@@ -39,3 +39,15 @@
 
 # debug information files
 *.dwo
+
+# .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.cache
+*.nupkg
+
+# Runtime data
+data/
