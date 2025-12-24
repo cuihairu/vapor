@@ -6,5 +6,12 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
   </PropertyGroup>
-</Project>
 
+  <!-- Test coverage settings for test projects -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>opencover</CoverletOutputFormat>
+    <ExcludeByAttribute>Obsolete,GeneratedCode,CompilerGenerated</ExcludeByAttribute>
+    <Exclude>[SteamControl.Steam.Core.Tests]*;[xunit.*]*;[Moq]*;[Microsoft.*]*;[System.*]*</Exclude>
+  </PropertyGroup>
+</Project>

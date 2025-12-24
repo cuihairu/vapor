@@ -23,6 +23,21 @@ export STEAMCONTROL_DB_PATH=:memory:
 dotnet run --project src/SteamControl.ControlPlane
 ```
 
+## Admin UI
+
+After starting the control plane, open your browser to:
+
+```
+http://127.0.0.1:8080/
+```
+
+The admin UI provides:
+- Dashboard with real-time statistics
+- Job creation and management
+- Agent status monitoring
+- Interactive auth challenge handling
+- Real-time event streaming
+
 ## Agent
 
 Environment variables:
@@ -41,7 +56,9 @@ export AGENT_API_KEY=dev-agent
 dotnet run --project src/SteamControl.Agent
 ```
 
-## Submit a job
+## API Examples
+
+### Submit a job
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
@@ -50,20 +67,93 @@ curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
   -d '{"action":"ping","region":"local","targets":["acct-1","acct-2"]}'
 ```
 
-## Watch job events (SSE)
+### Login with password
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
+  -H "Authorization: Bearer dev-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"login","region":"local","targets":["acct-1"],"payload":{"password":"<steam-password>"}}'
+```
+
+### Redeem a game key
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
+  -H "Authorization: Bearer dev-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"action":"redeem_key","region":"local","targets":["acct-1"],"payload":{"key":"AAAAA-BBBBB-CCCCC"}}'
+```
+
+### Submit auth code (when challenged)
+
+```bash
+curl -sS -X POST http://127.0.0.1:8080/v1/auth/challenges/acct-1/code \
+  -H "Authorization: Bearer dev-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"<email-code>","type":"email"}'
+```
+
+### Watch job events (SSE)
 
 ```bash
 curl -N http://127.0.0.1:8080/v1/jobs/<jobId>/events -H "Authorization: Bearer dev-admin"
 ```
 
-## List jobs
+### Watch session events (SSE)
+
+```bash
+curl -N http://127.0.0.1:8080/v1/sessions/events?accountName=acct-1 -H "Authorization: Bearer dev-admin"
+```
+
+### Watch auth challenge events (SSE)
+
+```bash
+curl -N http://127.0.0.1:8080/v1/auth/challenges/events -H "Authorization: Bearer dev-admin"
+```
+
+### List jobs
 
 ```bash
 curl -sS "http://127.0.0.1:8080/v1/jobs?limit=50" -H "Authorization: Bearer dev-admin"
 ```
 
-## Cancel a job
+### List agents
+
+```bash
+curl -sS http://127.0.0.1:8080/v1/agents/status -H "Authorization: Bearer dev-admin"
+```
+
+### Cancel a job
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/jobs/<jobId>/cancel -H "Authorization: Bearer dev-admin"
+```
+
+## Auth Challenge Workflow
+
+When a Steam account requires email or 2FA authentication:
+
+1. The session enters `ConnectingWaitAuthCode` or `ConnectingWait2FA` state
+2. Control Plane publishes an auth challenge event
+3. Admin UI displays a notification
+4. Submit the code via:
+   - **Admin UI**: Enter code in the auth challenge panel
+   - **API**: `POST /v1/auth/challenges/{accountName}/code`
+5. Agent receives the code and continues login
+
+### Example auth code submission
+
+```bash
+# Email code
+curl -sS -X POST http://127.0.0.1:8080/v1/auth/challenges/acct-1/code \
+  -H "Authorization: Bearer dev-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"123456","type":"email"}'
+
+# TOTP code (Steam Authenticator)
+curl -sS -X POST http://127.0.0.1:8080/v1/auth/challenges/acct-1/code \
+  -H "Authorization: Bearer dev-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"code":"987654","type":"totp"}'
 ```

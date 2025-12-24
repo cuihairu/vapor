@@ -5,6 +5,14 @@ using Microsoft.OpenApi.Models;
 using SteamControl.ControlPlane;
 using SteamControl.Protocol;
 
+// Request type for session events from agents
+public sealed record SessionEventRequest(
+	string AccountName,
+	string? EventType,
+	string? State,
+	string? Message
+);
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<Config>(_ => Config.LoadFromEnvironment());
@@ -45,6 +53,7 @@ builder.Services.ConfigureHttpJsonOptions(options => {
 
 var app = builder.Build();
 
+app.UseStaticFiles();
 app.UseWebSockets();
 
 var cfg = app.Services.GetRequiredService<Config>();
@@ -54,6 +63,9 @@ if (cfg.EnableSwagger) {
 }
 
 app.MapGet("/healthz", () => Results.Json(new { ok = true }));
+
+// Admin UI redirect
+app.MapGet("/", () => Results.Redirect("/admin.html"));
 
 app.MapGet("/v1/agents", (HttpContext ctx, Config cfg, AgentRegistry agents) => {
 	if (!Auth.TryAdmin(cfg, ctx.Request.Headers["Authorization"], out _)) {
@@ -165,6 +177,126 @@ app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, I
 		await ctx.Response.WriteAsync($"event: {e.Type}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 	}
+});
+
+// Session events streaming endpoint
+app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) => {
+	if (!Auth.TryAdmin(cfg, ctx.Request.Headers["Authorization"], out _)) {
+		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+		return;
+	}
+
+	ctx.Response.Headers.ContentType = "text/event-stream";
+	ctx.Response.Headers.CacheControl = "no-cache";
+	ctx.Response.Headers.Connection = "keep-alive";
+
+	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
+	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+
+	await foreach (var e in events.SubscribeSessions(ctx.RequestAborted, accountName)) {
+		var json = JsonSerializer.Serialize(e, SteamControl.Protocol.JsonDefaults.Options);
+		await ctx.Response.WriteAsync($"event: session.{e.EventType}\ndata: {json}\n\n", ctx.RequestAborted);
+		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+	}
+});
+
+// Auth challenge events streaming endpoint
+app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) => {
+	if (!Auth.TryAdmin(cfg, ctx.Request.Headers["Authorization"], out _)) {
+		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+		return;
+	}
+
+	ctx.Response.Headers.ContentType = "text/event-stream";
+	ctx.Response.Headers.CacheControl = "no-cache";
+	ctx.Response.Headers.Connection = "keep-alive";
+
+	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
+	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+
+	await foreach (var e in events.SubscribeAuthChallenges(ctx.RequestAborted, accountName)) {
+		var json = JsonSerializer.Serialize(e, SteamControl.Protocol.JsonDefaults.Options);
+		await ctx.Response.WriteAsync($"event: auth.{e.ChallengeType}\ndata: {json}\n\n", ctx.RequestAborted);
+		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+	}
+});
+
+// Submit auth code endpoint
+app.MapPost("/v1/auth/challenges/{accountName}/code", async Task<Results<Ok<object>, NotFound<ErrorResponse>, UnauthorizedHttpResult, BadRequest<ErrorResponse>>> (
+	HttpContext ctx,
+	Config cfg,
+	IEventBroker events,
+	string accountName,
+	Dictionary<string, string?> body
+) => {
+	if (!Auth.TryAdmin(cfg, ctx.Request.Headers["Authorization"], out _)) {
+		return TypedResults.Unauthorized();
+	}
+
+	if (!body.TryGetValue("code", out var code) || string.IsNullOrWhiteSpace(code)) {
+		return TypedResults.BadRequest(new ErrorResponse("code is required"));
+	}
+
+	if (!body.TryGetValue("type", out var type)) {
+		type = "email"; // Default to email guard
+	}
+
+	// Publish the auth code response event
+	// The agent will listen for this event and use the code to continue login
+	events.PublishAuthChallenge(accountName, $"code_provided_{type}", $"Auth code provided for {type}");
+
+	return TypedResults.Ok(new { ok = true, accountName, type });
+});
+
+// List active agents with their sessions
+app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agents) => {
+	if (!Auth.TryAdmin(cfg, ctx.Request.Headers["Authorization"], out _)) {
+		return TypedResults.Unauthorized();
+	}
+
+	var list = agents.List().Select(a => new {
+		id = a.Hello.AgentId,
+		region = a.Hello.Region,
+		capabilities = a.Hello.Capabilities,
+		connected = true,
+		connectedAt = DateTimeOffset.UtcNow
+	});
+
+	return TypedResults.Ok(new { agents = list });
+});
+
+// Receive session events from agents
+app.MapPost("/v1/sessions/events", async Task<Results<Ok<object>, UnauthorizedHttpResult, BadRequest<ErrorResponse>>> (
+	HttpContext ctx,
+	Config cfg,
+	IEventBroker events,
+	SessionEventRequest req
+) => {
+	// Allow both admin and agent tokens for this endpoint
+	if (!Auth.TryAdmin(cfg, ctx.Request.Headers["Authorization"], out _) &&
+	    !Auth.TryAgent(cfg, ctx.Request.Headers["Authorization"], out _)) {
+		return TypedResults.Unauthorized();
+	}
+
+	if (string.IsNullOrWhiteSpace(req.AccountName)) {
+		return TypedResults.BadRequest(new ErrorResponse("accountName is required"));
+	}
+
+	// Publish the session event
+	events.PublishSession(req.AccountName, req.EventType ?? "state_changed", req.State ?? "unknown", req.Message);
+
+	return TypedResults.Ok(new { ok = true });
+});
+
+// List active sessions
+app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg) => {
+	if (!Auth.TryAdmin(cfg, ctx.Request.Headers["Authorization"], out _)) {
+		return TypedResults.Unauthorized();
+	}
+
+	// TODO: Return actual session list from SessionManager
+	// For now, return empty list
+	return TypedResults.Ok(new { sessions = new List<object>() });
 });
 
 app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IEventBroker events) => {

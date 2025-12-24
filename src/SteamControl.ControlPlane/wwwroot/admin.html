@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SteamControl Admin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px 30px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            color: #1e3c72;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .header .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e3c72;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .input-group input,
+        .input-group select {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .job-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .job-item {
+            padding: 12px;
+            border-radius: 8px;
+            background: #f9fafb;
+            margin-bottom: 8px;
+            border-left: 3px solid #3b82f6;
+        }
+
+        .job-item.status-running {
+            border-left-color: #f59e0b;
+        }
+
+        .job-item.status-completed {
+            border-left-color: #10b981;
+        }
+
+        .job-item.status-failed {
+            border-left-color: #ef4444;
+        }
+
+        .job-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .job-id {
+            font-weight: 500;
+            color: #1e3c72;
+            font-size: 14px;
+        }
+
+        .job-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .job-status.pending {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .job-status.running {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .job-status.completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .job-status.failed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .job-details {
+            font-size: 13px;
+            color: #666;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+
+        .agent-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .agent-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-radius: 8px;
+            background: #f9fafb;
+            margin-bottom: 8px;
+        }
+
+        .agent-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .agent-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #3b82f6, #1e3c72);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .agent-name {
+            font-weight: 500;
+            color: #1e3c72;
+        }
+
+        .agent-region {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .events-log {
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+        }
+
+        .event-item {
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 4px;
+            background: #f9fafb;
+        }
+
+        .event-time {
+            color: #9ca3af;
+            margin-right: 8px;
+        }
+
+        .event-type {
+            font-weight: 500;
+            margin-right: 8px;
+        }
+
+        .event-type.session {
+            color: #3b82f6;
+        }
+
+        .event-type.auth {
+            color: #f59e0b;
+        }
+
+        .event-type.task {
+            color: #10b981;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1e3c72;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #f3f4f6;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .auth-challenge {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .auth-challenge-title {
+            font-weight: 600;
+            color: #92400e;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .auth-challenge-body {
+            font-size: 14px;
+            color: #78350f;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #f59e0b;
+            border-radius: 6px;
+            margin-top: 12px;
+            font-size: 14px;
+        }
+
+        .auth-input:focus {
+            outline: none;
+            border-color: #d97706;
+            box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 SteamControl Admin</h1>
+            <div class="status">
+                <span class="status-dot"></span>
+                <span id="connectionStatus">Connected</span>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="totalJobs">0</div>
+                <div class="stat-label">总任务数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="activeJobs">0</div>
+                <div class="stat-label">进行中</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="connectedAgents">0</div>
+                <div class="stat-label">已连接 Agent</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="completedJobs">0</div>
+                <div class="stat-label">已完成</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Create Job Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">创建新任务</h2>
+                </div>
+                <div class="input-group">
+                    <select id="actionSelect">
+                        <option value="ping">Ping (心跳检测)</option>
+                        <option value="echo">Echo (回显)</option>
+                        <option value="login">Login (登录)</option>
+                        <option value="idle">Idle (挂机)</option>
+                        <option value="redeem_key">Redeem Key (激活游戏)</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <input type="text" id="targetsInput" placeholder="目标账户 (逗号分隔, 如: acct1,acct2)">
+                </div>
+                <div class="input-group" id="payloadGroup">
+                    <input type="text" id="payloadInput" placeholder="额外参数 (JSON 格式, 可选)">
+                </div>
+                <div class="input-group">
+                    <select id="regionSelect">
+                        <option value="local">Local</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="createJob()">创建任务</button>
+                </div>
+            </div>
+
+            <!-- Agents Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">已连接 Agent</h2>
+                    <button class="btn btn-sm btn-primary" onclick="refreshAgents()">刷新</button>
+                </div>
+                <div class="agent-list" id="agentList">
+                    <div class="empty-state">
+                        <div class="loading"></div>
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Auth Challenges Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">认证挑战</h2>
+                </div>
+                <div id="authChallenges">
+                    <div class="empty-state">
+                        <p>暂无待处理的认证挑战</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Jobs List -->
+            <div class="card" style="grid-column: span 2;">
+                <div class="card-header">
+                    <h2 class="card-title">任务列表</h2>
+                    <button class="btn btn-sm btn-primary" onclick="refreshJobs()">刷新</button>
+                </div>
+                <div class="job-list" id="jobList">
+                    <div class="empty-state">
+                        <div class="loading"></div>
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Events Log -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">事件日志</h2>
+                </div>
+                <div class="events-log" id="eventsLog">
+                    <div class="empty-state">
+                        <p>等待事件...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        const API_KEY = localStorage.getItem('apiKey') || prompt('请输入管理员 API Key:');
+        if (API_KEY) {
+            localStorage.setItem('apiKey', API_KEY);
+        }
+
+        const headers = {
+            'Authorization': `Bearer ${API_KEY}`,
+            'Content-Type': 'application/json'
+        };
+
+        let eventSource = null;
+        let authEventSource = null;
+        let sessionEventSource = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshJobs();
+            refreshAgents();
+            startEventStream();
+        });
+
+        async function createJob() {
+            const action = document.getElementById('actionSelect').value;
+            const targets = document.getElementById('targetsInput').value.split(',').map(t => t.trim()).filter(t => t);
+            const region = document.getElementById('regionSelect').value;
+            const payloadStr = document.getElementById('payloadInput').value;
+
+            if (!targets.length) {
+                alert('请输入目标账户');
+                return;
+            }
+
+            let payload = {};
+            if (payloadStr) {
+                try {
+                    payload = JSON.parse(payloadStr);
+                } catch (e) {
+                    alert('无效的 JSON 格式');
+                    return;
+                }
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/v1/jobs`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ action, targets, region, payload: payloadStr ? payload : undefined })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    addEvent('task', `任务创建成功: ${result.job.id}`);
+                    refreshJobs();
+                } else {
+                    const error = await response.json();
+                    alert(`创建失败: ${error.error}`);
+                }
+            } catch (e) {
+                alert(`请求失败: ${e.message}`);
+            }
+        }
+
+        async function refreshJobs() {
+            try {
+                const response = await fetch(`${API_BASE}/v1/jobs?limit=50`, { headers });
+                if (response.ok) {
+                    const data = await response.json();
+                    renderJobs(data.jobs);
+                    updateStats(data.jobs);
+                }
+            } catch (e) {
+                console.error('Failed to fetch jobs:', e);
+            }
+        }
+
+        async function refreshAgents() {
+            try {
+                const response = await fetch(`${API_BASE}/v1/agents/status`, { headers });
+                if (response.ok) {
+                    const data = await response.json();
+                    renderAgents(data.agents);
+                    document.getElementById('connectedAgents').textContent = data.agents?.length || 0;
+                }
+            } catch (e) {
+                console.error('Failed to fetch agents:', e);
+            }
+        }
+
+        function renderJobs(jobs) {
+            const container = document.getElementById('jobList');
+            if (!jobs || jobs.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>暂无任务</p></div>';
+                return;
+            }
+
+            container.innerHTML = jobs.map(job => `
+                <div class="job-item status-${job.status.toLowerCase()}">
+                    <div class="job-header">
+                        <span class="job-id">${job.id.substring(0, 8)}...</span>
+                        <span class="job-status ${job.status.toLowerCase()}">${statusMap[job.status] || job.status}</span>
+                    </div>
+                    <div class="job-details">
+                        <div>动作: ${job.action}</div>
+                        <div>目标: ${job.targets?.length || 0} 个账户</div>
+                        <div>创建时间: ${new Date(job.createdAt).toLocaleString('zh-CN')}</div>
+                        <div>
+                            ${job.status === 'running' ? `<button class="btn btn-sm btn-danger" onclick="cancelJob('${job.id}')">取消</button>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderAgents(agents) {
+            const container = document.getElementById('agentList');
+            if (!agents || agents.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>暂无已连接的 Agent</p></div>';
+                return;
+            }
+
+            container.innerHTML = agents.map(agent => `
+                <div class="agent-item">
+                    <div class="agent-info">
+                        <div class="agent-avatar">${agent.id.substring(0, 2).toUpperCase()}</div>
+                        <div>
+                            <div class="agent-name">${agent.id}</div>
+                            <div class="agent-region">${agent.region}</div>
+                        </div>
+                    </div>
+                    <span class="badge badge-success">在线</span>
+                </div>
+            `).join('');
+        }
+
+        function updateStats(jobs) {
+            document.getElementById('totalJobs').textContent = jobs?.length || 0;
+            document.getElementById('activeJobs').textContent = jobs?.filter(j => j.status === 'running').length || 0;
+            document.getElementById('completedJobs').textContent = jobs?.filter(j => j.status === 'completed').length || 0;
+        }
+
+        async function cancelJob(jobId) {
+            if (!confirm('确定要取消此任务吗?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/v1/jobs/${jobId}/cancel`, {
+                    method: 'POST',
+                    headers
+                });
+                if (response.ok) {
+                    addEvent('task', `任务已取消: ${jobId.substring(0, 8)}...`);
+                    refreshJobs();
+                }
+            } catch (e) {
+                alert(`取消失败: ${e.message}`);
+            }
+        }
+
+        async function submitAuthCode(accountName, code) {
+            try {
+                const response = await fetch(`${API_BASE}/v1/auth/challenges/${accountName}/code`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({ code, type: 'email' })
+                });
+                if (response.ok) {
+                    addEvent('auth', `认证码已提交: ${accountName}`);
+                    removeAuthChallenge(accountName);
+                }
+            } catch (e) {
+                alert(`提交失败: ${e.message}`);
+            }
+        }
+
+        function startEventStream() {
+            // Listen for job events
+            eventSource = new EventSource(`${API_BASE}/v1/jobs/events?authorization=${encodeURIComponent(API_KEY)}`);
+            eventSource.addEventListener('task.finished', (e) => {
+                const data = JSON.parse(e.data);
+                addEvent('task', `任务完成: ${data.taskId?.substring(0, 8)}... - ${data.success ? '成功' : '失败'}`);
+                refreshJobs();
+            });
+
+            // Listen for auth challenge events
+            authEventSource = new EventSource(`${API_BASE}/v1/auth/challenges/events?authorization=${encodeURIComponent(API_KEY)}`);
+            authEventSource.addEventListener('auth.auth_code_required', (e) => {
+                const data = JSON.parse(e.data);
+                addAuthChallenge(data);
+            });
+
+            // Listen for session events
+            sessionEventSource = new EventSource(`${API_BASE}/v1/sessions/events?authorization=${encodeURIComponent(API_KEY)}`);
+            sessionEventSource.addEventListener('session.state_changed', (e) => {
+                const data = JSON.parse(e.data);
+                addEvent('session', `会话状态变化: ${data.accountName} -> ${data.state}`);
+            });
+        }
+
+        function addEvent(type, message) {
+            const container = document.getElementById('eventsLog');
+            const time = new Date().toLocaleTimeString('zh-CN');
+            const html = `
+                <div class="event-item">
+                    <span class="event-time">${time}</span>
+                    <span class="event-type ${type}">[${type}]</span>
+                    <span>${message}</span>
+                </div>
+            `;
+            container.innerHTML = html + container.innerHTML;
+            if (container.children.length > 50) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function addAuthChallenge(data) {
+            const container = document.getElementById('authChallenges');
+            const html = `
+                <div class="auth-challenge" id="auth-${data.accountName}">
+                    <div class="auth-challenge-title">
+                        <span>🔐</span>
+                        <span>${data.accountName} 需要认证码</span>
+                    </div>
+                    <div class="auth-challenge-body">
+                        <p>${data.message || '请输入 Steam 发送的认证码'}</p>
+                        <input type="text" class="auth-input" placeholder="输入认证码" id="code-${data.accountName}">
+                        <button class="btn btn-sm btn-success" style="margin-top: 8px;" onclick="submitAuthCode('${data.accountName}', document.getElementById('code-${data.accountName}').value)">
+                            提交
+                        </button>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = html + container.innerHTML;
+        }
+
+        function removeAuthChallenge(accountName) {
+            const element = document.getElementById(`auth-${accountName}`);
+            if (element) {
+                element.remove();
+            }
+        }
+
+        const statusMap = {
+            'pending': '等待中',
+            'running': '进行中',
+            'completed': '已完成',
+            'failed': '失败',
+            'canceled': '已取消'
+        };
+    </script>
+</body>
+</html>

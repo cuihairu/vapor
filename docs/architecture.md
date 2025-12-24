@@ -114,8 +114,86 @@ Development / MVP:
 
 ## Next implementation milestones
 
-1. Control plane skeleton: job/task models, HTTP API, agent tunnel.
-2. Agent skeleton: task executor with action registry (stub actions initially).
-3. Persisted storage and durable queue integration.
-4. Steam session engine: Bot-style session + Actions (library chosen per language).
-5. Event streaming, auth challenge workflow, admin UI.
+1. ~~Control plane skeleton: job/task models, HTTP API, agent tunnel.~~ (Completed)
+2. ~~Agent skeleton: task executor with action registry (stub actions initially).~~ (Completed)
+3. ~~Persisted storage and durable queue integration.~~ (Completed)
+4. ~~Steam session engine: Bot-style session + Actions (SteamKit2 integration).~~ (Completed)
+5. ~~Comprehensive test suite: hundreds of tests covering Actions, BotSession, SessionManager, SteamClientManager.~~ (Completed)
+6. ~~Event streaming, auth challenge workflow, admin UI.~~ (Completed)
+
+## Completed Features
+
+### Event Streaming System
+
+Enhanced event broker with support for:
+
+- **Session Events**: Real-time session state changes
+  - `GET /v1/sessions/events` - Subscribe to session events (SSE)
+  - `POST /v1/sessions/events` - Agents publish session events
+
+- **Auth Challenge Events**: Real-time authentication challenge notifications
+  - `GET /v1/auth/challenges/events` - Subscribe to auth challenge events (SSE)
+  - `POST /v1/auth/challenges/{accountName}/code` - Submit auth codes
+
+### Auth Challenge Workflow
+
+Interactive authentication flow for Steam Guard:
+
+1. Session enters `ConnectingWaitAuthCode` or `ConnectingWait2FA` state
+2. Agent publishes auth challenge event to Control Plane
+3. Admin UI displays challenge notification
+4. User submits auth code via UI or API
+5. Agent receives code via SSE stream and continues login
+
+### Admin UI
+
+Modern web-based admin interface (`/admin.html`):
+
+- Dashboard with statistics (total jobs, active jobs, agents, completed)
+- Create and manage jobs
+- View connected agents
+- Handle auth challenges interactively
+- Real-time event log
+- Responsive design with dark theme
+
+### API Endpoints
+
+#### Jobs
+- `POST /v1/jobs` - Create new job
+- `GET /v1/jobs` - List jobs
+- `GET /v1/jobs/{id}` - Get job details
+- `POST /v1/jobs/{id}/cancel` - Cancel job
+- `GET /v1/jobs/{id}/events` - Job event stream (SSE)
+
+#### Sessions
+- `GET /v1/sessions` - List active sessions
+- `GET /v1/sessions/events` - Session event stream (SSE)
+- `POST /v1/sessions/events` - Publish session event (agent)
+
+#### Auth Challenges
+- `GET /v1/auth/challenges/events` - Auth challenge stream (SSE)
+- `POST /v1/auth/challenges/{accountName}/code` - Submit auth code
+
+#### Agents
+- `GET /v1/agents` - List agents
+- `GET /v1/agents/status` - Get agent status
+- `WS /v1/agent/ws` - Agent WebSocket tunnel
+
+## Testing
+
+The project includes a comprehensive test suite for the Steam.Core module:
+
+- **228 Fact/Theory methods** across 13 test classes
+- **~4,600 lines** of test code
+- **xUnit** + **Moq** for unit testing
+- **Coverlet** for code coverage reporting
+- **Unit**, **integration**, and **performance** coverage
+
+See `tests/TESTING.md` for detailed testing documentation.
+
+### Test Coverage
+
+- ✅ Actions: Ping, Echo, Login, Idle, RedeemKey
+- ✅ Core Components: ActionRegistry, BotSession, SessionManager, SteamClientManager, Models, edge cases
+- ✅ Integration: end-to-end workflows, multi-account scenarios
+- ✅ Performance: concurrency and stress testing

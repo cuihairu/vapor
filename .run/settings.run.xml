@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <!-- Data collection settings -->
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>opencover</Format>
+          <Exclude>[SteamControl.Steam.Core.Tests]*</Exclude>
+          <Exclude>[xunit.*]*</Exclude>
+          <Exclude>[Moq]*</Exclude>
+          <Exclude>[Microsoft.*]*</Exclude>
+          <Exclude>[System.*]*</Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

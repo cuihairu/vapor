@@ -5,7 +5,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SteamControl.Protocol\SteamControl.Protocol.csproj" />
+    <ProjectReference Include="..\SteamControl.Steam.Core\SteamControl.Steam.Core.csproj" />
   </ItemGroup>
 </Project>
 
