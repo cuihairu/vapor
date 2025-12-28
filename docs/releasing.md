@@ -13,3 +13,6 @@ This repo uses **Semantic Versioning** with tags in the form `vX.Y.Z` (and optio
 5. GitHub Actions will build and publish a GitHub Release for the tag:
    - `SteamControl-ControlPlane-vX.Y.Z-<rid>.zip`
    - `SteamControl-Agent-vX.Y.Z-<rid>.zip`
+
+Notes:
+- Tags with a prerelease suffix (contains `-`, e.g. `v0.1.0-alpha.1`) are published as GitHub **prereleases**.
