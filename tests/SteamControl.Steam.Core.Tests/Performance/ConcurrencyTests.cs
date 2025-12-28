@@ -367,6 +367,7 @@ public class ConcurrencyTests : IDisposable
 		// Arrange
 		var threadCount = 20;
 		var actionsPerThread = 10;
+		var initialCount = _actionRegistry.ListNames().Count;
 
 		// Act - 并发注册动作
 		var tasks = Enumerable.Range(0, threadCount).Select(threadId =>
@@ -398,7 +399,7 @@ public class ConcurrencyTests : IDisposable
 		// Assert - 验证注册的动作数量
 		var registeredNames = _actionRegistry.ListNames();
 		_output.WriteLine($"Registered actions: {registeredNames.Count}");
-		Assert.Equal(threadCount * actionsPerThread, registeredNames.Count);
+		Assert.Equal(initialCount + (threadCount * actionsPerThread), registeredNames.Count);
 	}
 
 	[Fact]

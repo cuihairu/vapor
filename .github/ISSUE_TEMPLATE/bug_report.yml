@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a bug / 反馈问题
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! 请尽量提供完整信息，便于快速定位。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened? / 发生了什么
+      description: Describe the bug and what you expected.
+      placeholder: ...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: Paste relevant logs (redact secrets).
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version / 版本
+      placeholder: vX.Y.Z or commit SHA
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / 环境
+      placeholder: OS, .NET SDK/runtime version, deployment details
+

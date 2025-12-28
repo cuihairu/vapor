@@ -48,6 +48,8 @@ obj/
 *.suo
 *.cache
 *.nupkg
+TestResults/
+**/TestResults/
 
 # Runtime data
 data/

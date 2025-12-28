@@ -61,15 +61,15 @@ public class ModelsTests
 	[InlineData("DisconnectedByUser")]
 	[InlineData("Disconnecting")]
 	[InlineData("FatalError")]
-	public void SessionState_CanParseFromString(string stateName)
-	{
-		// Act
-		var success = Enum.TryParse<SessionState>(stateName, out var result);
+		public void SessionState_CanParseFromString(string stateName)
+		{
+			// Act
+			var success = Enum.TryParse<SessionState>(stateName, out var result);
 
-		// Assert
-		Assert.True(success);
-		Assert.NotEqual(default, result);
-	}
+			// Assert
+			Assert.True(success);
+			Assert.Equal(stateName, result.ToString());
+		}
 
 	#endregion
 

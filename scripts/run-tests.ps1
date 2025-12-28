@@ -8,6 +8,11 @@ param(
     [switch]$Help
 )
 
+# Allow running net8.0 testhost with only a newer runtime installed (e.g. net9).
+if (-not $env:DOTNET_ROLL_FORWARD) {
+    $env:DOTNET_ROLL_FORWARD = "Major"
+}
+
 # 颜色输出函数
 function Write-ColorOutput($ForegroundColor) {
     $fc = $host.UI.RawUI.ForegroundColor
@@ -59,7 +64,7 @@ if ($Verbose) {
 }
 
 if ($Coverage) {
-    $testCmd += " --collect:'XPlat Code Coverage' --results-directory ./TestResults"
+    $testCmd += " /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./TestResults/coverage/"
 }
 
 if ($Filter -ne "") {
@@ -83,7 +88,7 @@ if ($Coverage -and $exitCode -eq 0) {
     Write-Warning "处理覆盖率报告..."
 
     # 查找覆盖率文件
-    $coverageFile = Get-ChildItem -Path .\TestResults -Filter "coverage.opencover.xml" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $coverageFile = Get-ChildItem -Path . -Recurse -Filter "coverage.opencover.xml" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "TestResults[\\\\/]coverage" } | Select-Object -First 1
 
     if ($coverageFile) {
         Write-Success "覆盖率报告已生成: $($coverageFile.FullName)"

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using SteamControl.Steam.Core.Steam;
 
@@ -55,14 +56,14 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		_eventCallback = callback;
 	}
 
-	public async Task<BotSession> GetOrCreateSessionAsync(
+	public Task<BotSession> GetOrCreateSessionAsync(
 		string accountName,
 		AccountCredentials credentials,
 		CancellationToken cancellationToken = default)
 	{
 		if (_sessions.TryGetValue(accountName, out var existing))
 		{
-			return existing;
+			return Task.FromResult(existing);
 		}
 
 		var session = new BotSession(
@@ -102,10 +103,10 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		else
 		{
 			session.Dispose();
-			return _sessions[accountName];
+			return Task.FromResult(_sessions[accountName]);
 		}
 
-		return session;
+		return Task.FromResult(session);
 	}
 
 	public Task<BotSession?> GetSessionAsync(string accountName, CancellationToken cancellationToken = default)
@@ -128,7 +129,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		return _sessions.Values.ToList();
 	}
 
-	public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(CancellationToken cancellationToken = default)
+	public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents([EnumeratorCancellation] CancellationToken cancellationToken = default)
 	{
 		await foreach (var evt in _eventChannel.Reader.ReadAllAsync(cancellationToken))
 		{

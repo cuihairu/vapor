@@ -53,6 +53,9 @@ actionRegistry.Register(serviceProvider.GetRequiredService<RedeemKeyAction>());
 using CancellationTokenSource cts = new();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
+// Start one background task to listen for auth challenge events via SSE.
+_ = Task.Run(() => PollAuthChallengesAsync(agentId, region, wsUrlBase, agentApiKey, sessionManager, logger, cts.Token), cts.Token);
+
 TimeSpan backoff = TimeSpan.FromMilliseconds(500);
 while (!cts.IsCancellationRequested) {
 	try {
@@ -80,10 +83,7 @@ async Task RunOnce(CancellationToken cancellationToken) {
 	var hello = new AgentHello(agentId, region, capabilities, null);
 	await Send(ws, new WSMessage("hello", hello, null, null), cancellationToken);
 
-	// Start background task to listen for auth challenge events via HTTP polling
-_ = Task.Run(() => PollAuthChallengesAsync(agentId, region, wsUrlBase, agentApiKey, sessionManager, logger, cts.Token), cts.Token);
-
-while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
+	while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
 		WSMessage msg = await Receive<WSMessage>(ws, cancellationToken);
 		if (!string.Equals(msg.Type, "task", StringComparison.Ordinal) || msg.Task == null) {
 			continue;
@@ -201,15 +201,15 @@ static async Task Send<T>(ClientWebSocket ws, T value, CancellationToken cancell
 	await ws.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
 }
 
-static async Task PollAuthChallengesAsync(
-	string agentId,
-	string region,
-	string wsUrlBase,
-	string agentApiKey,
-	ISessionManager sessionManager,
-	ILogger logger,
-	CancellationToken cancellationToken)
-{
+	static async Task PollAuthChallengesAsync(
+		string agentId,
+		string region,
+		string wsUrlBase,
+		string agentApiKey,
+		ISessionManager sessionManager,
+		ILogger logger,
+		CancellationToken cancellationToken)
+	{
 	try
 	{
 		// Build HTTP base URL from WebSocket URL
@@ -237,47 +237,83 @@ static async Task PollAuthChallengesAsync(
 				using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 				using var reader = new System.IO.StreamReader(stream);
 
-				while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
-				{
-					var line = await reader.ReadLineAsync(cancellationToken);
-					if (string.IsNullOrWhiteSpace(line)) continue;
-
-					// Parse SSE format: "event: <type>" or "data: <json>"
-					if (line.StartsWith("event: "))
+					while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
 					{
-						var eventType = line["event: ".Length..].Trim();
-						var dataLine = await reader.ReadLineAsync();
-						if (dataLine?.StartsWith("data: ") == true)
-						{
-							var jsonData = dataLine["data: ".Length..];
-							try
-							{
-								using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonData);
-								var root = jsonDoc.RootElement;
-								var accountName = root.GetProperty("accountName").GetString();
+						var line = await reader.ReadLineAsync(cancellationToken);
+						if (string.IsNullOrWhiteSpace(line)) continue;
 
-								if (!string.IsNullOrWhiteSpace(accountName))
+						// Parse SSE format: "event: <type>" then "data: <json>"
+						if (line.StartsWith("event: ", StringComparison.Ordinal))
+						{
+							var eventType = line["event: ".Length..].Trim();
+							var dataLine = await reader.ReadLineAsync(cancellationToken);
+							if (dataLine?.StartsWith("data: ", StringComparison.Ordinal) == true)
+							{
+								var jsonData = dataLine["data: ".Length..];
+								try
 								{
-									// Handle different auth challenge events
+									if (eventType is not ("auth.code_provided_email" or "auth.code_provided_totp" or "auth.code_provided_2fa"))
+									{
+										continue;
+									}
+
+									using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonData);
+									var root = jsonDoc.RootElement;
+
+									if (!root.TryGetProperty("accountName", out var accountNameProp))
+									{
+										continue;
+									}
+
+									var accountName = accountNameProp.GetString();
+									if (string.IsNullOrWhiteSpace(accountName))
+									{
+										continue;
+									}
+
+									if (!root.TryGetProperty("code", out var codeProp))
+									{
+										logger.LogWarning("Auth code event missing code for {AccountName}", accountName);
+										continue;
+									}
+
+									var code = codeProp.GetString();
+									if (string.IsNullOrWhiteSpace(code))
+									{
+										logger.LogWarning("Auth code event has empty code for {AccountName}", accountName);
+										continue;
+									}
+
+									var session = await sessionManager.GetSessionAsync(accountName, cancellationToken);
+									if (session == null)
+									{
+										logger.LogWarning("Auth code received but no active session for {AccountName}", accountName);
+										continue;
+									}
+
 									if (eventType == "auth.code_provided_email")
 									{
-										logger.LogInformation("Auth code provided for {AccountName}", accountName);
-										// The code will be picked up by the session automatically from the payload
+										logger.LogInformation("Applying email auth code for {AccountName}", accountName);
+										session.ProvideAuthCode(code);
 									}
-									else if (eventType == "auth.code_provided_totp")
+									else
 									{
-										logger.LogInformation("2FA code provided for {AccountName}", accountName);
+										logger.LogInformation("Applying 2FA code for {AccountName}", accountName);
+										session.Provide2FACode(code);
 									}
 								}
-							}
-							catch (System.Text.Json.JsonException ex)
-							{
-								logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", jsonData);
+								catch (System.Text.Json.JsonException ex)
+								{
+									logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", jsonData);
+								}
+								catch (Exception ex)
+								{
+									logger.LogWarning(ex, "Failed to handle auth challenge event: {Data}", jsonData);
+								}
 							}
 						}
 					}
 				}
-			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 			{
 				break;

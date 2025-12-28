@@ -27,6 +27,7 @@ public sealed class BotSession : IDisposable
 	private readonly SemaphoreSlim _actionLock;
 	private readonly ISteamClientManager? _steamClientManager;
 	private readonly SessionEventDelegate? _eventCallback;
+	private int _disposed;
 	
 	private SessionState _state = SessionState.Disconnected;
 	private DateTimeOffset _lastHeartbeat = DateTimeOffset.UtcNow;
@@ -85,7 +86,8 @@ public sealed class BotSession : IDisposable
 			SessionCommandType.ExecuteAction,
 			actionName,
 			payload,
-			tcs
+			tcs,
+			cancellationToken
 		);
 
 		if (!_commandChannel.Writer.TryWrite(cmd))
@@ -103,7 +105,8 @@ public sealed class BotSession : IDisposable
 			SessionCommandType.ProvideAuthCode,
 			code,
 			null,
-			null
+			null,
+			CancellationToken.None
 		);
 		_commandChannel.Writer.TryWrite(cmd);
 	}
@@ -115,20 +118,27 @@ public sealed class BotSession : IDisposable
 			SessionCommandType.Provide2FACode,
 			code,
 			null,
-			null
+			null,
+			CancellationToken.None
 		);
 		_commandChannel.Writer.TryWrite(cmd);
 	}
 
 	public async Task DisconnectAsync(CancellationToken cancellationToken = default)
 	{
+		if (_backgroundTask == null)
+		{
+			return;
+		}
+
 		var tcs = new TaskCompletionSource<SessionCommandResult>();
 		var cmd = new SessionCommand(
 			Guid.NewGuid().ToString(),
 			SessionCommandType.Disconnect,
 			null,
 			null,
-			tcs
+			tcs,
+			cancellationToken
 		);
 
 		_commandChannel.Writer.TryWrite(cmd);
@@ -241,23 +251,27 @@ public sealed class BotSession : IDisposable
 
 	private async Task HandleExecuteAction(SessionCommand cmd, CancellationToken cancellationToken)
 	{
-		var action = _actionRegistry.Get(cmd.ActionName!);
+		var action = _actionRegistry.Get(cmd.ActionName);
 		if (action == null)
 		{
 			cmd.Completion?.TrySetResult(new SessionCommandResult(false, $"action not found: {cmd.ActionName}", null));
 			return;
 		}
 
-		if (action.Metadata.RequiresLogin && _state != SessionState.Connected)
+		// Only enforce login when a real steam client is wired in; in stub mode, actions can run while disconnected.
+		if (action.Metadata.RequiresLogin && _steamClientManager != null && _state != SessionState.Connected)
 		{
 			cmd.Completion?.TrySetResult(new SessionCommandResult(false, $"not logged in. Current state: {_state}", null));
 			return;
 		}
 
-		await _actionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+		using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmd.CancellationToken);
+		var effectiveToken = linkedCts.Token;
+
+		await _actionLock.WaitAsync(effectiveToken).ConfigureAwait(false);
 		try
 		{
-			var result = await action.ExecuteAsync(this, cmd.Payload ?? new Dictionary<string, object?>(), cancellationToken).ConfigureAwait(false);
+			var result = await action.ExecuteAsync(this, cmd.Payload ?? new Dictionary<string, object?>(), cmd.CancellationToken).ConfigureAwait(false);
 			cmd.Completion?.TrySetResult(new SessionCommandResult(result.Success, result.Error, result.Output));
 		}
 		finally
@@ -273,15 +287,16 @@ public sealed class BotSession : IDisposable
 			_logger.LogInformation("Auth code provided for {AccountName}", _accountName);
 			_steamClientManager?.SetAuthCode(_accountName, cmd.ActionName!);
 			SetState(SessionState.Connecting, "auth code provided; retrying login");
-			_commandChannel.Writer.TryWrite(new SessionCommand(
-				Guid.NewGuid().ToString(),
-				SessionCommandType.Login,
-				null,
-				null,
-				null
-			));
+				_commandChannel.Writer.TryWrite(new SessionCommand(
+					Guid.NewGuid().ToString(),
+					SessionCommandType.Login,
+					null,
+					null,
+					null,
+					CancellationToken.None
+				));
+			}
 		}
-	}
 
 	private void Handle2FACode(SessionCommand cmd)
 	{
@@ -290,15 +305,16 @@ public sealed class BotSession : IDisposable
 			_logger.LogInformation("2FA code provided for {AccountName}", _accountName);
 			_steamClientManager?.SetTwoFactorCode(_accountName, cmd.ActionName!);
 			SetState(SessionState.Connecting, "2FA code provided; retrying login");
-			_commandChannel.Writer.TryWrite(new SessionCommand(
-				Guid.NewGuid().ToString(),
-				SessionCommandType.Login,
-				null,
-				null,
-				null
-			));
+				_commandChannel.Writer.TryWrite(new SessionCommand(
+					Guid.NewGuid().ToString(),
+					SessionCommandType.Login,
+					null,
+					null,
+					null,
+					CancellationToken.None
+				));
+			}
 		}
-	}
 
 	private async Task HandleDisconnect(SessionCommand cmd)
 	{
@@ -306,16 +322,17 @@ public sealed class BotSession : IDisposable
 		cmd.Completion?.TrySetResult(new SessionCommandResult(true, null, null));
 	}
 
-	private async Task ConnectAsync(CancellationToken cancellationToken)
-	{
-		var tcs = new TaskCompletionSource<SessionCommandResult>();
-		var cmd = new SessionCommand(
-			Guid.NewGuid().ToString(),
-			SessionCommandType.Login,
-			null,
-			null,
-			tcs
-		);
+		private async Task ConnectAsync(CancellationToken cancellationToken)
+		{
+			var tcs = new TaskCompletionSource<SessionCommandResult>();
+			var cmd = new SessionCommand(
+				Guid.NewGuid().ToString(),
+				SessionCommandType.Login,
+				null,
+				null,
+				tcs,
+				cancellationToken
+			);
 
 		_commandChannel.Writer.TryWrite(cmd);
 		await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -363,7 +380,19 @@ public sealed class BotSession : IDisposable
 
 	public void Dispose()
 	{
-		_cts.Cancel();
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+		{
+			return;
+		}
+
+		try
+		{
+			_cts.Cancel();
+		}
+		catch (ObjectDisposedException)
+		{
+		}
+
 		_cts.Dispose();
 		_actionLock.Dispose();
 	}
@@ -383,7 +412,8 @@ public sealed record SessionCommand(
 	SessionCommandType Type,
 	string? ActionName,
 	IReadOnlyDictionary<string, object?>? Payload,
-	TaskCompletionSource<SessionCommandResult>? Completion
+	TaskCompletionSource<SessionCommandResult>? Completion,
+	CancellationToken CancellationToken
 );
 
 public sealed record SessionCommandResult(

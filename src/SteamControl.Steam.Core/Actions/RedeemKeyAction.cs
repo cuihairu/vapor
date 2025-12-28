@@ -26,7 +26,7 @@ public sealed class RedeemKeyAction : IAction
 		CancellationToken cancellationToken)
 	{
 		string? key = PayloadReader.GetString(payload, "key");
-		if (string.IsNullOrWhiteSpace(key))
+		if (key is null)
 		{
 			return Task.FromResult<ActionResult>(new ActionResult(false, "key is required", null));
 		}
@@ -45,11 +45,37 @@ public sealed class RedeemKeyAction : IAction
 
 	private static string MaskKey(string key)
 	{
+		if (key.Length == 0)
+		{
+			return string.Empty;
+		}
+
+		if (key.Contains('-', StringComparison.Ordinal))
+		{
+			var parts = key.Split('-', StringSplitOptions.None);
+			if (parts.Length >= 3)
+			{
+				return string.Join(
+					"-",
+					parts.Select((part, i) => (i == 0 || i == parts.Length - 1) ? part : new string('*', part.Length))
+				);
+			}
+		}
+
+		// Short keys: mask everything.
 		if (key.Length <= 8)
 		{
 			return new string('*', key.Length);
 		}
 
-		return key[..4] + new string('*', key.Length - 8) + key[^4..];
+		// Medium keys: preserve first/last char.
+		if (key.Length <= 20)
+		{
+			return $"{key[0]}{new string('*', key.Length - 2)}{key[^1]}";
+		}
+
+		// Long keys: preserve first/last 10 chars.
+		const int edgeLen = 10;
+		return key[..edgeLen] + new string('*', key.Length - (edgeLen * 2)) + key[^edgeLen..];
 	}
 }

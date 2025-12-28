@@ -52,7 +52,7 @@ public static class PayloadReader
 		{
 			int i => i,
 			long l when l is >= int.MinValue and <= int.MaxValue => (int)l,
-			double d when d is >= int.MinValue and <= int.MaxValue => (int)d,
+			double d when d is >= int.MinValue and <= int.MaxValue && Math.Floor(d) == d => (int)d,
 			JsonElement { ValueKind: JsonValueKind.Number } je when je.TryGetInt32(out var i) => i,
 			JsonElement { ValueKind: JsonValueKind.String } je when int.TryParse(je.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) => i,
 			string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) => i,
@@ -60,4 +60,3 @@ public static class PayloadReader
 		};
 	}
 }
-

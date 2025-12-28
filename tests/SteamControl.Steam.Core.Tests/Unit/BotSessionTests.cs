@@ -219,7 +219,7 @@ public class BotSessionTests : IDisposable
 		_actionRegistryMock.Setup(r => r.Get("test")).Returns(mockAction.Object);
 
 		// Act & Assert
-		await Assert.ThrowsAsync<OperationCanceledException>(
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(
 			() => session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token)
 		);
 	}
@@ -320,20 +320,17 @@ public class BotSessionTests : IDisposable
 	}
 
 	[Fact]
-	public async Task DisconnectAsync_WhenNotStarted_ReturnsSuccess()
+	public async Task DisconnectAsync_WhenNotStarted_DoesNotThrow()
 	{
 		// Arrange
 		var session = CreateSession();
 
 		// Act
-		var result = await session.DisconnectAsync(CancellationToken.None);
-
-		// Assert - command should succeed even if session not started
-		Assert.True(result.Success);
+		await session.DisconnectAsync(CancellationToken.None);
 	}
 
 	[Fact]
-	public async Task SubscribeEvents_ReturnsEventChannel()
+	public void SubscribeEvents_ReturnsEventChannel()
 	{
 		// Arrange
 		var session = CreateSession();
@@ -390,7 +387,7 @@ public class BotSessionTests : IDisposable
 	}
 
 	[Fact]
-	public async Task ConnectedAt_InitiallyReturnsDefault()
+	public void ConnectedAt_InitiallyReturnsDefault()
 	{
 		// Arrange
 		var session = CreateSession();

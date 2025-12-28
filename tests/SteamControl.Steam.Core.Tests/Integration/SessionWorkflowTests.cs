@@ -184,19 +184,18 @@ public class SessionWorkflowTests : IDisposable
 	}
 
 	[Fact]
-	public async Task Workflow_ActionRequiringLogin_WhenNotLoggedIn_ReturnsFailure()
+	public async Task Workflow_ActionRequiringLogin_InStubMode_Succeeds()
 	{
 		// Arrange
 		var accountName = "test_account";
 		var credentials = new AccountCredentials(accountName, "password");
 		var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
 
-		// Act - Idle 需要登录
+		// Act - stub mode runs without a real Steam connection
 		var result = await session.ExecuteActionAsync("idle", new Dictionary<string, object?>(), CancellationToken.None);
 
 		// Assert
-		Assert.False(result.Success);
-		Assert.Contains("not logged in", result.Error ?? string.Empty);
+		Assert.True(result.Success);
 	}
 
 	[Fact]

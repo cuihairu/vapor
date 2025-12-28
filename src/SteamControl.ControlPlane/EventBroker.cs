@@ -16,7 +16,9 @@ public sealed class EventBroker : IEventBroker {
 			return;
 		}
 
-		if (!_subscribers.TryGetValue(jobId, out var subs) || subs.IsEmpty) {
+		_subscribers.TryGetValue(jobId, out var subs);
+		_subscribers.TryGetValue("*", out var globalSubs);
+		if ((subs == null || subs.IsEmpty) && (globalSubs == null || globalSubs.IsEmpty)) {
 			return;
 		}
 
@@ -28,8 +30,16 @@ public sealed class EventBroker : IEventBroker {
 			Payload: payload
 		);
 
-		foreach (var entry in subs.Keys) {
-			_ = entry.Writer.TryWrite(e);
+		if (subs != null) {
+			foreach (var entry in subs.Keys) {
+				_ = entry.Writer.TryWrite(e);
+			}
+		}
+
+		if (globalSubs != null) {
+			foreach (var entry in globalSubs.Keys) {
+				_ = entry.Writer.TryWrite(e);
+			}
 		}
 	}
 
@@ -61,12 +71,13 @@ public sealed class EventBroker : IEventBroker {
 		}
 	}
 
-	public void PublishAuthChallenge(string accountName, string challengeType, string? message = null) {
+	public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null) {
 		var authEvent = new AuthChallengeEvent(
 			Id: Guid.NewGuid().ToString("N"),
 			AccountName: accountName,
 			ChallengeType: challengeType,
 			Message: message,
+			Code: code,
 			Timestamp: DateTimeOffset.UtcNow,
 			JobId: null
 		);
@@ -166,4 +177,3 @@ public sealed class EventBroker : IEventBroker {
 		}
 	}
 }
-

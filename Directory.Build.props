@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <LangVersion>latest</LangVersion>
+    <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -9,8 +9,9 @@
 
   <!-- Test coverage settings for test projects -->
   <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
-    <CollectCoverage>true</CollectCoverage>
-    <CoverletOutputFormat>opencover</CoverletOutputFormat>
+    <CollectCoverage Condition="'$(CollectCoverage)' == '' and '$(CI)' == 'true'">true</CollectCoverage>
+    <CoverletOutputFormat Condition="'$(CoverletOutputFormat)' == ''">opencover</CoverletOutputFormat>
+    <CoverletOutput Condition="'$(CoverletOutput)' == ''">./TestResults/coverage/</CoverletOutput>
     <ExcludeByAttribute>Obsolete,GeneratedCode,CompilerGenerated</ExcludeByAttribute>
     <Exclude>[SteamControl.Steam.Core.Tests]*;[xunit.*]*;[Moq]*;[Microsoft.*]*;[System.*]*</Exclude>
   </PropertyGroup>

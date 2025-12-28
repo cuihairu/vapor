@@ -18,7 +18,7 @@ public interface IAction
 public sealed record ActionMetadata(
 	string Name,
 	string Description,
-	bool RequiresLogin = true,
+	bool RequiresLogin = false,
 	int? TimeoutSeconds = null
 );
 
@@ -31,13 +31,13 @@ public sealed record ActionResult(
 public interface IActionRegistry
 {
 	void Register(IAction action);
-	IAction? Get(string name);
+	IAction? Get(string? name);
 	IReadOnlyList<string> ListNames();
 }
 
 public sealed class ActionRegistry : IActionRegistry
 {
-	private readonly Dictionary<string, IAction> _actions = new(StringComparer.OrdinalIgnoreCase);
+	private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IAction> _actions = new(StringComparer.OrdinalIgnoreCase);
 	private readonly ILogger<ActionRegistry> _logger;
 
 	public ActionRegistry(ILogger<ActionRegistry> logger)
@@ -51,8 +51,13 @@ public sealed class ActionRegistry : IActionRegistry
 		_logger.LogInformation("Registered action: {ActionName}", action.Name);
 	}
 
-	public IAction? Get(string name)
+	public IAction? Get(string? name)
 	{
+		if (name is null)
+		{
+			return null;
+		}
+
 		return _actions.TryGetValue(name, out var action) ? action : null;
 	}
 

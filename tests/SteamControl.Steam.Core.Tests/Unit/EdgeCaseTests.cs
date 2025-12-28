@@ -366,7 +366,7 @@ public class EdgeCaseTests : IDisposable
 	}
 
 	[Fact]
-	public async Task BotSession_StartMultipleTimes_ThrowsInvalidOperationException()
+	public void BotSession_StartMultipleTimes_ThrowsInvalidOperationException()
 	{
 		// Arrange
 		var credentials = new AccountCredentials("test", "pass");
@@ -391,14 +391,13 @@ public class EdgeCaseTests : IDisposable
 	public async Task ExecuteAction_WithCancelledToken_ThrowsOperationCanceledException()
 	{
 		// Arrange
-		var accountName = "test_account";
-		var credentials = new AccountCredentials(accountName, "password");
-		var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
-		session.Start();
+			var accountName = "test_account";
+			var credentials = new AccountCredentials(accountName, "password");
+			var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
 
-		var mockAction = new Mock<IAction>();
-		mockAction.Setup(a => a.Name).Returns("test");
-		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", false, 30));
+			var mockAction = new Mock<IAction>();
+			mockAction.Setup(a => a.Name).Returns("test");
+			mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", false, 30));
 		mockAction.Setup(a => a.ExecuteAsync(
 			It.IsAny<BotSession>(),
 			It.IsAny<IReadOnlyDictionary<string, object?>>(),
@@ -446,14 +445,13 @@ public class EdgeCaseTests : IDisposable
 	public async Task ExecuteAction_WithNullPayload_WorksCorrectly()
 	{
 		// Arrange
-		var accountName = "test_account";
-		var credentials = new AccountCredentials(accountName, "password");
-		var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
-		session.Start();
+			var accountName = "test_account";
+			var credentials = new AccountCredentials(accountName, "password");
+			var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
 
-		var mockAction = new Mock<IAction>();
-		mockAction.Setup(a => a.Name).Returns("test");
-		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", false, 30));
+			var mockAction = new Mock<IAction>();
+			mockAction.Setup(a => a.Name).Returns("test");
+			mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", false, 30));
 		mockAction.Setup(a => a.ExecuteAsync(
 			It.IsAny<BotSession>(),
 			It.IsAny<IReadOnlyDictionary<string, object?>>(),
@@ -465,27 +463,26 @@ public class EdgeCaseTests : IDisposable
 		// Act
 		var result = await session.ExecuteActionAsync("test", null!, CancellationToken.None);
 
-		// Assert
-		Assert.True(result.Success);
-		mockAction.Verify(a => a.ExecuteAsync(
-			It.IsAny<BotSession>(),
-			It.IsAny<IReadOnlyDictionary<string, object?>>() ?? null!,
-			It.IsAny<CancellationToken>()
-		), Times.Once);
-	}
+			// Assert
+			Assert.True(result.Success);
+			mockAction.Verify(a => a.ExecuteAsync(
+				It.IsAny<BotSession>(),
+				It.IsAny<IReadOnlyDictionary<string, object?>>(),
+				It.IsAny<CancellationToken>()
+			), Times.Once);
+		}
 
 	[Fact]
 	public async Task ExecuteAction_WithEmptyPayload_WorksCorrectly()
 	{
 		// Arrange
-		var accountName = "test_account";
-		var credentials = new AccountCredentials(accountName, "password");
-		var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
-		session.Start();
+			var accountName = "test_account";
+			var credentials = new AccountCredentials(accountName, "password");
+			var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
 
-		var mockAction = new Mock<IAction>();
-		mockAction.Setup(a => a.Name).Returns("test");
-		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", false, 30));
+			var mockAction = new Mock<IAction>();
+			mockAction.Setup(a => a.Name).Returns("test");
+			mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", false, 30));
 		mockAction.Setup(a => a.ExecuteAsync(
 			It.IsAny<BotSession>(),
 			It.IsAny<IReadOnlyDictionary<string, object?>>(),

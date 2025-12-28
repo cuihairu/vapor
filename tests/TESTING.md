@@ -163,6 +163,8 @@ tests/
 
 ## 运行测试
 
+> 提示：测试目标框架为 `net8.0`。推荐安装 .NET 8 runtime；如果你只安装了更高版本 runtime，可设置 `DOTNET_ROLL_FORWARD=Major`（`./scripts/run-tests.sh` / `.\scripts\run-tests.ps1` 已默认设置）。
+
 ### 基本命令
 
 ```bash
@@ -215,15 +217,17 @@ dotnet test --filter "FullyQualifiedName~ConcurrencyTests"
 ### 生成代码覆盖率报告
 
 ```bash
-# OpenCover 格式
-dotnet test --collect:"XPlat Code Coverage"
+# 推荐（OpenCover，输出到 */TestResults/coverage/coverage.opencover.xml）
+./scripts/run-tests.sh --coverage
 
-# Cobertura 格式
-dotnet test --collect:"XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollectorConfiguration.Format=cobertura
+# 或者直接用 dotnet（需要 test 项目引用 coverlet.msbuild）
+dotnet test tests/SteamControl.Steam.Core.Tests/SteamControl.Steam.Core.Tests.csproj \
+  -c Release \
+  /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./TestResults/coverage/
 
-# HTML 报告 (需要 ReportGenerator)
+# HTML 报告（可选，需要 ReportGenerator）
 dotnet tool install -g dotnet-reportgenerator-globaltool
-reportgenerator -reports:**/coverage.opencover.xml -targetdir:**/TestResults/coveragereport
+reportgenerator -reports:**/TestResults/coverage/coverage.opencover.xml -targetdir:**/TestResults/coveragereport
 ```
 
 ## 代码覆盖率
@@ -311,15 +315,12 @@ mockDependency.Verify(d => d.Method("expected"), Times.Once);
 ```yaml
 # GitHub Actions 示例
 - name: Run Tests
-  run: dotnet test --configuration Release --no-build
-
-- name: Generate Coverage
-  run: dotnet test --collect:"XPlat Code Coverage"
+  run: dotnet test SteamControl.sln -c Release --verbosity normal
 
 - name: Upload Coverage
-  uses: codecov/codecov-action@v3
+  uses: codecov/codecov-action@v5
   with:
-    files: ./TestResults/**/coverage.opencover.xml
+    files: "**/TestResults/coverage/coverage.opencover.xml"
 ```
 
 ## 性能基准

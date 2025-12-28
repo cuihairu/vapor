@@ -235,8 +235,8 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 
 	private void OnConnected(SteamClient.ConnectedCallback callback)
 	{
-		_logger.LogInformation("Steam client connected: {Result}", callback.Result);
-		_connectedTcs.TrySetResult(callback.Result == EResult.OK);
+		_logger.LogInformation("Steam client connected");
+		_connectedTcs.TrySetResult(true);
 	}
 
 	private void OnDisconnected(SteamClient.DisconnectedCallback callback)
@@ -288,8 +288,6 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		{
 		}
 
-		_steamClient.Dispose();
 		_loginStates.Clear();
 	}
 }
-

@@ -228,7 +228,7 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
-	public async Task SubscribeAllEvents_WithNoSessions_DoesNotThrow()
+	public void SubscribeAllEvents_WithNoSessions_DoesNotThrow()
 	{
 		// Act & Assert - should not throw
 		var events = _manager.SubscribeAllEvents(CancellationToken.None);
@@ -248,16 +248,16 @@ public class SessionManagerTests : IDisposable
 		var cts = new CancellationTokenSource();
 
 		// Start collecting events
-		var collectTask = Task.Run(async () =>
-		{
-			try
+			var collectTask = Task.Run(async () =>
 			{
-				await foreach (var evt in events)
+				try
 				{
-					eventList.Add(evt);
-					if (eventList.Count >= 1) break;
+					await foreach (var evt in events.WithCancellation(cts.Token))
+					{
+						eventList.Add(evt);
+						if (eventList.Count >= 1) break;
+					}
 				}
-			}
 			catch (OperationCanceledException)
 			{
 			}
@@ -318,7 +318,7 @@ public class SessionManagerTests : IDisposable
 		var credentials3 = new AccountCredentials("account3", "password3");
 
 		// Act - perform multiple operations concurrently
-		var tasks = new[]
+		var tasks = new Task[]
 		{
 			_manager.GetOrCreateSessionAsync("account1", credentials1, CancellationToken.None),
 			_manager.GetOrCreateSessionAsync("account2", credentials2, CancellationToken.None),
@@ -327,14 +327,14 @@ public class SessionManagerTests : IDisposable
 			Task.Run(async () =>
 			{
 				await Task.Delay(50);
-				return await _manager.GetSessionAsync("account2", CancellationToken.None);
+				_ = await _manager.GetSessionAsync("account2", CancellationToken.None);
 			})
 		};
 
-		var results = await Task.WhenAll(tasks);
+		await Task.WhenAll(tasks);
 
 		// Assert
-		Assert.Equal(5, results.Length); // All tasks should complete
+		Assert.Equal(5, tasks.Length); // All tasks should complete
 		var sessions = _manager.ListSessions();
 		Assert.Equal(3, sessions.Count);
 	}

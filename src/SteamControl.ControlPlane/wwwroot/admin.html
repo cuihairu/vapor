@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SteamControl Admin</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <style>
         * {
             margin: 0;
@@ -170,7 +171,8 @@
             border-left-color: #f59e0b;
         }
 
-        .job-item.status-completed {
+        .job-item.status-completed,
+        .job-item.status-finished {
             border-left-color: #10b981;
         }
 
@@ -199,7 +201,8 @@
             text-transform: uppercase;
         }
 
-        .job-status.pending {
+        .job-status.pending,
+        .job-status.queued {
             background: #dbeafe;
             color: #1e40af;
         }
@@ -209,7 +212,8 @@
             color: #92400e;
         }
 
-        .job-status.completed {
+        .job-status.completed,
+        .job-status.finished {
             background: #d1fae5;
             color: #065f46;
         }
@@ -545,6 +549,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             refreshJobs();
             refreshAgents();
+            refreshAuthChallenges();
             startEventStream();
         });
 
@@ -615,6 +620,31 @@
             }
         }
 
+        async function refreshAuthChallenges() {
+            try {
+                const response = await fetch(`${API_BASE}/v1/auth/challenges`, { headers });
+                if (response.ok) {
+                    const data = await response.json();
+                    renderAuthChallenges(data.challenges);
+                }
+            } catch (e) {
+                console.error('Failed to fetch auth challenges:', e);
+            }
+        }
+
+        function renderAuthChallenges(challenges) {
+            const container = document.getElementById('authChallenges');
+            if (!challenges || challenges.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = '';
+            for (let i = challenges.length - 1; i >= 0; i--) {
+                addAuthChallenge(challenges[i]);
+            }
+        }
+
         function renderJobs(jobs) {
             const container = document.getElementById('jobList');
             if (!jobs || jobs.length === 0) {
@@ -633,7 +663,7 @@
                         <div>目标: ${job.targets?.length || 0} 个账户</div>
                         <div>创建时间: ${new Date(job.createdAt).toLocaleString('zh-CN')}</div>
                         <div>
-                            ${job.status === 'running' ? `<button class="btn btn-sm btn-danger" onclick="cancelJob('${job.id}')">取消</button>` : ''}
+                            ${(job.status === 'running' || job.status === 'queued') ? `<button class="btn btn-sm btn-danger" onclick="cancelJob('${job.id}')">取消</button>` : ''}
                         </div>
                     </div>
                 </div>
@@ -663,8 +693,8 @@
 
         function updateStats(jobs) {
             document.getElementById('totalJobs').textContent = jobs?.length || 0;
-            document.getElementById('activeJobs').textContent = jobs?.filter(j => j.status === 'running').length || 0;
-            document.getElementById('completedJobs').textContent = jobs?.filter(j => j.status === 'completed').length || 0;
+            document.getElementById('activeJobs').textContent = jobs?.filter(j => j.status === 'running' || j.status === 'queued').length || 0;
+            document.getElementById('completedJobs').textContent = jobs?.filter(j => j.status === 'finished').length || 0;
         }
 
         async function cancelJob(jobId) {
@@ -684,12 +714,12 @@
             }
         }
 
-        async function submitAuthCode(accountName, code) {
+        async function submitAuthCode(accountName, code, type = 'email') {
             try {
                 const response = await fetch(`${API_BASE}/v1/auth/challenges/${accountName}/code`, {
                     method: 'POST',
                     headers,
-                    body: JSON.stringify({ code, type: 'email' })
+                    body: JSON.stringify({ code, type })
                 });
                 if (response.ok) {
                     addEvent('auth', `认证码已提交: ${accountName}`);
@@ -712,6 +742,10 @@
             // Listen for auth challenge events
             authEventSource = new EventSource(`${API_BASE}/v1/auth/challenges/events?authorization=${encodeURIComponent(API_KEY)}`);
             authEventSource.addEventListener('auth.auth_code_required', (e) => {
+                const data = JSON.parse(e.data);
+                addAuthChallenge(data);
+            });
+            authEventSource.addEventListener('auth.2fa_required', (e) => {
                 const data = JSON.parse(e.data);
                 addAuthChallenge(data);
             });
@@ -742,16 +776,21 @@
 
         function addAuthChallenge(data) {
             const container = document.getElementById('authChallenges');
+            const existing = document.getElementById(`auth-${data.accountName}`);
+            if (existing) {
+                existing.remove();
+            }
+            const titleText = data.challengeType === '2fa_required' ? '需要 2FA' : '需要认证码';
             const html = `
                 <div class="auth-challenge" id="auth-${data.accountName}">
                     <div class="auth-challenge-title">
                         <span>🔐</span>
-                        <span>${data.accountName} 需要认证码</span>
+                        <span>${data.accountName} ${titleText}</span>
                     </div>
                     <div class="auth-challenge-body">
                         <p>${data.message || '请输入 Steam 发送的认证码'}</p>
                         <input type="text" class="auth-input" placeholder="输入认证码" id="code-${data.accountName}">
-                        <button class="btn btn-sm btn-success" style="margin-top: 8px;" onclick="submitAuthCode('${data.accountName}', document.getElementById('code-${data.accountName}').value)">
+                        <button class="btn btn-sm btn-success" style="margin-top: 8px;" onclick="submitAuthCode('${data.accountName}', document.getElementById('code-${data.accountName}').value, '${data.challengeType === '2fa_required' ? 'totp' : 'email'}')">
                             提交
                         </button>
                     </div>
@@ -768,11 +807,14 @@
         }
 
         const statusMap = {
-            'pending': '等待中',
+            'queued': '等待中',
             'running': '进行中',
-            'completed': '已完成',
+            'finished': '已完成',
             'failed': '失败',
-            'canceled': '已取消'
+            'canceled': '已取消',
+            // Backwards-compatible aliases
+            'pending': '等待中',
+            'completed': '已完成'
         };
     </script>
 </body>

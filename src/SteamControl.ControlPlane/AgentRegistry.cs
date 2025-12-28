@@ -10,6 +10,8 @@ public sealed class AgentRegistry {
 
 	public IReadOnlyList<AgentHello> List() => _agents.Values.Select(a => a.Hello).OrderBy(a => a.Region, StringComparer.Ordinal).ThenBy(a => a.AgentId, StringComparer.Ordinal).ToList();
 
+	public IReadOnlyList<ConnectedAgent> ListConnected() => _agents.Values.OrderBy(a => a.Hello.Region, StringComparer.Ordinal).ThenBy(a => a.Hello.AgentId, StringComparer.Ordinal).ToList();
+
 	public IReadOnlyList<string> Regions() => _agents.Values.Select(a => a.Hello.Region).Distinct(StringComparer.Ordinal).OrderBy(r => r, StringComparer.Ordinal).ToList();
 
 	public ConnectedAgent? Pick(string region) {

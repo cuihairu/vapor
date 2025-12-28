@@ -15,11 +15,11 @@ public sealed record Config(
 		bool enableSwagger = string.Equals(Environment.GetEnvironmentVariable("STEAMCONTROL_ENABLE_SWAGGER"), "true", StringComparison.OrdinalIgnoreCase);
 
 		HashSet<string> agentApiKeys = new(StringComparer.Ordinal);
-		foreach (string v in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
-			if (v.Length == 0) {
+		foreach (string key in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
+			if (key.Length == 0) {
 				continue;
 			}
-			agentApiKeys.Add(v);
+			agentApiKeys.Add(key);
 		}
 
 		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger);

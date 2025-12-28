@@ -2,7 +2,11 @@
 # SteamControl 测试运行脚本
 # 用于运行测试并生成覆盖率报告
 
-set -e
+set -euo pipefail
+
+# Allow running net8.0 testhost with only a newer runtime installed (e.g. net9).
+: "${DOTNET_ROLL_FORWARD:=Major}"
+export DOTNET_ROLL_FORWARD
 
 # 颜色输出
 RED='\033[0;31m'
@@ -73,7 +77,7 @@ else
 fi
 
 if [ "$COVERAGE" = true ]; then
-    TEST_CMD="$TEST_CMD --collect:\"XPlat Code Coverage\" --results-directory ./TestResults"
+    TEST_CMD="$TEST_CMD /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./TestResults/coverage/"
 fi
 
 if [ -n "$FILTER" ]; then
@@ -82,8 +86,10 @@ fi
 
 # 执行测试
 echo -e "${YELLOW}运行测试...${NC}"
+set +e
 eval $TEST_CMD
 TEST_EXIT_CODE=$?
+set -e
 
 if [ $TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}测试通过!${NC}"
@@ -97,7 +103,7 @@ if [ "$COVERAGE" = true ] && [ $TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${YELLOW}处理覆盖率报告...${NC}"
 
     # 查找覆盖率文件
-    COVERAGE_FILE=$(find ./TestResults -name "coverage.opencover.xml" | head -n 1)
+    COVERAGE_FILE=$(find . -path "*/TestResults/coverage/coverage.opencover.xml" | head -n 1)
 
     if [ -n "$COVERAGE_FILE" ]; then
         echo -e "${GREEN}覆盖率报告已生成: $COVERAGE_FILE${NC}"

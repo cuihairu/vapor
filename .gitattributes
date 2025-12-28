@@ -1,0 +1,27 @@
+# Text normalization
+* text=auto
+
+# Enforce LF for common text files
+*.cs         text eol=lf
+*.csproj     text eol=lf
+*.props      text eol=lf
+*.targets    text eol=lf
+*.json       text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.md         text eol=lf
+*.sh         text eol=lf
+*.ps1        text eol=lf
+*.svg        text eol=lf
+
+# Visual Studio solutions are typically CRLF on Windows
+*.sln        text eol=crlf
+
+# Treat common binaries as binary
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.ico        binary
+*.pdf        binary
+*.zip        binary

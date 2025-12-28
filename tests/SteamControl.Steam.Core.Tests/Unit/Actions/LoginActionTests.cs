@@ -188,22 +188,19 @@ public class LoginActionTests
 		Assert.Equal("account2", result2.Output!["account"]?.ToString());
 	}
 
-	[Theory]
-	[InlineData("Disconnected")]
-	[InlineData("Connecting")]
-	[InlineData("Connected")]
-	public async Task ExecuteAsync_OutputsCurrentState(string expectedState)
-	{
-		// Arrange
-		var session = CreateTestSession("test_account");
+		[Fact]
+		public async Task ExecuteAsync_OutputsCurrentState()
+		{
+			// Arrange
+			var session = CreateTestSession("test_account");
 
-		// Act
-		var result = await _action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+			// Act
+			var result = await _action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
 
-		// Assert
-		Assert.NotNull(result.Output);
-		Assert.Contains(result.Output["state"]?.ToString() ?? "", new[] { "Disconnected", "Connecting", "Connected" });
-	}
+			// Assert
+			Assert.NotNull(result.Output);
+			Assert.Contains(result.Output["state"]?.ToString() ?? "", new[] { "Disconnected", "Connecting", "Connected" });
+		}
 
 	[Fact]
 	public async Task ExecuteAsync_AlwaysReturnsSameOutputStructure()

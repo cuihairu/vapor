@@ -247,23 +247,26 @@ public class IdleActionTests
 	}
 
 	[Fact]
-	public async Task ExecuteAsync_MultipleConcurrentCalls_DoNotInterfere()
-	{
+		public async Task ExecuteAsync_MultipleConcurrentCalls_DoNotInterfere()
+		{
 		// Arrange
 		var session = CreateTestSession("test_account");
 
 		// Act
-		var task1 = _action.ExecuteAsync(session, new Dictionary<string, object?> { ["duration"] = 30 }, CancellationToken.None);
-		var task2 = _action.ExecuteAsync(session, new Dictionary<string, object?> { ["duration"] = 60 }, CancellationToken.None);
-		var task3 = _action.ExecuteAsync(session, new Dictionary<string, object?> { ["duration"] = 90 }, CancellationToken.None);
+			var task1 = _action.ExecuteAsync(session, new Dictionary<string, object?> { ["duration"] = 30 }, CancellationToken.None);
+			var task2 = _action.ExecuteAsync(session, new Dictionary<string, object?> { ["duration"] = 60 }, CancellationToken.None);
+			var task3 = _action.ExecuteAsync(session, new Dictionary<string, object?> { ["duration"] = 90 }, CancellationToken.None);
 
-		var (result1, result2, result3) = await (task1, task2, task3);
+			var results = await Task.WhenAll(task1, task2, task3);
+			var result1 = results[0];
+			var result2 = results[1];
+			var result3 = results[2];
 
-		// Assert
-		Assert.Equal(30, (int)(result1.Output!["duration"] ?? 0));
-		Assert.Equal(60, (int)(result2.Output!["duration"] ?? 0));
-		Assert.Equal(90, (int)(result3.Output!["duration"] ?? 0));
-	}
+			// Assert
+			Assert.Equal(30, (int)(result1.Output!["duration"] ?? 0));
+			Assert.Equal(60, (int)(result2.Output!["duration"] ?? 0));
+			Assert.Equal(90, (int)(result3.Output!["duration"] ?? 0));
+		}
 
 	[Fact]
 	public async Task ExecuteAsync_WithDoubleDuration_IgnoresDecimal()

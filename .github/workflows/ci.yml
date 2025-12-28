@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore SteamControl.sln
+
+      - name: Build
+        run: dotnet build SteamControl.sln -c Release --no-restore
+
+      - name: Test (with coverage)
+        run: dotnet test SteamControl.sln -c Release --no-build --verbosity normal
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: "**/TestResults/coverage/coverage.opencover.xml"
+          fail_ci_if_error: false
