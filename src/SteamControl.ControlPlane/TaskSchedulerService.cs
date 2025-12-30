@@ -8,6 +8,7 @@ public sealed class TaskSchedulerService : BackgroundService {
 	private readonly IJobStore _store;
 	private readonly IEventBroker _events;
 	private readonly Config _cfg;
+	private DateTimeOffset _lastRequeueAt = DateTimeOffset.MinValue;
 
 	public TaskSchedulerService(AgentRegistry agents, IJobStore store, IEventBroker events, Config cfg) {
 		_agents = agents;
@@ -25,7 +26,10 @@ public sealed class TaskSchedulerService : BackgroundService {
 	}
 
 	private async Task DispatchOnce(CancellationToken cancellationToken) {
-		_ = await _store.RequeueStaleRunningTasks(TimeSpan.FromSeconds(_cfg.TaskLeaseSeconds), cancellationToken).ConfigureAwait(false);
+		if (DateTimeOffset.UtcNow - _lastRequeueAt >= TimeSpan.FromSeconds(5)) {
+			_ = await _store.RequeueStaleRunningTasks(TimeSpan.FromSeconds(_cfg.TaskLeaseSeconds), cancellationToken).ConfigureAwait(false);
+			_lastRequeueAt = DateTimeOffset.UtcNow;
+		}
 
 		foreach (string region in _agents.Regions()) {
 			const int maxPerTick = 25;
@@ -36,10 +40,10 @@ public sealed class TaskSchedulerService : BackgroundService {
 					break;
 				}
 
-				var agent = _agents.Pick(region);
+				var agent = _agents.Pick(region, task.Action);
 				if (agent == null) {
 					await _store.RequeueTask(task.Id, cancellationToken).ConfigureAwait(false);
-					_events.Publish(task.JobId, "task.dispatch_failed", new Dictionary<string, object?> { ["taskId"] = task.Id, ["error"] = "no agent available" });
+					_events.Publish(task.JobId, "task.dispatch_failed", new Dictionary<string, object?> { ["taskId"] = task.Id, ["error"] = "no capable agent available" });
 					break;
 				}
 

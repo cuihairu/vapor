@@ -129,6 +129,7 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	Config cfg,
 	IJobStore store,
 	IEventBroker events,
+	AgentRegistry agents,
 	string jobId
 ) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
@@ -136,8 +137,16 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	}
 
 	try {
-		await store.CancelJob(jobId, ctx.RequestAborted);
+		var cancels = await store.CancelJob(jobId, ctx.RequestAborted);
 		events.Publish(jobId, "job.canceled", null);
+
+		if (cancels.Count > 0) {
+			foreach (var agent in agents.ListConnected()) {
+				foreach (var cancel in cancels) {
+					agent.EnqueueTaskCancel(cancel);
+				}
+			}
+		}
 
 		return Results.Ok(new { ok = true });
 	} catch (NotFoundException) {
@@ -414,6 +423,12 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 			var msg = await WebSocketJson.Receive<WSMessage>(ws, ctx.RequestAborted);
 			switch (msg) {
 				default:
+					if (string.Equals(msg.Type, "task_heartbeat", StringComparison.Ordinal) && msg.TaskHeartbeat != null) {
+						try {
+							_ = await store.HeartbeatTask(msg.TaskHeartbeat.TaskId, msg.TaskHeartbeat.Attempt, ctx.RequestAborted);
+						} catch (NotFoundException) {
+						}
+					}
 					if (string.Equals(msg.Type, "task_result", StringComparison.Ordinal) && msg.TaskResult != null) {
 						try {
 							var (task, job) = await store.SetTaskResult(msg.TaskResult, ctx.RequestAborted);

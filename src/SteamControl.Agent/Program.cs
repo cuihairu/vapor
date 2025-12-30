@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Threading.Channels;
 using SteamControl.Protocol;
 using SteamControl.Steam.Core;
 using SteamControl.Steam.Core.Actions;
@@ -79,35 +80,112 @@ async Task RunOnce(CancellationToken cancellationToken) {
 	Console.WriteLine($"connecting: {uri}");
 	await ws.ConnectAsync(uri, cancellationToken);
 
+	using SemaphoreSlim sendGate = new(1, 1);
+	var tasks = Channel.CreateUnbounded<JobTask>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+
+	var executionGate = new object();
+	CancellationTokenSource? currentTaskCts = null;
+	string? currentTaskId = null;
+	int currentAttempt = 0;
+
 	var capabilities = actionRegistry.ListNames().ToDictionary(name => name, _ => true, StringComparer.OrdinalIgnoreCase);
 	var hello = new AgentHello(agentId, region, capabilities, null);
-	await Send(ws, new WSMessage("hello", hello, null, null), cancellationToken);
+	await SendLocked(ws, sendGate, new WSMessage("hello", hello, null, null), cancellationToken);
 
-	while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
-		WSMessage msg = await Receive<WSMessage>(ws, cancellationToken);
-		if (!string.Equals(msg.Type, "task", StringComparison.Ordinal) || msg.Task == null) {
-			continue;
+	var receiver = Task.Run(async () => {
+		try {
+			while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
+				WSMessage msg = await Receive<WSMessage>(ws, cancellationToken);
+				if (string.Equals(msg.Type, "task", StringComparison.Ordinal) && msg.Task != null) {
+					await tasks.Writer.WriteAsync(msg.Task, cancellationToken);
+					continue;
+				}
+
+				if (string.Equals(msg.Type, "task_cancel", StringComparison.Ordinal) && msg.TaskCancel != null) {
+					bool matches;
+					lock (executionGate) {
+						matches =
+							currentTaskCts != null &&
+							string.Equals(currentTaskId, msg.TaskCancel.TaskId, StringComparison.Ordinal) &&
+							currentAttempt == msg.TaskCancel.Attempt;
+					}
+
+					if (matches) {
+						try {
+							currentTaskCts!.Cancel();
+						} catch {
+						}
+					}
+				}
+			}
+		} catch {
+			// Receiver loop stops; outer loop will reconnect.
+		} finally {
+			tasks.Writer.TryComplete();
 		}
+	}, cancellationToken);
 
-		JobTask task = msg.Task;
-		Console.WriteLine($"task received: id={task.Id} action={task.Action} target={task.Target}");
+	try {
+		while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
+			JobTask task = await tasks.Reader.ReadAsync(cancellationToken);
+			Console.WriteLine($"task received: id={task.Id} action={task.Action} target={task.Target}");
 
-		(bool success, string? error, IReadOnlyDictionary<string, object?>? output) = await Execute(
-			task,
-			sessionManager,
-			logger,
-			cancellationToken
-		);
+			using var executeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, executeCts.Token);
 
-		TaskResult result = new(
-			TaskId: task.Id,
-			Success: success,
-			Error: error,
-			Output: output,
-			FinishedAt: DateTimeOffset.UtcNow
-		);
+			lock (executionGate) {
+				currentTaskCts = executeCts;
+				currentTaskId = task.Id;
+				currentAttempt = task.Attempt;
+			}
 
-		await Send(ws, new WSMessage("task_result", null, null, result), cancellationToken);
+			var heartbeatTask = Task.Run(
+				() => HeartbeatLoop(ws, sendGate, task, heartbeatCts.Token),
+				heartbeatCts.Token
+			);
+
+			bool success;
+			string? error;
+			IReadOnlyDictionary<string, object?>? output;
+			try {
+				(success, error, output) = await Execute(
+					task,
+					sessionManager,
+					logger,
+					executeCts.Token
+				);
+			} finally {
+				lock (executionGate) {
+					currentTaskCts = null;
+					currentTaskId = null;
+					currentAttempt = 0;
+				}
+			}
+
+			TaskResult result = new(
+				TaskId: task.Id,
+				Success: success,
+				Error: error,
+				Output: output,
+				FinishedAt: DateTimeOffset.UtcNow,
+				Attempt: task.Attempt
+			);
+
+			heartbeatCts.Cancel();
+			try {
+				await heartbeatTask;
+			} catch (OperationCanceledException) when (heartbeatCts.IsCancellationRequested) {
+			}
+
+			if (!executeCts.IsCancellationRequested) {
+				await SendLocked(ws, sendGate, new WSMessage("task_result", null, null, result), cancellationToken);
+			}
+		}
+	} finally {
+		try {
+			await receiver;
+		} catch {
+		}
 	}
 }
 
@@ -171,6 +249,8 @@ static async Task<(bool Success, string? Error, IReadOnlyDictionary<string, obje
 		);
 
 		return (result.Success, result.Error, result.Output);
+	} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+		return (false, "canceled", null);
 	} catch (Exception ex) {
 		logger.LogError(ex, "Execute failed for task {TaskId}", task.Id);
 		return (false, ex.Message, null);
@@ -199,6 +279,39 @@ static async Task<T> Receive<T>(ClientWebSocket ws, CancellationToken cancellati
 static async Task Send<T>(ClientWebSocket ws, T value, CancellationToken cancellationToken) {
 	byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonDefaults.Options);
 	await ws.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
+}
+
+static async Task SendLocked<T>(ClientWebSocket ws, SemaphoreSlim sendGate, T value, CancellationToken cancellationToken) {
+	await sendGate.WaitAsync(cancellationToken);
+	try {
+		await Send(ws, value, cancellationToken);
+	} finally {
+		sendGate.Release();
+	}
+}
+
+static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobTask task, CancellationToken cancellationToken) {
+	static async Task SendHeartbeat(ClientWebSocket ws, SemaphoreSlim sendGate, JobTask task, CancellationToken cancellationToken) {
+		if (ws.State != WebSocketState.Open) {
+			return;
+		}
+
+		var hb = new TaskHeartbeat(TaskId: task.Id, Attempt: task.Attempt, Ts: DateTimeOffset.UtcNow);
+		var msg = new WSMessage(Type: "task_heartbeat", Hello: null, Task: null, TaskResult: null, TaskHeartbeat: hb);
+		await SendLocked(ws, sendGate, msg, cancellationToken);
+	}
+
+	try {
+		await SendHeartbeat(ws, sendGate, task, cancellationToken);
+
+		using PeriodicTimer timer = new(TimeSpan.FromSeconds(5));
+		while (await timer.WaitForNextTickAsync(cancellationToken)) {
+			await SendHeartbeat(ws, sendGate, task, cancellationToken);
+		}
+	} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+	} catch {
+		// Best-effort: if the websocket is disconnected or errors, don't fail the task itself.
+	}
 }
 
 	static async Task PollAuthChallengesAsync(

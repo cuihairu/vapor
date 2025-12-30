@@ -24,6 +24,19 @@ public sealed class AgentRegistry {
 		return candidates[0];
 	}
 
+	public ConnectedAgent? Pick(string region, string action) {
+		var candidates = _agents.Values
+			.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal) && a.SupportsAction(action))
+			.OrderBy(a => a.Hello.AgentId, StringComparer.Ordinal)
+			.ToList();
+		if (candidates.Count == 0) {
+			return null;
+		}
+
+		// Simple deterministic pick; later replace with RR + health/capacity.
+		return candidates[0];
+	}
+
 	public ConnectedAgent Register(AgentHello hello, WebSocket socket, CancellationToken cancellationToken) {
 		var agent = new ConnectedAgent(hello, socket);
 		_agents[hello.AgentId] = agent;
@@ -49,6 +62,24 @@ public sealed class ConnectedAgent {
 
 	public bool EnqueueTask(JobTask task) {
 		return _send.Writer.TryWrite(new WSMessage(Type: "task", Hello: null, Task: task, TaskResult: null));
+	}
+
+	public bool EnqueueTaskCancel(TaskCancel cancel) {
+		return _send.Writer.TryWrite(new WSMessage(Type: "task_cancel", Hello: null, Task: null, TaskResult: null, TaskHeartbeat: null, TaskCancel: cancel));
+	}
+
+	public bool SupportsAction(string action) {
+		if (Hello.Capabilities is not { Count: > 0 }) {
+			return true;
+		}
+
+		foreach (var kvp in Hello.Capabilities) {
+			if (kvp.Value && string.Equals(kvp.Key, action, StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public void StartSendLoop(CancellationToken cancellationToken) {

@@ -11,7 +11,7 @@ Environment variables:
 - `STEAMCONTROL_ADMIN_API_KEY` (required for admin REST calls)
 - `STEAMCONTROL_AGENT_API_KEYS` (comma-separated; required for agent tunnel)
 - `STEAMCONTROL_DB_PATH` (default `data/controlplane.db`; use `:memory:` for ephemeral)
-- `STEAMCONTROL_TASK_LEASE_SECONDS` (default `300`; requeues stale running tasks)
+- `STEAMCONTROL_TASK_LEASE_SECONDS` (default `300`; requeues running tasks that stop heartbeating)
 - `STEAMCONTROL_ENABLE_SWAGGER` (set `true` to expose `/swagger`)
 
 Run:

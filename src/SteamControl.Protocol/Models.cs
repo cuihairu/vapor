@@ -55,7 +55,21 @@ public sealed record TaskResult(
 	bool Success,
 	string? Error,
 	IReadOnlyDictionary<string, object?>? Output,
-	DateTimeOffset FinishedAt
+	DateTimeOffset FinishedAt,
+	int Attempt = 0
+);
+
+public sealed record TaskHeartbeat(
+	string TaskId,
+	int Attempt,
+	DateTimeOffset Ts
+);
+
+public sealed record TaskCancel(
+	string TaskId,
+	int Attempt,
+	DateTimeOffset Ts,
+	string? Reason = null
 );
 
 public sealed record JobWithTasks(Job Job, IReadOnlyList<JobTask> Tasks);
@@ -81,5 +95,7 @@ public sealed record WSMessage(
 	string Type,
 	AgentHello? Hello,
 	JobTask? Task,
-	TaskResult? TaskResult
+	TaskResult? TaskResult,
+	TaskHeartbeat? TaskHeartbeat = null,
+	TaskCancel? TaskCancel = null
 );
