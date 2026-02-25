@@ -187,21 +187,28 @@ public class BotSessionTests : IDisposable
 		var session = CreateSession();
 		session.Start();
 
-		CancellationToken? capturedToken = null;
+		var tokenTcs = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
 		var cts = new CancellationTokenSource();
 
 		var mockAction = new Mock<IAction>();
 		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", RequiresLogin: false, 30));
 		mockAction.Setup(a => a.ExecuteAsync(It.IsAny<SteamControl.Steam.Core.BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
-			.Callback<SteamControl.Steam.Core.BotSession, IReadOnlyDictionary<string, object?>, CancellationToken>((_, _, t) => capturedToken = t)
-			.ReturnsAsync(new ActionResult(true, null, new Dictionary<string, object?>()));
+			.Returns(async (SteamControl.Steam.Core.BotSession s, IReadOnlyDictionary<string, object?> p, CancellationToken ct) =>
+			{
+				tokenTcs.TrySetResult(ct);
+				await Task.Delay(TimeSpan.FromMinutes(1), ct);
+				return new ActionResult(true, null, new Dictionary<string, object?>());
+			});
 		_actionRegistryMock.Setup(r => r.Get("test")).Returns(mockAction.Object);
 
 		// Act
-		await session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
+		var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
+		var observedToken = await tokenTcs.Task.WaitAsync(TimeSpan.FromSeconds(1));
+		cts.Cancel();
 
 		// Assert
-		Assert.Equal(cts.Token, capturedToken);
+		Assert.True(observedToken.IsCancellationRequested);
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call);
 	}
 
 	[Fact]
@@ -246,6 +253,31 @@ public class BotSessionTests : IDisposable
 		await Assert.ThrowsAnyAsync<OperationCanceledException>(
 			() => session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token)
 		);
+	}
+
+	[Fact]
+	public async Task ExecuteActionAsync_WhenActionExceedsActionTimeout_ReturnsTimeoutFailure()
+	{
+		// Arrange
+		var session = CreateSession();
+		session.Start();
+
+		var mockAction = new Mock<IAction>();
+		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("slow", "Slow", RequiresLogin: false, TimeoutSeconds: 1));
+		mockAction.Setup(a => a.ExecuteAsync(It.IsAny<SteamControl.Steam.Core.BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+			.Returns(async (SteamControl.Steam.Core.BotSession s, IReadOnlyDictionary<string, object?> p, CancellationToken ct) =>
+			{
+				await Task.Delay(TimeSpan.FromMinutes(1), ct);
+				return new ActionResult(true, null, new Dictionary<string, object?>());
+			});
+		_actionRegistryMock.Setup(r => r.Get("slow")).Returns(mockAction.Object);
+
+		// Act
+		var result = await session.ExecuteActionAsync("slow", new Dictionary<string, object?>(), CancellationToken.None);
+
+		// Assert
+		Assert.False(result.Success);
+		Assert.Equal("action timeout", result.Error);
 	}
 
 	[Fact]

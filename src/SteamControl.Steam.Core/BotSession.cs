@@ -266,16 +266,36 @@ public sealed class BotSession : IDisposable
 		}
 
 		using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmd.CancellationToken);
-		var effectiveToken = linkedCts.Token;
+		CancellationToken effectiveToken = linkedCts.Token;
+
+		CancellationTokenSource? timeoutCts = null;
+		if (action.Metadata.TimeoutSeconds is > 0)
+		{
+			timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(effectiveToken);
+			timeoutCts.CancelAfter(TimeSpan.FromSeconds(action.Metadata.TimeoutSeconds.Value));
+			effectiveToken = timeoutCts.Token;
+		}
 
 		await _actionLock.WaitAsync(effectiveToken).ConfigureAwait(false);
 		try
 		{
-			var result = await action.ExecuteAsync(this, cmd.Payload ?? new Dictionary<string, object?>(), cmd.CancellationToken).ConfigureAwait(false);
-			cmd.Completion?.TrySetResult(new SessionCommandResult(result.Success, result.Error, result.Output));
+			try
+			{
+				var result = await action.ExecuteAsync(this, cmd.Payload ?? new Dictionary<string, object?>(), effectiveToken).ConfigureAwait(false);
+				cmd.Completion?.TrySetResult(new SessionCommandResult(result.Success, result.Error, result.Output));
+			}
+			catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true)
+			{
+				cmd.Completion?.TrySetResult(new SessionCommandResult(false, "action timeout", null));
+			}
+			catch (OperationCanceledException) when (effectiveToken.IsCancellationRequested)
+			{
+				cmd.Completion?.TrySetResult(new SessionCommandResult(false, "canceled", null));
+			}
 		}
 		finally
 		{
+			timeoutCts?.Dispose();
 			_actionLock.Release();
 		}
 	}

@@ -151,9 +151,10 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		}
 	}
 
-	public async Task CancelJob(string jobId, CancellationToken cancellationToken) {
+	public async Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) {
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try {
+			var now = DateTimeOffset.UtcNow;
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 			using var tx = _connection.BeginTransaction();
 
@@ -169,6 +170,24 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 
 			if (updated == 0) {
 				throw new NotFoundException("job not found");
+			}
+
+			List<TaskCancel> running = [];
+			using (var cmd = _connection.CreateCommand()) {
+				cmd.Transaction = tx;
+				cmd.CommandText = """
+					SELECT id, attempt
+					FROM tasks
+					WHERE job_id = $jobId AND status = $running;
+					""";
+				cmd.Parameters.AddWithValue("$jobId", jobId);
+				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+					string taskId = reader.GetString(0);
+					int attempt = reader.GetInt32(1);
+					running.Add(new TaskCancel(taskId, attempt, now, "job canceled"));
+				}
 			}
 
 			using (var cmd = _connection.CreateCommand()) {
@@ -187,6 +206,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		}
 
 			tx.Commit();
+			return running;
 		} finally {
 			_mutex.Release();
 		}
@@ -314,6 +334,29 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		}
 	}
 
+	public async Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) {
+		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try {
+			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				UPDATE tasks
+				SET updated_at_ms = $updated
+				WHERE id = $id AND status = $running AND attempt = $attempt;
+				""";
+			cmd.Parameters.AddWithValue("$updated", nowMs);
+			cmd.Parameters.AddWithValue("$id", taskId);
+			cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+			cmd.Parameters.AddWithValue("$attempt", attempt);
+
+			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			return updated > 0;
+		} finally {
+			_mutex.Release();
+		}
+	}
+
 	public async Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) {
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try {
@@ -322,24 +365,49 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			JobTaskStatus newStatus = result.Success ? JobTaskStatus.Finished : JobTaskStatus.Failed;
 
 			string jobId;
+			int currentAttempt;
+			string currentStatusRaw;
 			{
 				using var cmd = _connection.CreateCommand();
-				cmd.CommandText = "SELECT job_id FROM tasks WHERE id = $id;";
+				cmd.CommandText = "SELECT job_id, status, attempt FROM tasks WHERE id = $id;";
 				cmd.Parameters.AddWithValue("$id", result.TaskId);
-				jobId = (string?) await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? "";
+				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+				if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+					throw new NotFoundException("task not found");
+				}
+
+				jobId = reader.GetString(0);
+				currentStatusRaw = reader.GetString(1);
+				currentAttempt = reader.GetInt32(2);
 			}
 
 			if (string.IsNullOrEmpty(jobId)) {
 				throw new NotFoundException("task not found");
 			}
 
+			if (!Enum.TryParse<JobTaskStatus>(currentStatusRaw, true, out var currentStatus) || currentStatus != JobTaskStatus.Running) {
+				throw new NotFoundException("task not running");
+			}
+
+			if (result.Attempt > 0 && currentAttempt != result.Attempt) {
+				throw new NotFoundException("task attempt mismatch");
+			}
+
 			{
 				using var cmd = _connection.CreateCommand();
-				cmd.CommandText = "UPDATE tasks SET status = $status, updated_at_ms = $updated WHERE id = $id;";
+				cmd.CommandText = """
+					UPDATE tasks
+					SET status = $status, updated_at_ms = $updated
+					WHERE id = $id AND status = $running;
+					""";
 				cmd.Parameters.AddWithValue("$status", newStatus.ToString());
 				cmd.Parameters.AddWithValue("$updated", nowMs);
 				cmd.Parameters.AddWithValue("$id", result.TaskId);
-				await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+				long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+				if (updated == 0) {
+					throw new NotFoundException("task not running");
+				}
 			}
 
 			await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
