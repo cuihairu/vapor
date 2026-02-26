@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/assets/icon.svg" width="96" alt="SteamControl" />
+  <img src="docs/assets/icon.svg" width="96" alt="Vapor" />
 </p>
 
-# SteamControl (ASF-inspired)
+# Vapor (ASF-inspired)
 
 [![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor)
@@ -38,7 +38,7 @@ API-controlled, headless Steam automation platform designed for large-scale batc
 
 ## Development status
 
-SteamControl is currently **alpha** (breaking changes expected).
+Vapor is currently **alpha** (breaking changes expected).
 
 ## License
 
@@ -51,3 +51,4 @@ See `CONTRIBUTING.md` and `SECURITY.md`.
 ## Support
 
 See `SUPPORT.md`.
+

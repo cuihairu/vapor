@@ -24,21 +24,21 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Restore
-        run: dotnet restore SteamControl.sln
+        run: dotnet restore Vapor.sln
 
       - name: Compute version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
       - name: Publish ControlPlane
         run: |
-          dotnet publish src/SteamControl.ControlPlane/SteamControl.ControlPlane.csproj \
+          dotnet publish src/Vapor.ControlPlane/Vapor.ControlPlane.csproj \
             -c Release -r ${{ matrix.rid }} --self-contained false \
             -p:Version=${{ env.VERSION }} \
             -o dist/controlplane/${{ matrix.rid }}
 
       - name: Publish Agent
         run: |
-          dotnet publish src/SteamControl.Agent/SteamControl.Agent.csproj \
+          dotnet publish src/Vapor.Agent/Vapor.Agent.csproj \
             -c Release -r ${{ matrix.rid }} --self-contained false \
             -p:Version=${{ env.VERSION }} \
             -o dist/agent/${{ matrix.rid }}
@@ -50,8 +50,8 @@ jobs:
           cp -R dist/agent/${{ matrix.rid }}/. release/stage/agent/
           cp README.md CHANGELOG.md LICENSE docs/running.md docs/releasing.md release/stage/controlplane/
           cp README.md CHANGELOG.md LICENSE docs/running.md docs/releasing.md release/stage/agent/
-          (cd release/stage/controlplane && zip -r ../../SteamControl-ControlPlane-${{ github.ref_name }}-${{ matrix.rid }}.zip .)
-          (cd release/stage/agent && zip -r ../../SteamControl-Agent-${{ github.ref_name }}-${{ matrix.rid }}.zip .)
+          (cd release/stage/controlplane && zip -r ../../Vapor-ControlPlane-${{ github.ref_name }}-${{ matrix.rid }}.zip .)
+          (cd release/stage/agent && zip -r ../../Vapor-Agent-${{ github.ref_name }}-${{ matrix.rid }}.zip .)
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -75,3 +75,4 @@ jobs:
           files: "*.zip"
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
+

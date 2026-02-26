@@ -1,4 +1,4 @@
-# SteamControl 测试运行脚本 (PowerShell)
+# Vapor 测试运行脚本 (PowerShell)
 # 用于运行测试并生成覆盖率报告
 
 param(
@@ -51,11 +51,11 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Success "SteamControl 测试运行器"
+Write-Success "Vapor 测试运行器"
 Write-Output "======================================"
 
 # 构建测试命令
-$testCmd = "dotnet test tests/SteamControl.Steam.Core.Tests/SteamControl.Steam.Core.Tests.csproj --configuration Release --nologo"
+$testCmd = "dotnet test tests/Vapor.Steam.Core.Tests/Vapor.Steam.Core.Tests.csproj --configuration Release --nologo"
 
 if ($Verbose) {
     $testCmd += " --verbosity normal"
@@ -105,3 +105,4 @@ if ($Coverage -and $exitCode -eq 0) {
 }
 
 exit $exitCode
+

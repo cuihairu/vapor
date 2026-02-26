@@ -1,12 +1,12 @@
-# SteamControl 测试概览
+# Vapor 测试概览
 
-本文档提供 SteamControl 项目的完整测试概览。
+本文档提供 Vapor 项目的完整测试概览。
 
 ## 测试项目结构
 
 ```
 tests/
-└── SteamControl.Steam.Core.Tests/
+└── Vapor.Steam.Core.Tests/
     ├── Unit/
     │   ├── Actions/
     │   │   ├── PingActionTests.cs        (15 tests, ~180 lines)
@@ -25,7 +25,7 @@ tests/
     ├── Performance/
     │   └── ConcurrencyTests.cs           (10 tests, ~420 lines)
     ├── README.md
-    └── SteamControl.Steam.Core.Tests.csproj
+    └── Vapor.Steam.Core.Tests.csproj
 ```
 
 ## 测试统计
@@ -172,7 +172,7 @@ tests/
 dotnet test
 
 # 运行特定测试项目
-dotnet test tests/SteamControl.Steam.Core.Tests/SteamControl.Steam.Core.Tests.csproj
+dotnet test tests/Vapor.Steam.Core.Tests/Vapor.Steam.Core.Tests.csproj
 
 # 运行特定测试类
 dotnet test --filter "FullyQualifiedName~PingActionTests"
@@ -221,7 +221,7 @@ dotnet test --filter "FullyQualifiedName~ConcurrencyTests"
 ./scripts/run-tests.sh --coverage
 
 # 或者直接用 dotnet（需要 test 项目引用 coverlet.msbuild）
-dotnet test tests/SteamControl.Steam.Core.Tests/SteamControl.Steam.Core.Tests.csproj \
+dotnet test tests/Vapor.Steam.Core.Tests/Vapor.Steam.Core.Tests.csproj \
   -c Release \
   /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./TestResults/coverage/
 
@@ -241,7 +241,7 @@ reportgenerator -reports:**/TestResults/coverage/coverage.opencover.xml -targetd
 
 ### 排除项
 
-- 测试项目本身 (`[SteamControl.Steam.Core.Tests]*`)
+- 测试项目本身 (`[Vapor.Steam.Core.Tests]*`)
 - xUnit 框架 (`[xunit.*]*`)
 - Moq 框架 (`[Moq]*`)
 - Microsoft 命名空间 (`[Microsoft.*]*`)
@@ -260,7 +260,7 @@ reportgenerator -reports:**/TestResults/coverage/coverage.opencover.xml -targetd
 
 - 测试类: `<ClassName>Tests`
 - 测试方法: `MethodName_State_ExpectedResult`
-- 测试命名空间: `SteamControl.Steam.Core.Tests.{Unit|Integration|Performance}`
+- 测试命名空间: `Vapor.Steam.Core.Tests.{Unit|Integration|Performance}`
 
 ### AAA 模式
 
@@ -315,7 +315,7 @@ mockDependency.Verify(d => d.Method("expected"), Times.Once);
 ```yaml
 # GitHub Actions 示例
 - name: Run Tests
-  run: dotnet test SteamControl.sln -c Release --verbosity normal
+  run: dotnet test Vapor.sln -c Release --verbosity normal
 
 - name: Upload Coverage
   uses: codecov/codecov-action@v5
@@ -353,3 +353,4 @@ mockDependency.Verify(d => d.Method("expected"), Times.Once);
 - 新功能必须包含测试
 - 修复 bug 时添加回归测试
 - 定期审查和重构测试代码
+

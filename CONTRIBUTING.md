@@ -8,8 +8,8 @@
 ## Build
 
 ```bash
-dotnet restore SteamControl.sln
-dotnet build SteamControl.sln -c Release
+dotnet restore Vapor.sln
+dotnet build Vapor.sln -c Release
 ```
 
 ## Test
@@ -28,3 +28,4 @@ dotnet build SteamControl.sln -c Release
 ## Releases
 
 See `docs/releasing.md`.
+

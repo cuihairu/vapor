@@ -6,7 +6,7 @@
       <DataCollector friendlyName="XPlat Code Coverage">
         <Configuration>
           <Format>opencover</Format>
-          <Exclude>[SteamControl.Steam.Core.Tests]*</Exclude>
+          <Exclude>[Vapor.Steam.Core.Tests]*</Exclude>
           <Exclude>[xunit.*]*</Exclude>
           <Exclude>[Moq]*</Exclude>
           <Exclude>[Microsoft.*]*</Exclude>
@@ -16,3 +16,4 @@
     </DataCollectors>
   </DataCollectionRunSettings>
 </RunSettings>
+

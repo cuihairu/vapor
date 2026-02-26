@@ -13,6 +13,7 @@
     <CoverletOutputFormat Condition="'$(CoverletOutputFormat)' == ''">opencover</CoverletOutputFormat>
     <CoverletOutput Condition="'$(CoverletOutput)' == ''">./TestResults/coverage/</CoverletOutput>
     <ExcludeByAttribute>Obsolete,GeneratedCode,CompilerGenerated</ExcludeByAttribute>
-    <Exclude>[SteamControl.Steam.Core.Tests]*;[xunit.*]*;[Moq]*;[Microsoft.*]*;[System.*]*</Exclude>
+    <Exclude>[Vapor.Steam.Core.Tests]*;[xunit.*]*;[Moq]*;[Microsoft.*]*;[System.*]*</Exclude>
   </PropertyGroup>
 </Project>
+

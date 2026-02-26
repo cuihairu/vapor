@@ -1,5 +1,5 @@
 #!/bin/bash
-# SteamControl 测试运行脚本
+# Vapor 测试运行脚本
 # 用于运行测试并生成覆盖率报告
 
 set -euo pipefail
@@ -64,11 +64,11 @@ if ! command -v dotnet &> /dev/null; then
     exit 1
 fi
 
-echo -e "${GREEN}SteamControl 测试运行器${NC}"
+echo -e "${GREEN}Vapor 测试运行器${NC}"
 echo "======================================"
 
 # 构建测试命令
-TEST_CMD="dotnet test tests/SteamControl.Steam.Core.Tests/SteamControl.Steam.Core.Tests.csproj --configuration Release --nologo"
+TEST_CMD="dotnet test tests/Vapor.Steam.Core.Tests/Vapor.Steam.Core.Tests.csproj --configuration Release --nologo"
 
 if [ "$VERBOSE" = true ]; then
     TEST_CMD="$TEST_CMD --verbosity normal"
@@ -120,3 +120,4 @@ if [ "$COVERAGE" = true ] && [ $TEST_EXIT_CODE -eq 0 ]; then
 fi
 
 exit $TEST_EXIT_CODE
+

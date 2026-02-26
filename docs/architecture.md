@@ -1,4 +1,4 @@
-# SteamControl Architecture (ASF-inspired)
+# Vapor Architecture (ASF-inspired)
 
 This project implements an API-controlled, headless Steam automation platform inspired by ArchiSteamFarm (ASF).
 The goal is to support large-scale, multi-account operations with multi-region deployment and centralized management.
@@ -197,3 +197,4 @@ See `tests/TESTING.md` for detailed testing documentation.
 - ✅ Core Components: ActionRegistry, BotSession, SessionManager, SteamClientManager, Models, edge cases
 - ✅ Integration: end-to-end workflows, multi-account scenarios
 - ✅ Performance: concurrency and stress testing
+
