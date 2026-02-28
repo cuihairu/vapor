@@ -187,28 +187,49 @@ public class BotSessionTests : IDisposable
 		var session = CreateSession();
 		session.Start();
 
-		var tokenTcs = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var capturedTokens = new System.Collections.Concurrent.ConcurrentBag<CancellationToken>();
+		var actionStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 		var cts = new CancellationTokenSource();
 
 		var mockAction = new Mock<IAction>();
 		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", RequiresLogin: false, 30));
 		mockAction.Setup(a => a.ExecuteAsync(It.IsAny<Vapor.Steam.Core.BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
-			.Returns(async (Vapor.Steam.Core.BotSession s, IReadOnlyDictionary<string, object?> p, CancellationToken ct) =>
+			.Returns((Vapor.Steam.Core.BotSession s, IReadOnlyDictionary<string, object?> p, CancellationToken ct) =>
 			{
-				tokenTcs.TrySetResult(ct);
-				await Task.Delay(TimeSpan.FromMinutes(1), ct);
-				return new ActionResult(true, null, new Dictionary<string, object?>());
+				capturedTokens.Add(ct);
+				actionStarted.TrySetResult(true);
+				// Return a task that waits for cancellation
+				return Task.Run(async () =>
+				{
+					try
+					{
+						await Task.Delay(TimeSpan.FromMinutes(1), ct);
+						return new ActionResult(true, null, new Dictionary<string, object?>());
+					}
+					catch (OperationCanceledException)
+					{
+						return new ActionResult(false, "Cancelled", null);
+					}
+				}, ct);
 			});
 		_actionRegistryMock.Setup(r => r.Get("test")).Returns(mockAction.Object);
 
 		// Act
 		var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
-		// Use a longer timeout for CI environments (10 seconds instead of 1)
-		var observedToken = await tokenTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+		// Wait for action to start
+		await actionStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+		// Cancel the token
 		cts.Cancel();
 
 		// Assert
+		// Verify action received the token
+		Assert.Single(capturedTokens);
+		var observedToken = capturedTokens.First();
 		Assert.True(observedToken.IsCancellationRequested);
+
+		// Verify the call was cancelled
 		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call);
 	}
 
