@@ -203,7 +203,8 @@ public class BotSessionTests : IDisposable
 
 		// Act
 		var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
-		var observedToken = await tokenTcs.Task.WaitAsync(TimeSpan.FromSeconds(1));
+		// Use a longer timeout for CI environments (10 seconds instead of 1)
+		var observedToken = await tokenTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
 		cts.Cancel();
 
 		// Assert
