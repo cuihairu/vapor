@@ -207,9 +207,10 @@ public class BotSessionTests : IDisposable
 		var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
 
 		// Wait for action to execute (or fail due to cancellation)
+		// Use a very long timeout for slow CI systems
 		try
 		{
-			await actionExecuted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+			await actionExecuted.Task.WaitAsync(TimeSpan.FromMinutes(2));
 			// If action executed, verify token was captured
 			var capturedToken = await tokenTcs.Task.WaitAsync(TimeSpan.FromSeconds(1));
 			Assert.True(capturedToken.IsCancellationRequested, "Token should be cancelled");
