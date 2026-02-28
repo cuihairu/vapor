@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
+using SteamKit2.Internal;
 
 namespace Vapor.Steam.Core.Steam;
 
@@ -16,7 +17,18 @@ public interface ISteamClientManager
 	void SetAuthCode(string accountName, string code);
 	void SetTwoFactorCode(string accountName, string code);
 	void RunCallbacks();
+	Task<RedeemKeyResult?> RedeemKeyAsync(string key, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Result of a key redemption attempt.
+/// </summary>
+public sealed record RedeemKeyResult(
+	EResult Result,
+	IReadOnlyList<uint>? GrantedAppIDs = null,
+	IReadOnlyList<uint>? GrantedPackageIDs = null,
+	string? ReceiptDetails = null
+);
 
 public sealed class SteamAuthCodeRequiredException : Exception
 {
@@ -208,6 +220,102 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 
 		_callbackManager.RunWaitCallbacks(TimeSpan.FromMilliseconds(100));
+	}
+
+	public async Task<RedeemKeyResult?> RedeemKeyAsync(string key, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(key);
+
+		if (_disposed)
+		{
+			throw new ObjectDisposedException(nameof(SteamClientManager));
+		}
+
+		if (!_steamClient.IsConnected)
+		{
+			_logger.LogWarning("Cannot redeem key: Steam client not connected");
+			return null;
+		}
+
+		try
+		{
+			var unifiedMessages = _steamClient.GetHandler<SteamUnifiedMessages>()
+				?? throw new InvalidOperationException("SteamUnifiedMessages handler not available");
+
+			var request = new CStore_RegisterCDKey_Request
+			{
+				activation_code = key,
+				is_request_from_client = true
+			};
+
+			_logger.LogInformation("Redeeming key: {Key}", MaskKey(key));
+
+			var asyncJob = unifiedMessages.SendMessage<CStore_RegisterCDKey_Request, CStore_RegisterCDKey_Response>(
+				"Store#RegisterCDKey",
+				request
+			);
+
+			// Set timeout
+			asyncJob.Timeout = TimeSpan.FromSeconds(60);
+
+			var response = await asyncJob.ToTask().ConfigureAwait(false);
+
+			if (response == null)
+			{
+				_logger.LogWarning("Key redemption timed out");
+				return new RedeemKeyResult(EResult.Timeout);
+			}
+
+			_logger.LogInformation(
+				"Key redemption result: {Result}",
+				response.Result
+			);
+
+			// TODO: Parse response.Body for granted app IDs and package IDs
+			// The structure may vary between SteamKit2 versions
+			return new RedeemKeyResult(response.Result);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Failed to redeem key");
+			return new RedeemKeyResult(EResult.Fail);
+		}
+	}
+
+	private static string MaskKey(string key)
+	{
+		if (key.Length == 0)
+		{
+			return string.Empty;
+		}
+
+		if (key.Contains('-', StringComparison.Ordinal))
+		{
+			var parts = key.Split('-', StringSplitOptions.None);
+			if (parts.Length >= 3)
+			{
+				return string.Join(
+					"-",
+					parts.Select((part, i) => (i == 0 || i == parts.Length - 1) ? part : new string('*', part.Length))
+				);
+			}
+		}
+
+		// Short keys: mask everything.
+		if (key.Length <= 8)
+		{
+			return new string('*', key.Length);
+		}
+
+		// Medium keys: preserve first/last char.
+		if (key.Length <= 20)
+		{
+			return $"{key[0]}{new string('*', key.Length - 2)}{key[^1]}";
+		}
+
+		// Long keys: preserve first/last 10 chars.
+		const int edgeLen = 10;
+		return key[..edgeLen] + new string('*', key.Length - (edgeLen * 2)) + key[^edgeLen..];
 	}
 
 	private SteamUser.LogOnDetails BuildLogOnDetails(string accountName, string password)

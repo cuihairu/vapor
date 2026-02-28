@@ -38,6 +38,7 @@ public sealed class BotSession : IDisposable
 	public SessionState State => _state;
 	public DateTimeOffset ConnectedAt { get; private set; }
 	public DateTimeOffset LastHeartbeat => _lastHeartbeat;
+	public ISteamClientManager? SteamClientManager => _steamClientManager;
 
 	public BotSession(
 		string accountName,

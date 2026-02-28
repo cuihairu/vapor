@@ -199,7 +199,7 @@ public class SessionWorkflowTests : IDisposable
 	}
 
 	[Fact]
-	public async Task Workflow_RedeemKeyWithValidKey_Succeeds()
+	public async Task Workflow_RedeemKeyWithValidKey_ReturnsStubResponse()
 	{
 		// Arrange
 		var accountName = "test_account";
@@ -210,13 +210,16 @@ public class SessionWorkflowTests : IDisposable
 		var payload = new Dictionary<string, object?> { ["key"] = "AAAAA-BBBBB-CCCCC" };
 		var result = await session.ExecuteActionAsync("redeem_key", payload, CancellationToken.None);
 
-		// Assert
-		Assert.True(result.Success);
+		// Assert - In stub mode (no SteamClientManager), action returns error
 		Assert.NotNull(result.Output);
 		Assert.Equal("redeem_key", result.Output["action"]?.ToString());
 
 		var maskedKey = result.Output["key"]?.ToString() ?? "";
 		Assert.DoesNotContain("BBBBB", maskedKey);
+
+		// Verify stub mode error
+		Assert.False(result.Success);
+		Assert.Contains("Steam client not available", result.Error);
 	}
 
 	[Fact]
