@@ -12,6 +12,7 @@ builder.Services.AddSingleton<Config>(_ => Config.LoadFromEnvironment());
 builder.Services.AddSingleton<IEventBroker, EventBroker>();
 builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddSingleton<AuthChallengeTracker>();
+builder.Services.AddSingleton<ConfigStore>();
 
 builder.Services.AddSingleton<IJobStore>(sp => {
 	var cfg = sp.GetRequiredService<Config>();
@@ -69,6 +70,39 @@ app.MapGet("/v1/agents", (HttpContext ctx, Config cfg, AgentRegistry agents) => 
 
 	var list = agents.List();
 	return Results.Ok(new { agents = list });
+});
+
+app.MapGet("/v1/config", (HttpContext ctx, Config cfg, ConfigStore configStore) => {
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+		return Results.Unauthorized();
+	}
+
+	return Results.Ok(new {
+		global = configStore.GetGlobal(),
+		accounts = configStore.ListAccounts()
+	});
+});
+
+app.MapPut("/v1/config/global", (HttpContext ctx, Config cfg, ConfigStore configStore, PutGlobalConfigRequest req) => {
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+		return Results.Unauthorized();
+	}
+
+	var updated = configStore.SetGlobal(req.Settings, req.UpdatedBy);
+	return Results.Ok(updated);
+});
+
+app.MapPut("/v1/config/account/{name}", (HttpContext ctx, Config cfg, ConfigStore configStore, string name, PutAccountConfigRequest req) => {
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+		return Results.Unauthorized();
+	}
+
+	if (string.IsNullOrWhiteSpace(name)) {
+		return Results.BadRequest(new ErrorResponse("account name is required"));
+	}
+
+	var updated = configStore.SetAccount(name, req.Enabled, req.Region, req.Labels, req.Settings, req.UpdatedBy);
+	return Results.Ok(updated);
 });
 
 app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadRequest<ErrorResponse>, UnauthorizedHttpResult, ProblemHttpResult>> (
@@ -359,7 +393,7 @@ app.MapPost("/v1/sessions/events", (
 			string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal)
 				? "2fa_required"
 				: "auth_code_required";
-		var evt = new AuthChallengeEvent(
+		var evt = new Vapor.ControlPlane.AuthChallengeEvent(
 			Id: Guid.NewGuid().ToString("N"),
 			AccountName: req.AccountName,
 			ChallengeType: challengeType,
@@ -534,5 +568,18 @@ public sealed record SessionEventRequest(
 	string? EventType,
 	string? State,
 	string? Message
+);
+
+public sealed record PutGlobalConfigRequest(
+	IReadOnlyDictionary<string, object?>? Settings,
+	string? UpdatedBy
+);
+
+public sealed record PutAccountConfigRequest(
+	bool Enabled = true,
+	string? Region = null,
+	IReadOnlyList<string>? Labels = null,
+	IReadOnlyDictionary<string, object?>? Settings = null,
+	string? UpdatedBy = null
 );
 

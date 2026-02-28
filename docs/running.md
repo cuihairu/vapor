@@ -127,6 +127,30 @@ curl -sS "http://127.0.0.1:8080/v1/jobs?limit=50" -H "Authorization: Bearer dev-
 curl -sS http://127.0.0.1:8080/v1/agents/status -H "Authorization: Bearer dev-admin"
 ```
 
+### Read config
+
+```bash
+curl -sS http://127.0.0.1:8080/v1/config -H "Authorization: Bearer dev-admin"
+```
+
+### Update global config
+
+```bash
+curl -sS -X PUT http://127.0.0.1:8080/v1/config/global \
+  -H "Authorization: Bearer dev-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"settings":{"defaultRegion":"local","maxConcurrentJobs":20},"updatedBy":"local-dev"}'
+```
+
+### Update account config
+
+```bash
+curl -sS -X PUT http://127.0.0.1:8080/v1/config/account/acct-1 \
+  -H "Authorization: Bearer dev-admin" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":true,"region":"local","labels":["vip"],"settings":{"proxy":"auto"}}'
+```
+
 ### Cancel a job
 
 ```bash
