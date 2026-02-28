@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/icon.svg" width="96" alt="Vapor" />
+  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" />
 </p>
 
 # Vapor (ASF-inspired)
