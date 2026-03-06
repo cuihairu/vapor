@@ -14,5 +14,9 @@
   <ItemGroup>
     <ProjectReference Include="..\Vapor.Protocol\Vapor.Protocol.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vapor.Steam.Core.Tests" />
+  </ItemGroup>
 </Project>
 

@@ -1,306 +1,204 @@
-# Vapor TODO (ASF 对标 + 优雅架构版)
+# Vapor 完成交付计划（从当前 Alpha 到可用 GA）
 
-> 目标：在不牺牲 ASF 实用能力的前提下，形成更可扩展的"控制面 + 区域 Agent + 插件化动作"架构。
+> 目标：把当前“骨架完整、能力未闭环”的状态推进到“可稳定运行、可运维、可扩展”的生产可用版本。
 
-## 里程碑进度
+## 0. 现状与完成定义
 
-| 里程碑 | 状态 | 完成度 |
-|--------|------|--------|
-| M0 - 契约与骨架 | ✅ 完成 | 100% |
-| M1 - IPC 与配置体系 | ✅ 完成 | 100% |
-| M2 - ASF 核心能力对齐 | 🚧 进行中 | ~30% |
-| M3 - 插件与生态 | ❌ 未开始 | 0% |
-| M4 - 爬虫与数据获取 | ❌ 未开始 | 0% |
-| M5 - 账号安全增强 | ❌ 未开始 | 0% |
+### 当前关键现状（基于仓库代码）
+- 控制面、Agent、会话模型已打通，具备任务下发/执行/回传主链路。
+- 仍存在构建阻塞（`PlayGamesAction` 类型冲突），主干不可通过全量测试。
+- M2（ASF 核心能力）仅部分完成，M3/M4/M5 大量能力待落地。
+- 测试框架存在，但与文档统计有偏差，需要统一口径并补齐新增能力测试。
 
----
-
-## M0 - 契约与骨架 ✅ 100%
-
-### 已完成
-- [x] `Vapor.Protocol/Actions.cs` - ActionDescriptor、ActionParamSchema
-- [x] `Vapor.Protocol/Models.cs` - Job/Task/Result 模型
-- [x] `Vapor.Protocol/Events.cs` - JobEvent/TaskEvent/SessionEvent/AuthEvent
-- [x] `Vapor.Protocol/Commands.cs` - CommandRequest/CommandResult/PermissionLevel
-- [x] `Vapor.Protocol/Configs.cs` - GlobalConfig/AccountConfig
-- [x] `Vapor.Steam.Core/ActionRegistry.cs` - 动作注册/发现
-- [x] `Vapor.Steam.Core/IAction.cs` - 动作接口 + 元数据
-- [x] `Vapor.Steam.Core/BotSession.cs` - 会话状态机
-- [x] `Vapor.Steam.Core/SessionManager.cs` - 会话池管理
-- [x] `Vapor.Agent/ActionDispatcher.cs` - Task → Action 执行
-- [x] `Vapor.Agent/TaskRunner.cs` - 幂等/重试/超时/心跳
-- [x] `Vapor.ControlPlane/` - REST API + WebSocket 隧道
+### “项目完成”判定（GA Exit Criteria）
+1. `dotnet build` / `dotnet test` 在主分支稳定通过。
+2. 核心动作闭环：登录、2FA、游戏状态、激活 Key、库存/交易、基础 farming。
+3. 安全闭环：凭证加密存储、令牌持久化与轮换、敏感日志脱敏、审计。
+4. 可运维：OpenAPI、E2E、Docker、CI/CD、可观测性、性能基线。
+5. 文档闭环：架构、运行、运维、发布、故障排查齐备。
 
 ---
 
-## M1 - IPC 与配置体系 ✅ 100%
+## 1. P0 阶段：先恢复“可开发状态”（1 周）
 
-### 已完成的 API 端点
-- [x] `GET /v1/agents` - 列出 Agent
-- [x] `GET /v1/agents/status` - Agent 状态
-- [x] `WS /v1/agent/ws` - Agent WebSocket 隧道
-- [x] `GET /v1/config` - 获取配置
-- [x] `PUT /v1/config/global` - 更新全局配置
-- [x] `PUT /v1/config/account/{name}` - 更新账号配置
-- [x] `POST /v1/jobs` - 创建 Job
-- [x] `GET /v1/jobs` - 列出 Jobs
-- [x] `GET /v1/jobs/{id}` - 获取 Job 详情
-- [x] `POST /v1/jobs/{id}/cancel` - 取消 Job
-- [x] `GET /v1/jobs/{id}/events` - Job 事件流 (SSE)
-- [x] `GET /v1/jobs/events` - 全局 Job 事件流
-- [x] `GET /v1/sessions` - 列出会话
-- [x] `GET /v1/sessions/events` - 会话事件流
-- [x] `GET /v1/auth/challenges` - 认证挑战列表
-- [x] `GET /v1/auth/challenges/events` - 认证挑战事件流
-- [x] `POST /v1/auth/challenges/{account}/code` - 提交验证码
+### 1.1 修复构建阻塞
+- [x] 修复 `src/Vapor.Steam.Core/Actions/PlayGamesAction.cs` 的重复类型定义与静态/实例混用。
+- [x] 补 `PlayGamesAction` 对应单测（解析输入、play/stop/idle 分支、异常输入）。
+- [x] 让 `dotnet build Vapor.sln` 通过。
 
-### 已完成功能
-- [x] `ConfigStore.cs` - 全局/账号配置存储
-- [x] `SqliteJobStore.cs` - Job/Task 持久化
-- [x] `EventBroker.cs` - 事件发布订阅
-- [x] `SessionTracker.cs` - 会话状态追踪
-- [x] `AuthChallengeTracker.cs` - 认证挑战追踪
-- [x] `admin.html` - 完整的管理 UI
+**验收标准**
+- 本地与 CI 构建成功；无编译错误。
+
+### 1.2 修复登录动作语义
+- [x] `LoginAction` 改为真正触发 session 登录流程（而非仅返回成功）。
+- [x] 对接 `BotSession` 登录命令路径，统一失败码与错误信息。
+- [ ] 增加登录成功/失败/需验证码/需 2FA 的单测与集成测试（P1 任务）。
+
+**验收标准**
+- 调用 `login` action 后会真实进入连接状态机。
+
+### 1.3 基线测试与质量门禁
+- [x] 校准测试文档统计（方法数、分类、覆盖范围）。
+- [x] CI 增加”编译 + 单测 + 最小集成测试”必过门禁。
+
+**验收标准**
+- PR 无法绕过测试门禁；文档统计与实际一致。
 
 ---
 
-## M2 - ASF 核心能力对齐 🚧 30%
+## 2. P1 阶段：M2 核心能力闭环（2-4 周）
 
-### 已完成
-- [x] 登录流程 (`LoginAction`)
-- [x] 邮箱验证码处理 (`SessionState.ConnectingWaitAuthCode`)
-- [x] TOTP 验证码处理 (`SessionState.ConnectingWait2FA`)
-- [x] RefreshToken/AccessToken 字段
-- [x] 会话重连 (`SessionState.Reconnecting`)
+### 2.1 PlayGames 全量实现
+- [ ] 在 `SteamClientManager` / handler 中实现真实 Play/Stop（含多 AppID）。
+- [ ] 支持输入格式：`123`、`123,456`、`id/123`，统一规范化。
+- [ ] 加入速率控制与幂等（相同状态重复请求无副作用）。
 
-### 待实现 Actions
+**验收标准**
+- API 可控制在线游戏状态；事件流可见状态变化。
 
-#### 2FA 相关
-- [ ] `GenerateAuthCodeAction` - 生成 TOTP 代码（需 SDA 支持）
-- [ ] `GetConfirmationsAction` - 获取待确认列表
-- [ ] `HandleConfirmationsAction` - 处理交易确认
+### 2.2 RedeemKey 深化
+- [ ] 解析 Steam 回包中 app/package/receipt 明细。
+- [ ] 细化错误映射（已拥有、重复、限流、格式错误、服务异常）。
+- [ ] 增加重试与可观测字段（请求ID、耗时、结果码）。
 
-#### 交易系统 (Trading)
-- [ ] `GetInventoryAction` - 获取库存物品
-  - 参考: `ArchiHandler.GetMyInventoryAsync()`
-- [ ] `SendTradeOfferAction` - 发送交易报价
-  - 参考: `Actions.SendInventory()`
-- [ ] `AcceptTradeOfferAction` - 接受交易报价
-  - 参考: `ArchiWebHandler.AcceptTradeOffer()`
-- [ ] `DeclineTradeOfferAction` - 拒绝交易报价
-- [ ] `CancelTradeOfferAction` - 取消交易报价
+**验收标准**
+- `redeem_key` 输出结构稳定且可用于自动化后处理。
 
-#### 游戏管理
-- [ ] `PlayGamesAction` - 设置游戏状态
-  - 参考: `Actions.Play()`
-- [ ] `RedeemKeyAction` - 完整实现（当前仅为 stub）
-  - 参考: `Actions.RedeemKey()` + `ArchiHandler.RedeemKey()`
-- [ ] `AddFreeLicenseAction` - 添加免费许可
-  - 参考: `Actions.AddFreeLicenseApp()`
-- [ ] `RemoveLicenseAction` - 移除许可
-- [ ] `UnpackBoosterPacksAction` - 开启补充包
-- [ ] `RedeemPointsAction` - 兑换积分
+### 2.3 Trading MVP
+- [ ] 实现 `GetInventoryAction`。
+- [ ] 实现 `SendTradeOfferAction` / `AcceptTradeOfferAction` / `DeclineTradeOfferAction` / `CancelTradeOfferAction`。
+- [ ] 建立交易流程校验（资产归属、报价状态机、风控节流）。
 
-#### Farming 核心
-- [ ] `CardsFarmer` - 卡牌挂机核心算法
-  - 参考: `CardsFarmer.cs` (~1400 行)
-  - 支持离线 farming
-  - 游戏优先级队列
-  - 时长控制
-  - 风险游戏黑名单
-- [ ] `PauseFarmingAction` - 暂停挂机
-- [ ] `ResumeFarmingAction` - 恢复挂机
-- [ ] `FarmingStatusAction` - 获取挂机状态
+**验收标准**
+- 可完成端到端交易报价生命周期。
 
-### 待实现基础设施
-- [ ] `SteamWebHandler` - Steam Web API 请求封装
-  - 参考: `ArchiWebHandler.cs`
-  - Cookie 管理
-  - Session 管理
-  - 请求限速
-- [ ] `ArchiHandler` - Steam 协议处理器
-  - 参考: `ArchiHandler.cs`
-  - PlayGames
-  - RedeemKey
-  - TradeOffers
+### 2.4 会话可靠性增强
+- [ ] AccessToken 自动刷新；RefreshToken 续期。
+- [ ] 断线重连策略（指数退避、上限、可配置）。
+- [ ] 进程重启后会话恢复（最小可用）。
+
+**验收标准**
+- 长时运行不依赖人工反复登录。
 
 ---
 
-## M3 - 插件与生态 ❌ 0%
+## 3. P2 阶段：M5 安全闭环（2-3 周）
 
-### 插件系统
-- [ ] `Vapor.Plugins.Core` - 插件加载器
-  - 参考: `PluginsCore.cs` (使用 MEF/System.Composition)
-  - 支持热加载/卸载
-  - 插件发现（目录扫描）
-  - 依赖管理
-- [ ] 插件 API 接口
-  - `IPlugin` - 插件基础接口
-  - `IAction` - 自定义动作
-  - `ICommand` - 自定义命令
-  - `IWebApi` - 自定义 API 端点
-- [ ] 插件配置管理
-- [ ] 插件沙箱隔离
+### 3.1 凭证体系
+- [ ] 统一密码来源：明文（仅开发）、AES、环境变量、文件。
+- [ ] 完成 `ICredentialStore` 的生产级实现（含并发安全、损坏恢复）。
+- [ ] 凭证版本化与迁移策略（老格式 -> 新格式）。
 
-### 官方插件
-- [ ] `MobileAuthenticatorPlugin` - Steam 手机验证器
-  - 参考: `MobileAuthenticator.cs`
-  - TOTP 代码生成
-  - 确认码生成
-  - Steam 时间同步
-- [ ] `ItemsMatcherPlugin` - 物品匹配交易
-  - 参考: ASF ItemsMatcher
-- [ ] `MonitoringPlugin` - 性能监控
-  - Grafana 集成
-  - 指标导出
+### 3.2 加密与密钥管理
+- [ ] 将 AES 实现升级为明确安全方案（建议 AES-GCM + 随机 nonce + 完整性校验）。
+- [ ] 引入主密钥配置规范（环境变量/KMS），禁止默认密钥用于生产。
+- [ ] 提供密钥轮换工具脚本。
+
+### 3.3 安全审计与脱敏
+- [ ] 全链路日志脱敏（密码、令牌、验证码、key）。
+- [ ] 审计日志（登录、验证码提交、交易、关键配置修改）。
+- [ ] 配置文件权限检查与启动告警。
+
+**验收标准**
+- 安全扫描与人工审查通过；敏感信息不落日志。
 
 ---
 
-## M4 - 爬虫与数据获取 ❌ 0%
+## 4. P3 阶段：M4 数据与爬虫能力（2-4 周）
 
-### Steam Web API
-- [ ] `SteamStoreApi` - 商店 API
-  - `GET /api/appdetails` - 游戏详情
-  - `GET /api/featuredcategories` - 特惠商品
-  - `GET /api/packagedetails` - 包详情
-- [ ] `SteamCommunityApi` - 社区 API
-  - 市场价格
-  - 物品详情
-- [ ] `SteamPICS` - PICS 协议
-  - 参考: `SteamPICSChanges.cs`
-  - 变化监听
-  - 产品信息获取
+### 4.1 Steam Web API 客户端产品化
+- [ ] 完善 `SteamWebHandler`：Cookie 容器、域级别管理、429/5xx 退避。
+- [ ] 增加统一 HTTP 中间件：重试、限流、熔断、指标。
 
-### 数据模型
-- [ ] `GameInfo` - 游戏信息模型
-  - AppID, 名称, 类型, 开发商
-  - 价格, 折扣, 标签
-- [ ] `ItemInfo` - 物品信息模型
-  - AppID, ContextID, AssetID
-  - 名称, 类型, 图片, 价格
-- [ ] `GameInfoCache` - 游戏信息缓存
+### 4.2 数据模型与缓存
+- [ ] `GameInfo` / `ItemInfo` / 缓存层落地。
+- [ ] 增量更新策略与缓存失效策略。
 
-### 新增 Actions
-- [ ] `GetGameInfoAction` - 获取游戏详情
-- [ ] `SearchGamesAction` - 搜索游戏
-- [ ] `GetPriceAction` - 获取价格
-- [ ] `GetMarketListingsAction` - 获取市场列表
+### 4.3 新动作
+- [ ] `GetGameInfoAction` / `SearchGamesAction` / `GetPriceAction` / `GetMarketListingsAction`。
 
-### 依赖
-- [ ] HttpClient 封装
-- [ ] HTML 解析器集成 (AngleSharp)
-- [ ] 速率限制器
+**验收标准**
+- 可稳定拉取并查询游戏与市场数据，且有缓存命中收益。
 
 ---
 
-## M5 - 账号安全增强 ❌ 0%
+## 5. P4 阶段：M3 插件系统（3-5 周）
 
-### 密码存储加密
-- [ ] `VaporCryptoHelper` - 加密工具类
-  - 参考: `ArchiCryptoHelper.cs`
-  - 支持: PlainText, AES, EnvironmentVariable, File
-  - AES-256-GCM 实现
-- [ ] `ECryptoMethod` 枚举
-  - PlainText - 开发测试
-  - AES - 推荐
-  - EnvironmentVariable - 密码从环境变量读取
-  - File - 密码从外部文件读取
-- [ ] 配置文件加密支持
-  ```json
-  {
-    "accounts": {
-      "bot1": {
-        "password": "aes:encrypted_base64_here",
-        "passwordFormat": "AES"
-      }
-    }
-  }
-  ```
+### 5.1 插件基础设施
+- [ ] `Vapor.Plugins.Core`（发现、加载、隔离、卸载）。
+- [ ] 插件 API：`IPlugin` / 自定义 `IAction` / `ICommand` / `IWebApi`。
+- [ ] 版本兼容策略（插件 API SemVer）。
 
-### 凭证持久化
-- [ ] `ICredentialStore` - 凭证存储接口
-  - SaveRefreshTokenAsync
-  - SaveAccessTokenAsync
-  - GetCredentialsAsync
-  - RevokeCredentialsAsync
-- [ ] `FileCredentialStore` - 文件实现
-- [ ] `SecureCredentialStore` - 安全存储实现
+### 5.2 官方插件首批
+- [ ] MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）。
+- [ ] MonitoringPlugin（指标导出、Grafana 面板模板）。
 
-### Mobile Authenticator (SDA)
-- [ ] `MobileAuthenticator` 核心类
-  - 参考: `MobileAuthenticator.cs`
-  - `GenerateToken()` - TOTP 代码生成
-  - `GenerateConfirmationHash()` - 确认哈希
-  - `GetConfirmations()` - 获取待确认
-  - `HandleConfirmations()` - 处理确认
-- [ ] `MobileAuthenticatorConfig` - 配置模型
-  - SharedSecret
-  - IdentitySecret
-  - DeviceId
-
-### 会话管理增强
-- [ ] AccessToken 自动刷新
-- [ ] RefreshToken 续期
-- [ ] 会话恢复（重启后无需登录）
-
-### 安全最佳实践
-- [ ] 日志脱敏（不打印密码/令牌）
-- [ ] 配置文件权限检查 (600)
-- [ ] 审计日志（认证操作记录）
-- [ ] 速率限制（防暴力破解）
+**验收标准**
+- 插件可独立发布升级，主程序无需改动即可扩展。
 
 ---
 
-## 游戏特定支持 (Dota2/CSGO)
+## 6. 横向工程化（并行推进）
 
-### Dota2
-- [ ] Dota2 API 集成
-- [ ] 战绩查询
-- [ ] 英雄数据
+### 6.1 文档与接口
+- [ ] OpenAPI 完整化（含错误码、示例、鉴权说明）。
+- [ ] 编写“生产部署指南”和“故障排查手册”。
 
-### CSGO
-- [ ] CSGO API 集成
-- [ ] 库存物品操作
-- [ ] 战绩查询
+### 6.2 测试体系
+- [ ] 增加 ControlPlane/Agent 的单测与集成测试。
+- [ ] 增加 E2E（控制面 + Agent + SQLite + 模拟 Steam 依赖）。
+- [ ] 增加性能基准（并发任务、SSE 连接数、队列吞吐）。
 
----
-
-## 实施优先级
-
-### P0 - 立即开始
-1. M5: 环境变量密码支持
-2. M5: RefreshToken 持久化
-3. M2: RedeemKeyAction 完整实现
-
-### P1 - 短期
-1. M2: SteamWebHandler
-2. M2: Trading 系统
-3. M5: AES 密码加密
-
-### P2 - 中期
-1. M2: CardsFarming 核心
-2. M4: Steam Web API 集成
-3. M5: Mobile Authenticator
-
-### P3 - 长期
-1. M3: 插件系统
-2. M4: 游戏特定支持
-3. M3: 官方插件
+### 6.3 发布与运维
+- [ ] Docker 镜像与 docker-compose 本地编排。
+- [ ] CI/CD：多平台构建、自动发布、回滚策略。
+- [ ] 可观测性：结构化日志、指标、追踪、告警规则。
 
 ---
 
-## 技术债务
+## 7. 建议里程碑排期（可调整）
 
-- [ ] 完善 API 文档 (OpenAPI)
-- [ ] 增加 E2E 测试
-- [ ] Docker 镜像构建
-- [ ] CI/CD 优化
-- [ ] 性能基准测试
+- Week 1: P0（构建恢复 + 登录语义 + 门禁）
+- Week 2-4: P1（M2 闭环）
+- Week 5-7: P2（安全闭环）
+- Week 6-9: P3（数据能力，与 P2 部分并行）
+- Week 8-12: P4（插件系统）
+- Week 10-12: GA 收口（E2E、性能、文档、发布演练）
 
 ---
 
-## 参考资料
+## 8. 风险清单与缓解
 
-- ArchiSteamFarm: https://github.com/JustArchiNET/ArchiSteamFarm
-- SteamKit2: https://github.com/SteamRE/SteamKit2
-- SteamDesktopAuthenticator: https://github.com/Jessecar96/SteamDesktopAuthenticator
+### 风险
+- Steam 协议/接口变化导致行为不稳定。
+- 交易与认证流程边界复杂，回归成本高。
+- 安全改造（加密/密钥管理）易引入兼容问题。
+
+### 缓解
+- 建立协议适配层，隔离 SteamKit2 变化。
+- 高风险流程先做 contract tests + replay tests。
+- 采用灰度开关与数据迁移脚本，逐步切换。
+
+---
+
+## 9. 每周交付模板（执行时使用）
+
+- 本周完成：
+  - 
+- 下周计划：
+  - 
+- 阻塞项：
+  - 
+- 质量数据：
+  - 构建状态：
+  - 单测通过率：
+  - E2E 通过率：
+  - 关键性能指标：
+
+---
+
+## 10. 下一步（立刻执行）
+
+1. 修复 `PlayGamesAction` 编译阻塞。
+2. 把 `LoginAction` 改成真实登录命令。
+3. 跑通全量测试并建立 CI 必过门禁。
