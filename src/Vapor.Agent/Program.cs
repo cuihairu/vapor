@@ -28,7 +28,13 @@ var serviceProvider = new ServiceCollection()
 	.AddSingleton<IdleAction>()
 	.AddSingleton<EchoAction>()
 	.AddSingleton<LoginAction>()
+	.AddSingleton<PlayGamesAction>()
 	.AddSingleton<RedeemKeyAction>()
+	.AddSingleton<GetInventoryAction>()
+	.AddSingleton<SendTradeOfferAction>()
+	.AddSingleton<AcceptTradeOfferAction>()
+	.AddSingleton<DeclineTradeOfferAction>()
+	.AddSingleton<CancelTradeOfferAction>()
 	.BuildServiceProvider();
 
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
@@ -49,7 +55,13 @@ actionRegistry.Register(serviceProvider.GetRequiredService<PingAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<IdleAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<EchoAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<LoginAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<PlayGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<RedeemKeyAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetInventoryAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<SendTradeOfferAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<AcceptTradeOfferAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<DeclineTradeOfferAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<CancelTradeOfferAction>());
 
 using CancellationTokenSource cts = new();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -482,4 +494,3 @@ static async Task PublishSessionEventAsync(string wsUrlBase, string agentApiKey,
 		logger.LogWarning(ex, "Failed to publish session event for {AccountName}", accountName);
 	}
 }
-

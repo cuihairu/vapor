@@ -5,11 +5,12 @@ using Xunit;
 
 namespace Vapor.Steam.Core.Tests.Unit.Actions;
 
-public class LoginActionTests
+public class LoginActionTests : IDisposable
 {
 	private readonly Mock<ILogger<LoginAction>> _loggerMock;
 	private readonly Mock<ILogger<Vapor.Steam.Core.BotSession>> _sessionLoggerMock;
 	private readonly LoginAction _action;
+	private readonly List<BotSession> _sessions = [];
 
 	public LoginActionTests()
 	{
@@ -95,7 +96,7 @@ public class LoginActionTests
 		// Assert
 		Assert.NotNull(result.Output);
 		Assert.True(result.Output.ContainsKey("state"));
-		Assert.Equal("Disconnected", result.Output["state"]?.ToString());
+		Assert.Equal("Connected", result.Output["state"]?.ToString());
 	}
 
 	[Fact]
@@ -223,7 +224,17 @@ public class LoginActionTests
 	{
 		var credentials = new AccountCredentials(accountName, "test_password");
 		var mockRegistry = new Mock<IActionRegistry>(MockBehavior.Loose);
-		return new BotSession(accountName, credentials, mockRegistry.Object, _sessionLoggerMock.Object, null);
+		var session = new BotSession(accountName, credentials, mockRegistry.Object, _sessionLoggerMock.Object, null);
+		_sessions.Add(session);
+		return session;
+	}
+
+	public void Dispose()
+	{
+		foreach (var session in _sessions)
+		{
+			session.Dispose();
+		}
 	}
 }
 

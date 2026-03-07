@@ -53,6 +53,9 @@ public sealed class PlayGamesAction : IAction
 			return Task.FromResult<ActionResult>(new ActionResult(false, "No games specified", null));
 		}
 
+		// Call SteamClientManager to actually play the games
+		session.SteamClientManager?.PlayGames(gamesToPlay);
+
 		_logger.LogInformation("Playing {Count} games: {Games}", gamesToPlay.Count, string.Join(", ", gamesToPlay));
 
 		var output = new Dictionary<string, object?>
@@ -62,12 +65,14 @@ public sealed class PlayGamesAction : IAction
 			["account"] = session.AccountName
 		};
 
-		// TODO: Integrate with Steam client to actually play the games
 		return Task.FromResult<ActionResult>(new ActionResult(true, null, output));
 	}
 
 	private Task<ActionResult> StopAllGamesAsync(BotSession session)
 	{
+		// Call SteamClientManager to stop all games
+		session.SteamClientManager?.PlayGames([]);
+
 		_logger.LogInformation("Stopping all games for {AccountName}", session.AccountName);
 
 		var output = new Dictionary<string, object?>
@@ -76,7 +81,6 @@ public sealed class PlayGamesAction : IAction
 			["account"] = session.AccountName
 		};
 
-		// TODO: Integrate with Steam client to actually stop games
 		return Task.FromResult<ActionResult>(new ActionResult(true, null, output));
 	}
 }

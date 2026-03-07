@@ -20,12 +20,13 @@ public sealed class LoginAction : IAction
 		TimeoutSeconds: 60
 	);
 
-	public Task<ActionResult> ExecuteAsync(
+	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
 		IReadOnlyDictionary<string, object?> payload,
 		CancellationToken cancellationToken)
 	{
 		_logger.LogInformation("Login action for {AccountName}", session.AccountName);
+		var loginResult = await session.LoginDirectAsync(cancellationToken).ConfigureAwait(false);
 
 		var output = new Dictionary<string, object?>
 		{
@@ -34,7 +35,7 @@ public sealed class LoginAction : IAction
 			["action"] = "login"
 		};
 
-		return Task.FromResult<ActionResult>(new ActionResult(true, null, output));
+		return new ActionResult(loginResult.Success, loginResult.Error, output);
 	}
 }
 

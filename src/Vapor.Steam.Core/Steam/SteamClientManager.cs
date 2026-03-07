@@ -18,6 +18,14 @@ public interface ISteamClientManager
 	void SetTwoFactorCode(string accountName, string code);
 	void RunCallbacks();
 	Task<RedeemKeyResult?> RedeemKeyAsync(string key, CancellationToken cancellationToken = default);
+	/// <summary>
+	/// Plays the specified games on Steam. Pass empty set to stop playing all games.
+	/// </summary>
+	void PlayGames(HashSet<uint> appIds);
+	/// <summary>
+	/// Gets the currently playing game AppIDs.
+	/// </summary>
+	IReadOnlySet<uint> GetPlayingGames();
 }
 
 /// <summary>
@@ -316,6 +324,63 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		// Long keys: preserve first/last 10 chars.
 		const int edgeLen = 10;
 		return key[..edgeLen] + new string('*', key.Length - (edgeLen * 2)) + key[^edgeLen..];
+	}
+
+	private readonly HashSet<uint> _playingGames = [];
+	private readonly object _playingGamesLock = new();
+
+	public void PlayGames(HashSet<uint> appIds)
+	{
+		ThrowIfDisposed();
+
+		lock (_playingGamesLock)
+		{
+			// Check if the games being played are the same (idempotent)
+			if (_playingGames.SetEquals(appIds))
+			{
+				_logger.LogDebug("PlayGames: already playing requested games, skipping");
+				return;
+			}
+
+			_playingGames.Clear();
+			_playingGames.UnionWith(appIds);
+		}
+
+		if (!_steamClient.IsConnected)
+		{
+			_logger.LogWarning("PlayGames: Steam client not connected, games will be played on next connection");
+			return;
+		}
+
+		var gamesPlayed = new ClientMsgProtobuf<CMsgClientGamesPlayed>(EMsg.ClientGamesPlayed);
+
+		if (appIds.Count > 0)
+		{
+			foreach (var appId in appIds)
+			{
+				gamesPlayed.Body.games_played.Add(new CMsgClientGamesPlayed.GamePlayed
+				{
+					game_id = new GameID { AppID = (ushort)appId }.ToUInt64(),
+					game_extra_info = string.Empty
+				});
+			}
+
+			_logger.LogInformation("Playing {Count} games: {Games}", appIds.Count, string.Join(", ", appIds.OrderBy(id => id)));
+		}
+		else
+		{
+			_logger.LogInformation("Stopping all games");
+		}
+
+		_steamClient.Send(gamesPlayed);
+	}
+
+	public IReadOnlySet<uint> GetPlayingGames()
+	{
+		lock (_playingGamesLock)
+		{
+			return _playingGames.ToHashSet();
+		}
 	}
 
 	private SteamUser.LogOnDetails BuildLogOnDetails(string accountName, string password)

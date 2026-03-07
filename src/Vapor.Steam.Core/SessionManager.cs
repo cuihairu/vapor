@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Vapor.Steam.Core.Steam;
+using Vapor.Steam.Core.Web;
 
 namespace Vapor.Steam.Core;
 
@@ -72,7 +73,11 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			_actionRegistry,
 			_loggerFactory.CreateLogger<BotSession>(),
 			_steamClientManager,
-			_eventCallback
+			steamWebHandler: new SteamWebHandler(
+				new SteamWebHandlerConfig(),
+				_loggerFactory.CreateLogger<SteamWebHandler>()
+			),
+			eventCallback: _eventCallback
 		);
 
 		if (_sessions.TryAdd(accountName, session))
@@ -149,4 +154,3 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		_sessions.Clear();
 	}
 }
-

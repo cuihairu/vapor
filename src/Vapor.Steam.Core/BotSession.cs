@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Steam;
+using Vapor.Steam.Core.Web;
 
 namespace Vapor.Steam.Core;
 
@@ -27,6 +28,8 @@ public sealed class BotSession : IDisposable
 	private readonly SemaphoreSlim _actionLock;
 	private readonly ISteamClientManager? _steamClientManager;
 	private readonly SessionEventDelegate? _eventCallback;
+	private readonly SteamWebHandler? _steamWebHandler;
+	private readonly object _startLock = new();
 	private int _disposed;
 	
 	private SessionState _state = SessionState.Disconnected;
@@ -39,6 +42,7 @@ public sealed class BotSession : IDisposable
 	public DateTimeOffset ConnectedAt { get; private set; }
 	public DateTimeOffset LastHeartbeat => _lastHeartbeat;
 	public ISteamClientManager? SteamClientManager => _steamClientManager;
+	public SteamWebHandler? SteamWebHandler => _steamWebHandler;
 
 	public BotSession(
 		string accountName,
@@ -46,6 +50,7 @@ public sealed class BotSession : IDisposable
 		IActionRegistry actionRegistry,
 		ILogger<BotSession> logger,
 		ISteamClientManager? steamClientManager = null,
+		SteamWebHandler? steamWebHandler = null,
 		SessionEventDelegate? eventCallback = null)
 	{
 		_accountName = accountName;
@@ -53,6 +58,7 @@ public sealed class BotSession : IDisposable
 		_actionRegistry = actionRegistry;
 		_logger = logger;
 		_steamClientManager = steamClientManager;
+		_steamWebHandler = steamWebHandler;
 		_eventCallback = eventCallback;
 		_commandChannel = Channel.CreateUnbounded<SessionCommand>(new UnboundedChannelOptions { SingleReader = true });
 		_eventChannel = Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = false });
@@ -62,16 +68,14 @@ public sealed class BotSession : IDisposable
 
 	public void Start()
 	{
-		if (_backgroundTask != null)
+		lock (_startLock)
 		{
-			throw new InvalidOperationException("Session already started");
-		}
+			if (_backgroundTask != null)
+			{
+				throw new InvalidOperationException("Session already started");
+			}
 
-		_backgroundTask = RunAsync(_cts.Token);
-
-		if (_steamClientManager != null)
-		{
-			_steamCallbackTask = Task.Run(() => RunSteamCallbacksAsync(_cts.Token), _cts.Token);
+			StartCore();
 		}
 	}
 
@@ -146,9 +150,43 @@ public sealed class BotSession : IDisposable
 		await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
 	}
 
+	public async Task<SessionCommandResult> LoginAsync(CancellationToken cancellationToken = default)
+	{
+		EnsureStarted();
+		return await ConnectAsync(cancellationToken).ConfigureAwait(false);
+	}
+
+	public Task<SessionCommandResult> LoginDirectAsync(CancellationToken cancellationToken = default)
+	{
+		return LoginCoreAsync(cancellationToken);
+	}
+
 	public IAsyncEnumerable<SessionEvent> SubscribeEvents(CancellationToken cancellationToken = default)
 	{
 		return _eventChannel.Reader.ReadAllAsync(cancellationToken);
+	}
+
+	private void EnsureStarted()
+	{
+		lock (_startLock)
+		{
+			if (_backgroundTask != null)
+			{
+				return;
+			}
+
+			StartCore();
+		}
+	}
+
+	private void StartCore()
+	{
+		_backgroundTask = RunAsync(_cts.Token);
+
+		if (_steamClientManager != null)
+		{
+			_steamCallbackTask = Task.Run(() => RunSteamCallbacksAsync(_cts.Token), _cts.Token);
+		}
 	}
 
 	private async Task RunAsync(CancellationToken cancellationToken)
@@ -213,41 +251,8 @@ public sealed class BotSession : IDisposable
 
 	private async Task HandleLogin(SessionCommand cmd, CancellationToken cancellationToken)
 	{
-		if (_steamClientManager == null)
-		{
-			SetState(SessionState.Connected, "logged in (stub mode)");
-			cmd.Completion?.TrySetResult(new SessionCommandResult(true, null, null));
-			return;
-		}
-
-		SetState(SessionState.Connecting, "connecting to Steam");
-
-		try
-		{
-			await _steamClientManager.ConnectAsync(cancellationToken).ConfigureAwait(false);
-			await _steamClientManager.LoginAsync(_accountName, _credentials.Password, cancellationToken).ConfigureAwait(false);
-			SetState(SessionState.Connected, "connected to Steam");
-			ConnectedAt = DateTimeOffset.UtcNow;
-			cmd.Completion?.TrySetResult(new SessionCommandResult(true, null, null));
-		}
-		catch (SteamAuthCodeRequiredException ex)
-		{
-			SetState(SessionState.ConnectingWaitAuthCode, ex.Message);
-			_eventChannel.Writer.TryWrite(new SessionEvent(SessionEventType.AuthCodeNeeded, _accountName, SessionState.ConnectingWaitAuthCode, ex.Message));
-			cmd.Completion?.TrySetResult(new SessionCommandResult(false, ex.Message, null));
-		}
-		catch (SteamTwoFactorCodeRequiredException ex)
-		{
-			SetState(SessionState.ConnectingWait2FA, ex.Message);
-			_eventChannel.Writer.TryWrite(new SessionEvent(SessionEventType.TwoFactorCodeNeeded, _accountName, SessionState.ConnectingWait2FA, ex.Message));
-			cmd.Completion?.TrySetResult(new SessionCommandResult(false, ex.Message, null));
-		}
-		catch (Exception ex)
-		{
-			_logger.LogError(ex, "Login failed for {AccountName}", _accountName);
-			SetState(SessionState.FatalError, ex.Message);
-			cmd.Completion?.TrySetResult(new SessionCommandResult(false, ex.Message, null));
-		}
+		var result = await LoginCoreAsync(cancellationToken).ConfigureAwait(false);
+		cmd.Completion?.TrySetResult(result);
 	}
 
 	private async Task HandleExecuteAction(SessionCommand cmd, CancellationToken cancellationToken)
@@ -343,20 +348,58 @@ public sealed class BotSession : IDisposable
 		cmd.Completion?.TrySetResult(new SessionCommandResult(true, null, null));
 	}
 
-		private async Task ConnectAsync(CancellationToken cancellationToken)
-		{
-			var tcs = new TaskCompletionSource<SessionCommandResult>();
-			var cmd = new SessionCommand(
-				Guid.NewGuid().ToString(),
-				SessionCommandType.Login,
-				null,
-				null,
-				tcs,
-				cancellationToken
-			);
+	private async Task<SessionCommandResult> ConnectAsync(CancellationToken cancellationToken)
+	{
+		var tcs = new TaskCompletionSource<SessionCommandResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var cmd = new SessionCommand(
+			Guid.NewGuid().ToString(),
+			SessionCommandType.Login,
+			null,
+			null,
+			tcs,
+			cancellationToken
+		);
 
 		_commandChannel.Writer.TryWrite(cmd);
-		await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+		return await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+	}
+
+	private async Task<SessionCommandResult> LoginCoreAsync(CancellationToken cancellationToken)
+	{
+		if (_steamClientManager == null)
+		{
+			SetState(SessionState.Connected, "logged in (stub mode)");
+			return new SessionCommandResult(true, null, null);
+		}
+
+		SetState(SessionState.Connecting, "connecting to Steam");
+
+		try
+		{
+			await _steamClientManager.ConnectAsync(cancellationToken).ConfigureAwait(false);
+			await _steamClientManager.LoginAsync(_accountName, _credentials.Password, cancellationToken).ConfigureAwait(false);
+			SetState(SessionState.Connected, "connected to Steam");
+			ConnectedAt = DateTimeOffset.UtcNow;
+			return new SessionCommandResult(true, null, null);
+		}
+		catch (SteamAuthCodeRequiredException ex)
+		{
+			SetState(SessionState.ConnectingWaitAuthCode, ex.Message);
+			_eventChannel.Writer.TryWrite(new SessionEvent(SessionEventType.AuthCodeNeeded, _accountName, SessionState.ConnectingWaitAuthCode, ex.Message));
+			return new SessionCommandResult(false, ex.Message, null);
+		}
+		catch (SteamTwoFactorCodeRequiredException ex)
+		{
+			SetState(SessionState.ConnectingWait2FA, ex.Message);
+			_eventChannel.Writer.TryWrite(new SessionEvent(SessionEventType.TwoFactorCodeNeeded, _accountName, SessionState.ConnectingWait2FA, ex.Message));
+			return new SessionCommandResult(false, ex.Message, null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Login failed for {AccountName}", _accountName);
+			SetState(SessionState.FatalError, ex.Message);
+			return new SessionCommandResult(false, ex.Message, null);
+		}
 	}
 
 	private async Task DisconnectInternalAsync(CancellationToken cancellationToken)
@@ -442,4 +485,3 @@ public sealed record SessionCommandResult(
 	string? Error,
 	IReadOnlyDictionary<string, object?>? Output
 );
-
