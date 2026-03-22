@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using Vapor.Protocol;
 using Vapor.Steam.Core;
 using Vapor.Steam.Core.Actions;
+using Vapor.Steam.Core.Security;
 using Vapor.Steam.Core.Steam;
 
 static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) switch {
@@ -21,7 +22,14 @@ string agentApiKey = RequireEnv("AGENT_API_KEY");
 var serviceProvider = new ServiceCollection()
 	.AddLogging(configure => configure.AddConsole())
 	.AddSingleton<IActionRegistry, ActionRegistry>()
-	.AddSingleton<ISessionManager, SessionManager>()
+	.AddSingleton<ICredentialStore, FileCredentialStore>()
+	.AddSingleton<ISessionManager>(p => new SessionManager(
+		p.GetRequiredService<IActionRegistry>(),
+		p.GetRequiredService<ILogger<SessionManager>>(),
+		p.GetRequiredService<ISteamClientManager>(),
+		p.GetRequiredService<ICredentialStore>(),
+		p.GetRequiredService<ILoggerFactory>()
+	))
 	.AddSingleton<SteamClientManager>()
 	.AddSingleton<ISteamClientManager>(p => p.GetRequiredService<SteamClientManager>())
 	.AddSingleton<PingAction>()
@@ -226,33 +234,74 @@ static async Task<(bool Success, string? Error, IReadOnlyDictionary<string, obje
 	JobTask task,
 	ISessionManager sessionManager,
 	ILogger logger,
-	CancellationToken cancellationToken) 
+	CancellationToken cancellationToken)
 {
 	string action = task.Action.Trim().ToLowerInvariant();
 	string accountName = task.Target;
-	
-	try {
+
+	try
+	{
 		var payload = task.Payload ?? new Dictionary<string, object?>();
 
 		string password =
 			PayloadReader.GetString(payload, "password") ??
 			PayloadReader.GetString(payload, "pass") ??
-			"stub_password";
+			string.Empty;
 
-		var credentials = new AccountCredentials(
-			AccountName: accountName,
-			Password: password,
-			AuthCode: PayloadReader.GetString(payload, "authCode") ?? PayloadReader.GetString(payload, "auth_code"),
-			TwoFactorCode: PayloadReader.GetString(payload, "twoFactorCode") ?? PayloadReader.GetString(payload, "two_factor_code"),
-			RefreshToken: PayloadReader.GetString(payload, "refreshToken") ?? PayloadReader.GetString(payload, "refresh_token"),
-			AccessToken: PayloadReader.GetString(payload, "accessToken") ?? PayloadReader.GetString(payload, "access_token")
-		);
+		string? accessToken = PayloadReader.GetString(payload, "accessToken") ?? PayloadReader.GetString(payload, "access_token");
+		string? refreshToken = PayloadReader.GetString(payload, "refreshToken") ?? PayloadReader.GetString(payload, "refresh_token");
 
-		var session = await sessionManager.GetOrCreateSessionAsync(
-			accountName,
-			credentials,
-			cancellationToken
-		);
+		BotSession session;
+
+		// If only tokens are provided (no password), try to restore from stored credentials
+		if (string.IsNullOrEmpty(password) && !string.IsNullOrEmpty(refreshToken))
+		{
+			logger.LogInformation("Attempting to restore session for {AccountName} using tokens", accountName);
+
+			var credentials = new AccountCredentials(
+				AccountName: accountName,
+				Password: string.Empty,
+				AccessToken: accessToken,
+				RefreshToken: refreshToken
+			);
+
+			session = await sessionManager.GetOrCreateSessionAsync(
+				accountName,
+				credentials,
+				cancellationToken
+			);
+		}
+		else if (string.IsNullOrEmpty(password))
+		{
+			// No credentials provided, try to restore from stored credentials
+			logger.LogInformation("No credentials provided, attempting to restore session for {AccountName}", accountName);
+			var restoredSession = await ((Vapor.Steam.Core.SessionManager)sessionManager).TryRestoreSessionAsync(accountName, cancellationToken);
+
+			if (restoredSession == null)
+			{
+				return (false, "No credentials provided and no stored session found", null);
+			}
+
+			session = restoredSession;
+		}
+		else
+		{
+			// Password provided, create new session
+			var credentials = new AccountCredentials(
+				AccountName: accountName,
+				Password: password,
+				AuthCode: PayloadReader.GetString(payload, "authCode") ?? PayloadReader.GetString(payload, "auth_code"),
+				TwoFactorCode: PayloadReader.GetString(payload, "twoFactorCode") ?? PayloadReader.GetString(payload, "two_factor_code"),
+				RefreshToken: refreshToken,
+				AccessToken: accessToken
+			);
+
+			session = await sessionManager.GetOrCreateSessionAsync(
+				accountName,
+				credentials,
+				cancellationToken
+			);
+		}
 
 		var result = await session.ExecuteActionAsync(
 			action,
@@ -261,9 +310,13 @@ static async Task<(bool Success, string? Error, IReadOnlyDictionary<string, obje
 		);
 
 		return (result.Success, result.Error, result.Output);
-	} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+	}
+	catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+	{
 		return (false, "canceled", null);
-	} catch (Exception ex) {
+	}
+	catch (Exception ex)
+	{
 		logger.LogError(ex, "Execute failed for task {TaskId}", task.Id);
 		return (false, ex.Message, null);
 	}

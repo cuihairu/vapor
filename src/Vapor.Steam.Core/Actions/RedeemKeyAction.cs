@@ -79,6 +79,16 @@ public sealed class RedeemKeyAction : IAction
 			["success"] = success
 		};
 
+		if (result.RequestId != null)
+		{
+			output["requestId"] = result.RequestId;
+		}
+
+		if (result.DurationMs > 0)
+		{
+			output["durationMs"] = result.DurationMs;
+		}
+
 		if (result.GrantedAppIDs?.Count > 0)
 		{
 			output["grantedAppIds"] = result.GrantedAppIDs;

@@ -1,7 +1,10 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
 using SteamKit2.Internal;
+using Vapor.Steam.Core.Security;
+using Vapor.Steam.Core.Utilities;
 
 namespace Vapor.Steam.Core.Steam;
 
@@ -26,6 +29,10 @@ public interface ISteamClientManager
 	/// Gets the currently playing game AppIDs.
 	/// </summary>
 	IReadOnlySet<uint> GetPlayingGames();
+	/// <summary>
+	/// Refreshes the access token for the given account using stored credentials.
+	/// </summary>
+	Task<bool> RefreshAccessTokenAsync(string accountName, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -33,6 +40,8 @@ public interface ISteamClientManager
 /// </summary>
 public sealed record RedeemKeyResult(
 	EResult Result,
+	string? RequestId = null,
+	long DurationMs = 0,
 	IReadOnlyList<uint>? GrantedAppIDs = null,
 	IReadOnlyList<uint>? GrantedPackageIDs = null,
 	string? ReceiptDetails = null
@@ -62,15 +71,17 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private readonly SteamClient _steamClient;
 	private readonly CallbackManager _callbackManager;
 	private readonly ILogger<SteamClientManager> _logger;
+	private readonly ICredentialStore? _credentialStore;
 	private readonly ConcurrentDictionary<string, LoginState> _loginStates = new(StringComparer.OrdinalIgnoreCase);
 	private readonly object _connectLock = new();
 	private TaskCompletionSource<bool> _connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 	private string? _activeLoginAccountName;
 	private bool _disposed;
 
-	public SteamClientManager(ILogger<SteamClientManager> logger)
+	public SteamClientManager(ILogger<SteamClientManager> logger, ICredentialStore? credentialStore = null)
 	{
 		_logger = logger;
+		_credentialStore = credentialStore;
 		_steamClient = new SteamClient();
 		_callbackManager = new CallbackManager(_steamClient);
 
@@ -245,6 +256,9 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			return null;
 		}
 
+		var requestId = Guid.NewGuid().ToString("N")[..12];
+		var stopwatch = ValueStopwatch.StartNew();
+
 		try
 		{
 			var unifiedMessages = _steamClient.GetHandler<SteamUnifiedMessages>()
@@ -256,7 +270,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 				is_request_from_client = true
 			};
 
-			_logger.LogInformation("Redeeming key: {Key}", MaskKey(key));
+			_logger.LogInformation("Redeeming key: {Key} (RequestId: {RequestId})", MaskKey(key), requestId);
 
 			var asyncJob = unifiedMessages.SendMessage<CStore_RegisterCDKey_Request, CStore_RegisterCDKey_Response>(
 				"Store#RegisterCDKey",
@@ -270,23 +284,107 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 
 			if (response == null)
 			{
-				_logger.LogWarning("Key redemption timed out");
-				return new RedeemKeyResult(EResult.Timeout);
+				_logger.LogWarning("Key redemption timed out (RequestId: {RequestId})", requestId);
+				return new RedeemKeyResult(EResult.Timeout, requestId, stopwatch.ElapsedMilliseconds);
 			}
 
 			_logger.LogInformation(
-				"Key redemption result: {Result}",
-				response.Result
+				"Key redemption result: {Result} (RequestId: {RequestId}, Duration: {Duration}ms)",
+				response.Result,
+				requestId,
+				stopwatch.ElapsedMilliseconds
 			);
 
-			// TODO: Parse response.Body for granted app IDs and package IDs
-			// The structure may vary between SteamKit2 versions
-			return new RedeemKeyResult(response.Result);
+			// Parse response.Body for granted app IDs, package IDs, and receipt details
+			// Note: SteamKit2's protobuf structure may vary by version
+			List<uint>? grantedAppIds = null;
+			List<uint>? grantedPackageIds = null;
+			string? receiptDetails = null;
+
+			if (response.Result == EResult.OK)
+			{
+				// Try to access response details
+				// The exact structure depends on SteamKit2 version
+				// For now, we'll log the response type for debugging
+				_logger.LogDebug("Response body type: {ResponseType}", response.Body?.GetType().Name ?? "null");
+
+				// TODO: Parse actual response fields based on SteamKit2 version
+				// Common fields include: granted_appids, granted_packageids, purchase_receipt_info
+			}
+
+			return new RedeemKeyResult(
+				response.Result,
+				requestId,
+				stopwatch.ElapsedMilliseconds,
+				grantedAppIds,
+				grantedPackageIds,
+				receiptDetails
+			);
 		}
 		catch (Exception ex)
 		{
-			_logger.LogError(ex, "Failed to redeem key");
-			return new RedeemKeyResult(EResult.Fail);
+			_logger.LogError(ex, "Failed to redeem key (RequestId: {RequestId})", requestId);
+			return new RedeemKeyResult(EResult.Fail, requestId, stopwatch.ElapsedMilliseconds);
+		}
+	}
+
+	public async Task<bool> RefreshAccessTokenAsync(string accountName, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(accountName);
+
+		if (_credentialStore == null)
+		{
+			_logger.LogWarning("Cannot refresh token: no credential store configured");
+			return false;
+		}
+
+		ThrowIfDisposed();
+
+		try
+		{
+			// Try to get the refresh token from storage
+			var refreshToken = await _credentialStore.GetRefreshTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
+			if (string.IsNullOrWhiteSpace(refreshToken))
+			{
+				_logger.LogDebug("No refresh token found for {AccountName}", accountName);
+				return false;
+			}
+
+			// Update the login state with the refresh token
+			await UpdateLogOnDetailsAsync(accountName, null, refreshToken).ConfigureAwait(false);
+
+			// Connect if not connected
+			if (!_steamClient.IsConnected)
+			{
+				await ConnectAsync(cancellationToken).ConfigureAwait(false);
+			}
+
+			// Log in using the refresh token
+			// SteamKit2 will use the refresh token to obtain a new access token
+			var details = await GetLogOnDetailsAsync(accountName).ConfigureAwait(false);
+			if (details == null)
+			{
+				_logger.LogWarning("Failed to get logon details for {AccountName}", accountName);
+				return false;
+			}
+
+			// Update details to use refresh token
+			details.AccessToken = refreshToken;
+			details.ShouldRememberPassword = true;
+
+			var steamUser = _steamClient.GetHandler<SteamUser>() ?? throw new InvalidOperationException("SteamUser handler not available");
+			steamUser.LogOn(details);
+
+			// Wait a bit for the login to process
+			await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+
+			_logger.LogInformation("Token refresh initiated for {AccountName}", accountName);
+			return true;
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Failed to refresh access token for {AccountName}", accountName);
+			return false;
 		}
 	}
 
@@ -418,7 +516,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		_connectedTcs.TrySetResult(false);
 	}
 
-	private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
+		private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
 	{
 		var accountName = _activeLoginAccountName;
 		if (string.IsNullOrWhiteSpace(accountName))
@@ -429,6 +527,37 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		if (_loginStates.TryGetValue(accountName, out var state))
 		{
 			state.LoginTcs?.TrySetResult(callback);
+		}
+
+		// Extract and store tokens from successful login
+		if (callback.Result == EResult.OK && _credentialStore != null)
+		{
+			_ = Task.Run(async () =>
+			{
+				try
+				{
+					// SteamKit2 stores tokens in the logon details after successful login
+					var details = await GetLogOnDetailsAsync(accountName).ConfigureAwait(false);
+					if (details?.AccessToken != null)
+					{
+						// Store access token with typical expiration time (8 hours for Steam)
+						var accessToken = new StoredAccessToken(
+							details.AccessToken,
+							DateTimeOffset.UtcNow.AddHours(8)
+						);
+						await _credentialStore.SaveAccessTokenAsync(accountName, accessToken).ConfigureAwait(false);
+						_logger.LogInformation("Access token saved for {AccountName}", accountName);
+					}
+
+					// SteamKit2 may provide a refresh token via the WebAPI auth interface
+					// For now, we'll store the access token which can be used for session resumption
+					// Refresh token handling requires additional WebAPI calls
+				}
+				catch (Exception ex)
+				{
+					_logger.LogError(ex, "Failed to store tokens for {AccountName}", accountName);
+				}
+			});
 		}
 	}
 
