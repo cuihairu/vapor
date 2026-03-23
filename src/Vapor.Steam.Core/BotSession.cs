@@ -376,8 +376,26 @@ public sealed class BotSession : IDisposable
 
 		try
 		{
+			if (!string.IsNullOrWhiteSpace(_credentials.AccessToken) || !string.IsNullOrWhiteSpace(_credentials.RefreshToken))
+			{
+				await _steamClientManager.UpdateLogOnDetailsAsync(
+					_accountName,
+					_credentials.AccessToken,
+					_credentials.RefreshToken
+				).ConfigureAwait(false);
+			}
+
 			await _steamClientManager.ConnectAsync(cancellationToken).ConfigureAwait(false);
-			await _steamClientManager.LoginAsync(_accountName, _credentials.Password, cancellationToken).ConfigureAwait(false);
+
+			if (!string.IsNullOrWhiteSpace(_credentials.AccessToken) || !string.IsNullOrWhiteSpace(_credentials.RefreshToken))
+			{
+				await _steamClientManager.LoginAsync(_accountName, string.Empty, cancellationToken).ConfigureAwait(false);
+			}
+			else
+			{
+				await _steamClientManager.LoginAsync(_accountName, _credentials.Password, cancellationToken).ConfigureAwait(false);
+			}
+
 			SetState(SessionState.Connected, "connected to Steam");
 			ConnectedAt = DateTimeOffset.UtcNow;
 			return new SessionCommandResult(true, null, null);

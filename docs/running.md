@@ -13,6 +13,12 @@ Environment variables:
 - `Vapor_DB_PATH` (default `data/controlplane.db`; use `:memory:` for ephemeral)
 - `Vapor_TASK_LEASE_SECONDS` (default `300`; requeues running tasks that stop heartbeating)
 - `Vapor_ENABLE_SWAGGER` (set `true` to expose `/swagger`)
+- `VAPOR_ENCRYPTION_KEY` (recommended in production; custom encryption key, minimum 32 bytes)
+- `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` (optional escape hatch for production, not recommended)
+
+Credential storage notes:
+- New credential writes use AES-GCM with a random nonce and authentication tag.
+- Existing AES-CBC credential records remain readable for backward compatibility.
 
 Run:
 
@@ -21,6 +27,7 @@ export ASPNETCORE_URLS=http://127.0.0.1:8080
 export Vapor_ADMIN_API_KEY=dev-admin
 export Vapor_AGENT_API_KEYS=dev-agent
 export Vapor_DB_PATH=:memory:
+export VAPOR_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 dotnet run --project src/Vapor.ControlPlane
 ```
 
@@ -46,6 +53,12 @@ Environment variables:
 - `AGENT_REGION` (required)
 - `AGENT_CONTROLPLANE_WS_URL` (required, e.g. `ws://127.0.0.1:8080/v1/agent/ws`)
 - `AGENT_API_KEY` (required, must match one entry in `Vapor_AGENT_API_KEYS`)
+- `VAPOR_ENCRYPTION_KEY` (recommended in production; custom encryption key, minimum 32 bytes)
+- `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` (optional escape hatch for production, not recommended)
+- `AGENT_RECONNECT_INITIAL_DELAY_MS` (optional, default `500`)
+- `AGENT_RECONNECT_MAX_DELAY_MS` (optional, default `10000`)
+- `AGENT_RECONNECT_BACKOFF_FACTOR` (optional, default `2`)
+- `AGENT_RECONNECT_MAX_RETRIES` (optional, default `0` for unlimited)
 
 Run:
 
@@ -54,6 +67,8 @@ export AGENT_ID=agent-1
 export AGENT_REGION=local
 export AGENT_CONTROLPLANE_WS_URL=ws://127.0.0.1:8080/v1/agent/ws
 export AGENT_API_KEY=dev-agent
+export VAPOR_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
+export AGENT_RECONNECT_MAX_RETRIES=10
 dotnet run --project src/Vapor.Agent
 ```
 

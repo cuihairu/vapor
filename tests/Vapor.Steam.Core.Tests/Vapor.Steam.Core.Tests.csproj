@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vapor.Steam.Core\Vapor.Steam.Core.csproj" />
+    <ProjectReference Include="..\..\src\Vapor.Agent\Vapor.Agent.csproj" />
   </ItemGroup>
 
 </Project>

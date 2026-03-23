@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vapor.Protocol\Vapor.Protocol.csproj" />
+    <ProjectReference Include="..\Vapor.Steam.Core\Vapor.Steam.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -13,4 +14,3 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.9.0" />
   </ItemGroup>
 </Project>
-

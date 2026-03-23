@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Moq;
+using SteamKit2;
+using SteamKit2.Internal;
 using Vapor.Steam.Core.Steam;
+using Vapor.Steam.Core.Security;
 using Xunit;
 
 namespace Vapor.Steam.Core.Tests.Unit;
@@ -8,12 +11,14 @@ namespace Vapor.Steam.Core.Tests.Unit;
 public class SteamClientManagerTests : IDisposable
 {
 	private readonly Mock<ILogger<SteamClientManager>> _loggerMock;
+	private readonly FakeSteamAuthTokenProvider _steamAuthTokenProvider;
 	private readonly SteamClientManager _manager;
 
 	public SteamClientManagerTests()
 	{
 		_loggerMock = new Mock<ILogger<SteamClientManager>>(MockBehavior.Loose);
-		_manager = new SteamClientManager(_loggerMock.Object);
+		_steamAuthTokenProvider = new FakeSteamAuthTokenProvider();
+		_manager = new SteamClientManager(_loggerMock.Object, null, _steamAuthTokenProvider);
 	}
 
 	[Fact]
@@ -304,6 +309,133 @@ public class SteamClientManagerTests : IDisposable
 
 		// Assert - calling RunCallbacks after dispose should not crash
 		// (SteamClient is disposed but we just verify no exception is thrown)
+	}
+
+	[Fact]
+	public void ParseRedeemReceipt_WithLineItems_ExtractsAppsPackagesAndDetails()
+	{
+		var response = new CStore_RegisterCDKey_Response
+		{
+			purchase_receipt_info = new CStore_PurchaseReceiptInfo
+			{
+				transactionid = 123456789,
+				packageid = 42,
+				country_code = "CN",
+				line_items =
+				{
+					new CStore_PurchaseReceiptInfo.LineItem
+					{
+						appid = 570,
+						packageid = 42,
+						line_item_description = "Dota 2"
+					},
+					new CStore_PurchaseReceiptInfo.LineItem
+					{
+						appid = 730,
+						packageid = 99,
+						line_item_description = "CS2 Prime"
+					}
+				}
+			}
+		};
+
+		var parsed = SteamClientManager.ParseRedeemReceipt(response);
+
+		Assert.NotNull(parsed);
+		Assert.Equal(new uint[] { 570, 730 }, parsed!.GrantedAppIds);
+		Assert.Equal(new uint[] { 42, 99 }, parsed.GrantedPackageIds);
+		Assert.Contains("TransactionId=123456789", parsed.ReceiptDetails);
+		Assert.Contains("PackageId=42", parsed.ReceiptDetails);
+		Assert.Contains("Description=Dota 2", parsed.ReceiptDetails);
+		Assert.Contains("Description=CS2 Prime", parsed.ReceiptDetails);
+	}
+
+	[Fact]
+	public void ParseRedeemReceipt_WithoutReceipt_ReturnsNull()
+	{
+		var response = new CStore_RegisterCDKey_Response();
+
+		var parsed = SteamClientManager.ParseRedeemReceipt(response);
+
+		Assert.Null(parsed);
+	}
+
+	[Fact]
+	public async Task RefreshAccessTokenAsync_WithSteamIdAndRefreshToken_RotatesTokens()
+	{
+		var credentialStoreMock = new Mock<ICredentialStore>(MockBehavior.Strict);
+		var manager = new SteamClientManager(_loggerMock.Object, credentialStoreMock.Object, _steamAuthTokenProvider);
+
+		await manager.UpdateLogOnDetailsAsync("test_account", "old-access", "old-refresh");
+
+		var steamId = new SteamID(76561198000000000);
+		await manager.UpdateSteamIdAsync("test_account", steamId);
+
+		credentialStoreMock
+			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync("old-refresh");
+		_steamAuthTokenProvider.ExpectedSteamId = steamId;
+		_steamAuthTokenProvider.ExpectedRefreshToken = "old-refresh";
+		_steamAuthTokenProvider.Result = new SteamTokenRenewalResult("new-access", "new-refresh");
+		credentialStoreMock
+			.Setup(s => s.SaveRefreshTokenAsync("test_account", "new-refresh", It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		credentialStoreMock
+			.Setup(s => s.SaveAccessTokenAsync(
+				"test_account",
+				It.Is<StoredAccessToken>(t => t.Token == "new-access"),
+				It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+
+		var refreshed = await manager.RefreshAccessTokenAsync("test_account", CancellationToken.None);
+		var details = await manager.GetLogOnDetailsAsync("test_account");
+
+		Assert.True(refreshed);
+		Assert.NotNull(details);
+		Assert.Equal("new-access", details!.AccessToken);
+	}
+
+	[Fact]
+	public async Task RefreshAccessTokenAsync_WithoutSteamId_ReturnsFalse()
+	{
+		var credentialStoreMock = new Mock<ICredentialStore>(MockBehavior.Strict);
+		var manager = new SteamClientManager(_loggerMock.Object, credentialStoreMock.Object, _steamAuthTokenProvider);
+
+		await manager.UpdateLogOnDetailsAsync("test_account", "old-access", "old-refresh");
+		credentialStoreMock
+			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync("old-refresh");
+
+		var refreshed = await manager.RefreshAccessTokenAsync("test_account", CancellationToken.None);
+
+		Assert.False(refreshed);
+	}
+
+	private sealed class FakeSteamAuthTokenProvider : ISteamAuthTokenProvider
+	{
+		public SteamID? ExpectedSteamId { get; set; }
+		public string? ExpectedRefreshToken { get; set; }
+		public SteamTokenRenewalResult? Result { get; set; }
+
+		public Task<SteamTokenRenewalResult> GenerateAccessTokenForAppAsync(
+			SteamID steamId,
+			string refreshToken,
+			bool allowRenewal,
+			CancellationToken cancellationToken = default)
+		{
+			if (ExpectedSteamId != null)
+			{
+				Assert.Equal(ExpectedSteamId, steamId);
+			}
+
+			if (ExpectedRefreshToken != null)
+			{
+				Assert.Equal(ExpectedRefreshToken, refreshToken);
+			}
+
+			Assert.True(allowRenewal);
+			return Task.FromResult(Result ?? throw new InvalidOperationException("Result was not configured."));
+		}
 	}
 
 	public void Dispose()

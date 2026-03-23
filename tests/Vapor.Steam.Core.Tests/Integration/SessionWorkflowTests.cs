@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using Vapor.Steam.Core.Actions;
+using Vapor.Steam.Core.Steam;
 
 namespace Vapor.Steam.Core.Tests.Integration;
 
@@ -395,10 +396,116 @@ public class SessionWorkflowTests : IDisposable
 		}
 	}
 
+	[Fact]
+	public async Task Workflow_LoginAction_WithSteamClient_SucceedsAndTransitionsConnected()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", "password", It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+
+		using var sessionManager = CreateSteamBackedSessionManager(steamClientManagerMock.Object);
+		var session = await sessionManager.GetOrCreateSessionAsync(
+			"test_account",
+			new AccountCredentials("test_account", "password"),
+			CancellationToken.None);
+
+		var result = await session.ExecuteActionAsync("login", new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(SessionState.Connected, session.State);
+		Assert.Equal("Connected", result.Output!["state"]?.ToString());
+	}
+
+	[Fact]
+	public async Task Workflow_LoginAction_WithSteamFailure_ReturnsFatalError()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", "password", It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("Steam login failed: InvalidPassword"));
+
+		using var sessionManager = CreateSteamBackedSessionManager(steamClientManagerMock.Object);
+		var session = await sessionManager.GetOrCreateSessionAsync(
+			"test_account",
+			new AccountCredentials("test_account", "password"),
+			CancellationToken.None);
+
+		var result = await session.ExecuteActionAsync("login", new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal(SessionState.FatalError, session.State);
+		Assert.Equal("Steam login failed: InvalidPassword", result.Error);
+	}
+
+	[Fact]
+	public async Task Workflow_LoginAction_WhenAuthCodeRequired_ReturnsWaitAuthCodeState()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", "password", It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new SteamAuthCodeRequiredException("Steam auth code required (email Steam Guard)"));
+
+		using var sessionManager = CreateSteamBackedSessionManager(steamClientManagerMock.Object);
+		var session = await sessionManager.GetOrCreateSessionAsync(
+			"test_account",
+			new AccountCredentials("test_account", "password"),
+			CancellationToken.None);
+
+		var result = await session.ExecuteActionAsync("login", new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal(SessionState.ConnectingWaitAuthCode, session.State);
+		Assert.Equal("ConnectingWaitAuthCode", result.Output!["state"]?.ToString());
+	}
+
+	[Fact]
+	public async Task Workflow_LoginAction_WhenTwoFactorRequired_ReturnsWait2FAState()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", "password", It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new SteamTwoFactorCodeRequiredException("Steam 2FA code required (authenticator)"));
+
+		using var sessionManager = CreateSteamBackedSessionManager(steamClientManagerMock.Object);
+		var session = await sessionManager.GetOrCreateSessionAsync(
+			"test_account",
+			new AccountCredentials("test_account", "password"),
+			CancellationToken.None);
+
+		var result = await session.ExecuteActionAsync("login", new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal(SessionState.ConnectingWait2FA, session.State);
+		Assert.Equal("ConnectingWait2FA", result.Output!["state"]?.ToString());
+	}
+
+	private SessionManager CreateSteamBackedSessionManager(ISteamClientManager steamClientManager)
+	{
+		var actionRegistry = new ActionRegistry(NullLogger<ActionRegistry>.Instance);
+		actionRegistry.Register(new LoginAction(NullLogger<LoginAction>.Instance));
+
+		return new SessionManager(
+			actionRegistry,
+			_loggerMock.Object,
+			steamClientManager);
+	}
+
 	public void Dispose()
 	{
 		_sessionManager.Dispose();
 		GC.SuppressFinalize(this);
 	}
 }
-

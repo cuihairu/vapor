@@ -6,6 +6,7 @@ namespace Vapor.Steam.Core.Actions;
 
 public sealed class RedeemKeyAction : IAction
 {
+	private const int MaxAttempts = 3;
 	private readonly ILogger<RedeemKeyAction> _logger;
 
 	public RedeemKeyAction(ILogger<RedeemKeyAction> logger)
@@ -50,8 +51,33 @@ public sealed class RedeemKeyAction : IAction
 			);
 		}
 
-		// Redeem the key
-		RedeemKeyResult? result = await session.SteamClientManager.RedeemKeyAsync(key, cancellationToken).ConfigureAwait(false);
+		RedeemKeyResult? result = null;
+		var attempts = 0;
+		for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+		{
+			attempts = attempt;
+			result = await session.SteamClientManager.RedeemKeyAsync(key, cancellationToken).ConfigureAwait(false);
+
+			if (result == null)
+			{
+				break;
+			}
+
+			if (!ShouldRetry(result.Result) || attempt == MaxAttempts)
+			{
+				break;
+			}
+
+			var delay = TimeSpan.FromMilliseconds(250 * attempt);
+			_logger.LogWarning(
+				"Transient redeem failure for {AccountName}: {Result} on attempt {Attempt}/{MaxAttempts}, retrying after {DelayMs}ms",
+				session.AccountName,
+				result.Result,
+				attempt,
+				MaxAttempts,
+				delay.TotalMilliseconds);
+			await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+		}
 
 		if (result == null)
 		{
@@ -62,7 +88,9 @@ public sealed class RedeemKeyAction : IAction
 				{
 					["action"] = "redeem_key",
 					["key"] = MaskKey(key),
-					["result"] = "timeout"
+					["result"] = "timeout",
+					["resultCode"] = (int)EResult.Timeout,
+					["attempts"] = attempts
 				}
 			);
 		}
@@ -76,6 +104,8 @@ public sealed class RedeemKeyAction : IAction
 			["action"] = "redeem_key",
 			["key"] = MaskKey(key),
 			["result"] = result.Result.ToString(),
+			["resultCode"] = (int)result.Result,
+			["attempts"] = attempts,
 			["success"] = success
 		};
 
@@ -121,6 +151,12 @@ public sealed class RedeemKeyAction : IAction
 			EResult.Timeout => "Request timed out",
 			_ => $"Failed to redeem key: {result}"
 		};
+
+	private static bool ShouldRetry(EResult result) =>
+		result is EResult.Timeout
+			or EResult.ServiceUnavailable
+			or EResult.Busy
+			or EResult.TryAnotherCM;
 
 	private static string MaskKey(string key)
 	{

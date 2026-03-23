@@ -16,7 +16,7 @@ public enum ECryptoMethod : byte
 	PlainText,
 
 	/// <summary>
-	/// AES-256-CBC encryption with encrypted IV. Recommended for production.
+	/// AES encryption for credential storage. New writes use AES-GCM; legacy AES-CBC data remains readable.
 	/// </summary>
 	AES,
 
@@ -41,6 +41,11 @@ public static partial class VaporCryptoHelper
 {
 	private const byte MinimumCryptKeyBytes = 32;
 	private const byte DefaultKeyLength = 32;
+	private const string AesGcmPrefix = "gcm:";
+	private const int AesGcmNonceSize = 12;
+	private const int AesGcmTagSize = 16;
+	internal const string EncryptionKeyEnvironmentVariable = "VAPOR_ENCRYPTION_KEY";
+	internal const string AllowInsecureDefaultKeyEnvironmentVariable = "VAPOR_ALLOW_INSECURE_DEFAULT_KEY";
 
 	private static byte[] _encryptionKey = [];
 	private static bool _hasDefaultKey = true;
@@ -49,6 +54,41 @@ public static partial class VaporCryptoHelper
 	/// Gets whether the default encryption key is being used.
 	/// </summary>
 	public static bool HasDefaultKey => _hasDefaultKey;
+
+	public static void ConfigureFromEnvironment(Func<string, string?> getEnvironmentVariable)
+	{
+		ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
+
+		var encryptionKey = getEnvironmentVariable(EncryptionKeyEnvironmentVariable);
+		if (!string.IsNullOrWhiteSpace(encryptionKey) && _hasDefaultKey)
+		{
+			SetEncryptionKey(encryptionKey);
+		}
+	}
+
+	public static void EnsureSafeForEnvironment(Func<string, string?> getEnvironmentVariable)
+	{
+		ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
+
+		if (!IsProductionEnvironment(getEnvironmentVariable))
+		{
+			return;
+		}
+
+		if (!_hasDefaultKey)
+		{
+			return;
+		}
+
+		var allowInsecure = getEnvironmentVariable(AllowInsecureDefaultKeyEnvironmentVariable);
+		if (string.Equals(allowInsecure, "true", StringComparison.OrdinalIgnoreCase))
+		{
+			return;
+		}
+
+		throw new InvalidOperationException(
+			$"Default encryption key is not allowed in production. Set {EncryptionKeyEnvironmentVariable} to a custom key.");
+	}
 
 	/// <summary>
 	/// Sets a custom encryption key for AES encryption.
@@ -73,7 +113,7 @@ public static partial class VaporCryptoHelper
 			);
 		}
 
-		_hasDefaultKey = !encryptionKey.SequenceEqual(GetDefaultKey());
+		_hasDefaultKey = encryptionKey.SequenceEqual(GetDefaultKey());
 		_encryptionKey = encryptionKey;
 	}
 
@@ -149,6 +189,22 @@ public static partial class VaporCryptoHelper
 		return Encoding.UTF8.GetBytes("Vapor"); // Default key - should be changed in production
 	}
 
+	private static bool IsProductionEnvironment(Func<string, string?> getEnvironmentVariable)
+	{
+		var environment =
+			getEnvironmentVariable("DOTNET_ENVIRONMENT") ??
+			getEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ??
+			getEnvironmentVariable("VAPOR_ENVIRONMENT");
+
+		return string.Equals(environment, "Production", StringComparison.OrdinalIgnoreCase);
+	}
+
+	internal static void ResetForTests()
+	{
+		_encryptionKey = [];
+		_hasDefaultKey = true;
+	}
+
 	private static string? EncryptAES(string text)
 	{
 		ArgumentException.ThrowIfNullOrEmpty(text);
@@ -157,32 +213,21 @@ public static partial class VaporCryptoHelper
 		{
 			byte[] key = GetKey();
 			byte[] textData = Encoding.UTF8.GetBytes(text);
+			byte[] nonce = RandomNumberGenerator.GetBytes(AesGcmNonceSize);
+			byte[] ciphertext = new byte[textData.Length];
+			byte[] tag = new byte[AesGcmTagSize];
 
-			// Generate random IV
-			Span<byte> iv = stackalloc byte[16];
-			RandomNumberGenerator.Fill(iv);
+			using var aesGcm = new AesGcm(key, AesGcmTagSize);
+			aesGcm.Encrypt(nonce, textData, ciphertext, tag);
 
-			using Aes aes = Aes.Create();
-			aes.BlockSize = 128;
-			aes.KeySize = 256;
-			aes.Key = key;
-
-			// Encrypt the IV itself using ECB (no padding)
-			byte[] encryptedIv = aes.EncryptEcb(iv, PaddingMode.None);
-
-			// Encrypt the actual data using CBC with the random IV
-			byte[] encryptedText = aes.EncryptCbc(textData, iv);
-
-			// Combine encrypted IV + encrypted text
-			int encryptedCount = encryptedIv.Length + encryptedText.Length;
-			byte[] result = ArrayPool<byte>.Shared.Rent(encryptedCount);
-
+			byte[] result = ArrayPool<byte>.Shared.Rent(nonce.Length + tag.Length + ciphertext.Length);
 			try
 			{
-				Array.Copy(encryptedIv, result, encryptedIv.Length);
-				Array.Copy(encryptedText, 0, result, encryptedIv.Length, encryptedText.Length);
+				Array.Copy(nonce, result, nonce.Length);
+				Array.Copy(tag, 0, result, nonce.Length, tag.Length);
+				Array.Copy(ciphertext, 0, result, nonce.Length + tag.Length, ciphertext.Length);
 
-				return Convert.ToBase64String(result, 0, encryptedCount);
+				return AesGcmPrefix + Convert.ToBase64String(result, 0, nonce.Length + tag.Length + ciphertext.Length);
 			}
 			finally
 			{
@@ -202,37 +247,68 @@ public static partial class VaporCryptoHelper
 
 		try
 		{
-			byte[] key = GetKey();
-			byte[] decryptedData = Convert.FromBase64String(text);
-
-			if (decryptedData.Length < 16)
+			if (text.StartsWith(AesGcmPrefix, StringComparison.Ordinal))
 			{
-				return null; // Invalid data
+				return DecryptAesGcm(text[AesGcmPrefix.Length..]);
 			}
 
-			using Aes aes = Aes.Create();
-			aes.BlockSize = 128;
-			aes.KeySize = 256;
-			aes.Key = key;
-
-			// First 16 bytes are the encrypted IV
-			Span<byte> encryptedIv = decryptedData.AsSpan(0, 16);
-			Span<byte> encryptedText = decryptedData.AsSpan(16);
-
-			// Decrypt the IV
-			Span<byte> iv = stackalloc byte[16];
-			aes.DecryptEcb(encryptedIv, iv, PaddingMode.None);
-
-			// Decrypt the actual data using the decrypted IV
-			byte[] decryptedText = aes.DecryptCbc(encryptedText, iv);
-
-			return Encoding.UTF8.GetString(decryptedText);
+			return DecryptAesCbc(text);
 		}
 		catch
 		{
 			// Log error in production
 			return null;
 		}
+	}
+
+	private static string? DecryptAesGcm(string base64Text)
+	{
+		byte[] key = GetKey();
+		byte[] encryptedData = Convert.FromBase64String(base64Text);
+
+		if (encryptedData.Length < AesGcmNonceSize + AesGcmTagSize)
+		{
+			return null;
+		}
+
+		Span<byte> nonce = encryptedData.AsSpan(0, AesGcmNonceSize);
+		Span<byte> tag = encryptedData.AsSpan(AesGcmNonceSize, AesGcmTagSize);
+		Span<byte> ciphertext = encryptedData.AsSpan(AesGcmNonceSize + AesGcmTagSize);
+		byte[] plaintext = new byte[ciphertext.Length];
+
+		using var aesGcm = new AesGcm(key, AesGcmTagSize);
+		aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
+
+		return Encoding.UTF8.GetString(plaintext);
+	}
+
+	private static string? DecryptAesCbc(string base64Text)
+	{
+		byte[] key = GetKey();
+		byte[] decryptedData = Convert.FromBase64String(base64Text);
+
+		if (decryptedData.Length < 16)
+		{
+			return null; // Invalid data
+		}
+
+		using Aes aes = Aes.Create();
+		aes.BlockSize = 128;
+		aes.KeySize = 256;
+		aes.Key = key;
+
+		// First 16 bytes are the encrypted IV
+		Span<byte> encryptedIv = decryptedData.AsSpan(0, 16);
+		Span<byte> encryptedText = decryptedData.AsSpan(16);
+
+		// Decrypt the IV
+		Span<byte> iv = stackalloc byte[16];
+		aes.DecryptEcb(encryptedIv, iv, PaddingMode.None);
+
+		// Decrypt the actual data using the decrypted IV
+		byte[] decryptedText = aes.DecryptCbc(encryptedText, iv);
+
+		return Encoding.UTF8.GetString(decryptedText);
 	}
 
 	private static Task<string?> DecryptFromEnvironmentVariable(string text)

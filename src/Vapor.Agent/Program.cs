@@ -8,6 +8,8 @@ using Vapor.Steam.Core;
 using Vapor.Steam.Core.Actions;
 using Vapor.Steam.Core.Security;
 using Vapor.Steam.Core.Steam;
+using Vapor.Steam.Core.Utilities;
+using Vapor.Agent;
 
 static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) switch {
 	{ Length: > 0 } v => v,
@@ -18,6 +20,9 @@ string agentId = RequireEnv("AGENT_ID");
 string region = RequireEnv("AGENT_REGION");
 string wsUrlBase = RequireEnv("AGENT_CONTROLPLANE_WS_URL");
 string agentApiKey = RequireEnv("AGENT_API_KEY");
+VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
+VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
+var reconnectPolicy = AgentReconnectPolicy.FromEnvironment(Environment.GetEnvironmentVariable);
 
 var serviceProvider = new ServiceCollection()
 	.AddLogging(configure => configure.AddConsole())
@@ -48,6 +53,12 @@ var serviceProvider = new ServiceCollection()
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
 var actionRegistry = serviceProvider.GetRequiredService<IActionRegistry>();
 var sessionManager = serviceProvider.GetRequiredService<ISessionManager>();
+logger.LogInformation(
+	"Agent reconnect policy: initialDelayMs={InitialDelayMs}, maxDelayMs={MaxDelayMs}, backoffFactor={BackoffFactor}, maxRetries={MaxRetries}",
+	reconnectPolicy.InitialDelay.TotalMilliseconds,
+	reconnectPolicy.MaxDelay.TotalMilliseconds,
+	reconnectPolicy.BackoffFactor,
+	reconnectPolicy.IsUnlimitedRetries ? "unlimited" : reconnectPolicy.MaxRetries);
 
 // Set up session event callback to publish to Control Plane
 sessionManager.SetEventCallback(async (accountName, eventType, state, message) =>
@@ -77,17 +88,32 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 // Start one background task to listen for auth challenge events via SSE.
 _ = Task.Run(() => PollAuthChallengesAsync(agentId, region, wsUrlBase, agentApiKey, sessionManager, logger, cts.Token), cts.Token);
 
-TimeSpan backoff = TimeSpan.FromMilliseconds(500);
+var consecutiveFailures = 0;
 while (!cts.IsCancellationRequested) {
 	try {
 		await RunOnce(cts.Token);
-		backoff = TimeSpan.FromMilliseconds(500);
+		consecutiveFailures = 0;
 	} catch (OperationCanceledException) when (cts.IsCancellationRequested) {
 		break;
 	} catch (Exception ex) {
-		Console.Error.WriteLine($"agent disconnected: {ex.Message}");
+		consecutiveFailures++;
+		Console.Error.WriteLine($"agent disconnected: {SensitiveDataRedactor.Redact(ex.Message)}");
+
+		if (reconnectPolicy.HasReachedRetryLimit(consecutiveFailures))
+		{
+			logger.LogError(
+				ex,
+				"Agent reconnect retry limit reached after {ConsecutiveFailures} failures. Shutting down.",
+				consecutiveFailures);
+			break;
+		}
+
+		var backoff = reconnectPolicy.GetDelayForAttempt(consecutiveFailures);
+		logger.LogWarning(
+			"Agent reconnect attempt {Attempt} failed. Waiting {DelayMs}ms before retry.",
+			consecutiveFailures,
+			backoff.TotalMilliseconds);
 		await Task.Delay(backoff, cts.Token);
-		backoff = TimeSpan.FromMilliseconds(Math.Min(backoff.TotalMilliseconds * 2, 10_000));
 	}
 }
 
@@ -97,7 +123,7 @@ async Task RunOnce(CancellationToken cancellationToken) {
 	using ClientWebSocket ws = new();
 	ws.Options.SetRequestHeader("Authorization", $"Bearer {agentApiKey}");
 
-	Console.WriteLine($"connecting: {uri}");
+	Console.WriteLine($"connecting: {SensitiveDataRedactor.Redact(uri.ToString())}");
 	await ws.ConnectAsync(uri, cancellationToken);
 
 	using SemaphoreSlim sendGate = new(1, 1);
@@ -482,11 +508,11 @@ static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobT
 								}
 								catch (System.Text.Json.JsonException ex)
 								{
-									logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", jsonData);
+									logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
 								}
 								catch (Exception ex)
 								{
-									logger.LogWarning(ex, "Failed to handle auth challenge event: {Data}", jsonData);
+									logger.LogWarning(ex, "Failed to handle auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
 								}
 							}
 						}

@@ -373,6 +373,74 @@ public class BotSessionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task LoginAsync_WithPassword_UsesPasswordLogin()
+	{
+		var session = CreateSession();
+		session.Start();
+
+		_steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", "test_password", It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+
+		var result = await session.LoginAsync(CancellationToken.None);
+
+		Assert.True(result.Success);
+		_steamClientManagerMock.Verify(
+			m => m.UpdateLogOnDetailsAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>()),
+			Times.Never);
+		_steamClientManagerMock.Verify(m => m.LoginAsync("test_account", "test_password", It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task LoginAsync_WithStoredAccessToken_UsesTokenLogin()
+	{
+		var session = CreateSession(new AccountCredentials("test_account", string.Empty, AccessToken: "access-token"));
+		session.Start();
+
+		_steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.UpdateLogOnDetailsAsync("test_account", "access-token", null))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+
+		var result = await session.LoginAsync(CancellationToken.None);
+
+		Assert.True(result.Success);
+		_steamClientManagerMock.Verify(m => m.UpdateLogOnDetailsAsync("test_account", "access-token", null), Times.Once);
+		_steamClientManagerMock.Verify(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task LoginAsync_WithStoredRefreshToken_UsesTokenLogin()
+	{
+		var session = CreateSession(new AccountCredentials("test_account", string.Empty, RefreshToken: "refresh-token"));
+		session.Start();
+
+		_steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.UpdateLogOnDetailsAsync("test_account", null, "refresh-token"))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+
+		var result = await session.LoginAsync(CancellationToken.None);
+
+		Assert.True(result.Success);
+		_steamClientManagerMock.Verify(m => m.UpdateLogOnDetailsAsync("test_account", null, "refresh-token"), Times.Once);
+		_steamClientManagerMock.Verify(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
 	public void SubscribeEvents_ReturnsEventChannel()
 	{
 		// Arrange
@@ -450,11 +518,11 @@ public class BotSessionTests : IDisposable
 		session.Dispose();
 	}
 
-	private Vapor.Steam.Core.BotSession CreateSession()
+	private Vapor.Steam.Core.BotSession CreateSession(AccountCredentials? credentials = null)
 	{
 		return new Vapor.Steam.Core.BotSession(
 			"test_account",
-			_credentials,
+			credentials ?? _credentials,
 			_actionRegistryMock.Object,
 			_loggerMock.Object,
 			_steamClientManagerMock.Object
@@ -467,4 +535,3 @@ public class BotSessionTests : IDisposable
 		GC.SuppressFinalize(this);
 	}
 }
-

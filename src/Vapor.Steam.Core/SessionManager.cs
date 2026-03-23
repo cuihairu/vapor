@@ -43,22 +43,35 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	private readonly CancellationTokenSource _cts;
 	private readonly ISteamClientManager? _steamClientManager;
 	private readonly ICredentialStore? _credentialStore;
+	private readonly TimeSpan _tokenRefreshCheckInterval;
+	private readonly TimeSpan _tokenRefreshLeadTime;
+	private readonly ConcurrentDictionary<string, byte> _tokenRefreshInFlight = new(StringComparer.OrdinalIgnoreCase);
 	private SessionEventDelegate? _eventCallback;
+	private readonly Task? _tokenRefreshTask;
 
 	public SessionManager(
 		IActionRegistry actionRegistry,
 		ILogger<SessionManager> logger,
 		ISteamClientManager? steamClientManager = null,
 		ICredentialStore? credentialStore = null,
-		ILoggerFactory? loggerFactory = null)
+		ILoggerFactory? loggerFactory = null,
+		TimeSpan? tokenRefreshCheckInterval = null,
+		TimeSpan? tokenRefreshLeadTime = null)
 	{
 		_actionRegistry = actionRegistry;
 		_logger = logger;
 		_steamClientManager = steamClientManager;
 		_credentialStore = credentialStore;
 		_loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+		_tokenRefreshCheckInterval = tokenRefreshCheckInterval ?? TimeSpan.FromMinutes(1);
+		_tokenRefreshLeadTime = tokenRefreshLeadTime ?? TimeSpan.FromMinutes(15);
 		_eventChannel = Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = false });
 		_cts = new CancellationTokenSource();
+
+		if (_steamClientManager != null && _credentialStore != null)
+		{
+			_tokenRefreshTask = Task.Run(() => RunTokenRefreshLoopAsync(_cts.Token), _cts.Token);
+		}
 	}
 
 	public void SetEventCallback(SessionEventDelegate? callback)
@@ -206,6 +219,15 @@ public sealed class SessionManager : ISessionManager, IDisposable
 				}
 			}, _cts.Token);
 
+			var restoreResult = await session.LoginAsync(cancellationToken).ConfigureAwait(false);
+			if (!restoreResult.Success)
+			{
+				_sessions.TryRemove(accountName, out _);
+				session.Dispose();
+				_logger.LogWarning("Session restore failed for {AccountName}: {Error}", accountName, restoreResult.Error);
+				return null;
+			}
+
 			_logger.LogInformation("Session restored for {AccountName} from stored credentials", accountName);
 		}
 		else
@@ -240,5 +262,78 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			session.Dispose();
 		}
 		_sessions.Clear();
+	}
+
+	private async Task RunTokenRefreshLoopAsync(CancellationToken cancellationToken)
+	{
+		try
+		{
+			using var timer = new PeriodicTimer(_tokenRefreshCheckInterval);
+			while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
+			{
+				await RefreshExpiringSessionsAsync(cancellationToken).ConfigureAwait(false);
+			}
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Background token refresh loop failed");
+		}
+	}
+
+	private async Task RefreshExpiringSessionsAsync(CancellationToken cancellationToken)
+	{
+		if (_credentialStore == null || _steamClientManager == null)
+		{
+			return;
+		}
+
+		var now = DateTimeOffset.UtcNow;
+		foreach (var session in _sessions.Values)
+		{
+			if (session.State != SessionState.Connected)
+			{
+				continue;
+			}
+
+			var accountName = session.AccountName;
+			var accessToken = await _credentialStore.GetAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
+
+			var shouldRefresh = accessToken == null || accessToken.ExpiresAt <= now.Add(_tokenRefreshLeadTime);
+			if (!shouldRefresh)
+			{
+				continue;
+			}
+
+			if (!await _credentialStore.HasCredentialsAsync(accountName, cancellationToken).ConfigureAwait(false))
+			{
+				continue;
+			}
+
+			if (!_tokenRefreshInFlight.TryAdd(accountName, 0))
+			{
+				continue;
+			}
+
+			try
+			{
+				_logger.LogInformation("Refreshing access token for {AccountName}", accountName);
+				var refreshed = await _steamClientManager.RefreshAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
+				if (!refreshed)
+				{
+					_logger.LogWarning("Access token refresh failed for {AccountName}", accountName);
+				}
+			}
+			catch (Exception ex)
+			{
+				_logger.LogWarning(ex, "Access token refresh threw for {AccountName}", accountName);
+			}
+			finally
+			{
+				_tokenRefreshInFlight.TryRemove(accountName, out _);
+			}
+		}
 	}
 }

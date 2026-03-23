@@ -5,8 +5,12 @@ using Microsoft.Extensions.Primitives;
 using Microsoft.OpenApi.Models;
 using Vapor.ControlPlane;
 using Vapor.Protocol;
+using Vapor.Steam.Core.Security;
+using Vapor.Steam.Core.Utilities;
 
 var builder = WebApplication.CreateBuilder(args);
+VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
+VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
 
 builder.Services.AddSingleton<Config>(_ => Config.LoadFromEnvironment());
 builder.Services.AddSingleton<IEventBroker, EventBroker>();
@@ -48,6 +52,7 @@ builder.Services.ConfigureHttpJsonOptions(options => {
 });
 
 var app = builder.Build();
+var auditLogger = app.Logger;
 
 app.UseStaticFiles();
 app.UseWebSockets();
@@ -89,6 +94,15 @@ app.MapPut("/v1/config/global", (HttpContext ctx, Config cfg, ConfigStore config
 	}
 
 	var updated = configStore.SetGlobal(req.Settings, req.UpdatedBy);
+	WriteAuditLog(
+		auditLogger,
+		ctx,
+		"config.global.updated",
+		details: new Dictionary<string, object?>
+		{
+			["updatedBy"] = req.UpdatedBy,
+			["settings"] = req.Settings
+		});
 	return Results.Ok(updated);
 });
 
@@ -102,6 +116,19 @@ app.MapPut("/v1/config/account/{name}", (HttpContext ctx, Config cfg, ConfigStor
 	}
 
 	var updated = configStore.SetAccount(name, req.Enabled, req.Region, req.Labels, req.Settings, req.UpdatedBy);
+	WriteAuditLog(
+		auditLogger,
+		ctx,
+		"config.account.updated",
+		accountName: name,
+		details: new Dictionary<string, object?>
+		{
+			["updatedBy"] = req.UpdatedBy,
+			["enabled"] = req.Enabled,
+			["region"] = req.Region,
+			["labels"] = req.Labels,
+			["settings"] = req.Settings
+		});
 	return Results.Ok(updated);
 });
 
@@ -126,6 +153,19 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 
 	var created = await store.CreateJob(req, ctx.RequestAborted);
 	events.Publish(created.Job.Id, "job.created", new Dictionary<string, object?> { ["action"] = created.Job.Action, ["targets"] = created.Job.Targets.Count });
+	WriteAuditLog(
+		auditLogger,
+		ctx,
+		"job.created",
+		jobId: created.Job.Id,
+		details: new Dictionary<string, object?>
+		{
+			["action"] = created.Job.Action,
+			["region"] = created.Job.Region,
+			["targetCount"] = created.Job.Targets.Count,
+			["payload"] = req.Payload,
+			["meta"] = req.Meta
+		});
 
 	return TypedResults.Accepted($"/v1/jobs/{created.Job.Id}", new CreateJobResponse(created.Job));
 });
@@ -173,6 +213,7 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	try {
 		var cancels = await store.CancelJob(jobId, ctx.RequestAborted);
 		events.Publish(jobId, "job.canceled", null);
+		WriteAuditLog(auditLogger, ctx, "job.canceled", jobId: jobId, details: new Dictionary<string, object?> { ["cancelCount"] = cancels.Count });
 
 		if (cancels.Count > 0) {
 			foreach (var agent in agents.ListConnected()) {
@@ -339,6 +380,16 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", (
 	// Publish the auth code response event
 	// The agent will listen for this event and use the code to continue login
 	events.PublishAuthChallenge(accountName, $"code_provided_{type}", $"Auth code provided for {type}", code);
+	WriteAuditLog(
+		auditLogger,
+		ctx,
+		"auth.code.submitted",
+		accountName: accountName,
+		details: new Dictionary<string, object?>
+		{
+			["type"] = type,
+			["code"] = code
+		});
 
 	return Results.Ok(new { ok = true, accountName, type });
 });
@@ -385,6 +436,17 @@ app.MapPost("/v1/sessions/events", (
 	// Publish the session event
 	events.PublishSession(req.AccountName, normalizedType, state, req.Message);
 	sessions.Update(req.AccountName, normalizedType, state, req.Message);
+	WriteAuditLog(
+		auditLogger,
+		ctx,
+		"session.event.received",
+		accountName: req.AccountName,
+		details: new Dictionary<string, object?>
+		{
+			["eventType"] = normalizedType,
+			["state"] = state,
+			["message"] = req.Message
+		});
 
 	// Publish auth challenge events when sessions require user input
 	if (IsAuthChallengeRequired(normalizedType, state)) {
@@ -560,6 +622,35 @@ static bool IsAuthChallengeRequired(string normalizedEventType, string state) {
 
 	return string.Equals(state, "ConnectingWaitAuthCode", StringComparison.Ordinal) ||
 	       string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal);
+}
+
+static void WriteAuditLog(
+	ILogger logger,
+	HttpContext ctx,
+	string action,
+	string? accountName = null,
+	string? jobId = null,
+	IReadOnlyDictionary<string, object?>? details = null)
+{
+	var payload = JsonSerializer.Serialize(details ?? new Dictionary<string, object?>(), Vapor.Protocol.JsonDefaults.Options);
+	logger.LogInformation(
+		"AUDIT action={Action} actor={Actor} ip={RemoteIp} account={AccountName} jobId={JobId} details={Details}",
+		action,
+		GetAuditActor(ctx),
+		ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+		accountName ?? string.Empty,
+		jobId ?? string.Empty,
+		SensitiveDataRedactor.Redact(payload));
+}
+
+static string GetAuditActor(HttpContext ctx)
+{
+	if (ctx.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor) && !StringValues.IsNullOrEmpty(forwardedFor))
+	{
+		return forwardedFor.ToString();
+	}
+
+	return ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 }
 
 // Request type for session events from agents

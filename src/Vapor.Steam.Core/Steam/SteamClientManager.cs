@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reflection;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
+using SteamKit2.Authentication;
 using SteamKit2.Internal;
 using Vapor.Steam.Core.Security;
 using Vapor.Steam.Core.Utilities;
@@ -35,6 +37,56 @@ public interface ISteamClientManager
 	Task<bool> RefreshAccessTokenAsync(string accountName, CancellationToken cancellationToken = default);
 }
 
+internal interface ISteamAuthTokenProvider
+{
+	Task<SteamTokenRenewalResult> GenerateAccessTokenForAppAsync(
+		SteamID steamId,
+		string refreshToken,
+		bool allowRenewal,
+		CancellationToken cancellationToken = default);
+}
+
+internal sealed record SteamTokenRenewalResult(
+	string AccessToken,
+	string? RefreshToken
+);
+
+internal sealed class SteamAuthTokenProvider : ISteamAuthTokenProvider
+{
+	private readonly object _authentication;
+	private readonly MethodInfo _generateAccessTokenMethod;
+
+	public SteamAuthTokenProvider(SteamClient steamClient)
+	{
+		var ctor = typeof(SteamAuthentication).GetConstructor(
+			BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+			binder: null,
+			types: [typeof(SteamClient)],
+			modifiers: null)
+			?? throw new InvalidOperationException("SteamAuthentication constructor was not found.");
+
+		_authentication = ctor.Invoke([steamClient]);
+		_generateAccessTokenMethod = typeof(SteamAuthentication).GetMethod(
+			name: nameof(GenerateAccessTokenForAppAsync),
+			bindingAttr: BindingFlags.Instance | BindingFlags.Public)
+			?? throw new InvalidOperationException("GenerateAccessTokenForAppAsync method was not found.");
+	}
+
+	public async Task<SteamTokenRenewalResult> GenerateAccessTokenForAppAsync(
+		SteamID steamId,
+		string refreshToken,
+		bool allowRenewal,
+		CancellationToken cancellationToken = default)
+	{
+		var result = (Task<AccessTokenGenerateResult>)_generateAccessTokenMethod.Invoke(
+			_authentication,
+			[steamId, refreshToken, allowRenewal])!;
+
+		var generated = await result.ConfigureAwait(false);
+		return new SteamTokenRenewalResult(generated.AccessToken, generated.RefreshToken);
+	}
+}
+
 /// <summary>
 /// Result of a key redemption attempt.
 /// </summary>
@@ -45,6 +97,12 @@ public sealed record RedeemKeyResult(
 	IReadOnlyList<uint>? GrantedAppIDs = null,
 	IReadOnlyList<uint>? GrantedPackageIDs = null,
 	string? ReceiptDetails = null
+);
+
+internal sealed record RedeemReceiptParseResult(
+	IReadOnlyList<uint> GrantedAppIds,
+	IReadOnlyList<uint> GrantedPackageIds,
+	string? ReceiptDetails
 );
 
 public sealed class SteamAuthCodeRequiredException : Exception
@@ -63,6 +121,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	{
 		public string? AccessToken { get; init; }
 		public string? RefreshToken { get; init; }
+		public SteamID? SteamId { get; init; }
 		public string? AuthCode { get; init; }
 		public string? TwoFactorCode { get; init; }
 		public TaskCompletionSource<SteamUser.LoggedOnCallback>? LoginTcs { get; init; }
@@ -72,6 +131,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private readonly CallbackManager _callbackManager;
 	private readonly ILogger<SteamClientManager> _logger;
 	private readonly ICredentialStore? _credentialStore;
+	private readonly ISteamAuthTokenProvider _steamAuthTokenProvider;
 	private readonly ConcurrentDictionary<string, LoginState> _loginStates = new(StringComparer.OrdinalIgnoreCase);
 	private readonly object _connectLock = new();
 	private TaskCompletionSource<bool> _connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -84,6 +144,21 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		_credentialStore = credentialStore;
 		_steamClient = new SteamClient();
 		_callbackManager = new CallbackManager(_steamClient);
+		_steamAuthTokenProvider = new SteamAuthTokenProvider(_steamClient);
+
+		SubscribeCallbacks();
+	}
+
+	internal SteamClientManager(
+		ILogger<SteamClientManager> logger,
+		ICredentialStore? credentialStore,
+		ISteamAuthTokenProvider steamAuthTokenProvider)
+	{
+		_logger = logger;
+		_credentialStore = credentialStore;
+		_steamClient = new SteamClient();
+		_callbackManager = new CallbackManager(_steamClient);
+		_steamAuthTokenProvider = steamAuthTokenProvider;
 
 		SubscribeCallbacks();
 	}
@@ -97,14 +172,16 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			return Task.FromResult<SteamUser.LogOnDetails?>(null);
 		}
 
+		var token = state.AccessToken ?? state.RefreshToken;
+
 		return Task.FromResult<SteamUser.LogOnDetails?>(new SteamUser.LogOnDetails
 		{
 			Username = state.AccountName,
 			Password = state.Password,
 			AuthCode = state.AuthCode,
 			TwoFactorCode = state.TwoFactorCode,
-			AccessToken = state.AccessToken,
-			ShouldRememberPassword = !string.IsNullOrWhiteSpace(state.AccessToken)
+			AccessToken = token,
+			ShouldRememberPassword = !string.IsNullOrWhiteSpace(token)
 		});
 	}
 
@@ -115,6 +192,16 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			_ => new LoginState(accountName, string.Empty) { AccessToken = accessToken, RefreshToken = refreshToken },
 			(_, existing) => existing with { AccessToken = accessToken, RefreshToken = refreshToken }
 		);
+
+		return Task.CompletedTask;
+	}
+
+	internal Task UpdateSteamIdAsync(string accountName, SteamID steamId)
+	{
+		_loginStates.AddOrUpdate(
+			accountName,
+			_ => new LoginState(accountName, string.Empty) { SteamId = steamId },
+			(_, existing) => existing with { SteamId = steamId });
 
 		return Task.CompletedTask;
 	}
@@ -295,30 +382,15 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 				stopwatch.ElapsedMilliseconds
 			);
 
-			// Parse response.Body for granted app IDs, package IDs, and receipt details
-			// Note: SteamKit2's protobuf structure may vary by version
-			List<uint>? grantedAppIds = null;
-			List<uint>? grantedPackageIds = null;
-			string? receiptDetails = null;
-
-			if (response.Result == EResult.OK)
-			{
-				// Try to access response details
-				// The exact structure depends on SteamKit2 version
-				// For now, we'll log the response type for debugging
-				_logger.LogDebug("Response body type: {ResponseType}", response.Body?.GetType().Name ?? "null");
-
-				// TODO: Parse actual response fields based on SteamKit2 version
-				// Common fields include: granted_appids, granted_packageids, purchase_receipt_info
-			}
+			var parsedReceipt = ParseRedeemReceipt(response.Body);
 
 			return new RedeemKeyResult(
 				response.Result,
 				requestId,
 				stopwatch.ElapsedMilliseconds,
-				grantedAppIds,
-				grantedPackageIds,
-				receiptDetails
+				parsedReceipt?.GrantedAppIds,
+				parsedReceipt?.GrantedPackageIds,
+				parsedReceipt?.ReceiptDetails
 			);
 		}
 		catch (Exception ex)
@@ -342,7 +414,6 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 
 		try
 		{
-			// Try to get the refresh token from storage
 			var refreshToken = await _credentialStore.GetRefreshTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
 			if (string.IsNullOrWhiteSpace(refreshToken))
 			{
@@ -350,36 +421,33 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 				return false;
 			}
 
-			// Update the login state with the refresh token
-			await UpdateLogOnDetailsAsync(accountName, null, refreshToken).ConfigureAwait(false);
-
-			// Connect if not connected
-			if (!_steamClient.IsConnected)
+			if (!_loginStates.TryGetValue(accountName, out var state) || state.SteamId == null)
 			{
-				await ConnectAsync(cancellationToken).ConfigureAwait(false);
-			}
-
-			// Log in using the refresh token
-			// SteamKit2 will use the refresh token to obtain a new access token
-			var details = await GetLogOnDetailsAsync(accountName).ConfigureAwait(false);
-			if (details == null)
-			{
-				_logger.LogWarning("Failed to get logon details for {AccountName}", accountName);
+				_logger.LogWarning("Cannot rotate refresh token for {AccountName}: SteamID is unavailable", accountName);
 				return false;
 			}
 
-			// Update details to use refresh token
-			details.AccessToken = refreshToken;
-			details.ShouldRememberPassword = true;
+			var generated = await _steamAuthTokenProvider
+				.GenerateAccessTokenForAppAsync(state.SteamId, refreshToken, allowRenewal: true, cancellationToken)
+				.ConfigureAwait(false);
 
-			var steamUser = _steamClient.GetHandler<SteamUser>() ?? throw new InvalidOperationException("SteamUser handler not available");
-			steamUser.LogOn(details);
+			var newRefreshToken = string.IsNullOrWhiteSpace(generated.RefreshToken) ? refreshToken : generated.RefreshToken;
+			var newAccessToken = generated.AccessToken;
 
-			// Wait a bit for the login to process
-			await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
+			await UpdateLogOnDetailsAsync(accountName, newAccessToken, newRefreshToken).ConfigureAwait(false);
+			await _credentialStore.SaveRefreshTokenAsync(accountName, newRefreshToken, cancellationToken).ConfigureAwait(false);
+			await _credentialStore.SaveAccessTokenAsync(
+				accountName,
+				new StoredAccessToken(newAccessToken, DateTimeOffset.UtcNow.AddHours(8)),
+				cancellationToken).ConfigureAwait(false);
 
-			_logger.LogInformation("Token refresh initiated for {AccountName}", accountName);
+			_logger.LogInformation("Token refresh and renewal succeeded for {AccountName}", accountName);
 			return true;
+		}
+		catch (AuthenticationException ex)
+		{
+			_logger.LogError(ex, "Steam authentication token renewal failed for {AccountName}: {Result}", accountName, ex.Result);
+			return false;
 		}
 		catch (Exception ex)
 		{
@@ -481,9 +549,78 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 	}
 
+	internal static RedeemReceiptParseResult? ParseRedeemReceipt(CStore_RegisterCDKey_Response? responseBody)
+	{
+		var receipt = responseBody?.purchase_receipt_info;
+		if (receipt == null)
+		{
+			return null;
+		}
+
+		var grantedAppIds = receipt.line_items
+			.Select(lineItem => lineItem.appid)
+			.Where(appId => appId > 0)
+			.Distinct()
+			.ToArray();
+
+		var grantedPackageIds = receipt.line_items
+			.Select(lineItem => lineItem.packageid)
+			.Append(receipt.packageid)
+			.Where(packageId => packageId > 0)
+			.Distinct()
+			.ToArray();
+
+		var detailParts = new List<string>();
+		if (receipt.transactionid > 0)
+		{
+			detailParts.Add($"TransactionId={receipt.transactionid}");
+		}
+
+		if (receipt.packageid > 0)
+		{
+			detailParts.Add($"PackageId={receipt.packageid}");
+		}
+
+		if (!string.IsNullOrWhiteSpace(receipt.country_code))
+		{
+			detailParts.Add($"Country={receipt.country_code}");
+		}
+
+		if (receipt.line_items.Count > 0)
+		{
+			var lineItemSummary = string.Join(
+				", ",
+				receipt.line_items.Select(lineItem =>
+				{
+					var description = string.IsNullOrWhiteSpace(lineItem.line_item_description)
+						? "N/A"
+						: lineItem.line_item_description;
+					return $"AppId={lineItem.appid}, PackageId={lineItem.packageid}, Description={description}";
+				}));
+			detailParts.Add($"LineItems=[{lineItemSummary}]");
+		}
+
+		if (!string.IsNullOrWhiteSpace(receipt.error_headline))
+		{
+			detailParts.Add($"ErrorHeadline={receipt.error_headline}");
+		}
+
+		if (!string.IsNullOrWhiteSpace(receipt.error_string))
+		{
+			detailParts.Add($"Error={receipt.error_string}");
+		}
+
+		return new RedeemReceiptParseResult(
+			grantedAppIds,
+			grantedPackageIds,
+			detailParts.Count > 0 ? string.Join("; ", detailParts) : null
+		);
+	}
+
 	private SteamUser.LogOnDetails BuildLogOnDetails(string accountName, string password)
 	{
 		_loginStates.TryGetValue(accountName, out var state);
+		var token = state?.AccessToken ?? state?.RefreshToken;
 
 		return new SteamUser.LogOnDetails
 		{
@@ -491,8 +628,8 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			Password = password,
 			AuthCode = state?.AuthCode,
 			TwoFactorCode = state?.TwoFactorCode,
-			AccessToken = state?.AccessToken,
-			ShouldRememberPassword = !string.IsNullOrWhiteSpace(state?.AccessToken)
+			AccessToken = token,
+			ShouldRememberPassword = !string.IsNullOrWhiteSpace(token)
 		};
 	}
 
@@ -529,6 +666,11 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			state.LoginTcs?.TrySetResult(callback);
 		}
 
+		if (callback.ClientSteamID != null)
+		{
+			_ = UpdateSteamIdAsync(accountName, callback.ClientSteamID);
+		}
+
 		// Extract and store tokens from successful login
 		if (callback.Result == EResult.OK && _credentialStore != null)
 		{
@@ -536,22 +678,26 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			{
 				try
 				{
-					// SteamKit2 stores tokens in the logon details after successful login
-					var details = await GetLogOnDetailsAsync(accountName).ConfigureAwait(false);
-					if (details?.AccessToken != null)
+					if (!_loginStates.TryGetValue(accountName, out var currentState))
 					{
-						// Store access token with typical expiration time (8 hours for Steam)
+						return;
+					}
+
+					if (!string.IsNullOrWhiteSpace(currentState.RefreshToken))
+					{
+						await _credentialStore.SaveRefreshTokenAsync(accountName, currentState.RefreshToken).ConfigureAwait(false);
+						_logger.LogInformation("Refresh token saved for {AccountName}", accountName);
+					}
+
+					if (!string.IsNullOrWhiteSpace(currentState.AccessToken))
+					{
 						var accessToken = new StoredAccessToken(
-							details.AccessToken,
+							currentState.AccessToken,
 							DateTimeOffset.UtcNow.AddHours(8)
 						);
 						await _credentialStore.SaveAccessTokenAsync(accountName, accessToken).ConfigureAwait(false);
 						_logger.LogInformation("Access token saved for {AccountName}", accountName);
 					}
-
-					// SteamKit2 may provide a refresh token via the WebAPI auth interface
-					// For now, we'll store the access token which can be used for session resumption
-					// Refresh token handling requires additional WebAPI calls
 				}
 				catch (Exception ex)
 				{
@@ -593,4 +739,3 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		_loginStates.Clear();
 	}
 }
-

@@ -296,11 +296,113 @@ public class RedeemKeyActionTests
 		Assert.DoesNotContain("BBBBBBB", maskedKey);
 	}
 
-	private BotSession CreateTestSession(string accountName)
+	[Fact]
+	public async Task ExecuteAsync_WithGrantedAppsAndPackages_EmitsReceiptFields()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.Setup(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemKeyResult(
+				EResult.OK,
+				RequestId: "req-1",
+				DurationMs: 321,
+				GrantedAppIDs: new uint[] { 570, 730 },
+				GrantedPackageIDs: new uint[] { 42, 99 },
+				ReceiptDetails: "TransactionId=1; LineItems=[...]"));
+
+		var session = CreateTestSession("test_account", steamClientManagerMock.Object);
+		var payload = new Dictionary<string, object?> { ["key"] = "AAAAA-BBBBB-CCCCC" };
+
+		var result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.NotNull(result.Output);
+		Assert.Equal("req-1", result.Output!["requestId"]);
+		Assert.Equal(321L, result.Output["durationMs"]);
+		Assert.Equal(new uint[] { 570, 730 }, result.Output["grantedAppIds"]);
+		Assert.Equal(new uint[] { 42, 99 }, result.Output["grantedPackageIds"]);
+		Assert.Equal("TransactionId=1; LineItems=[...]", result.Output["receiptDetails"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_EmitsResultCodeAndAttempts()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.Setup(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemKeyResult(EResult.InvalidParam));
+
+		var session = CreateTestSession("test_account", steamClientManagerMock.Object);
+
+		var result = await _action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["key"] = "AAAAA-BBBBB-CCCCC" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.NotNull(result.Output);
+		Assert.Equal((int)EResult.InvalidParam, result.Output!["resultCode"]);
+		Assert.Equal(1, result.Output["attempts"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_WithTransientFailure_RetriesAndSucceeds()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.SetupSequence(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout))
+			.ReturnsAsync(new RedeemKeyResult(
+				EResult.OK,
+				RequestId: "req-2",
+				DurationMs: 111));
+
+		var session = CreateTestSession("test_account", steamClientManagerMock.Object);
+
+		var result = await _action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["key"] = "AAAAA-BBBBB-CCCCC" },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.NotNull(result.Output);
+		Assert.Equal(2, result.Output!["attempts"]);
+		Assert.Equal((int)EResult.OK, result.Output["resultCode"]);
+		steamClientManagerMock.Verify(
+			m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()),
+			Times.Exactly(2));
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_WithPersistentTransientFailure_StopsAtMaxAttempts()
+	{
+		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
+		steamClientManagerMock
+			.SetupSequence(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout))
+			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout))
+			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout));
+
+		var session = CreateTestSession("test_account", steamClientManagerMock.Object);
+
+		var result = await _action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["key"] = "AAAAA-BBBBB-CCCCC" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.NotNull(result.Output);
+		Assert.Equal(3, result.Output!["attempts"]);
+		Assert.Equal((int)EResult.Timeout, result.Output["resultCode"]);
+		steamClientManagerMock.Verify(
+			m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()),
+			Times.Exactly(3));
+	}
+
+	private BotSession CreateTestSession(string accountName, ISteamClientManager? steamClientManager = null)
 	{
 		var credentials = new AccountCredentials(accountName, "test_password");
 		var mockRegistry = new Mock<IActionRegistry>(MockBehavior.Loose);
-		// No SteamClientManager - tests run in stub mode
-		return new BotSession(accountName, credentials, mockRegistry.Object, _sessionLoggerMock.Object, null);
+		return new BotSession(accountName, credentials, mockRegistry.Object, _sessionLoggerMock.Object, steamClientManager);
 	}
 }

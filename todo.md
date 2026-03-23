@@ -10,7 +10,7 @@
 - **测试**: 289 个测试全部通过（15 个测试文件，覆盖 Unit / Integration / Performance）。
 - **CI**: 多平台（Ubuntu / Windows / macOS）构建 + 测试门禁已就绪。
 - **已实现 Actions（11 个）**: Ping, Echo, Login, Idle, PlayGames, RedeemKey, GetInventory, SendTradeOffer, AcceptTradeOffer, DeclineTradeOffer, CancelTradeOffer。
-- **已实现基础设施**: ControlPlane（15+ API 端点 + SSE 事件流 + SQLite 持久化 + Admin UI）、Agent（WebSocket 隧道 + 全部 Action 注册）、SessionEngine（BotSession 状态机 + SessionManager + SteamClientManager）、SteamWebHandler、SteamTradeClient、FileCredentialStore + AES-256-CBC 加密。
+- **已实现基础设施**: ControlPlane（15+ API 端点 + SSE 事件流 + SQLite 持久化 + Admin UI）、Agent（WebSocket 隧道 + 全部 Action 注册）、SessionEngine（BotSession 状态机 + SessionManager + SteamClientManager）、SteamWebHandler、SteamTradeClient、FileCredentialStore + AES-GCM 加密（兼容历史 AES-CBC 数据）。
 - **整体完成度**: ~45%。
 
 ### GA Exit Criteria
@@ -45,9 +45,9 @@
 
 - [x] 基础错误映射（AlreadyOwned、DuplicateRequest、RateLimitExceeded、InvalidParam、Timeout）。
 - [x] Key masking 安全日志。
-- [ ] 解析 Steam 回包中 app/package/receipt 明细，丰富输出结构。
-- [ ] 增加可观测字段（请求 ID、耗时、结果码）。
-- [ ] 增加重试策略（瞬时失败自动重试）。
+- [x] 解析 Steam 回包中 app/package/receipt 明细，丰富输出结构。
+- [x] 增加可观测字段（请求 ID、耗时、结果码）。
+- [x] 增加重试策略（瞬时失败自动重试）。
 
 ### 2.3 Trading MVP ✅ 已完成
 
@@ -62,19 +62,19 @@
 
 - [x] Token 持久化（FileCredentialStore 存储 RefreshToken / AccessToken）。
 - [x] Agent 断线重连（指数退避 500ms → 10s）。
-- [ ] AccessToken 自动刷新（过期前主动续期）。
-- [ ] RefreshToken 续期策略。
-- [ ] 断线重连策略可配置化（退避上限、最大重试次数）。
-- [ ] 进程重启后会话恢复（从持久化 Token 自动重建会话）。
+- [x] AccessToken 自动刷新（过期前主动续期）。
+- [x] RefreshToken 续期策略。
+- [x] 断线重连策略可配置化（退避上限、最大重试次数）。
+- [x] 进程重启后会话恢复（从持久化 Token 自动重建会话）。
 
 ### 2.5 登录流程测试补全
 
-- [ ] 登录成功/失败/需验证码/需 2FA 的单测。
-- [ ] 登录流程集成测试（模拟 Steam 响应）。
+- [x] 登录成功/失败/需验证码/需 2FA 的单测。
+- [x] 登录流程集成测试（模拟 Steam 响应）。
 
 ---
 
-## 3. P2 阶段：M5 安全闭环（~50% 完成）
+## 3. P2 阶段：M5 安全闭环（~70% 完成）
 
 ### 3.1 凭证体系（⚠️ 部分完成）
 
@@ -88,14 +88,16 @@
 
 - [x] AES-256-CBC 加密实现（随机 IV、Base64 编码）。
 - [x] 自定义密钥支持（`SetEncryptionKey()`，一次性设置）。
-- [ ] 升级为 AES-GCM + 随机 nonce + 完整性校验。
-- [ ] 禁止默认密钥 "Vapor" 用于生产（启动检查 + 告警）。
+- [x] 升级为 AES-GCM + 随机 nonce + 完整性校验。
+- [x] 禁止默认密钥 "Vapor" 用于生产（启动检查 + 告警）。
 - [ ] 引入主密钥配置规范（环境变量 / KMS）。
 - [ ] 密钥轮换工具脚本。
 
 ### 3.3 安全审计与脱敏（⚠️ 部分完成）
 
 - [x] RedeemKey / SteamClientManager 中的 Key masking。
+- [x] 统一敏感文本/JSON 脱敏工具（密码、令牌、验证码、key 字段）并接入 Agent 高风险日志入口。
+- [x] ControlPlane 关键入口结构化审计日志（配置修改、任务创建/取消、验证码提交、会话事件上报）。
 - [ ] 全链路日志脱敏（密码、令牌、验证码、key 统一拦截）。
 - [ ] 审计日志（登录、验证码提交、交易、关键配置修改）。
 - [ ] 配置文件权限检查与启动告警。
@@ -180,7 +182,7 @@
 |------|------|--------|------|
 | P0 构建恢复 | Week 1 | ✅ 100% | 已完成 |
 | P1 M2 核心能力 | Week 2-4 | ⚠️ ~75% | 剩余：Token 刷新、会话恢复、RedeemKey 明细、登录测试 |
-| P2 安全闭环 | Week 5-7 | ⚠️ ~50% | 剩余：AES-GCM 升级、审计日志、全链路脱敏、密钥轮换 |
+| P2 安全闭环 | Week 5-7 | ⚠️ ~70% | 剩余：其余日志入口脱敏、审计持久化/查询、密钥轮换 |
 | P3 数据能力 | Week 6-9 | ⚠️ ~30% | 剩余：数据模型、缓存层、4 个新 Action |
 | P4 插件系统 | Week 8-12 | ❌ 0% | 未开始 |
 | GA 收口 | Week 10-12 | ⚠️ ~30% | 剩余：Docker、E2E、性能基准、文档 |
@@ -202,5 +204,5 @@
 1. **P1 补完**: AccessToken 自动刷新 + 进程重启会话恢复。
 2. **P1 补完**: RedeemKey 回包明细解析 + 可观测字段。
 3. **P1 补完**: 登录流程单测与集成测试。
-4. **P2 推进**: AES-GCM 升级 + 禁止默认密钥。
-5. **P2 推进**: 全链路日志脱敏 + 审计日志。
+4. **P2 推进**: 其余日志入口脱敏 + 审计持久化/查询。
+5. **P2 推进**: 引入主密钥配置规范（环境变量 / KMS）与轮换工具。
