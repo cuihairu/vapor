@@ -12,12 +12,12 @@ public sealed class EventBroker : IEventBroker {
 	private readonly Channel<AuthChallengeEvent> _globalAuthChannel = Channel.CreateUnbounded<AuthChallengeEvent>(new UnboundedChannelOptions { SingleReader = false });
 
 	public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload) {
-		if (string.IsNullOrEmpty(jobId)) {
-			return;
+		_subscribers.TryGetValue("*", out var globalSubs);
+		ConcurrentDictionary<Channel<Event>, byte>? subs = null;
+		if (!string.IsNullOrEmpty(jobId)) {
+			_subscribers.TryGetValue(jobId, out subs);
 		}
 
-		_subscribers.TryGetValue(jobId, out var subs);
-		_subscribers.TryGetValue("*", out var globalSubs);
 		if ((subs == null || subs.IsEmpty) && (globalSubs == null || globalSubs.IsEmpty)) {
 			return;
 		}
