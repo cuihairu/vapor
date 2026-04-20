@@ -292,6 +292,11 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 	public async Task RequeueTask(string taskId, CancellationToken cancellationToken) {
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try {
+			string? jobId = await ReadTaskJobId(taskId, cancellationToken).ConfigureAwait(false);
+			if (jobId == null) {
+				return;
+			}
+
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
@@ -304,7 +309,10 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			cmd.Parameters.AddWithValue("$id", taskId);
 			cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 
-			await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			if (updated > 0) {
+				await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
+			}
 		} finally {
 			_mutex.Release();
 		}
@@ -315,6 +323,22 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		try {
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 			long cutoffMs = nowMs - (long) taskLease.TotalMilliseconds;
+			HashSet<string> affectedJobIds = [];
+
+			using (var select = _connection.CreateCommand()) {
+				select.CommandText = """
+					SELECT DISTINCT job_id
+					FROM tasks
+					WHERE status = $running AND updated_at_ms < $cutoff;
+					""";
+				select.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+				select.Parameters.AddWithValue("$cutoff", cutoffMs);
+
+				using var reader = await select.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+					affectedJobIds.Add(reader.GetString(0));
+				}
+			}
 
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
@@ -328,6 +352,12 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			cmd.Parameters.AddWithValue("$cutoff", cutoffMs);
 
 			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			if (updated > 0) {
+				foreach (string jobId in affectedJobIds) {
+					await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
+				}
+			}
+
 			return (int) updated;
 		} finally {
 			_mutex.Release();
@@ -510,6 +540,14 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 	}
 
+	private async Task<string?> ReadTaskJobId(string taskId, CancellationToken cancellationToken) {
+		using var cmd = _connection.CreateCommand();
+		cmd.CommandText = "SELECT job_id FROM tasks WHERE id = $id;";
+		cmd.Parameters.AddWithValue("$id", taskId);
+		object? value = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+		return value?.ToString();
+	}
+
 	private async Task<Job> ReadJob(string jobId, CancellationToken cancellationToken) {
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
@@ -601,4 +639,3 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		);
 	}
 }
-
