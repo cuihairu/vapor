@@ -521,12 +521,12 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		JobStatus newStatus = JobStatus.Finished;
 		if (running > 0) {
 			newStatus = JobStatus.Running;
-		} else if (queued > 0 && (finished > 0 || failed > 0 || canceled > 0)) {
+		} else if (failed > 0) {
+			newStatus = JobStatus.Failed;
+		} else if (queued > 0 && (finished > 0 || canceled > 0)) {
 			newStatus = JobStatus.Running;
 		} else if (queued > 0) {
 			newStatus = JobStatus.Queued;
-		} else if (failed > 0) {
-			newStatus = JobStatus.Failed;
 		} else if (canceled > 0 && finished == 0 && failed == 0) {
 			newStatus = JobStatus.Canceled;
 		}
