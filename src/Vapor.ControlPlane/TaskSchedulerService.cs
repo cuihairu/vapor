@@ -25,7 +25,7 @@ public sealed class TaskSchedulerService : BackgroundService {
 		}
 	}
 
-	private async Task DispatchOnce(CancellationToken cancellationToken) {
+	internal async Task DispatchOnce(CancellationToken cancellationToken) {
 		if (DateTimeOffset.UtcNow - _lastRequeueAt >= TimeSpan.FromSeconds(5)) {
 			_ = await _store.RequeueStaleRunningTasks(TimeSpan.FromSeconds(_cfg.TaskLeaseSeconds), cancellationToken).ConfigureAwait(false);
 			_lastRequeueAt = DateTimeOffset.UtcNow;
