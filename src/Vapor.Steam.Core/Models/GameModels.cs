@@ -144,3 +144,57 @@ public sealed record GameSearchResult
 
 	public DateTimeOffset FetchedAt { get; init; } = DateTimeOffset.UtcNow;
 }
+
+/// <summary>
+/// A listing on the Steam Community Market for a given app.
+/// Prices are the buyer-facing totals (item price + fees), converted to major currency units.
+/// </summary>
+public sealed record MarketListing
+{
+	/// <summary>The market listing ID.</summary>
+	public ulong ListingId { get; init; }
+
+	/// <summary>The AppID the listed asset belongs to.</summary>
+	public uint AppId { get; init; }
+
+	/// <summary>Asset ID of the listed item.</summary>
+	public ulong AssetId { get; init; }
+
+	/// <summary>Class ID of the listed item (maps to item descriptions).</summary>
+	public ulong ClassId { get; init; }
+
+	/// <summary>Instance ID of the listed item.</summary>
+	public ulong InstanceId { get; init; }
+
+	/// <summary>Total buyer-facing price (price + fees), in major currency units.</summary>
+	public decimal? TotalPrice { get; init; }
+
+	/// <summary>Steam currency ID of the converted price (e.g. 2001 = USD).</summary>
+	public int? CurrencyId { get; init; }
+
+	/// <summary>When this snapshot was fetched.</summary>
+	public DateTimeOffset FetchedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// A page of market listings with pagination metadata.
+/// </summary>
+public sealed record MarketListingsPage
+{
+	public uint AppId { get; init; }
+
+	public IReadOnlyList<MarketListing> Listings { get; init; } = [];
+
+	/// <summary>Total listings matching the query.</summary>
+	public int TotalCount { get; init; }
+
+	/// <summary>Offset this page starts at.</summary>
+	public int Start { get; init; }
+
+	/// <summary>Page size.</summary>
+	public int PageSize { get; init; }
+
+	public bool HasMore => Start + Listings.Count < TotalCount;
+
+	public static string CacheKey(uint appId, int start, int count) => $"market:{appId}:{start}:{count}";
+}

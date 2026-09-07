@@ -212,12 +212,32 @@ Agent enables it via `AddRedactingConsole()`.
 
 ## Data & Caching
 
-- Models: `GameInfo`, `ItemInfo`, `PriceOverview`, `GameSearchResult` (with cache
-  key helpers and `FetchedAt` freshness markers).
+- Models: `GameInfo`, `ItemInfo`, `PriceOverview`, `GameSearchResult`,
+  `MarketListing`/`MarketListingsPage` (with cache key helpers and `FetchedAt`
+  freshness markers).
 - `IVaporCache` abstraction with `MemoryVaporCache` implementation: per-entry
   TTL (default 10 min), LRU eviction, hit/miss counters, single-flight factory
   deduplication (cache stampede protection), injectable clock for testing.
   Redis-backed implementations can be added behind the same interface.
+- Store data actions (`get_game_info`, `search_games`, `get_price`,
+  `get_market_listings`) resolve data through `SteamStoreApiClient`
+  (appdetails / storesearch / community market endpoints) and are cached by
+  default; callers can override TTL per call via `cache_ttl_seconds` (0 disables).
+
+## HTTP Resilience
+
+`SteamWebHandler` applies a unified middleware-style pipeline:
+
+- **Retry with differentiated backoff**: 429 responses honor the `Retry-After`
+  header (capped by config); 5xx responses use exponential backoff. Both stay
+  within the configured retry budget.
+- **Circuit breaker** (`HttpCircuitBreaker`): opens after N consecutive
+  failures, half-opens after a cool-down allowing a single probe, closes on
+  probe success. Rejected requests throw `CircuitBreakerOpenException`
+  without touching the network.
+- **Metrics** (`WebRequestMetrics`): totals, successes, 429/5xx/4xx splits,
+  network failures, retries and circuit-breaker rejections, exposed as an
+  immutable snapshot for observability pipelines.
 
 ## Security & Key Management
 

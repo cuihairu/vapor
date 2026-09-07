@@ -21,12 +21,13 @@ public interface IVaporCache
 
 	/// <summary>
 	/// Returns the cached value when present and fresh; otherwise invokes
-	/// <paramref name="factory"/>, caches the result and returns it.
+	/// <paramref name="factory"/>, caches the (non-null) result and returns it.
 	/// Concurrent requests for the same key share a single factory invocation.
+	/// Null factory results are returned but not cached.
 	/// </summary>
 	Task<T?> GetOrSetAsync<T>(
 		string key,
-		Func<CancellationToken, Task<T>> factory,
+		Func<CancellationToken, Task<T?>> factory,
 		TimeSpan? ttl = null,
 		CancellationToken cancellationToken = default) where T : class;
 

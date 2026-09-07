@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Store data actions (P3): `get_game_info`, `search_games`, `get_price` and
+  `get_market_listings`, all wired through the shared `IVaporCache` layer with
+  per-call `cache_ttl_seconds` override (0 disables caching).
+- `SteamStoreApiClient` (+ interface) covering appdetails, storesearch and
+  community market endpoints; `MarketListing` / `MarketListingsPage` models.
+- HTTP resilience for `SteamWebHandler`:
+  - 429 responses honor the Retry-After header (bounded by config) while 5xx
+    errors use exponential backoff; both are retried within the retry budget.
+  - `HttpCircuitBreaker` (Closed/Open/HalfOpen with single half-open probe)
+    rejects traffic after repeated failures until recovery.
+  - `WebRequestMetrics` counters (successes, 429s, 5xx, 4xx, network failures,
+    retries, circuit-breaker rejections) exposed as a snapshot.
+  - Configurable `RateLimitIntervalMs`, `MaxRetryDelayMs`, `MaxRetryAfterSeconds`
+    and circuit breaker thresholds.
 - Trade safety layer (`Vapor.Steam.Core.Trading`):
   - `TradeOfferStateMachine`: legal offer transition checks (accept requires a
     received Active unexpired offer matching the expected partner; decline vs

@@ -58,6 +58,20 @@ var serviceProvider = new ServiceCollection()
 	.AddSingleton<CancelTradeOfferAction>(p => new CancelTradeOfferAction(
 		p.GetRequiredService<ILogger<CancelTradeOfferAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
+	.AddSingleton<Vapor.Steam.Core.Caching.IVaporCache>(p => new Vapor.Steam.Core.Caching.MemoryVaporCache(
+		new Vapor.Steam.Core.Caching.MemoryVaporCacheOptions { Capacity = 4096, DefaultTtl = TimeSpan.FromMinutes(10) }))
+	.AddSingleton<GetGameInfoAction>(p => new GetGameInfoAction(
+		p.GetRequiredService<ILogger<GetGameInfoAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
+	.AddSingleton<SearchGamesAction>(p => new SearchGamesAction(
+		p.GetRequiredService<ILogger<SearchGamesAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
+	.AddSingleton<GetPriceAction>(p => new GetPriceAction(
+		p.GetRequiredService<ILogger<GetPriceAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
+	.AddSingleton<GetMarketListingsAction>(p => new GetMarketListingsAction(
+		p.GetRequiredService<ILogger<GetMarketListingsAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
 	.BuildServiceProvider();
 
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
@@ -91,6 +105,10 @@ actionRegistry.Register(serviceProvider.GetRequiredService<SendTradeOfferAction>
 actionRegistry.Register(serviceProvider.GetRequiredService<AcceptTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<DeclineTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CancelTradeOfferAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<SearchGamesAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetPriceAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetMarketListingsAction>());
 
 using CancellationTokenSource cts = new();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };

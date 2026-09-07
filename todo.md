@@ -7,11 +7,11 @@
 ### 当前状态快照（2025-03-11）
 
 - **构建**: `dotnet build` 通过，0 错误 0 警告。
-- **测试**: 489 个测试全部通过（38 个测试文件，覆盖 Unit / Integration / Performance）。
+- **测试**: 530 个测试全部通过（41 个测试文件，覆盖 Unit / Integration / Performance）。
 - **CI**: 多平台（Ubuntu / Windows / macOS）构建 + 测试门禁已就绪。
-- **已实现 Actions（11 个）**: Ping, Echo, Login, Idle, PlayGames, RedeemKey, GetInventory, SendTradeOffer, AcceptTradeOffer, DeclineTradeOffer, CancelTradeOffer。
+- **已实现 Actions（15 个）**: Ping, Echo, Login, Idle, PlayGames, RedeemKey, GetInventory, SendTradeOffer, AcceptTradeOffer, DeclineTradeOffer, CancelTradeOffer, GetGameInfo, SearchGames, GetPrice, GetMarketListings。
 - **已实现基础设施**: ControlPlane（15+ API 端点 + SSE 事件流 + SQLite 持久化 + 审计日志持久化/查询 + Admin UI）、Agent（WebSocket 隧道 + 全部 Action 注册）、SessionEngine（BotSession 状态机 + SessionManager + SteamClientManager）、SteamWebHandler、SteamTradeClient、FileCredentialStore（v2 加密存储 + 备份恢复 + 版本迁移）+ AES-GCM 加密（兼容历史 AES-CBC 数据）。
-- **整体完成度**: ~65%。
+- **整体完成度**: ~72%。
 
 ### GA Exit Criteria
 
@@ -112,12 +112,12 @@
 
 ## 4. P3 阶段：M4 数据与爬虫能力（~30% 完成）
 
-### 4.1 Steam Web API 客户端产品化（✅ 基本完成）
+### 4.1 Steam Web API 客户端产品化（✅ 完成）
 
-- [x] `SteamWebHandler`：重试（指数退避，最多 5 次）、限流（1 req/s）、Cookie 管理。
+- [x] `SteamWebHandler`：重试（指数退避，最多 5 次）、限流（1 req/s，可配置）、Cookie 管理。
 - [x] 请求头规范（User-Agent、Accept、Referer、Origin）。
-- [ ] 429/5xx 退避策略增强（区分限流 vs 服务异常）。
-- [ ] 统一 HTTP 中间件：熔断、指标采集。
+- [x] 429/5xx 退避策略增强（区分限流 vs 服务异常：429 尊重 Retry-After（有上限），5xx 指数退避）。
+- [x] 统一 HTTP 中间件（`HttpCircuitBreaker` 熔断：Closed/Open/HalfOpen + 单探针；`WebRequestMetrics` 指标采集：成功率/429/5xx/网络失败/重试/熔断拒绝）。
 
 ### 4.2 数据模型与缓存（✅ 基本完成）
 
@@ -126,12 +126,14 @@
 - [ ] 增量更新策略与缓存失效策略（数据 Action 接入后完善）。
 - [ ] 可选 Redis 后端实现（接口已就绪）。
 
-### 4.3 新动作
+### 4.3 新动作（✅ 完成）
 
-- [ ] `GetGameInfoAction`（获取游戏详情）。
-- [ ] `SearchGamesAction`（搜索游戏）。
-- [ ] `GetPriceAction`（获取价格信息）。
-- [ ] `GetMarketListingsAction`（获取市场列表）。
+- [x] `GetGameInfoAction`（获取游戏详情，appdetails API，缓存接入）。
+- [x] `SearchGamesAction`（搜索游戏，storesearch API，limit 1-50，缓存接入）。
+- [x] `GetPriceAction`（获取价格信息，price_overview 提取，缓存接入）。
+- [x] `GetMarketListingsAction`（获取市场列表，market search render API，分页 + 缓存接入）。
+- [x] `SteamStoreApiClient`（三个数据源统一客户端）+ `MarketListing`/`MarketListingsPage` 模型。
+- [x] 缓存策略：payload `cache_ttl_seconds` 覆盖（0 = 禁用），Agent 共享 4096 容量 / 10 分钟默认 TTL 缓存。
 
 ---
 
@@ -190,7 +192,7 @@
 | P0 构建恢复 | Week 1 | ✅ 100% | 已完成 |
 | P1 M2 核心能力 | Week 2-4 | ✅ 100% | 交易校验增强已完成 |
 | P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
-| P3 数据能力 | Week 6-9 | ⚠️ ~55% | 剩余：4 个数据 Action、HTTP 中间件增强 |
+| P3 数据能力 | Week 6-9 | ✅ ~95% | 剩余：Redis 缓存后端（可选）、增量更新策略 |
 | P4 插件系统 | Week 8-12 | ❌ 0% | 未开始 |
 | GA 收口 | Week 10-12 | ⚠️ ~30% | 剩余：Docker、E2E、性能基准、文档 |
 
@@ -208,9 +210,8 @@
 
 ## 9. 下一步优先事项
 
-1. ~~P2 收尾: 日志 Provider 级统一脱敏拦截~~（已完成）。
-2. ~~P1 收尾: 交易流程校验增强~~（已完成）。
-3. ~~P3 推进: GameInfo/ItemInfo 数据模型、缓存层~~（已完成）。
-4. **P3 推进**: 4 个数据 Action（GetGameInfoAction / SearchGamesAction / GetPriceAction / GetMarketListingsAction）+ SteamStoreApiClient。
-5. **P3 推进**: 429/5xx 退避策略增强、统一 HTTP 中间件（熔断、指标）。
-6. **横向**: ControlPlane/Agent E2E 测试、Docker 镜像与 compose 编排。
+1. ~~P3 收尾: 4 个数据 Action + 缓存接入~~（已完成）。
+2. ~~P2 推进: 429/5xx 退避增强 + 熔断/指标~~（已完成）。
+3. **P4 推进**: 插件基础设施（Vapor.Plugins.Core：发现、加载、隔离、卸载 + IPlugin API）。
+4. **P4 推进**: MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）。
+5. **横向**: ControlPlane/Agent E2E 测试、Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）。

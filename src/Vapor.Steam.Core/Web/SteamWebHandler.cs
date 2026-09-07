@@ -24,14 +24,44 @@ public sealed record SteamWebHandlerConfig
 	public int RequestTimeout { get; init; } = 60;
 
 	/// <summary>
-	/// Maximum number of retry attempts.
+	/// Maximum number of retry attempts (including the initial attempt).
 	/// </summary>
 	public int MaxRetries { get; init; } = 5;
 
 	/// <summary>
-	/// Delay between retries in milliseconds.
+	/// Base delay between retries in milliseconds; 5xx/network errors back off exponentially.
 	/// </summary>
 	public int RetryDelayMs { get; init; } = 1000;
+
+	/// <summary>
+	/// Minimum interval between outgoing requests (client-side throttling). 0 disables.
+	/// </summary>
+	public int RateLimitIntervalMs { get; init; } = 1000;
+
+	/// <summary>
+	/// Upper bound for a single retry delay, in milliseconds.
+	/// </summary>
+	public int MaxRetryDelayMs { get; init; } = 30_000;
+
+	/// <summary>
+	/// Upper bound applied to the Retry-After header on 429 responses, in seconds.
+	/// </summary>
+	public int MaxRetryAfterSeconds { get; init; } = 60;
+
+	/// <summary>
+	/// Whether the circuit breaker rejects requests while open.
+	/// </summary>
+	public bool EnableCircuitBreaker { get; init; } = true;
+
+	/// <summary>
+	/// Consecutive failures before the circuit breaker opens.
+	/// </summary>
+	public int CircuitBreakerFailureThreshold { get; init; } = 10;
+
+	/// <summary>
+	/// How long the circuit breaker stays open before allowing a half-open probe.
+	/// </summary>
+	public TimeSpan CircuitBreakerOpenDuration { get; init; } = TimeSpan.FromSeconds(30);
 
 	/// <summary>
 	/// Base URL for Steam Community.
@@ -51,6 +81,9 @@ public sealed record SteamWebHandlerConfig
 
 /// <summary>
 /// Handles Steam Web API requests with session management and cookie handling.
+/// Retry policy distinguishes rate limiting (429, honoring Retry-After) from
+/// server errors (5xx, exponential backoff); a circuit breaker trips after
+/// repeated failures and metrics are collected for observability.
 /// </summary>
 public sealed class SteamWebHandler : IDisposable
 {
@@ -60,9 +93,15 @@ public sealed class SteamWebHandler : IDisposable
 	private readonly Dictionary<string, string> _loginCookies = new();
 	private readonly HttpClient _httpClient;
 	private readonly SemaphoreSlim _rateLimitLock = new(1, 1);
+	private readonly HttpCircuitBreaker _circuitBreaker;
 	private int _requestCount;
 	private DateTime _lastRequestTime = DateTime.MinValue;
 	private bool _disposed;
+
+	/// <summary>
+	/// Request counters exposed for observability.
+	/// </summary>
+	public WebRequestMetrics Metrics { get; } = new();
 
 	public SteamWebHandler(SteamWebHandlerConfig config, ILogger<SteamWebHandler> logger)
 	{
@@ -78,13 +117,26 @@ public sealed class SteamWebHandler : IDisposable
 
 		_httpClient = new(handler)
 		{
-			DefaultRequestHeaders =
-			{
-				{ "User-Agent", _config.UserAgent }
-			},
 			Timeout = TimeSpan.FromSeconds(_config.RequestTimeout)
 		};
+		_circuitBreaker = new HttpCircuitBreaker(_config.CircuitBreakerFailureThreshold, _config.CircuitBreakerOpenDuration);
 	}
+
+	internal SteamWebHandler(SteamWebHandlerConfig config, ILogger<SteamWebHandler> logger, HttpMessageHandler handler)
+	{
+		_config = config ?? new SteamWebHandlerConfig();
+		_logger = logger;
+		_httpClient = new(handler)
+		{
+			Timeout = TimeSpan.FromSeconds(_config.RequestTimeout)
+		};
+		_circuitBreaker = new HttpCircuitBreaker(_config.CircuitBreakerFailureThreshold, _config.CircuitBreakerOpenDuration);
+	}
+
+	/// <summary>
+	/// Current circuit breaker state.
+	/// </summary>
+	public CircuitBreakerState CircuitState => _circuitBreaker.State;
 
 	/// <summary>
 /// Gets the underlying HttpClient for advanced scenarios.
@@ -185,14 +237,24 @@ public sealed class SteamWebHandler : IDisposable
 	{
 		ThrowIfDisposed();
 
+		if (_config.EnableCircuitBreaker && !_circuitBreaker.TryAllowRequest())
+		{
+			Metrics.RecordCircuitBreakerRejection();
+			throw new CircuitBreakerOpenException(
+				$"Circuit breaker is open; request to {url.Host} was rejected without hitting the network");
+		}
+
 		// Rate limiting
 		await ApplyRateLimitingAsync(cancellationToken).ConfigureAwait(false);
+
+		Exception? lastException = null;
 
 		for (int attempt = 0; attempt < _config.MaxRetries; attempt++)
 		{
 			if (attempt > 0)
 			{
-				await Task.Delay(_config.RetryDelayMs, cancellationToken).ConfigureAwait(false);
+				Metrics.RecordRetry();
+				await Task.Delay(_pendingRetryDelayMs, cancellationToken).ConfigureAwait(false);
 			}
 
 			try
@@ -214,25 +276,113 @@ public sealed class SteamWebHandler : IDisposable
 					responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 				}
 
-				return new SteamWebResponse(
+				var webResponse = new SteamWebResponse(
 					response.StatusCode,
 					statusCode,
 					responseHeaders,
 					responseBody
 				);
+
+				if (statusCode == 429)
+				{
+					Metrics.RecordRateLimited();
+					RecordBreakerFailure();
+
+					if (attempt < _config.MaxRetries - 1)
+					{
+						// Rate limited: honor Retry-After when present, bounded by config.
+						int retryAfterMs = ResolveRetryAfterMs(responseHeaders);
+						_pendingRetryDelayMs = retryAfterMs;
+						_logger.LogWarning(
+							"Rate limited (429) on attempt {Attempt}/{MaxRetries} for {Url}; retrying in {DelayMs}ms",
+							attempt + 1, _config.MaxRetries, url, retryAfterMs);
+						continue;
+					}
+				}
+				else if (statusCode >= 500)
+				{
+					Metrics.RecordServerError();
+					RecordBreakerFailure();
+
+					if (attempt < _config.MaxRetries - 1)
+					{
+						// Server error: exponential backoff.
+						_pendingRetryDelayMs = ComputeExponentialBackoffMs(attempt);
+						_logger.LogWarning(
+							"Server error ({StatusCode}) on attempt {Attempt}/{MaxRetries} for {Url}; retrying in {DelayMs}ms",
+							statusCode, attempt + 1, _config.MaxRetries, url, _pendingRetryDelayMs);
+						continue;
+					}
+				}
+				else if (statusCode >= 400)
+				{
+					Metrics.RecordClientError();
+					RecordBreakerSuccess();
+				}
+				else
+				{
+					Metrics.RecordSuccess();
+					RecordBreakerSuccess();
+				}
+
+				return webResponse;
 			}
 			catch (HttpRequestException ex) when (attempt < _config.MaxRetries - 1)
 			{
+				lastException = ex;
+				Metrics.RecordNetworkFailure();
+				RecordBreakerFailure();
+				_pendingRetryDelayMs = ComputeExponentialBackoffMs(attempt);
 				_logger.LogWarning(ex, "Request attempt {Attempt}/{MaxRetries} failed", attempt + 1, _config.MaxRetries);
 			}
 			catch (Exception ex)
 			{
+				Metrics.RecordNetworkFailure();
+				RecordBreakerFailure();
 				_logger.LogError(ex, "Request failed after {Attempts} attempts", attempt + 1);
 				throw;
 			}
 		}
 
-		throw new InvalidOperationException("Request failed after all retry attempts");
+		throw new InvalidOperationException(
+			$"Request failed after all retry attempts", lastException);
+	}
+
+	private int _pendingRetryDelayMs;
+
+	private int ComputeExponentialBackoffMs(int attempt)
+	{
+		long delay = (long)_config.RetryDelayMs * (1 << Math.Min(attempt, 10));
+		return (int)Math.Min(Math.Max(delay, 1), _config.MaxRetryDelayMs);
+	}
+
+	private int ResolveRetryAfterMs(IReadOnlyDictionary<string, string> responseHeaders)
+	{
+		if (responseHeaders.TryGetValue("Retry-After", out var value) &&
+		    int.TryParse(value.Trim(), out int seconds) && seconds > 0)
+		{
+			int capped = Math.Min(seconds, _config.MaxRetryAfterSeconds);
+			return capped * 1000;
+		}
+
+		// No Retry-After: fall back to a conservative rate-limit delay.
+		return Math.Min(_config.RetryDelayMs * 4, _config.MaxRetryDelayMs);
+	}
+
+	private void RecordBreakerSuccess()
+	{
+		if (_config.EnableCircuitBreaker)
+		{
+			_circuitBreaker.RecordSuccess();
+		}
+	}
+
+	private void RecordBreakerFailure()
+	{
+		if (_config.EnableCircuitBreaker)
+		{
+			_circuitBreaker.RecordFailure();
+		}
 	}
 
 	private HttpRequestMessage CreateRequest(
@@ -316,10 +466,10 @@ public sealed class SteamWebHandler : IDisposable
 			var now = DateTime.UtcNow;
 			var timeSinceLastRequest = now - _lastRequestTime;
 
-			// Simple rate limiting: max 1 request per second
-			if (timeSinceLastRequest.TotalMilliseconds < 1000)
+			// Client-side throttling between outgoing requests.
+			if (timeSinceLastRequest.TotalMilliseconds < _config.RateLimitIntervalMs)
 			{
-				var delayMs = 1000 - (int)timeSinceLastRequest.TotalMilliseconds;
+				var delayMs = _config.RateLimitIntervalMs - (int)timeSinceLastRequest.TotalMilliseconds;
 				if (delayMs > 0)
 				{
 					await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
@@ -328,6 +478,7 @@ public sealed class SteamWebHandler : IDisposable
 
 			_lastRequestTime = now;
 			_requestCount++;
+			Metrics.RecordTotal();
 		}
 		finally
 		{

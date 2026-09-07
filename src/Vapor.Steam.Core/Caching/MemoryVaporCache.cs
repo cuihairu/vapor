@@ -86,7 +86,7 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 
 	public async Task<T?> GetOrSetAsync<T>(
 		string key,
-		Func<CancellationToken, Task<T>> factory,
+		Func<CancellationToken, Task<T?>> factory,
 		TimeSpan? ttl = null,
 		CancellationToken cancellationToken = default) where T : class
 	{
@@ -166,13 +166,13 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 
 	private async Task<object?> CreateAndCacheAsync<T>(
 		string key,
-		Func<CancellationToken, Task<T>> factory,
+		Func<CancellationToken, Task<T?>> factory,
 		TimeSpan? ttl,
 		CancellationToken cancellationToken) where T : class
 	{
 		try
 		{
-			T value = await factory(cancellationToken).ConfigureAwait(false);
+			T? value = await factory(cancellationToken).ConfigureAwait(false);
 
 			if (value != null)
 			{

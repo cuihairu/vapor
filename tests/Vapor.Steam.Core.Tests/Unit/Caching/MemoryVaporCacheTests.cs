@@ -145,17 +145,14 @@ public sealed class MemoryVaporCacheTests
 		using var cache = Create();
 		int invocations = 0;
 
-		var first = await cache.GetOrSetAsync("key", ct =>
+		Task<FakePayload?> Factory(CancellationToken ct)
 		{
 			invocations++;
-			return Task.FromResult(new FakePayload { Value = "computed" });
-		});
+			return Task.FromResult(new FakePayload { Value = "computed" })!;
+		}
 
-		var second = await cache.GetOrSetAsync("key", ct =>
-		{
-			invocations++;
-			return Task.FromResult(new FakePayload { Value = "computed" });
-		});
+		var first = await cache.GetOrSetAsync("key", Factory);
+		var second = await cache.GetOrSetAsync("key", Factory);
 
 		Assert.NotNull(first);
 		Assert.NotNull(second);
@@ -169,10 +166,10 @@ public sealed class MemoryVaporCacheTests
 		using var cache = Create();
 		int invocations = 0;
 
-		Task<FakePayload> Factory(CancellationToken _)
+		async Task<FakePayload?> Factory(CancellationToken _)
 		{
 			invocations++;
-			return Task.FromResult(invocations == 1 ? null! : new FakePayload { Value = "later" });
+			return await Task.FromResult(invocations == 1 ? null : new FakePayload { Value = "later" });
 		}
 
 		var first = await cache.GetOrSetAsync("key", Factory);
@@ -193,10 +190,11 @@ public sealed class MemoryVaporCacheTests
 		int invocations = 0;
 		var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-		Task<FakePayload> Factory(CancellationToken ct)
+		async Task<FakePayload?> Factory(CancellationToken ct)
 		{
 			Interlocked.Increment(ref invocations);
-			return gate.Task.ContinueWith(_ => new FakePayload { Value = "shared" }, TaskScheduler.Default);
+			await gate.Task;
+			return new FakePayload { Value = "shared" };
 		}
 
 		var first = cache.GetOrSetAsync("key", Factory);
