@@ -37,6 +37,23 @@ public static partial class SensitiveDataRedactor
 			: RedactKeyValueText(value);
 	}
 
+	/// <summary>
+	/// Redacts a structured value when its key is sensitive (password, token, code, key, ...).
+	/// Returns the value unchanged otherwise. Useful for structured-log state where the
+	/// key is known separately from the value.
+	/// </summary>
+	public static string? RedactValue(string? key, string? value)
+	{
+		if (string.IsNullOrEmpty(value))
+		{
+			return value;
+		}
+
+		return key != null && IsSensitiveKey(key)
+			? RedactedValue
+			: Redact(value);
+	}
+
 	private static bool TryRedactJson(string value, out string redacted)
 	{
 		try

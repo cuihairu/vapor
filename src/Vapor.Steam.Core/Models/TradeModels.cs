@@ -474,15 +474,16 @@ public sealed record TradeUrlParams
 
 			queryParams.TryGetValue("token", out var token);
 
-			// Convert partner ID to 64-bit SteamID
-			// Partner ID is the account ID, convert to 64-bit SteamID
+			// The partner parameter is usually the 32-bit account ID, but some
+			// tools emit the full 64-bit SteamID; handle both.
 			if (!ulong.TryParse(partner, out var accountId))
 			{
 				return null;
 			}
 
-			// Convert to 64-bit SteamID (76561197960265728 + accountId)
-			var steamId = 76561197960265728UL + accountId;
+			ulong steamId = accountId >= 76561197960265728UL
+				? accountId
+				: 76561197960265728UL + accountId;
 
 			return new TradeUrlParams
 			{

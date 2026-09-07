@@ -1,0 +1,226 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Vapor.Steam.Core.Logging;
+using Xunit;
+
+namespace Vapor.Steam.Core.Tests.Unit.Logging;
+
+public sealed class RedactingLoggerProviderTests
+{
+	private sealed record CapturedLog(LogLevel Level, string Message, Exception? Exception, IReadOnlyList<KeyValuePair<string, object?>>? StructuredState);
+
+	private sealed class CapturingProvider : ILoggerProvider
+	{
+		private readonly object _gate = new();
+
+		public List<CapturedLog> Captured { get; } = [];
+
+		public bool Disposed { get; private set; }
+
+		public ILogger CreateLogger(string categoryName)
+		{
+			return new CapturingLogger(this);
+		}
+
+		public void Dispose()
+		{
+			Disposed = true;
+		}
+
+		private sealed class CapturingLogger(CapturingProvider owner) : ILogger
+		{
+			public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+			{
+				return NullScope.Instance;
+			}
+
+			public bool IsEnabled(LogLevel logLevel) => true;
+
+			void ILogger.Log<TState>(
+				LogLevel logLevel,
+				EventId eventId,
+				TState state,
+				Exception? exception,
+				Func<TState, Exception?, string> formatter)
+			{
+				IReadOnlyList<KeyValuePair<string, object?>>? structured =
+					state as IReadOnlyList<KeyValuePair<string, object?>>;
+
+				lock (owner._gate)
+				{
+					owner.Captured.Add(new CapturedLog(
+						logLevel,
+						formatter(state, exception),
+						exception,
+						structured));
+				}
+			}
+
+			private sealed class NullScope : IDisposable
+			{
+				public static readonly NullScope Instance = new();
+
+				public void Dispose()
+				{
+				}
+			}
+		}
+	}
+
+	private static ILogger CreateLogger(CapturingProvider capturing)
+	{
+		var provider = new RedactingLoggerProvider(capturing);
+		return provider.CreateLogger("Test");
+	}
+
+	[Fact]
+	public void Log_WithPlainTextSecrets_RedactsValues()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		logger.LogInformation("login password=hunter2 token=abc123def user=bob");
+
+		var entry = Assert.Single(capturing.Captured);
+		Assert.DoesNotContain("hunter2", entry.Message, StringComparison.Ordinal);
+		Assert.DoesNotContain("abc123def", entry.Message, StringComparison.Ordinal);
+		Assert.Contains("<redacted>", entry.Message, StringComparison.Ordinal);
+		Assert.Contains("user=bob", entry.Message, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void Log_WithJsonPayloadSecrets_RedactsValues()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		string json = "{\"password\":\"hunter2\",\"refreshToken\":\"rt-xyz\",\"action\":\"login\"}";
+		logger.Log(LogLevel.Information, default, json, null, static (state, _) => state);
+
+		var entry = Assert.Single(capturing.Captured);
+		Assert.DoesNotContain("hunter2", entry.Message, StringComparison.Ordinal);
+		Assert.DoesNotContain("rt-xyz", entry.Message, StringComparison.Ordinal);
+		Assert.Contains("login", entry.Message, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void Log_WithStructuredState_RedactsSensitiveValues()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		var state = new List<KeyValuePair<string, object?>>
+		{
+			new("accountName", "alice"),
+			new("authCode", "987654"),
+			new("count", 42)
+		};
+
+		logger.Log(
+			LogLevel.Information,
+			new EventId(1),
+			state,
+			null,
+			(s, _) => $"account={s.First(p => p.Key == "accountName").Value} code={s.First(p => p.Key == "authCode").Value}");
+
+		var entry = Assert.Single(capturing.Captured);
+		Assert.NotNull(entry.StructuredState);
+		Assert.DoesNotContain("987654", entry.Message, StringComparison.Ordinal);
+
+		var authCodePair = Assert.Single(entry.StructuredState!, p => p.Key == "authCode");
+		Assert.Equal("<redacted>", authCodePair.Value);
+
+		var accountPair = Assert.Single(entry.StructuredState!, p => p.Key == "accountName");
+		Assert.Equal("alice", accountPair.Value);
+	}
+
+	[Fact]
+	public void Log_WithException_ReddactsExceptionContent()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		var exception = new InvalidOperationException("request failed with key=ABCD-EFGH");
+		logger.LogError(exception, "operation failed");
+
+		var entry = Assert.Single(capturing.Captured);
+		Assert.NotNull(entry.Exception);
+		Assert.DoesNotContain("ABCD-EFGH", entry.Exception.ToString(), StringComparison.Ordinal);
+		Assert.Contains("InvalidOperationException", entry.Exception.Data["OriginalExceptionType"]?.ToString() ?? "", StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void Log_WhenInnerDisabled_DoesNotForward()
+	{
+		var capturing = new DisabledCapturingProvider();
+		var provider = new RedactingLoggerProvider(capturing);
+		var logger = provider.CreateLogger("Test");
+
+		logger.LogInformation("password=hunter2");
+
+		Assert.Empty(capturing.Captured);
+	}
+
+	[Fact]
+	public void Dispose_DisposesInnerProvider()
+	{
+		var inner = new CapturingProvider();
+		var provider = new RedactingLoggerProvider(inner);
+
+		provider.Dispose();
+
+		Assert.True(inner.Disposed);
+	}
+
+	[Fact]
+	public void AddRedactingConsole_RegistersWrappedConsoleProvider()
+	{
+		var services = new ServiceCollection();
+		services.AddLogging(builder => builder.AddRedactingConsole());
+
+		using var provider = services.BuildServiceProvider();
+		var loggerProviders = provider.GetServices<ILoggerProvider>().ToList();
+
+		Assert.Contains(loggerProviders, p => p is RedactingLoggerProvider);
+		Assert.DoesNotContain(loggerProviders, p => p is Microsoft.Extensions.Logging.Console.ConsoleLoggerProvider);
+
+		var factory = provider.GetRequiredService<ILoggerFactory>();
+		ILogger logger = factory.CreateLogger("Test");
+
+		logger.LogInformation("token=super-secret-value");
+
+		// The provider composition itself is validated; console output is exercised implicitly.
+		Assert.True(logger.IsEnabled(LogLevel.Information));
+	}
+
+	private sealed class DisabledCapturingProvider : ILoggerProvider
+	{
+		public List<CapturedLog> Captured { get; } = [];
+
+		public bool Disposed { get; private set; }
+
+		public void Dispose() => Disposed = true;
+
+		public ILogger CreateLogger(string categoryName)
+		{
+			return new DisabledLogger(this);
+		}
+
+		private sealed class DisabledLogger(DisabledCapturingProvider owner) : ILogger
+		{
+			public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+			public bool IsEnabled(LogLevel logLevel) => false;
+
+			void ILogger.Log<TState>(
+				LogLevel logLevel,
+				EventId eventId,
+				TState state,
+				Exception? exception,
+				Func<TState, Exception?, string> formatter)
+			{
+				owner.Captured.Add(new CapturedLog(logLevel, formatter(state, exception), exception, null));
+			}
+		}
+	}
+}

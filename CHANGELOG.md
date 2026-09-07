@@ -9,24 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Trade safety layer (`Vapor.Steam.Core.Trading`):
+  - `TradeOfferStateMachine`: legal offer transition checks (accept requires a
+    received Active unexpired offer matching the expected partner; decline vs
+    cancel direction validation; SteamID64 <-> account ID conversion).
+  - `TradeAssetValidator`: pre-send ownership verification (asset exists, is
+    tradable, off cooldown, sufficient quantity, duplicate references aggregated).
+  - `TradeRateLimiter`: per-account sliding-window quota + concurrency gate
+    with configurable options and injectable clock.
+  - `ISteamTradeClient` interface extraction and `GetOwnSteamId` (steamlogin
+    cookie parsing); trade URLs with 64-bit partner IDs are now parsed correctly.
+  - Trade actions enforce validation by default; `skip_verification` and
+    `verify_state=false` payload flags allow explicit bypass; Agent wires a
+    shared rate limiter via DI.
+- Full-chain log redaction: `RedactingLoggerProvider` wraps any logger sink and
+  redacts messages, structured state values, scopes and exception content;
+  Agent uses `AddRedactingConsole()`.
+- Steam data models: `GameInfo`, `ItemInfo`, `PriceOverview`, `GameSearchResult`
+  with cache key helpers and freshness markers.
+- Cache layer: `IVaporCache` + `MemoryVaporCache` (per-entry TTL, LRU eviction,
+  hit/miss counters, single-flight factory deduplication, injectable clock).
+
+### Fixed
+
+- Flaky `SessionManagerTests.SubscribeAllEvents_ReceivesEventsFromSessions` timeout.
+- `TokenRefreshTests` async-without-await warnings breaking strict builds on .NET 8 SDK.
+
+### Security
+
 - Audit log persistence: `SqliteAuditStore` + `IAuditStore` with `GET /v1/audit/logs`
   (filters by action/account/jobId/time range, paging, redacted sensitive details).
 - Dedicated audit records for login transitions (`session.login`) and sensitive
   task results (trade/redeem actions via `task.result.reported`).
 - Credential store v2 format: AES-GCM encrypted tokens at rest, transparent
-  migration from legacy v1 plain files, atomic writes, `.bak` backup recovery,
-  and Unix permission tightening (owner-only 600).
+  v1 migration, atomic writes, `.bak` corruption recovery, and Unix permission
+  tightening (owner-only 600).
 - Master key configuration: `VAPOR_ENCRYPTION_KEY_BASE64` and
   `VAPOR_ENCRYPTION_KEY_FILE` sources (KMS/Docker secrets workflows) with
   priority over `VAPOR_ENCRYPTION_KEY`.
 - Key rotation CLI (`tools/Vapor.KeyRotation`): re-encrypts the credential store
   between keys with `base64:`/`file:`/`env:` specs, `--dry-run`, and abort-on-failure safety.
 - Explicit-key crypto APIs (`EncryptWithKey`/`DecryptWithKey`) for rotation tooling.
-
-### Fixed
-
-- Flaky `SessionManagerTests.SubscribeAllEvents_ReceivesEventsFromSessions` timeout.
-- `TokenRefreshTests` async-without-await warnings breaking strict builds on .NET 8 SDK.
 
 - Ongoing development.
 

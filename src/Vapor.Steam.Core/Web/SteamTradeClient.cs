@@ -9,7 +9,7 @@ namespace Vapor.Steam.Core.Web;
 /// <summary>
 /// Handles Steam trade-related Web API operations.
 /// </summary>
-public sealed class SteamTradeClient : IDisposable
+public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 {
 	private readonly SteamWebHandler _webHandler;
 	private readonly ILogger<SteamTradeClient> _logger;
@@ -529,6 +529,35 @@ public sealed class SteamTradeClient : IDisposable
 	{
 		var cookies = _webHandler.GetAllCookies();
 		return cookies.TryGetValue("sessionid", out var sessionId) ? sessionId : null;
+	}
+
+	/// <summary>
+	/// Resolves the logged-in user's own 64-bit SteamID from web session cookies
+	/// (the steamlogin cookie encodes it as "steamid%7C%7Ctoken").
+	/// Returns null when the session cookies do not carry a usable identity.
+	/// </summary>
+	public ulong? GetOwnSteamId()
+	{
+		ThrowIfDisposed();
+
+		var cookies = _webHandler.GetAllCookies();
+
+		foreach (string cookieName in new[] { "steamlogin[secure]", "steamlogin" })
+		{
+			if (!cookies.TryGetValue(cookieName, out var value) || string.IsNullOrEmpty(value))
+			{
+				continue;
+			}
+
+			// Cookie format: "<steamid>%7C%7C<token>" (URL-encoded pipe separators).
+			string steamIdPart = value.Split("%7C%7C")[0].Split('|')[0];
+			if (ulong.TryParse(steamIdPart, out ulong steamId) && steamId >= 76561197960265728UL)
+			{
+				return steamId;
+			}
+		}
+
+		return null;
 	}
 
 	private async Task<string?> GetApiKeyAsync(CancellationToken cancellationToken)

@@ -187,6 +187,38 @@ login session transitions (`session.login`), and sensitive task results
 (trade/redeem actions, `task.result.reported`). Sensitive detail values
 (passwords, tokens, codes, keys) are redacted before persistence.
 
+## Trade Safety Layer
+
+All trade actions run through three enforcement layers before touching Steam:
+
+- **`TradeOfferStateMachine`** — legal transition checks: accept requires a
+  received, `Active`, unexpired offer whose sender matches the expected partner;
+  decline only applies to received offers; cancel only to sent offers
+  (including `CreatedNeedsConfirmation`).
+- **`TradeAssetValidator`** — ownership verification before sending: every asset
+  must exist in the sender's inventory, be tradable, be off trade cooldown, and
+  be available in sufficient quantity (duplicate references are aggregated).
+- **`TradeRateLimiter`** — per-account sliding-window quota (default 5 ops / 5 min)
+  plus a concurrency gate (default 1 concurrent op) to avoid Steam rate limiting.
+
+Validation is on by default; payloads may pass `skip_verification=true`
+(send) or `verify_state=false` (accept/decline/cancel) to bypass explicitly.
+
+## Log Redaction
+
+`RedactingLoggerProvider` wraps any logger sink and redacts sensitive values from
+messages, structured state, scopes and exception content before output. The
+Agent enables it via `AddRedactingConsole()`.
+
+## Data & Caching
+
+- Models: `GameInfo`, `ItemInfo`, `PriceOverview`, `GameSearchResult` (with cache
+  key helpers and `FetchedAt` freshness markers).
+- `IVaporCache` abstraction with `MemoryVaporCache` implementation: per-entry
+  TTL (default 10 min), LRU eviction, hit/miss counters, single-flight factory
+  deduplication (cache stampede protection), injectable clock for testing.
+  Redis-backed implementations can be added behind the same interface.
+
 ## Security & Key Management
 
 - **Encryption at rest**: credentials stored in `~/.vapor/credentials.json` use

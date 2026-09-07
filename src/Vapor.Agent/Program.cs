@@ -9,6 +9,7 @@ using Vapor.Steam.Core.Actions;
 using Vapor.Steam.Core.Security;
 using Vapor.Steam.Core.Steam;
 using Vapor.Steam.Core.Utilities;
+using Vapor.Steam.Core.Logging;
 using Vapor.Agent;
 
 static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) switch {
@@ -25,9 +26,10 @@ VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
 var reconnectPolicy = AgentReconnectPolicy.FromEnvironment(Environment.GetEnvironmentVariable);
 
 var serviceProvider = new ServiceCollection()
-	.AddLogging(configure => configure.AddConsole())
+	.AddLogging(configure => configure.AddRedactingConsole())
 	.AddSingleton<IActionRegistry, ActionRegistry>()
 	.AddSingleton<ICredentialStore, FileCredentialStore>()
+	.AddSingleton<Vapor.Steam.Core.Trading.TradeRateLimiter>()
 	.AddSingleton<ISessionManager>(p => new SessionManager(
 		p.GetRequiredService<IActionRegistry>(),
 		p.GetRequiredService<ILogger<SessionManager>>(),
@@ -44,10 +46,18 @@ var serviceProvider = new ServiceCollection()
 	.AddSingleton<PlayGamesAction>()
 	.AddSingleton<RedeemKeyAction>()
 	.AddSingleton<GetInventoryAction>()
-	.AddSingleton<SendTradeOfferAction>()
-	.AddSingleton<AcceptTradeOfferAction>()
-	.AddSingleton<DeclineTradeOfferAction>()
-	.AddSingleton<CancelTradeOfferAction>()
+	.AddSingleton<SendTradeOfferAction>(p => new SendTradeOfferAction(
+		p.GetRequiredService<ILogger<SendTradeOfferAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
+	.AddSingleton<AcceptTradeOfferAction>(p => new AcceptTradeOfferAction(
+		p.GetRequiredService<ILogger<AcceptTradeOfferAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
+	.AddSingleton<DeclineTradeOfferAction>(p => new DeclineTradeOfferAction(
+		p.GetRequiredService<ILogger<DeclineTradeOfferAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
+	.AddSingleton<CancelTradeOfferAction>(p => new CancelTradeOfferAction(
+		p.GetRequiredService<ILogger<CancelTradeOfferAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
 	.BuildServiceProvider();
 
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();

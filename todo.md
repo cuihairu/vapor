@@ -7,11 +7,11 @@
 ### 当前状态快照（2025-03-11）
 
 - **构建**: `dotnet build` 通过，0 错误 0 警告。
-- **测试**: 394 个测试全部通过（18 个测试文件，覆盖 Unit / Integration / Performance）。
+- **测试**: 489 个测试全部通过（38 个测试文件，覆盖 Unit / Integration / Performance）。
 - **CI**: 多平台（Ubuntu / Windows / macOS）构建 + 测试门禁已就绪。
 - **已实现 Actions（11 个）**: Ping, Echo, Login, Idle, PlayGames, RedeemKey, GetInventory, SendTradeOffer, AcceptTradeOffer, DeclineTradeOffer, CancelTradeOffer。
 - **已实现基础设施**: ControlPlane（15+ API 端点 + SSE 事件流 + SQLite 持久化 + 审计日志持久化/查询 + Admin UI）、Agent（WebSocket 隧道 + 全部 Action 注册）、SessionEngine（BotSession 状态机 + SessionManager + SteamClientManager）、SteamWebHandler、SteamTradeClient、FileCredentialStore（v2 加密存储 + 备份恢复 + 版本迁移）+ AES-GCM 加密（兼容历史 AES-CBC 数据）。
-- **整体完成度**: ~55%。
+- **整体完成度**: ~65%。
 
 ### GA Exit Criteria
 
@@ -56,7 +56,12 @@
 - [x] `AcceptTradeOfferAction` / `DeclineTradeOfferAction` / `CancelTradeOfferAction`。
 - [x] `SteamTradeClient` 完整实现（库存、报价 CRUD、IEconService API）。
 - [x] `TradeModels` 数据模型（InventoryItem、TradeOffer、TradeOfferState 等）。
-- [ ] 交易流程校验增强（资产归属验证、报价状态机、风控节流）。
+- [x] 交易流程校验增强（资产归属验证、报价状态机、风控节流）：
+  - `TradeOfferStateMachine`：合法转换校验（accept 仅限收到的 Active 未过期报价 + partner 匹配；decline/cancel 方向校验）。
+  - `TradeAssetValidator`：发送前验证资产存在、可交易、无冷却、数量充足（重复引用聚合）。
+  - `TradeRateLimiter`：单账户滑动窗口限额 + 并发互斥（默认 5 次/5 分钟，可配置、可注入时钟）。
+  - `ISteamTradeClient` 接口提取 + `GetOwnSteamId`（steamlogin cookie 解析），Trade URL 支持 64 位 partner。
+  - Action 层默认开启校验（`skip_verification` / `verify_state=false` 可显式跳过），Agent DI 注册共享限流器。
 
 ### 2.4 会话可靠性增强（⚠️ 部分完成）
 
@@ -101,7 +106,7 @@
 - [x] 审计日志持久化与查询（`SqliteAuditStore` + `GET /v1/audit/logs` 分页/过滤 API，存储前统一脱敏）。
 - [x] 审计日志覆盖登录（session.login）、交易/激活码任务结果（task.result.reported）、验证码提交、配置修改。
 - [x] 凭证文件权限检查与启动告警（Unix 下自动收紧为 600，过宽权限告警并修复）。
-- [ ] 全链路日志脱敏（日志 Provider 级统一拦截，当前已覆盖审计与高风险入口）。
+- [x] 全链路日志脱敏（`RedactingLoggerProvider` 输出层统一拦截：消息、结构化状态、scope、异常均脱敏；Agent 已接入 `AddRedactingConsole`）。
 
 ---
 
@@ -114,11 +119,12 @@
 - [ ] 429/5xx 退避策略增强（区分限流 vs 服务异常）。
 - [ ] 统一 HTTP 中间件：熔断、指标采集。
 
-### 4.2 数据模型与缓存
+### 4.2 数据模型与缓存（✅ 基本完成）
 
-- [ ] `GameInfo` / `ItemInfo` 数据模型定义。
-- [ ] 缓存层落地（内存缓存 + 可选 Redis）。
-- [ ] 增量更新策略与缓存失效策略。
+- [x] `GameInfo` / `ItemInfo` / `PriceOverview` / `GameSearchResult` 数据模型定义（含缓存 key 生成与 FetchedAt 新鲜度标记）。
+- [x] 缓存层落地（`IVaporCache` 接口 + `MemoryVaporCache`：TTL、LRU 淘汰、hit/miss 统计、单飞行防击穿、可注入时钟）。
+- [ ] 增量更新策略与缓存失效策略（数据 Action 接入后完善）。
+- [ ] 可选 Redis 后端实现（接口已就绪）。
 
 ### 4.3 新动作
 
@@ -182,9 +188,9 @@
 | 阶段 | 周期 | 完成度 | 说明 |
 |------|------|--------|------|
 | P0 构建恢复 | Week 1 | ✅ 100% | 已完成 |
-| P1 M2 核心能力 | Week 2-4 | ⚠️ ~75% | 剩余：Token 刷新、会话恢复、RedeemKey 明细、登录测试 |
-| P2 安全闭环 | Week 5-7 | ✅ ~95% | 剩余：日志 Provider 级统一脱敏 |
-| P3 数据能力 | Week 6-9 | ⚠️ ~30% | 剩余：数据模型、缓存层、4 个新 Action |
+| P1 M2 核心能力 | Week 2-4 | ✅ 100% | 交易校验增强已完成 |
+| P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
+| P3 数据能力 | Week 6-9 | ⚠️ ~55% | 剩余：4 个数据 Action、HTTP 中间件增强 |
 | P4 插件系统 | Week 8-12 | ❌ 0% | 未开始 |
 | GA 收口 | Week 10-12 | ⚠️ ~30% | 剩余：Docker、E2E、性能基准、文档 |
 
@@ -202,9 +208,9 @@
 
 ## 9. 下一步优先事项
 
-1. ~~P2 推进: 其余日志入口脱敏 + 审计持久化/查询~~（已完成）。
-2. ~~P2 推进: 主密钥配置规范与密钥轮换工具~~（已完成）。
-3. **P2 收尾**: 日志 Provider 级统一脱敏拦截。
-4. **P1 收尾**: 交易流程校验增强（资产归属验证、报价状态机、风控节流）。
-5. **P3 推进**: GameInfo/ItemInfo 数据模型、缓存层、4 个数据 Action。
+1. ~~P2 收尾: 日志 Provider 级统一脱敏拦截~~（已完成）。
+2. ~~P1 收尾: 交易流程校验增强~~（已完成）。
+3. ~~P3 推进: GameInfo/ItemInfo 数据模型、缓存层~~（已完成）。
+4. **P3 推进**: 4 个数据 Action（GetGameInfoAction / SearchGamesAction / GetPriceAction / GetMarketListingsAction）+ SteamStoreApiClient。
+5. **P3 推进**: 429/5xx 退避策略增强、统一 HTTP 中间件（熔断、指标）。
 6. **横向**: ControlPlane/Agent E2E 测试、Docker 镜像与 compose 编排。

@@ -59,5 +59,23 @@ public static class PayloadReader
 			_ => null
 		};
 	}
+
+	public static bool? GetBool(IReadOnlyDictionary<string, object?> payload, string key)
+	{
+		if (!TryGetValue(payload, key, out var value) || value == null)
+		{
+			return null;
+		}
+
+		return value switch
+		{
+			bool b => b,
+			JsonElement { ValueKind: JsonValueKind.True } => true,
+			JsonElement { ValueKind: JsonValueKind.False } => false,
+			string s when bool.TryParse(s, out var parsed) => parsed,
+			JsonElement { ValueKind: JsonValueKind.String } je when bool.TryParse(je.GetString(), out var parsed) => parsed,
+			_ => null
+		};
+	}
 }
 
