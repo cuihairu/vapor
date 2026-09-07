@@ -23,6 +23,11 @@ builder.Services.AddSingleton<IJobStore>(sp => {
 	return new SqliteJobStore(cfg.DbPath);
 });
 
+builder.Services.AddSingleton<IAuditStore>(sp => {
+	var cfg = sp.GetRequiredService<Config>();
+	return new SqliteAuditStore(cfg.AuditDbPath);
+});
+
 builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddHostedService<TaskSchedulerService>();
 
@@ -88,14 +93,15 @@ app.MapGet("/v1/config", (HttpContext ctx, Config cfg, ConfigStore configStore) 
 	});
 });
 
-app.MapPut("/v1/config/global", (HttpContext ctx, Config cfg, ConfigStore configStore, PutGlobalConfigRequest req) => {
+app.MapPut("/v1/config/global", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, PutGlobalConfigRequest req) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
 		return Results.Unauthorized();
 	}
 
 	var updated = configStore.SetGlobal(req.Settings, req.UpdatedBy);
-	WriteAuditLog(
+	await WriteAuditLog(
 		auditLogger,
+		audit,
 		ctx,
 		"config.global.updated",
 		details: new Dictionary<string, object?>
@@ -106,7 +112,7 @@ app.MapPut("/v1/config/global", (HttpContext ctx, Config cfg, ConfigStore config
 	return Results.Ok(updated);
 });
 
-app.MapPut("/v1/config/account/{name}", (HttpContext ctx, Config cfg, ConfigStore configStore, string name, PutAccountConfigRequest req) => {
+app.MapPut("/v1/config/account/{name}", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, string name, PutAccountConfigRequest req) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
 		return Results.Unauthorized();
 	}
@@ -116,8 +122,9 @@ app.MapPut("/v1/config/account/{name}", (HttpContext ctx, Config cfg, ConfigStor
 	}
 
 	var updated = configStore.SetAccount(name, req.Enabled, req.Region, req.Labels, req.Settings, req.UpdatedBy);
-	WriteAuditLog(
+	await WriteAuditLog(
 		auditLogger,
+		audit,
 		ctx,
 		"config.account.updated",
 		accountName: name,
@@ -136,6 +143,7 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 	HttpContext ctx,
 	Config cfg,
 	IJobStore store,
+	IAuditStore audit,
 	IEventBroker events,
 	CreateJobRequest req
 ) => {
@@ -153,8 +161,9 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 
 	var created = await store.CreateJob(req, ctx.RequestAborted);
 	events.Publish(created.Job.Id, "job.created", new Dictionary<string, object?> { ["action"] = created.Job.Action, ["targets"] = created.Job.Targets.Count });
-	WriteAuditLog(
+	await WriteAuditLog(
 		auditLogger,
+		audit,
 		ctx,
 		"job.created",
 		jobId: created.Job.Id,
@@ -202,6 +211,7 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	HttpContext ctx,
 	Config cfg,
 	IJobStore store,
+	IAuditStore audit,
 	IEventBroker events,
 	AgentRegistry agents,
 	string jobId
@@ -213,7 +223,7 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	try {
 		var cancels = await store.CancelJob(jobId, ctx.RequestAborted);
 		events.Publish(jobId, "job.canceled", null);
-		WriteAuditLog(auditLogger, ctx, "job.canceled", jobId: jobId, details: new Dictionary<string, object?> { ["cancelCount"] = cancels.Count });
+		await WriteAuditLog(auditLogger, audit, ctx, "job.canceled", jobId: jobId, details: new Dictionary<string, object?> { ["cancelCount"] = cancels.Count });
 
 		if (cancels.Count > 0) {
 			foreach (var agent in agents.ListConnected()) {
@@ -340,9 +350,10 @@ app.MapGet("/v1/auth/challenges", (HttpContext ctx, Config cfg, AuthChallengeTra
 });
 
 // Submit auth code endpoint
-app.MapPost("/v1/auth/challenges/{accountName}/code", (
+app.MapPost("/v1/auth/challenges/{accountName}/code", async (
 	HttpContext ctx,
 	Config cfg,
+	IAuditStore audit,
 	IEventBroker events,
 	AuthChallengeTracker tracker,
 	string accountName,
@@ -380,8 +391,9 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", (
 	// Publish the auth code response event
 	// The agent will listen for this event and use the code to continue login
 	events.PublishAuthChallenge(accountName, $"code_provided_{type}", $"Auth code provided for {type}", code);
-	WriteAuditLog(
+	await WriteAuditLog(
 		auditLogger,
+		audit,
 		ctx,
 		"auth.code.submitted",
 		accountName: accountName,
@@ -412,9 +424,10 @@ app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agen
 });
 
 // Receive session events from agents
-app.MapPost("/v1/sessions/events", (
+app.MapPost("/v1/sessions/events", async (
 	HttpContext ctx,
 	Config cfg,
+	IAuditStore audit,
 	IEventBroker events,
 	SessionTracker sessions,
 	AuthChallengeTracker challenges,
@@ -436,8 +449,9 @@ app.MapPost("/v1/sessions/events", (
 	// Publish the session event
 	events.PublishSession(req.AccountName, normalizedType, state, req.Message);
 	sessions.Update(req.AccountName, normalizedType, state, req.Message);
-	WriteAuditLog(
+	await WriteAuditLog(
 		auditLogger,
+		audit,
 		ctx,
 		"session.event.received",
 		accountName: req.AccountName,
@@ -447,6 +461,21 @@ app.MapPost("/v1/sessions/events", (
 			["state"] = state,
 			["message"] = req.Message
 		});
+
+	// Persist login-relevant transitions as dedicated audit records.
+	if (IsLoginAuditEvent(normalizedType, state)) {
+		await WriteAuditLog(
+			auditLogger,
+			audit,
+			ctx,
+			"session.login",
+			accountName: req.AccountName,
+			details: new Dictionary<string, object?>
+			{
+				["eventType"] = normalizedType,
+				["state"] = state
+			});
+	}
 
 	// Publish auth challenge events when sessions require user input
 	if (IsAuthChallengeRequired(normalizedType, state)) {
@@ -483,7 +512,44 @@ app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg, SessionTracker sessions
 	return Results.Ok(new { sessions = sessions.List() });
 });
 
-app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IEventBroker events) => {
+// Query persisted audit logs
+app.MapGet("/v1/audit/logs", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	IAuditStore audit,
+	int? limit,
+	int? offset,
+	string? action,
+	string? account,
+	string? jobId,
+	long? fromMs,
+	long? toMs
+) => {
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+		return Results.Unauthorized();
+	}
+
+	if (fromMs.HasValue && toMs.HasValue && fromMs.Value > toMs.Value) {
+		return Results.BadRequest(new ErrorResponse("fromMs must not be greater than toMs"));
+	}
+
+	var query = new AuditQuery(
+		Action: action,
+		AccountName: account,
+		JobId: jobId,
+		From: fromMs.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(fromMs.Value) : null,
+		To: toMs.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(toMs.Value) : null,
+		Limit: Math.Clamp(limit ?? 100, 1, 500),
+		Offset: Math.Max(offset ?? 0, 0)
+	);
+
+	IReadOnlyList<AuditEntry> logs = await audit.QueryAsync(query, ctx.RequestAborted);
+	int total = await audit.CountAsync(query, ctx.RequestAborted);
+
+	return Results.Ok(new { logs, total, limit = query.Limit, offset = query.Offset });
+});
+
+app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IAuditStore audit, IEventBroker events) => {
 	if (!Auth.TryAgent(cfg, GetAuthorization(ctx), out _)) {
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
 		return;
@@ -525,13 +591,28 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 						} catch (NotFoundException) {
 						}
 					}
-					if (string.Equals(msg.Type, "task_result", StringComparison.Ordinal) && msg.TaskResult != null) {
-						try {
-							var (task, job) = await store.SetTaskResult(msg.TaskResult, ctx.RequestAborted);
-							events.Publish(task.JobId, "task.finished", new Dictionary<string, object?> { ["taskId"] = task.Id, ["success"] = msg.TaskResult.Success, ["job"] = job.Status.ToString() });
-						} catch (NotFoundException) {
+				if (string.Equals(msg.Type, "task_result", StringComparison.Ordinal) && msg.TaskResult != null) {
+					try {
+						var (task, job) = await store.SetTaskResult(msg.TaskResult, ctx.RequestAborted);
+						events.Publish(task.JobId, "task.finished", new Dictionary<string, object?> { ["taskId"] = task.Id, ["success"] = msg.TaskResult.Success, ["job"] = job.Status.ToString() });
+
+						if (IsSensitiveTaskAction(task.Action)) {
+							await WriteAuditLog(
+								auditLogger,
+								audit,
+								ctx,
+								"task.result.reported",
+								accountName: task.Target,
+								jobId: task.JobId,
+								details: new Dictionary<string, object?> {
+									["action"] = task.Action,
+									["taskId"] = task.Id,
+									["success"] = msg.TaskResult.Success
+								});
 						}
+					} catch (NotFoundException) {
 					}
+				}
 					break;
 			}
 		}
@@ -624,8 +705,9 @@ static bool IsAuthChallengeRequired(string normalizedEventType, string state) {
 	       string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal);
 }
 
-static void WriteAuditLog(
+static async Task WriteAuditLog(
 	ILogger logger,
+	IAuditStore auditStore,
 	HttpContext ctx,
 	string action,
 	string? accountName = null,
@@ -641,6 +723,41 @@ static void WriteAuditLog(
 		accountName ?? string.Empty,
 		jobId ?? string.Empty,
 		SensitiveDataRedactor.Redact(payload));
+
+	// Persist with the same redaction guarantees as the structured log.
+	var entry = AuditStoreExtensions.CreateEntry(
+		action,
+		GetAuditActor(ctx),
+		remoteIp: ctx.Connection.RemoteIpAddress?.ToString(),
+		accountName: accountName,
+		jobId: jobId,
+		details: details);
+
+	try {
+		await auditStore.RecordAsync(entry, ctx.RequestAborted);
+	} catch (OperationCanceledException) {
+		throw;
+	} catch (Exception ex) {
+		// Audit persistence must never block the API response.
+		logger.LogError(ex, "Failed to persist audit entry {Action}", action);
+	}
+}
+
+static bool IsLoginAuditEvent(string normalizedEventType, string state) {
+	return string.Equals(state, "LoggedOn", StringComparison.Ordinal) ||
+	       string.Equals(state, "LoginFailed", StringComparison.Ordinal) ||
+	       string.Equals(state, "LoggedOff", StringComparison.Ordinal) ||
+	       string.Equals(state, "Disconnected", StringComparison.Ordinal) ||
+	       normalizedEventType.Contains("login", StringComparison.OrdinalIgnoreCase);
+}
+
+static bool IsSensitiveTaskAction(string action) {
+	return action.StartsWith("SendTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+	       action.StartsWith("AcceptTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+	       action.StartsWith("DeclineTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+	       action.StartsWith("CancelTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+	       action.StartsWith("GetInventory", StringComparison.OrdinalIgnoreCase) ||
+	       action.StartsWith("RedeemKey", StringComparison.OrdinalIgnoreCase);
 }
 
 static string GetAuditActor(HttpContext ctx)

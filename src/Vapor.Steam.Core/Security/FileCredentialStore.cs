@@ -4,13 +4,24 @@ using Microsoft.Extensions.Logging;
 namespace Vapor.Steam.Core.Security;
 
 /// <summary>
-/// File-based credential store.
-/// Stores credentials in ~/.vapor/credentials.json
+/// File-based credential store with encryption-at-rest.
+/// Stores credentials in ~/.vapor/credentials.json using versioned format v2:
+/// tokens are encrypted with AES-GCM via <see cref="VaporCryptoHelper"/>.
+/// Legacy v1 files (plain account map) are migrated transparently on first load.
+/// Writes are atomic (temp file + replace) and backed up to a .bak file used for corruption recovery.
 /// </summary>
 public sealed class FileCredentialStore : ICredentialStore, IDisposable
 {
+	private const int CurrentFormatVersion = 2;
+	private const string EncryptedValuePrefix = "gcm:";
+	private const string BackupFileExtension = ".bak";
+	private const string TempFileExtension = ".tmp";
+
+	private static readonly UnixFileMode CredentialFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
 	private readonly ILogger<FileCredentialStore> _logger;
 	private readonly string _credentialsPath;
+	private readonly string _backupPath;
 	private readonly SemaphoreSlim _lock = new(1, 1);
 	private readonly JsonSerializerOptions _jsonOptions;
 	private Dictionary<string, AccountCredentials> _credentials = new();
@@ -29,6 +40,7 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 
 		Directory.CreateDirectory(dataDirectory);
 		_credentialsPath = Path.Combine(dataDirectory, "credentials.json");
+		_backupPath = _credentialsPath + BackupFileExtension;
 
 		_jsonOptions = new JsonSerializerOptions
 		{
@@ -201,20 +213,50 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 				return;
 			}
 
+			bool migratedFromV1 = false;
+
 			if (File.Exists(_credentialsPath))
 			{
 				try
 				{
-					string json = await File.ReadAllTextAsync(_credentialsPath, cancellationToken).ConfigureAwait(false);
-					_credentials = JsonSerializer.Deserialize<Dictionary<string, AccountCredentials>>(json, _jsonOptions)
-						?? new Dictionary<string, AccountCredentials>();
+					(_credentials, migratedFromV1) = await ReadStoreFileAsync(_credentialsPath, cancellationToken).ConfigureAwait(false);
 					_logger.LogDebug("Loaded credentials for {Count} accounts", _credentials.Count);
 				}
-				catch (Exception ex)
+				catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
 				{
-					_logger.LogError(ex, "Failed to load credentials file, starting fresh");
-					_credentials = new Dictionary<string, AccountCredentials>();
+					_logger.LogError(ex, "Credentials file is corrupted, attempting backup recovery");
+
+					if (File.Exists(_backupPath))
+					{
+						try
+						{
+							(_credentials, migratedFromV1) = await ReadStoreFileAsync(_backupPath, cancellationToken).ConfigureAwait(false);
+							_logger.LogWarning("Recovered credentials for {Count} accounts from backup", _credentials.Count);
+
+							// Restore the backup as the live file so subsequent writes are consistent.
+							File.Copy(_backupPath, _credentialsPath, overwrite: true);
+						}
+						catch (Exception backupEx) when (backupEx is JsonException or IOException or UnauthorizedAccessException)
+						{
+							_logger.LogError(backupEx, "Backup recovery failed, starting fresh");
+							_credentials = new Dictionary<string, AccountCredentials>();
+						}
+					}
+					else
+					{
+						_logger.LogError("No backup available, starting fresh");
+						_credentials = new Dictionary<string, AccountCredentials>();
+					}
 				}
+			}
+
+			CheckAndTightenFilePermissions();
+
+			if (migratedFromV1 && _credentials.Count > 0)
+			{
+				// Persist the migrated (encrypted) v2 format right away.
+				await SaveToFileAsync(cancellationToken).ConfigureAwait(false);
+				_logger.LogInformation("Migrated credential store from v1 to v2 (encrypted) for {Count} accounts", _credentials.Count);
 			}
 
 			_loaded = true;
@@ -225,17 +267,204 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		}
 	}
 
+	/// <summary>
+	/// Reads a store file, supporting both v2 (versioned + encrypted) and v1 (legacy plain map) formats.
+	/// Returns the decrypted credentials and whether a v1 → v2 migration is required.
+	/// </summary>
+	private async Task<(Dictionary<string, AccountCredentials> Credentials, bool MigratedFromV1)> ReadStoreFileAsync(string path, CancellationToken cancellationToken)
+	{
+		string json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
+		using var document = JsonDocument.Parse(json);
+
+		Dictionary<string, AccountCredentials>? credentials;
+		bool isV1 = false;
+
+		if (document.RootElement.ValueKind == JsonValueKind.Object &&
+		    document.RootElement.TryGetProperty("version", out var versionElement) &&
+		    versionElement.TryGetInt32(out int version))
+		{
+			if (version > CurrentFormatVersion)
+			{
+				throw new InvalidOperationException($"Credential store format version {version} is newer than supported {CurrentFormatVersion}");
+			}
+
+			if (!document.RootElement.TryGetProperty("accounts", out var accountsElement) ||
+			    accountsElement.ValueKind != JsonValueKind.Object)
+			{
+				throw new InvalidOperationException("Credential store file is missing the accounts object");
+			}
+
+			credentials = accountsElement.Deserialize<Dictionary<string, AccountCredentials>>(_jsonOptions);
+		}
+		else
+		{
+			// Legacy v1: root object is the account map itself, tokens stored in plain text.
+			credentials = document.RootElement.Deserialize<Dictionary<string, AccountCredentials>>(_jsonOptions);
+			isV1 = true;
+		}
+
+		var result = new Dictionary<string, AccountCredentials>();
+		foreach (var (accountName, creds) in credentials ?? new Dictionary<string, AccountCredentials>())
+		{
+			result[accountName] = new AccountCredentials
+			{
+				RefreshToken = await DecryptValueAsync(creds.RefreshToken, accountName, nameof(creds.RefreshToken), cancellationToken).ConfigureAwait(false),
+				RefreshTokenUpdatedAt = creds.RefreshTokenUpdatedAt,
+				AccessToken = await DecryptValueAsync(creds.AccessToken, accountName, nameof(creds.AccessToken), cancellationToken).ConfigureAwait(false),
+				AccessTokenExpiresAt = creds.AccessTokenExpiresAt
+			};
+		}
+
+		return (result, isV1);
+	}
+
+	private static async Task<string?> DecryptValueAsync(string? value, string accountName, string fieldName, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+
+		if (string.IsNullOrEmpty(value))
+		{
+			return null;
+		}
+
+		if (!value.StartsWith(EncryptedValuePrefix, StringComparison.Ordinal))
+		{
+			// Legacy plain-text value (v1 file).
+			return value;
+		}
+
+		string? decrypted = await VaporCryptoHelper.Decrypt(ECryptoMethod.AES, value).ConfigureAwait(false);
+		if (decrypted == null)
+		{
+			throw new InvalidOperationException(
+				$"Failed to decrypt {fieldName} for account '{accountName}'. The configured encryption key does not match the one used to write the store.");
+		}
+
+		return decrypted;
+	}
+
 	private async Task SaveToFileAsync(CancellationToken cancellationToken)
 	{
+		var accounts = new Dictionary<string, AccountCredentials>(StringComparer.Ordinal);
+		foreach (var (accountName, creds) in _credentials)
+		{
+			string? encryptedRefreshToken = EncryptValue(creds.RefreshToken, accountName, nameof(creds.RefreshToken));
+			string? encryptedAccessToken = EncryptValue(creds.AccessToken, accountName, nameof(creds.AccessToken));
+
+			accounts[accountName] = new AccountCredentials
+			{
+				RefreshToken = encryptedRefreshToken,
+				RefreshTokenUpdatedAt = creds.RefreshTokenUpdatedAt,
+				AccessToken = encryptedAccessToken,
+				AccessTokenExpiresAt = creds.AccessTokenExpiresAt
+			};
+		}
+
+		var store = new CredentialStoreFile
+		{
+			Version = CurrentFormatVersion,
+			Accounts = accounts
+		};
+
+		string json = JsonSerializer.Serialize(store, _jsonOptions);
+
 		try
 		{
-			string json = JsonSerializer.Serialize(_credentials, _jsonOptions);
-			await File.WriteAllTextAsync(_credentialsPath, json, cancellationToken).ConfigureAwait(false);
+			// Backup current file before replacing it.
+			if (File.Exists(_credentialsPath))
+			{
+				File.Copy(_credentialsPath, _backupPath, overwrite: true);
+			}
+
+			// Atomic write: write to temp file, then replace.
+			string tempPath = _credentialsPath + TempFileExtension;
+			await File.WriteAllTextAsync(tempPath, json, cancellationToken).ConfigureAwait(false);
+			ApplyFilePermissions(tempPath);
+			File.Move(tempPath, _credentialsPath, overwrite: true);
 		}
 		catch (Exception ex)
 		{
 			_logger.LogError(ex, "Failed to save credentials file");
 		}
+	}
+
+	private static string? EncryptValue(string? value, string accountName, string fieldName)
+	{
+		if (string.IsNullOrEmpty(value))
+		{
+			return null;
+		}
+
+		string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, value);
+		if (encrypted == null)
+		{
+			// Fail secure: refuse to write plain-text secrets to disk.
+			throw new InvalidOperationException($"Failed to encrypt {fieldName} for account '{accountName}'");
+		}
+
+		return encrypted;
+	}
+
+	private void CheckAndTightenFilePermissions()
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			return;
+		}
+
+		TightenPermissions(_credentialsPath);
+		TightenPermissions(_backupPath);
+	}
+
+	private void ApplyFilePermissions(string path)
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			return;
+		}
+
+		try
+		{
+			File.SetUnixFileMode(path, CredentialFileMode);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogWarning(ex, "Failed to restrict permissions on {Path}", path);
+		}
+	}
+
+	private void TightenPermissions(string path)
+	{
+		if (OperatingSystem.IsWindows() || !File.Exists(path))
+		{
+			return;
+		}
+
+		try
+		{
+			UnixFileMode current = File.GetUnixFileMode(path);
+			if ((current & (UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead | UnixFileMode.OtherWrite)) != 0)
+			{
+				_logger.LogWarning(
+					"Credentials file {Path} has overly permissive permissions ({Mode}), tightening to owner-only access",
+					path,
+					current);
+				File.SetUnixFileMode(path, CredentialFileMode);
+			}
+		}
+		catch (Exception ex)
+		{
+			_logger.LogWarning(ex, "Failed to check permissions on {Path}", path);
+		}
+	}
+
+	/// <summary>
+	/// On-disk representation of the versioned credential store (v2).
+	/// </summary>
+	private sealed class CredentialStoreFile
+	{
+		public int Version { get; set; } = CurrentFormatVersion;
+		public Dictionary<string, AccountCredentials> Accounts { get; set; } = new();
 	}
 
 	/// <summary>

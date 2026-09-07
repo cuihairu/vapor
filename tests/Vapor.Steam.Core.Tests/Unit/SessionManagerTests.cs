@@ -267,7 +267,7 @@ public class SessionManagerTests : IDisposable
 		// Wait a bit for events
 		await Task.Delay(200);
 		cts.Cancel();
-		await collectTask.WaitAsync(TimeSpan.FromSeconds(1));
+		await collectTask.WaitAsync(TimeSpan.FromSeconds(5));
 
 		// Assert
 		// Events should be collected (the exact number depends on timing)

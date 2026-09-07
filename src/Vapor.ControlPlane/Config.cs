@@ -5,7 +5,8 @@ public sealed record Config(
 	IReadOnlySet<string> AgentApiKeys,
 	string DbPath,
 	int TaskLeaseSeconds,
-	bool EnableSwagger
+	bool EnableSwagger,
+	string AuditDbPath = "data/audit.db"
 ) {
 	public static Config LoadFromEnvironment() {
 		string adminApiKey = Environment.GetEnvironmentVariable("Vapor_ADMIN_API_KEY") ?? "";
@@ -13,6 +14,7 @@ public sealed record Config(
 		string dbPath = Environment.GetEnvironmentVariable("Vapor_DB_PATH") ?? "data/controlplane.db";
 		int taskLeaseSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_TASK_LEASE_SECONDS"), out int v) && v > 0 ? v : 300;
 		bool enableSwagger = string.Equals(Environment.GetEnvironmentVariable("Vapor_ENABLE_SWAGGER"), "true", StringComparison.OrdinalIgnoreCase);
+		string auditDbPath = Environment.GetEnvironmentVariable("Vapor_AUDIT_DB_PATH") ?? "data/audit.db";
 
 		HashSet<string> agentApiKeys = new(StringComparer.Ordinal);
 		foreach (string key in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) {
@@ -22,7 +24,7 @@ public sealed record Config(
 			agentApiKeys.Add(key);
 		}
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath);
 	}
 }
 

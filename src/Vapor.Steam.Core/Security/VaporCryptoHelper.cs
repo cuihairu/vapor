@@ -45,6 +45,8 @@ public static partial class VaporCryptoHelper
 	private const int AesGcmNonceSize = 12;
 	private const int AesGcmTagSize = 16;
 	internal const string EncryptionKeyEnvironmentVariable = "VAPOR_ENCRYPTION_KEY";
+	internal const string EncryptionKeyBase64EnvironmentVariable = "VAPOR_ENCRYPTION_KEY_BASE64";
+	internal const string EncryptionKeyFileEnvironmentVariable = "VAPOR_ENCRYPTION_KEY_FILE";
 	internal const string AllowInsecureDefaultKeyEnvironmentVariable = "VAPOR_ALLOW_INSECURE_DEFAULT_KEY";
 
 	private static byte[] _encryptionKey = [];
@@ -59,8 +61,27 @@ public static partial class VaporCryptoHelper
 	{
 		ArgumentNullException.ThrowIfNull(getEnvironmentVariable);
 
-		var encryptionKey = getEnvironmentVariable(EncryptionKeyEnvironmentVariable);
-		if (!string.IsNullOrWhiteSpace(encryptionKey) && _hasDefaultKey)
+		if (!_hasDefaultKey)
+		{
+			return;
+		}
+
+		string? base64Key = getEnvironmentVariable(EncryptionKeyBase64EnvironmentVariable);
+		if (!string.IsNullOrWhiteSpace(base64Key))
+		{
+			SetEncryptionKeyFromBase64(base64Key);
+			return;
+		}
+
+		string? keyFile = getEnvironmentVariable(EncryptionKeyFileEnvironmentVariable);
+		if (!string.IsNullOrWhiteSpace(keyFile))
+		{
+			SetEncryptionKeyFromFile(keyFile);
+			return;
+		}
+
+		string? encryptionKey = getEnvironmentVariable(EncryptionKeyEnvironmentVariable);
+		if (!string.IsNullOrWhiteSpace(encryptionKey))
 		{
 			SetEncryptionKey(encryptionKey);
 		}
@@ -104,17 +125,120 @@ public static partial class VaporCryptoHelper
 		}
 
 		byte[] encryptionKey = Encoding.UTF8.GetBytes(key);
+		ApplyEncryptionKey(encryptionKey);
+	}
 
+	/// <summary>
+	/// Sets a custom encryption key from base64-encoded raw key bytes.
+	/// Suitable for KMS/Vault workflows where keys are provisioned as raw bytes.
+	/// </summary>
+	public static void SetEncryptionKeyFromBase64(string base64Key)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(base64Key);
+
+		if (!_hasDefaultKey)
+		{
+			throw new InvalidOperationException("Encryption key can only be set once");
+		}
+
+		byte[] encryptionKey;
+		try
+		{
+			encryptionKey = Convert.FromBase64String(base64Key.Trim());
+		}
+		catch (FormatException)
+		{
+			throw new ArgumentException("Encryption key is not valid base64", nameof(base64Key));
+		}
+
+		ApplyEncryptionKey(encryptionKey);
+	}
+
+	/// <summary>
+	/// Sets a custom encryption key read from an external file (e.g. Docker/K8s secret, KMS-exported key).
+	/// Content is trimmed; base64 content is decoded when it decodes to a valid key length,
+	/// otherwise the raw UTF-8 bytes are used.
+	/// </summary>
+	public static void SetEncryptionKeyFromFile(string keyFilePath)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(keyFilePath);
+
+		if (!_hasDefaultKey)
+		{
+			throw new InvalidOperationException("Encryption key can only be set once");
+		}
+
+		string filePath = keyFilePath.StartsWith("file:", StringComparison.OrdinalIgnoreCase)
+			? keyFilePath["file:".Length..]
+			: keyFilePath;
+
+		if (!File.Exists(filePath))
+		{
+			throw new FileNotFoundException("Encryption key file not found", filePath);
+		}
+
+		string content = File.ReadAllText(filePath).Trim();
+
+		try
+		{
+			byte[] decoded = Convert.FromBase64String(content);
+			if (decoded.Length >= MinimumCryptKeyBytes)
+			{
+				ApplyEncryptionKey(decoded);
+				return;
+			}
+		}
+		catch (FormatException)
+		{
+			// Fall through to raw text interpretation.
+		}
+
+		ApplyEncryptionKey(Encoding.UTF8.GetBytes(content));
+	}
+
+	/// <summary>
+	/// Encrypts text with an explicit key material, without touching the global key.
+	/// Used by key rotation tooling.
+	/// </summary>
+	public static string? EncryptWithKey(byte[] keyMaterial, string text)
+	{
+		ArgumentNullException.ThrowIfNull(keyMaterial);
+		ArgumentException.ThrowIfNullOrEmpty(text);
+		ThrowIfKeyTooShort(keyMaterial);
+
+		return EncryptAesGcm(keyMaterial, text);
+	}
+
+	/// <summary>
+	/// Decrypts text with an explicit key material, without touching the global key.
+	/// Used by key rotation tooling.
+	/// </summary>
+	public static Task<string?> DecryptWithKey(byte[] keyMaterial, string text)
+	{
+		ArgumentNullException.ThrowIfNull(keyMaterial);
+		ArgumentException.ThrowIfNullOrEmpty(text);
+		ThrowIfKeyTooShort(keyMaterial);
+
+		return Task.FromResult(DecryptAes(keyMaterial, text));
+	}
+
+	private static void ApplyEncryptionKey(byte[] encryptionKey)
+	{
+		ThrowIfKeyTooShort(encryptionKey);
+
+		_hasDefaultKey = encryptionKey.SequenceEqual(GetDefaultKey());
+		_encryptionKey = encryptionKey;
+	}
+
+	private static void ThrowIfKeyTooShort(byte[] encryptionKey)
+	{
 		if (encryptionKey.Length < MinimumCryptKeyBytes)
 		{
 			throw new ArgumentException(
 				$"Encryption key is too short. Minimum recommended: {MinimumCryptKeyBytes} bytes",
-				nameof(key)
+				nameof(encryptionKey)
 			);
 		}
-
-		_hasDefaultKey = encryptionKey.SequenceEqual(GetDefaultKey());
-		_encryptionKey = encryptionKey;
 	}
 
 	/// <summary>
@@ -173,15 +297,49 @@ public static partial class VaporCryptoHelper
 	public static bool HasTransformation(ECryptoMethod cryptoMethod) =>
 		cryptoMethod == ECryptoMethod.AES;
 
-	private static byte[] GetKey()
+	private static string? EncryptAES(string text)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(text);
+
+		try
+		{
+			return EncryptAesGcm(GetKeyMaterial(), text);
+		}
+		catch
+		{
+			// Log error in production
+			return null;
+		}
+	}
+
+	private static string? DecryptAES(string text)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(text);
+
+		try
+		{
+			return DecryptAes(GetKeyMaterial(), text);
+		}
+		catch
+		{
+			// Log error in production
+			return null;
+		}
+	}
+
+	private static byte[] GetKeyMaterial()
 	{
 		if (_encryptionKey.Length == 0)
 		{
 			_encryptionKey = GetDefaultKey();
 		}
 
-		byte[] key = SHA256.HashData(_encryptionKey);
-		return key;
+		return _encryptionKey;
+	}
+
+	private static byte[] GetKey(byte[] keyMaterial)
+	{
+		return SHA256.HashData(keyMaterial);
 	}
 
 	private static byte[] GetDefaultKey()
@@ -205,13 +363,13 @@ public static partial class VaporCryptoHelper
 		_hasDefaultKey = true;
 	}
 
-	private static string? EncryptAES(string text)
+	private static string? EncryptAesGcm(byte[] keyMaterial, string text)
 	{
 		ArgumentException.ThrowIfNullOrEmpty(text);
 
 		try
 		{
-			byte[] key = GetKey();
+			byte[] key = GetKey(keyMaterial);
 			byte[] textData = Encoding.UTF8.GetBytes(text);
 			byte[] nonce = RandomNumberGenerator.GetBytes(AesGcmNonceSize);
 			byte[] ciphertext = new byte[textData.Length];
@@ -241,7 +399,7 @@ public static partial class VaporCryptoHelper
 		}
 	}
 
-	private static string? DecryptAES(string text)
+	private static string? DecryptAes(byte[] keyMaterial, string text)
 	{
 		ArgumentException.ThrowIfNullOrEmpty(text);
 
@@ -249,10 +407,10 @@ public static partial class VaporCryptoHelper
 		{
 			if (text.StartsWith(AesGcmPrefix, StringComparison.Ordinal))
 			{
-				return DecryptAesGcm(text[AesGcmPrefix.Length..]);
+				return DecryptAesGcm(keyMaterial, text[AesGcmPrefix.Length..]);
 			}
 
-			return DecryptAesCbc(text);
+			return DecryptAesCbc(keyMaterial, text);
 		}
 		catch
 		{
@@ -261,9 +419,9 @@ public static partial class VaporCryptoHelper
 		}
 	}
 
-	private static string? DecryptAesGcm(string base64Text)
+	private static string? DecryptAesGcm(byte[] keyMaterial, string base64Text)
 	{
-		byte[] key = GetKey();
+		byte[] key = GetKey(keyMaterial);
 		byte[] encryptedData = Convert.FromBase64String(base64Text);
 
 		if (encryptedData.Length < AesGcmNonceSize + AesGcmTagSize)
@@ -282,9 +440,9 @@ public static partial class VaporCryptoHelper
 		return Encoding.UTF8.GetString(plaintext);
 	}
 
-	private static string? DecryptAesCbc(string base64Text)
+	private static string? DecryptAesCbc(byte[] keyMaterial, string base64Text)
 	{
-		byte[] key = GetKey();
+		byte[] key = GetKey(keyMaterial);
 		byte[] decryptedData = Convert.FromBase64String(base64Text);
 
 		if (decryptedData.Length < 16)

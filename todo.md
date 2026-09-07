@@ -7,11 +7,11 @@
 ### 当前状态快照（2025-03-11）
 
 - **构建**: `dotnet build` 通过，0 错误 0 警告。
-- **测试**: 289 个测试全部通过（15 个测试文件，覆盖 Unit / Integration / Performance）。
+- **测试**: 394 个测试全部通过（18 个测试文件，覆盖 Unit / Integration / Performance）。
 - **CI**: 多平台（Ubuntu / Windows / macOS）构建 + 测试门禁已就绪。
 - **已实现 Actions（11 个）**: Ping, Echo, Login, Idle, PlayGames, RedeemKey, GetInventory, SendTradeOffer, AcceptTradeOffer, DeclineTradeOffer, CancelTradeOffer。
-- **已实现基础设施**: ControlPlane（15+ API 端点 + SSE 事件流 + SQLite 持久化 + Admin UI）、Agent（WebSocket 隧道 + 全部 Action 注册）、SessionEngine（BotSession 状态机 + SessionManager + SteamClientManager）、SteamWebHandler、SteamTradeClient、FileCredentialStore + AES-GCM 加密（兼容历史 AES-CBC 数据）。
-- **整体完成度**: ~45%。
+- **已实现基础设施**: ControlPlane（15+ API 端点 + SSE 事件流 + SQLite 持久化 + 审计日志持久化/查询 + Admin UI）、Agent（WebSocket 隧道 + 全部 Action 注册）、SessionEngine（BotSession 状态机 + SessionManager + SteamClientManager）、SteamWebHandler、SteamTradeClient、FileCredentialStore（v2 加密存储 + 备份恢复 + 版本迁移）+ AES-GCM 加密（兼容历史 AES-CBC 数据）。
+- **整体完成度**: ~55%。
 
 ### GA Exit Criteria
 
@@ -76,31 +76,32 @@
 
 ## 3. P2 阶段：M5 安全闭环（~70% 完成）
 
-### 3.1 凭证体系（⚠️ 部分完成）
+### 3.1 凭证体系（✅ 完成）
 
 - [x] `ICredentialStore` 接口定义（Save/Get RefreshToken、AccessToken、Revoke、HasCredentials）。
 - [x] `FileCredentialStore` 生产级实现（`~/.vapor/credentials.json`，SemaphoreSlim 并发安全，懒加载）。
 - [x] 支持多密码来源：明文、AES、环境变量、文件（`VaporCryptoHelper`）。
-- [ ] 凭证文件损坏恢复（备份 + 回滚）。
-- [ ] 凭证版本化与迁移策略（老格式 → 新格式）。
+- [x] 凭证文件损坏恢复（备份 + 回滚，`.bak` 自动恢复）。
+- [x] 凭证版本化与迁移策略（v1 明文 → v2 加密格式，加载时自动迁移）。
 
-### 3.2 加密与密钥管理（⚠️ 部分完成）
+### 3.2 加密与密钥管理（✅ 完成）
 
 - [x] AES-256-CBC 加密实现（随机 IV、Base64 编码）。
 - [x] 自定义密钥支持（`SetEncryptionKey()`，一次性设置）。
 - [x] 升级为 AES-GCM + 随机 nonce + 完整性校验。
 - [x] 禁止默认密钥 "Vapor" 用于生产（启动检查 + 告警）。
-- [ ] 引入主密钥配置规范（环境变量 / KMS）。
-- [ ] 密钥轮换工具脚本。
+- [x] 引入主密钥配置规范（`VAPOR_ENCRYPTION_KEY` / `VAPOR_ENCRYPTION_KEY_BASE64` / `VAPOR_ENCRYPTION_KEY_FILE`，适配 KMS / Docker secrets）。
+- [x] 密钥轮换工具（`tools/Vapor.KeyRotation` CLI，支持 base64/file/env 密钥格式、dry-run、失败中止）。
 
-### 3.3 安全审计与脱敏（⚠️ 部分完成）
+### 3.3 安全审计与脱敏（✅ 完成）
 
 - [x] RedeemKey / SteamClientManager 中的 Key masking。
 - [x] 统一敏感文本/JSON 脱敏工具（密码、令牌、验证码、key 字段）并接入 Agent 高风险日志入口。
 - [x] ControlPlane 关键入口结构化审计日志（配置修改、任务创建/取消、验证码提交、会话事件上报）。
-- [ ] 全链路日志脱敏（密码、令牌、验证码、key 统一拦截）。
-- [ ] 审计日志（登录、验证码提交、交易、关键配置修改）。
-- [ ] 配置文件权限检查与启动告警。
+- [x] 审计日志持久化与查询（`SqliteAuditStore` + `GET /v1/audit/logs` 分页/过滤 API，存储前统一脱敏）。
+- [x] 审计日志覆盖登录（session.login）、交易/激活码任务结果（task.result.reported）、验证码提交、配置修改。
+- [x] 凭证文件权限检查与启动告警（Unix 下自动收紧为 600，过宽权限告警并修复）。
+- [ ] 全链路日志脱敏（日志 Provider 级统一拦截，当前已覆盖审计与高风险入口）。
 
 ---
 
@@ -182,7 +183,7 @@
 |------|------|--------|------|
 | P0 构建恢复 | Week 1 | ✅ 100% | 已完成 |
 | P1 M2 核心能力 | Week 2-4 | ⚠️ ~75% | 剩余：Token 刷新、会话恢复、RedeemKey 明细、登录测试 |
-| P2 安全闭环 | Week 5-7 | ⚠️ ~70% | 剩余：其余日志入口脱敏、审计持久化/查询、密钥轮换 |
+| P2 安全闭环 | Week 5-7 | ✅ ~95% | 剩余：日志 Provider 级统一脱敏 |
 | P3 数据能力 | Week 6-9 | ⚠️ ~30% | 剩余：数据模型、缓存层、4 个新 Action |
 | P4 插件系统 | Week 8-12 | ❌ 0% | 未开始 |
 | GA 收口 | Week 10-12 | ⚠️ ~30% | 剩余：Docker、E2E、性能基准、文档 |
@@ -201,8 +202,9 @@
 
 ## 9. 下一步优先事项
 
-1. **P1 补完**: AccessToken 自动刷新 + 进程重启会话恢复。
-2. **P1 补完**: RedeemKey 回包明细解析 + 可观测字段。
-3. **P1 补完**: 登录流程单测与集成测试。
-4. **P2 推进**: 其余日志入口脱敏 + 审计持久化/查询。
-5. **P2 推进**: 引入主密钥配置规范（环境变量 / KMS）与轮换工具。
+1. ~~P2 推进: 其余日志入口脱敏 + 审计持久化/查询~~（已完成）。
+2. ~~P2 推进: 主密钥配置规范与密钥轮换工具~~（已完成）。
+3. **P2 收尾**: 日志 Provider 级统一脱敏拦截。
+4. **P1 收尾**: 交易流程校验增强（资产归属验证、报价状态机、风控节流）。
+5. **P3 推进**: GameInfo/ItemInfo 数据模型、缓存层、4 个数据 Action。
+6. **横向**: ControlPlane/Agent E2E 测试、Docker 镜像与 compose 编排。

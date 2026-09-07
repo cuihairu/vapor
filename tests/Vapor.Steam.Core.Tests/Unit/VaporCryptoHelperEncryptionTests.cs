@@ -52,6 +52,155 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 		Assert.Equal(plaintext, decrypted);
 	}
 
+	[Fact]
+	public async Task EncryptWithKey_DecryptWithKey_RoundTripsWithoutGlobalKey()
+	{
+		byte[] keyMaterial = Encoding.UTF8.GetBytes(new string('Z', 40));
+		const string plaintext = "rotation-secret";
+
+		string? encrypted = VaporCryptoHelper.EncryptWithKey(keyMaterial, plaintext);
+		string? decrypted = await VaporCryptoHelper.DecryptWithKey(keyMaterial, encrypted!);
+
+		Assert.NotNull(encrypted);
+		Assert.StartsWith("gcm:", encrypted, StringComparison.Ordinal);
+		Assert.Equal(plaintext, decrypted);
+	}
+
+	[Fact]
+	public void EncryptWithKey_WithShortKey_Throws()
+	{
+		Assert.Throws<ArgumentException>(
+			() => VaporCryptoHelper.EncryptWithKey(new byte[16], "value"));
+	}
+
+	[Fact]
+	public void DecryptWithKey_WithNullKey_Throws()
+	{
+		Assert.Throws<ArgumentNullException>(
+			() => VaporCryptoHelper.DecryptWithKey(null!, "value").ConfigureAwait(false).GetAwaiter().GetResult());
+	}
+
+	[Fact]
+	public async Task ConfigureFromEnvironment_WithBase64Key_AppliesRawKeyBytes()
+	{
+		VaporCryptoHelper.ResetForTests();
+		byte[] rawKey = RandomNumberGenerator.GetBytes(32);
+		string base64Key = Convert.ToBase64String(rawKey);
+		var environment = new Dictionary<string, string?>
+		{
+			["VAPOR_ENCRYPTION_KEY_BASE64"] = base64Key
+		};
+
+		VaporCryptoHelper.ConfigureFromEnvironment(key => environment.TryGetValue(key, out var value) ? value : null);
+
+		Assert.False(VaporCryptoHelper.HasDefaultKey);
+
+		const string plaintext = "kms-provisioned-secret";
+		string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
+		string? decryptedWithRawKey = await VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
+
+		Assert.Equal(plaintext, decryptedWithRawKey);
+	}
+
+	[Fact]
+	public async Task ConfigureFromEnvironment_WithKeyFile_AppliesFileContent()
+	{
+		VaporCryptoHelper.ResetForTests();
+		// Content that is not valid base64 falls back to raw UTF-8 interpretation.
+		string keyText = "vapor-master-key-file-content!0123456789";
+		string keyFile = Path.Combine(Path.GetTempPath(), "vapor-key-" + Guid.NewGuid().ToString("N"));
+		await File.WriteAllTextAsync(keyFile, keyText);
+
+		try
+		{
+			var environment = new Dictionary<string, string?>
+			{
+				["VAPOR_ENCRYPTION_KEY_FILE"] = keyFile
+			};
+
+			VaporCryptoHelper.ConfigureFromEnvironment(key => environment.TryGetValue(key, out var value) ? value : null);
+
+			Assert.False(VaporCryptoHelper.HasDefaultKey);
+
+			const string plaintext = "file-provisioned-secret";
+			string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
+			string? decryptedWithRawKey = await VaporCryptoHelper.DecryptWithKey(Encoding.UTF8.GetBytes(keyText), encrypted!);
+
+			Assert.Equal(plaintext, decryptedWithRawKey);
+		}
+		finally
+		{
+			File.Delete(keyFile);
+		}
+	}
+
+	[Fact]
+	public async Task ConfigureFromEnvironment_WithBase64KeyFile_DecodesKeyBytes()
+	{
+		VaporCryptoHelper.ResetForTests();
+		byte[] rawKey = RandomNumberGenerator.GetBytes(32);
+		string keyFile = Path.Combine(Path.GetTempPath(), "vapor-key-" + Guid.NewGuid().ToString("N"));
+		await File.WriteAllTextAsync(keyFile, Convert.ToBase64String(rawKey));
+
+		try
+		{
+			var environment = new Dictionary<string, string?>
+			{
+				["VAPOR_ENCRYPTION_KEY_FILE"] = keyFile
+			};
+
+			VaporCryptoHelper.ConfigureFromEnvironment(key => environment.TryGetValue(key, out var value) ? value : null);
+
+			Assert.False(VaporCryptoHelper.HasDefaultKey);
+
+			const string plaintext = "file-b64-secret";
+			string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
+			string? decryptedWithRawKey = await VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
+
+			Assert.Equal(plaintext, decryptedWithRawKey);
+		}
+		finally
+		{
+			File.Delete(keyFile);
+		}
+	}
+
+	[Fact]
+	public async Task ConfigureFromEnvironment_Base64TakesPrecedenceOverPlainKey()
+	{
+		VaporCryptoHelper.ResetForTests();
+		byte[] rawKey = RandomNumberGenerator.GetBytes(32);
+		var environment = new Dictionary<string, string?>
+		{
+			["VAPOR_ENCRYPTION_KEY"] = new string('K', 32),
+			["VAPOR_ENCRYPTION_KEY_BASE64"] = Convert.ToBase64String(rawKey)
+		};
+
+		VaporCryptoHelper.ConfigureFromEnvironment(key => environment.TryGetValue(key, out var value) ? value : null);
+
+		const string plaintext = "precedence-secret";
+		string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
+		string? decryptedWithBase64Key = await VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
+
+		Assert.Equal(plaintext, decryptedWithBase64Key);
+	}
+
+	[Fact]
+	public void SetEncryptionKeyFromBase64_WithInvalidBase64_Throws()
+	{
+		VaporCryptoHelper.ResetForTests();
+		Assert.Throws<ArgumentException>(
+			() => VaporCryptoHelper.SetEncryptionKeyFromBase64("not-valid-base64!!!"));
+	}
+
+	[Fact]
+	public void SetEncryptionKeyFromFile_WithMissingFile_Throws()
+	{
+		VaporCryptoHelper.ResetForTests();
+		Assert.Throws<FileNotFoundException>(
+			() => VaporCryptoHelper.SetEncryptionKeyFromFile(Path.Combine(Path.GetTempPath(), "vapor-missing-" + Guid.NewGuid().ToString("N"))));
+	}
+
 	private static string EncryptLegacyCbc(string text, string keyMaterial)
 	{
 		byte[] key = SHA256.HashData(Encoding.UTF8.GetBytes(keyMaterial));

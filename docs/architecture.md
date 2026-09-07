@@ -179,6 +179,30 @@ Modern web-based admin interface (`/admin.html`):
 - `GET /v1/agents/status` - Get agent status
 - `WS /v1/agent/ws` - Agent WebSocket tunnel
 
+#### Audit
+- `GET /v1/audit/logs` - Query persisted audit logs (filters: `action`, `account`, `jobId`, `fromMs`, `toMs`; paging via `limit`/`offset`)
+
+Audit records cover configuration changes, job lifecycle, auth code submissions,
+login session transitions (`session.login`), and sensitive task results
+(trade/redeem actions, `task.result.reported`). Sensitive detail values
+(passwords, tokens, codes, keys) are redacted before persistence.
+
+## Security & Key Management
+
+- **Encryption at rest**: credentials stored in `~/.vapor/credentials.json` use
+  versioned format v2 with AES-GCM encrypted tokens. Legacy v1 (plain) files are
+  migrated transparently on first load.
+- **Corruption recovery**: writes are atomic (temp file + replace); the previous
+  file is backed up as `.bak` and used to recover from corruption.
+- **File permissions**: credential files are tightened to owner-only (600) on Unix.
+- **Master key sources** (priority order):
+  - `VAPOR_ENCRYPTION_KEY_BASE64` - raw key bytes as base64 (KMS/Vault workflow)
+  - `VAPOR_ENCRYPTION_KEY_FILE` - key file (Docker/K8s secrets; base64 content decoded when valid)
+  - `VAPOR_ENCRYPTION_KEY` - plain text
+- **Key rotation**: `tools/Vapor.KeyRotation` CLI re-encrypts the credential store
+  from an old to a new key (supports `base64:`/`file:`/`env:` key specs, `--dry-run`,
+  aborts without modification when any account fails to decrypt).
+
 ## Testing
 
 The project includes a comprehensive test suite for the Steam.Core module:

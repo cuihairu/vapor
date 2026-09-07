@@ -46,7 +46,7 @@ public sealed class TokenRefreshTests : IDisposable
 	}
 
 	[Fact]
-	public async Task StoredAccessToken_ExpiresInFuture_IsValid()
+	public void StoredAccessToken_ExpiresInFuture_IsValid()
 	{
 		// Arrange
 		var token = new StoredAccessToken(
@@ -62,7 +62,7 @@ public sealed class TokenRefreshTests : IDisposable
 	}
 
 	[Fact]
-	public async Task StoredAccessToken_Expired_IsInvalid()
+	public void StoredAccessToken_Expired_IsInvalid()
 	{
 		// Arrange
 		var token = new StoredAccessToken(
