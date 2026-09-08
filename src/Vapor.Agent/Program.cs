@@ -11,6 +11,7 @@ using Vapor.Steam.Core.Steam;
 using Vapor.Steam.Core.Utilities;
 using Vapor.Steam.Core.Logging;
 using Vapor.Agent;
+using Vapor.Plugins.Core;
 
 static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) switch {
 	{ Length: > 0 } v => v,
@@ -110,6 +111,9 @@ actionRegistry.Register(serviceProvider.GetRequiredService<SearchGamesAction>())
 actionRegistry.Register(serviceProvider.GetRequiredService<GetPriceAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetMarketListingsAction>());
 
+// Load plugins (discovery + isolated load + contribution registration).
+var pluginManager = await LoadPluginsAsync(serviceProvider, actionRegistry, logger);
+
 using CancellationTokenSource cts = new();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
@@ -143,6 +147,46 @@ while (!cts.IsCancellationRequested) {
 			backoff.TotalMilliseconds);
 		await Task.Delay(backoff, cts.Token);
 	}
+}
+
+if (pluginManager is not null) {
+	await pluginManager.DisposeAsync();
+}
+
+static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger) {
+	var pluginsDir = Environment.GetEnvironmentVariable("VAPOR_PLUGINS_DIR");
+	if (string.IsNullOrWhiteSpace(pluginsDir)) {
+		pluginsDir = Path.Combine(AppContext.BaseDirectory, "plugins");
+	}
+
+	if (!Directory.Exists(pluginsDir)) {
+		logger.LogDebug("No plugins directory found at {PluginsDirectory}; skipping plugin load", pluginsDir);
+		return null;
+	}
+
+	var loggerFactory = services.GetRequiredService<ILoggerFactory>();
+	var manager = new PluginManager(
+		new DefaultPluginHostServices(loggerFactory, services),
+		loggerFactory);
+
+	manager.PluginLoaded += (_, e) => {
+		foreach (var action in e.Plugin.Actions) {
+			actionRegistry.Register(action);
+		}
+	};
+	manager.PluginUnloading += (_, e) => {
+		foreach (var action in e.Plugin.Actions) {
+			actionRegistry.Unregister(action.Name);
+		}
+	};
+
+	var report = await manager.LoadAllAsync(pluginsDir);
+	foreach (var failure in report.Failures) {
+		logger.LogWarning("Plugin load failure: {Failure}", SensitiveDataRedactor.Redact(failure));
+	}
+
+	logger.LogInformation("Plugins loaded: {LoadedCount}, failures: {FailureCount}", report.Loaded.Count, report.Failures.Count);
+	return manager;
 }
 
 async Task RunOnce(CancellationToken cancellationToken) {

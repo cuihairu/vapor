@@ -137,13 +137,16 @@
 
 ---
 
-## 5. P4 阶段：M3 插件系统（0% 未开始）
+## 5. P4 阶段：M3 插件系统（~40% 进行中）
 
-### 5.1 插件基础设施
+### 5.1 插件基础设施（✅ 完成）
 
-- [ ] `Vapor.Plugins.Core`（发现、加载、隔离、卸载）。
-- [ ] 插件 API：`IPlugin` / 自定义 `IAction` / `ICommand` / `IWebApi`。
-- [ ] 版本兼容策略（插件 API SemVer）。
+- [x] `Vapor.Plugins.Core`（发现 `PluginDiscovery` + plugin.json 清单、加载 `PluginLoader`、隔离 `PluginLoadContext` 可卸载 ALC（Vapor 契约程序集与宿主共享类型标识）、卸载 `PluginManager.UnloadAsync` + ALC 回收验证）。
+- [x] 插件 API：`IPlugin` / `IPluginContext` / `IPluginHostServices` + 能力接口 `IActionPlugin`（贡献 Steam.Core `IAction`）/ `ICommandPlugin`（`IPluginCommand`）/ `IWebApiPlugin`（宿主无关的 `PluginWebRoute`）。
+- [x] 版本兼容策略（`PluginApi` SemVer：major 必须一致，插件 minor ≤ 宿主 minor，prerelease/build 忽略）。
+- [x] `PluginManager` 生命周期（LoadAll/Load/Unload/重载、失败隔离报告 `PluginLoadReport`、`PluginLoaded`/`PluginUnloading` 事件）。
+- [x] `ActionRegistry.Unregister`（插件卸载时移除其贡献的 Action）+ Agent 集成（`VAPOR_PLUGINS_DIR` 或 `./plugins`，加载插件并注册 Action，退出时卸载）。
+- [x] 测试：`Vapor.Plugins.Core.Tests`（46 个测试）+ `Vapor.Plugins.TestPlugin` 示例插件程序集。
 
 ### 5.2 官方插件首批
 
@@ -193,7 +196,7 @@
 | P1 M2 核心能力 | Week 2-4 | ✅ 100% | 交易校验增强已完成 |
 | P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
 | P3 数据能力 | Week 6-9 | ✅ ~95% | 剩余：Redis 缓存后端（可选）、增量更新策略 |
-| P4 插件系统 | Week 8-12 | ❌ 0% | 未开始 |
+| P4 插件系统 | Week 8-12 | ⚠️ ~40% | 插件基础设施与 API 已完成；剩余：官方插件 |
 | GA 收口 | Week 10-12 | ⚠️ ~30% | 剩余：Docker、E2E、性能基准、文档 |
 
 ---
@@ -212,6 +215,7 @@
 
 1. ~~P3 收尾: 4 个数据 Action + 缓存接入~~（已完成）。
 2. ~~P2 推进: 429/5xx 退避增强 + 熔断/指标~~（已完成）。
-3. **P4 推进**: 插件基础设施（Vapor.Plugins.Core：发现、加载、隔离、卸载 + IPlugin API）。
+3. ~~P4 推进: 插件基础设施（Vapor.Plugins.Core：发现、加载、隔离、卸载 + IPlugin API）~~（已完成）。
 4. **P4 推进**: MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）。
-5. **横向**: ControlPlane/Agent E2E 测试、Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）。
+5. **P4 推进**: MonitoringPlugin（指标导出、Grafana 面板模板）。
+6. **横向**: ControlPlane/Agent E2E 测试、Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）。

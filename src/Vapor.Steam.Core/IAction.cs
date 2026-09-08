@@ -31,6 +31,7 @@ public sealed record ActionResult(
 public interface IActionRegistry
 {
 	void Register(IAction action);
+	bool Unregister(string name);
 	IAction? Get(string? name);
 	IReadOnlyList<string> ListNames();
 }
@@ -49,6 +50,17 @@ public sealed class ActionRegistry : IActionRegistry
 	{
 		_actions[action.Name] = action;
 		_logger.LogInformation("Registered action: {ActionName}", action.Name);
+	}
+
+	public bool Unregister(string name)
+	{
+		var removed = _actions.TryRemove(name, out _);
+		if (removed)
+		{
+			_logger.LogInformation("Unregistered action: {ActionName}", name);
+		}
+
+		return removed;
 	}
 
 	public IAction? Get(string? name)

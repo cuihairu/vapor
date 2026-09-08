@@ -26,6 +26,10 @@ tests/
     │   └── ConcurrencyTests.cs           (10 tests, ~420 lines)
     ├── README.md
     └── Vapor.Steam.Core.Tests.csproj
+
+tests/
+├── Vapor.Plugins.Core.Tests/            (46 tests: manifest/discovery/SemVer 兼容/加载/卸载/ALC 回收)
+└── Vapor.Plugins.TestPlugin/            (插件基础设施测试用的示例插件程序集)
 ```
 
 ## 测试统计
