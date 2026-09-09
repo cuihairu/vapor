@@ -1,0 +1,342 @@
+using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
+using Vapor.Plugins.MobileAuthenticator;
+
+namespace Vapor.Plugins.MobileAuthenticator.Tests;
+
+public class AuthenticatorActionTests
+{
+	private const string SharedSecret = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=";
+	private const string IdentitySecret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+
+	private static SteamTimeSynchronizer CreateSynchronizer(long? serverTime = null) =>
+		new(_ => Task.FromResult(serverTime ?? 0L), new FixedTimeProvider(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+
+	[Fact]
+	public async Task GenerateTotp_WithExplicitTime_ReturnsKnownCode()
+	{
+		var action = new GenerateTotpAction(CreateSynchronizer());
+		var payload = new Dictionary<string, object?> { ["shared_secret"] = SharedSecret, ["time"] = 59L };
+
+		var result = await action.ExecuteAsync(null!, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("PV9M4", result.Output!["code"]);
+		Assert.Equal(1, result.Output["seconds_remaining"]);
+		Assert.False((bool)result.Output["time_synced"]!);
+	}
+
+	[Fact]
+	public async Task GenerateTotp_MissingSecret_Fails()
+	{
+		var action = new GenerateTotpAction(CreateSynchronizer());
+
+		var result = await action.ExecuteAsync(null!, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("shared_secret", result.Error);
+	}
+
+	[Fact]
+	public async Task GenerateTotp_InvalidSecret_Fails()
+	{
+		var action = new GenerateTotpAction(CreateSynchronizer());
+		var payload = new Dictionary<string, object?> { ["shared_secret"] = "!!bad!!" };
+
+		var result = await action.ExecuteAsync(null!, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+	}
+
+	[Fact]
+	public async Task GenerateTotp_UsesSynchronizedTime()
+	{
+		var local = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		var synchronizer = new SteamTimeSynchronizer(
+			_ => Task.FromResult(59L),
+			new FixedTimeProvider(local));
+		await synchronizer.SyncAsync();
+
+		var action = new GenerateTotpAction(synchronizer);
+		var payload = new Dictionary<string, object?> { ["sharedSecret"] = SharedSecret };
+
+		var result = await action.ExecuteAsync(null!, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("PV9M4", result.Output!["code"]);
+		Assert.True((bool)result.Output["time_synced"]!);
+	}
+
+	[Fact]
+	public async Task GenerateConfirmationHash_ReturnsKnownHash()
+	{
+		var action = new GenerateConfirmationHashAction(CreateSynchronizer());
+		var payload = new Dictionary<string, object?>
+		{
+			["identity_secret"] = IdentitySecret,
+			["tag"] = "allow",
+			["time"] = 1610000000L
+		};
+
+		var result = await action.ExecuteAsync(null!, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("zJsKoS9LykHHgQG+K6g0aHCd45o=", result.Output!["hash"]);
+		Assert.Equal("allow", result.Output["tag"]);
+	}
+
+	[Fact]
+	public async Task GenerateConfirmationHash_DefaultsToConfTag()
+	{
+		var action = new GenerateConfirmationHashAction(CreateSynchronizer());
+		var payload = new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret, ["time"] = 1610000000L };
+
+		var result = await action.ExecuteAsync(null!, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("conf", result.Output!["tag"]);
+	}
+
+	[Fact]
+	public async Task GenerateConfirmationHash_UnknownTag_Fails()
+	{
+		var action = new GenerateConfirmationHashAction(CreateSynchronizer());
+		var payload = new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret, ["tag"] = "bogus" };
+
+		var result = await action.ExecuteAsync(null!, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("tag", result.Error);
+	}
+
+	[Fact]
+	public async Task GenerateConfirmationHash_MissingSecret_Fails()
+	{
+		var action = new GenerateConfirmationHashAction(CreateSynchronizer());
+
+		var result = await action.ExecuteAsync(null!, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("identity_secret", result.Error);
+	}
+
+	[Fact]
+	public async Task SyncSteamTime_Succeeds()
+	{
+		var local = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		var synchronizer = new SteamTimeSynchronizer(_ => Task.FromResult(local.ToUnixTimeSeconds() + 5), new FixedTimeProvider(local));
+		var action = new SyncSteamTimeAction(synchronizer, NullLogger<SyncSteamTimeAction>.Instance);
+
+		var result = await action.ExecuteAsync(null!, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(5L, result.Output!["offset_seconds"]);
+		Assert.True(synchronizer.HasSynced);
+	}
+
+	[Fact]
+	public async Task SyncSteamTime_QueryFailure_ReturnsError()
+	{
+		var synchronizer = new SteamTimeSynchronizer(_ => Task.FromException<long>(new HttpRequestException("down")));
+		var action = new SyncSteamTimeAction(synchronizer, NullLogger<SyncSteamTimeAction>.Instance);
+
+		var result = await action.ExecuteAsync(null!, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Steam time sync failed", result.Error);
+	}
+
+	[Fact]
+	public async Task GetTradeConfirmations_ReturnsParsedConfirmations()
+	{
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null, new[]
+			{
+				new TradeConfirmation(123UL, 456UL, 789UL, "Trade with someone", "You give: item")
+			})
+		};
+
+		var action = new GetTradeConfirmationsAction(NullLogger<GetTradeConfirmationsAction>.Instance, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret };
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(1, result.Output!["count"]);
+		Assert.Equal(IdentitySecret, fakeClient.LastIdentitySecret);
+	}
+
+	[Fact]
+	public async Task GetTradeConfirmations_MissingSecret_Fails()
+	{
+		var action = new GetTradeConfirmationsAction(NullLogger<GetTradeConfirmationsAction>.Instance, _ => new FakeMobileConfirmationClient());
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("identity_secret", result.Error);
+	}
+
+	[Fact]
+	public async Task GetTradeConfirmations_NoWebHandler_Fails()
+	{
+		var action = new GetTradeConfirmationsAction(NullLogger<GetTradeConfirmationsAction>.Instance, _ => new FakeMobileConfirmationClient());
+		using var session = TestSession.Create(withWebHandler: false);
+		var payload = new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret };
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("web handler", result.Error);
+	}
+
+	[Fact]
+	public async Task GetTradeConfirmations_ClientFailure_PropagatesError()
+	{
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(false, "Steam rejected the confirmation list request")
+		};
+
+		var action = new GetTradeConfirmationsAction(NullLogger<GetTradeConfirmationsAction>.Instance, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret };
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("rejected", result.Error);
+	}
+
+	[Fact]
+	public async Task RespondTradeConfirmation_Allow_Succeeds()
+	{
+		var fakeClient = new FakeMobileConfirmationClient { OperationResult = new MobileConfirmationResult(true) };
+		var action = new RespondTradeConfirmationAction(NullLogger<RespondTradeConfirmationAction>.Instance, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?>
+		{
+			["identity_secret"] = IdentitySecret,
+			["confirmation_id"] = "123",
+			["nonce"] = "456",
+			["operation"] = "allow"
+		};
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("allow", result.Output!["operation"]);
+		Assert.Equal((123UL, 456UL, ConfirmationOperation.Allow), fakeClient.LastRespond);
+	}
+
+	[Fact]
+	public async Task RespondTradeConfirmation_Cancel_Succeeds()
+	{
+		var fakeClient = new FakeMobileConfirmationClient { OperationResult = new MobileConfirmationResult(true) };
+		var action = new RespondTradeConfirmationAction(NullLogger<RespondTradeConfirmationAction>.Instance, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?>
+		{
+			["identity_secret"] = IdentitySecret,
+			["confirmation_id"] = 123L,
+			["nonce"] = 456L,
+			["operation"] = "cancel"
+		};
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal((123UL, 456UL, ConfirmationOperation.Cancel), fakeClient.LastRespond);
+	}
+
+	[Theory]
+	[InlineData("bogus")]
+	public async Task RespondTradeConfirmation_InvalidOperation_Fails(string operation)
+	{
+		var fakeClient = new FakeMobileConfirmationClient { OperationResult = new MobileConfirmationResult(true) };
+		var action = new RespondTradeConfirmationAction(NullLogger<RespondTradeConfirmationAction>.Instance, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?>
+		{
+			["identity_secret"] = IdentitySecret,
+			["confirmation_id"] = "123",
+			["nonce"] = "456",
+			["operation"] = operation
+		};
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("operation", result.Error);
+	}
+
+	[Fact]
+	public async Task RespondTradeConfirmation_MissingConfirmationId_Fails()
+	{
+		var action = new RespondTradeConfirmationAction(NullLogger<RespondTradeConfirmationAction>.Instance, _ => new FakeMobileConfirmationClient());
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret, ["nonce"] = "456" };
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("confirmation_id", result.Error);
+	}
+
+	[Fact]
+	public async Task RespondTradeConfirmation_ClientFailure_PropagatesError()
+	{
+		var fakeClient = new FakeMobileConfirmationClient { OperationResult = new MobileConfirmationResult(false, "bad confirmation") };
+		var action = new RespondTradeConfirmationAction(NullLogger<RespondTradeConfirmationAction>.Instance, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?>
+		{
+			["identity_secret"] = IdentitySecret,
+			["confirmation_id"] = "123",
+			["nonce"] = "456"
+		};
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("bad confirmation", result.Error);
+	}
+
+	private sealed class FixedTimeProvider : TimeProvider
+	{
+		private readonly DateTimeOffset _now;
+
+		public FixedTimeProvider(DateTimeOffset now) => _now = now;
+
+		public override DateTimeOffset GetUtcNow() => _now;
+	}
+
+	private sealed class FakeMobileConfirmationClient : IMobileConfirmationClient
+	{
+		public MobileConfirmationListResult ListResult { get; set; } = new(true, null, []);
+		public MobileConfirmationResult OperationResult { get; set; } = new(true);
+		public string? LastIdentitySecret { get; private set; }
+		public (ulong Id, ulong Nonce, ConfirmationOperation Op) LastRespond { get; private set; }
+
+		public Task<MobileConfirmationListResult> GetConfirmationsAsync(string identitySecret, CancellationToken cancellationToken)
+		{
+			LastIdentitySecret = identitySecret;
+			return Task.FromResult(ListResult);
+		}
+
+		public Task<MobileConfirmationResult> RespondAsync(
+			string identitySecret,
+			ulong confirmationId,
+			ulong nonce,
+			ConfirmationOperation operation,
+			CancellationToken cancellationToken)
+		{
+			LastIdentitySecret = identitySecret;
+			LastRespond = (confirmationId, nonce, operation);
+			return Task.FromResult(OperationResult);
+		}
+	}
+}

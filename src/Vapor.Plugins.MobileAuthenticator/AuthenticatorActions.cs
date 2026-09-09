@@ -1,0 +1,409 @@
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using Vapor.Steam.Core;
+using Vapor.Steam.Core.Web;
+
+namespace Vapor.Plugins.MobileAuthenticator;
+
+/// <summary>
+/// "generate_totp": generates the current Steam mobile authenticator code from a
+/// base64 shared secret. Uses the synced Steam time offset when available.
+/// Payload: shared_secret (string, base64). Optional: time (unix seconds, for testing).
+/// </summary>
+public sealed class GenerateTotpAction : IAction
+{
+	private readonly SteamTimeSynchronizer _timeSynchronizer;
+
+	public GenerateTotpAction(SteamTimeSynchronizer timeSynchronizer)
+	{
+		_timeSynchronizer = timeSynchronizer;
+	}
+
+	public string Name => "generate_totp";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Generate a Steam mobile authenticator TOTP code from a shared secret",
+		RequiresLogin: false,
+		TimeoutSeconds: 15);
+
+	public Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		var sharedSecret = PayloadReader.GetString(payload, "shared_secret") ?? PayloadReader.GetString(payload, "sharedSecret");
+		if (string.IsNullOrWhiteSpace(sharedSecret))
+		{
+			return Task.FromResult(new ActionResult(false, "shared_secret is required", null));
+		}
+
+		var time = ReadTime(payload) ?? _timeSynchronizer.GetCurrentSteamTime();
+
+		string code;
+		try
+		{
+			code = SteamTotp.Generate(sharedSecret, time);
+		}
+		catch (ArgumentException ex)
+		{
+			return Task.FromResult(new ActionResult(false, ex.Message, null));
+		}
+
+		return Task.FromResult(new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["code"] = code,
+			["seconds_remaining"] = SteamTotp.SecondsRemaining(time),
+			["time"] = time,
+			["time_synced"] = _timeSynchronizer.HasSynced
+		}));
+	}
+
+	internal static long? ReadTime(IReadOnlyDictionary<string, object?> payload)
+	{
+		if (!PayloadReader.TryGetValue(payload, "time", out var value) || value is null)
+		{
+			return null;
+		}
+
+		return value switch
+		{
+			long l => l,
+			int i => i,
+			double d when d % 1 == 0 => (long)d,
+			JsonElement { ValueKind: JsonValueKind.Number } e when e.TryGetInt64(out var parsed) => parsed,
+			string s when long.TryParse(s, out var parsed) => parsed,
+			_ => null
+		};
+	}
+}
+
+/// <summary>
+/// "generate_confirmation_hash": computes the HMAC-SHA1 confirmation hash used by the
+/// /mobileconf endpoints.
+/// Payload: identity_secret (string, base64), tag (conf|details|allow|cancel). Optional: time.
+/// </summary>
+public sealed class GenerateConfirmationHashAction : IAction
+{
+	private readonly SteamTimeSynchronizer _timeSynchronizer;
+
+	public GenerateConfirmationHashAction(SteamTimeSynchronizer timeSynchronizer)
+	{
+		_timeSynchronizer = timeSynchronizer;
+	}
+
+	public string Name => "generate_confirmation_hash";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Generate a mobile confirmation hash from an identity secret",
+		RequiresLogin: false,
+		TimeoutSeconds: 15);
+
+	public Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		var identitySecret = PayloadReader.GetString(payload, "identity_secret") ?? PayloadReader.GetString(payload, "identitySecret");
+		if (string.IsNullOrWhiteSpace(identitySecret))
+		{
+			return Task.FromResult(new ActionResult(false, "identity_secret is required", null));
+		}
+
+		var tag = PayloadReader.GetString(payload, "tag") ?? "conf";
+		if (!ConfirmationHashGenerator.KnownTags.Contains(tag))
+		{
+			return Task.FromResult(new ActionResult(false, $"tag must be one of: {string.Join(", ", ConfirmationHashGenerator.KnownTags)}", null));
+		}
+
+		var time = GenerateTotpAction.ReadTime(payload) ?? _timeSynchronizer.GetCurrentSteamTime();
+
+		string hash;
+		try
+		{
+			hash = ConfirmationHashGenerator.Generate(identitySecret, time, tag);
+		}
+		catch (ArgumentException ex)
+		{
+			return Task.FromResult(new ActionResult(false, ex.Message, null));
+		}
+
+		return Task.FromResult(new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["hash"] = hash,
+			["tag"] = tag,
+			["time"] = time,
+			["time_synced"] = _timeSynchronizer.HasSynced
+		}));
+	}
+}
+
+/// <summary>
+/// "sync_steam_time": queries Steam's QueryTime endpoint and stores the local/server clock
+/// offset. Subsequent TOTP and confirmation hash generations use the synced time.
+/// </summary>
+public sealed class SyncSteamTimeAction : IAction
+{
+	private readonly SteamTimeSynchronizer _timeSynchronizer;
+	private readonly ILogger<SyncSteamTimeAction> _logger;
+
+	public SyncSteamTimeAction(SteamTimeSynchronizer timeSynchronizer, ILogger<SyncSteamTimeAction> logger)
+	{
+		_timeSynchronizer = timeSynchronizer;
+		_logger = logger;
+	}
+
+	public string Name => "sync_steam_time";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Synchronize the local clock offset against Steam server time",
+		RequiresLogin: false,
+		TimeoutSeconds: 30);
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		try
+		{
+			await _timeSynchronizer.SyncAsync(cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			return new ActionResult(false, "canceled", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogWarning(ex, "Steam time sync failed");
+			return new ActionResult(false, $"Steam time sync failed: {ex.Message}", null);
+		}
+
+		return new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["offset_seconds"] = _timeSynchronizer.OffsetSeconds,
+			["steam_time"] = _timeSynchronizer.GetCurrentSteamTime(),
+			["synced_at"] = _timeSynchronizer.LastSyncedAt?.ToString("O")
+		});
+	}
+}
+
+/// <summary>
+/// "get_trade_confirmations": lists pending mobile trade/market confirmations for the
+/// session account. Requires identity_secret.
+/// </summary>
+public sealed class GetTradeConfirmationsAction : IAction
+{
+	private readonly ILogger<GetTradeConfirmationsAction> _logger;
+	private readonly Func<BotSession, IMobileConfirmationClient> _clientFactory;
+
+	public GetTradeConfirmationsAction(ILogger<GetTradeConfirmationsAction> logger, SteamTimeSynchronizer timeSynchronizer)
+	{
+		_logger = logger;
+		_clientFactory = session => new MobileConfirmationClient(session.SteamWebHandler!, timeSynchronizer, logger);
+	}
+
+	internal GetTradeConfirmationsAction(
+		ILogger<GetTradeConfirmationsAction> logger,
+		Func<BotSession, IMobileConfirmationClient> clientFactory)
+	{
+		_logger = logger;
+		_clientFactory = clientFactory;
+	}
+
+	public string Name => "get_trade_confirmations";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"List pending mobile trade/market confirmations",
+		RequiresLogin: true,
+		TimeoutSeconds: 30);
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		var identitySecret = PayloadReader.GetString(payload, "identity_secret") ?? PayloadReader.GetString(payload, "identitySecret");
+		if (string.IsNullOrWhiteSpace(identitySecret))
+		{
+			return new ActionResult(false, "identity_secret is required", null);
+		}
+
+		if (session.SteamWebHandler is null)
+		{
+			return new ActionResult(false, "Steam web handler not available", null);
+		}
+
+		MobileConfirmationListResult result;
+		try
+		{
+			result = await _clientFactory(session).GetConfirmationsAsync(identitySecret, cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			return new ActionResult(false, "canceled", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Failed to fetch trade confirmations for {AccountName}", session.AccountName);
+			return new ActionResult(false, ex.Message, null);
+		}
+
+		if (!result.Success)
+		{
+			return new ActionResult(false, result.Error, null);
+		}
+
+		var confirmations = result.Confirmations ?? [];
+		return new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["count"] = confirmations.Count,
+			["confirmations"] = confirmations.Select(c => new Dictionary<string, object?>
+			{
+				["id"] = c.Id.ToString(),
+				["nonce"] = c.Nonce.ToString(),
+				["creator_id"] = c.CreatorId.ToString(),
+				["headline"] = c.Headline,
+				["summary"] = c.Summary
+			}).ToList()
+		});
+	}
+}
+
+/// <summary>
+/// "respond_trade_confirmation": accepts (allow) or cancels a pending mobile confirmation.
+/// Payload: identity_secret, confirmation_id, nonce, operation (allow|cancel, default allow).
+/// </summary>
+public sealed class RespondTradeConfirmationAction : IAction
+{
+	private readonly ILogger<RespondTradeConfirmationAction> _logger;
+	private readonly Func<BotSession, IMobileConfirmationClient> _clientFactory;
+
+	public RespondTradeConfirmationAction(ILogger<RespondTradeConfirmationAction> logger, SteamTimeSynchronizer timeSynchronizer)
+	{
+		_logger = logger;
+		_clientFactory = session => new MobileConfirmationClient(session.SteamWebHandler!, timeSynchronizer, logger);
+	}
+
+	internal RespondTradeConfirmationAction(
+		ILogger<RespondTradeConfirmationAction> logger,
+		Func<BotSession, IMobileConfirmationClient> clientFactory)
+	{
+		_logger = logger;
+		_clientFactory = clientFactory;
+	}
+
+	public string Name => "respond_trade_confirmation";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Accept or cancel a pending mobile trade/market confirmation",
+		RequiresLogin: true,
+		TimeoutSeconds: 30);
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		var identitySecret = PayloadReader.GetString(payload, "identity_secret") ?? PayloadReader.GetString(payload, "identitySecret");
+		if (string.IsNullOrWhiteSpace(identitySecret))
+		{
+			return new ActionResult(false, "identity_secret is required", null);
+		}
+
+		if (!TryGetUInt64(payload, "confirmation_id", out var confirmationId))
+		{
+			return new ActionResult(false, "confirmation_id is required and must be a positive integer", null);
+		}
+
+		if (!TryGetUInt64(payload, "nonce", out var nonce))
+		{
+			return new ActionResult(false, "nonce is required and must be a positive integer", null);
+		}
+
+		var operationText = PayloadReader.GetString(payload, "operation") ?? "allow";
+		var operation = operationText.Equals("cancel", StringComparison.OrdinalIgnoreCase)
+			? ConfirmationOperation.Cancel
+			: operationText.Equals("allow", StringComparison.OrdinalIgnoreCase)
+				? ConfirmationOperation.Allow
+				: (ConfirmationOperation?)null;
+
+		if (operation is null)
+		{
+			return new ActionResult(false, "operation must be 'allow' or 'cancel'", null);
+		}
+
+		if (session.SteamWebHandler is null)
+		{
+			return new ActionResult(false, "Steam web handler not available", null);
+		}
+
+		MobileConfirmationResult result;
+		try
+		{
+			result = await _clientFactory(session)
+				.RespondAsync(identitySecret, confirmationId, nonce, operation.Value, cancellationToken)
+				.ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			return new ActionResult(false, "canceled", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Failed to respond to confirmation {ConfirmationId} for {AccountName}", confirmationId, session.AccountName);
+			return new ActionResult(false, ex.Message, null);
+		}
+
+		if (!result.Success)
+		{
+			return new ActionResult(false, result.Error, null);
+		}
+
+		_logger.LogInformation(
+			"Confirmation {ConfirmationId} {Operation} for {AccountName}",
+			confirmationId, operation.Value == ConfirmationOperation.Allow ? "allowed" : "canceled", session.AccountName);
+
+		return new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["confirmation_id"] = confirmationId.ToString(),
+			["operation"] = operation.Value == ConfirmationOperation.Allow ? "allow" : "cancel"
+		});
+	}
+
+	private static bool TryGetUInt64(IReadOnlyDictionary<string, object?> payload, string key, out ulong value)
+	{
+		value = 0;
+
+		if (!PayloadReader.TryGetValue(payload, key, out var raw) || raw is null)
+		{
+			return false;
+		}
+
+		switch (raw)
+		{
+			case ulong u:
+				value = u;
+				return true;
+			case long l when l > 0:
+				value = (ulong)l;
+				return true;
+			case int i when i > 0:
+				value = (ulong)i;
+				return true;
+			case double d when d > 0 && d % 1 == 0:
+				value = (ulong)d;
+				return true;
+			case JsonElement { ValueKind: JsonValueKind.Number } e:
+				return e.TryGetUInt64(out value);
+			case string s:
+				return ulong.TryParse(s, out value);
+			default:
+				return false;
+		}
+	}
+}
