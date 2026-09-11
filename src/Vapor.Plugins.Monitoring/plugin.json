@@ -1,0 +1,14 @@
+{
+  "id": "vapor.monitoring",
+  "name": "Vapor Monitoring",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "description": "Prometheus metrics endpoint: actions, cache, sessions and runtime.",
+  "entryAssembly": "Vapor.Plugins.Monitoring.dll",
+  "entryType": "Vapor.Plugins.Monitoring.MonitoringPlugin",
+  "configuration": {
+    "metrics.host": "127.0.0.1",
+    "metrics.port": "9700",
+    "metrics.path": "/metrics"
+  }
+}

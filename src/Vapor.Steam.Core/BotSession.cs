@@ -285,24 +285,36 @@ public sealed class BotSession : IDisposable
 		await _actionLock.WaitAsync(effectiveToken).ConfigureAwait(false);
 		try
 		{
+			var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 			try
 			{
 				var result = await action.ExecuteAsync(this, cmd.Payload ?? new Dictionary<string, object?>(), effectiveToken).ConfigureAwait(false);
 				cmd.Completion?.TrySetResult(new SessionCommandResult(result.Success, result.Error, result.Output));
+				NotifyActionExecuted(action.Name, result.Success, stopwatch.Elapsed.TotalMilliseconds);
 			}
 			catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true)
 			{
 				cmd.Completion?.TrySetResult(new SessionCommandResult(false, "action timeout", null));
+				NotifyActionExecuted(action.Name, false, stopwatch.Elapsed.TotalMilliseconds);
 			}
 			catch (OperationCanceledException) when (effectiveToken.IsCancellationRequested)
 			{
 				cmd.Completion?.TrySetResult(new SessionCommandResult(false, "canceled", null));
+				NotifyActionExecuted(action.Name, false, stopwatch.Elapsed.TotalMilliseconds);
 			}
 		}
 		finally
 		{
 			timeoutCts?.Dispose();
 			_actionLock.Release();
+		}
+	}
+
+	private void NotifyActionExecuted(string actionName, bool success, double durationMs)
+	{
+		if (_actionRegistry is ActionRegistry registry)
+		{
+			registry.RaiseActionExecuted(actionName, success, durationMs);
 		}
 	}
 

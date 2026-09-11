@@ -48,3 +48,21 @@ jobs:
       with:
         files: "**/TestResults/coverage/coverage.opencover.xml"
         fail_ci_if_error: false
+
+  docker-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        show-progress: false
+
+    - name: Build control plane image
+      run: docker build -f src/Vapor.ControlPlane/Dockerfile -t vapor/controlplane:ci .
+
+    - name: Build agent image
+      run: docker build -f src/Vapor.Agent/Dockerfile -t vapor/agent:ci .
+
+    - name: Validate compose file
+      run: docker compose config -q

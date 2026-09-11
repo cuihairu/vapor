@@ -39,6 +39,7 @@ public interface IActionRegistry
 public sealed class ActionRegistry : IActionRegistry
 {
 	private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IAction> _actions = new(StringComparer.OrdinalIgnoreCase);
+	private readonly System.Collections.Concurrent.ConcurrentDictionary<IActionExecutionObserver, byte> _executionObservers = new();
 	private readonly ILogger<ActionRegistry> _logger;
 
 	public ActionRegistry(ILogger<ActionRegistry> logger)
@@ -61,6 +62,41 @@ public sealed class ActionRegistry : IActionRegistry
 		}
 
 		return removed;
+	}
+
+	/// <summary>
+	/// Subscribes an observer to action execution outcomes. Observers are notified via
+	/// <see cref="RaiseActionExecuted"/> and must be removed before disposal
+	/// (e.g. when a plugin unloads).
+	/// </summary>
+	public void AddExecutionObserver(IActionExecutionObserver observer)
+	{
+		_executionObservers[observer] = 1;
+	}
+
+	/// <summary>Removes a previously subscribed execution observer.</summary>
+	public bool RemoveExecutionObserver(IActionExecutionObserver observer)
+	{
+		return _executionObservers.TryRemove(observer, out _);
+	}
+
+	/// <summary>
+	/// Notifies all subscribed observers of an execution outcome. Observer exceptions are
+	/// swallowed so monitoring can never break action execution.
+	/// </summary>
+	public void RaiseActionExecuted(string actionName, bool success, double durationMs)
+	{
+		foreach (var observer in _executionObservers.Keys)
+		{
+			try
+			{
+				observer.OnActionExecuted(actionName, success, durationMs);
+			}
+			catch (Exception ex)
+			{
+				_logger.LogWarning(ex, "Action execution observer threw for action {ActionName}", actionName);
+			}
+		}
 	}
 
 	public IAction? Get(string? name)

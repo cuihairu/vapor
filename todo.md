@@ -151,7 +151,7 @@
 ### 5.2 官方插件首批
 
 - [x] MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步、交易确认列表/响应，59 个测试）。
-- [ ] MonitoringPlugin（指标导出、Grafana 面板模板）。
+- [x] MonitoringPlugin（Prometheus 文本端点 + get_metrics Action + 插件 Web 路由；动作/会话/缓存/运行时指标；Grafana 面板模板 + Prometheus 抓取配置，21 个测试）。
 
 ---
 
@@ -174,7 +174,6 @@
 - [x] 性能测试（ConcurrencyTests）。
 - [x] ControlPlane 单测（API / 审计 / 存储 / 调度，38 个测试）。
 - [ ] Agent 单测与集成测试。
-- [ ] Agent 单测与集成测试。
 - [ ] E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）。
 - [ ] 性能基准扩展（并发任务、SSE 连接数、队列吞吐）。
 
@@ -182,10 +181,11 @@
 
 - [x] CI/CD 多平台构建（Ubuntu / Windows / macOS，Debug / Release）。
 - [x] Codecov 覆盖率上报。
-- [ ] Docker 镜像（ControlPlane + Agent）。
-- [ ] docker-compose 本地编排。
+- [x] Docker 镜像（ControlPlane + Agent，含 Monitoring 插件、非 root 用户、CI 构建门禁）。
+- [x] docker-compose 本地编排（含 observability profile：Prometheus + Grafana 自动 provisioning）。
 - [ ] 自动发布流水线与回滚策略。
-- [ ] 可观测性：结构化日志、指标（Prometheus）、追踪（OpenTelemetry）、告警规则。
+- [x] 可观测性：结构化日志（脱敏）、指标（MonitoringPlugin Prometheus 端点 + Grafana 面板 + compose observability profile）。
+- [ ] 可观测性增强：追踪（OpenTelemetry）、告警规则。
 
 ---
 
@@ -197,8 +197,8 @@
 | P1 M2 核心能力 | Week 2-4 | ✅ 100% | 交易校验增强已完成 |
 | P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
 | P3 数据能力 | Week 6-9 | ✅ ~95% | 剩余：Redis 缓存后端（可选）、增量更新策略 |
-| P4 插件系统 | Week 8-12 | ⚠️ ~70% | 基础设施 + MobileAuthenticatorPlugin 已完成；剩余：MonitoringPlugin |
-| GA 收口 | Week 10-12 | ⚠️ ~30% | 剩余：Docker、E2E、性能基准、文档 |
+| P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
+| GA 收口 | Week 10-12 | ⚠️ ~55% | Docker/compose/可观测性已就绪；剩余：Agent 单测、E2E、发布流水线、部署/排障手册 |
 
 ---
 
@@ -218,7 +218,10 @@
 2. ~~P2 推进: 429/5xx 退避增强 + 熔断/指标~~（已完成）。
 3. ~~P4 推进: 插件基础设施（Vapor.Plugins.Core：发现、加载、隔离、卸载 + IPlugin API）~~（已完成）。
 4. ~~P4 推进: MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）~~（已完成，已注册进 Vapor.sln）。
-5. **P4 推进**: MonitoringPlugin（指标导出、Grafana 面板模板）。
-6. **横向**: Agent 单测、E2E 测试、Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）。
+5. ~~P4 推进: MonitoringPlugin（指标导出、Grafana 面板模板）~~（已完成：Prometheus 端点 + 面板模板 + compose observability profile）。
+6. ~~横向: Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）~~（已完成）。
+7. **横向**: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）、自动发布流水线。
+8. **横向**: 生产部署指南、故障排查手册、OpenAPI 完整化。
 
-> 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步），635 个测试全部通过。
+> 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
+> 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。

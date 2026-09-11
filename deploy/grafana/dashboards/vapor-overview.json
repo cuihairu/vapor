@@ -1,0 +1,207 @@
+{
+  "uid": "vapor-overview",
+  "title": "Vapor Overview",
+  "description": "Agent actions, sessions, cache efficiency and .NET runtime metrics from the Vapor Monitoring plugin.",
+  "tags": ["vapor"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "label": "Scrape job",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+        "query": "label_values(vapor_action_executions_total, job)",
+        "refresh": 2,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Agent uptime",
+      "description": "Process uptime of the scraped Vapor agent.",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "decimals": 1 },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "process_uptime_seconds{job=~\"$job\"}", "legendFormat": "uptime" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Action executions / sec",
+      "description": "Rate of action executions by action and outcome.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action, status) (rate(vapor_action_executions_total{job=~\"$job\"}[5m]))",
+          "legendFormat": "{{action}} ({{status}})"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Action failure ratio",
+      "description": "Share of failed action executions over 15m.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "max": 1, "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(vapor_action_executions_total{job=~\"$job\", status=\"failure\"}[15m])) / clamp_min(sum(rate(vapor_action_executions_total{job=~\"$job\"}[15m])), 1e-9)",
+          "legendFormat": "failure ratio"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Avg action duration",
+      "description": "Mean execution time per action (sum/count of cumulative seconds).",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (action) (rate(vapor_action_duration_seconds_sum{job=~\"$job\"}[5m])) / clamp_min(sum by (action) (rate(vapor_action_executions_total{job=~\"$job\"}[5m])), 1e-9)",
+          "legendFormat": "{{action}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Sessions by state",
+      "description": "Bot sessions grouped by session state.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "vapor_sessions_by_state{job=~\"$job\"}",
+          "legendFormat": "{{state}}"
+        },
+        {
+          "refId": "B",
+          "expr": "vapor_sessions_active{job=~\"$job\"}",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Cache hit ratio",
+      "description": "Vapor cache hit ratio over 5m.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1, "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(vapor_cache_hits_total{job=~\"$job\"}[5m]) / clamp_min(rate(vapor_cache_hits_total{job=~\"$job\"}[5m]) + rate(vapor_cache_misses_total{job=~\"$job\"}[5m]), 1e-9)",
+          "legendFormat": "hit ratio"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Session events / sec",
+      "description": "Rate of session lifecycle events by type.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (type) (rate(vapor_session_events_total{job=~\"$job\"}[5m]))",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Working set",
+      "description": "Process working set of the agent.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        { "refId": "A", "expr": "process_working_set_bytes{job=~\"$job\"}", "legendFormat": "working set" },
+        { "refId": "B", "expr": "dotnet_gc_heap_size_bytes{job=~\"$job\"}", "legendFormat": "managed heap" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Runtime: GC & thread pool",
+      "description": "GC collection rate and thread pool pressure.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "vapor-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 12, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (generation) (rate(dotnet_gc_collections_total{job=~\"$job\"}[5m]))",
+          "legendFormat": "GC gen {{generation}}/s"
+        },
+        {
+          "refId": "B",
+          "expr": "dotnet_threadpool_threads{job=~\"$job\"}",
+          "legendFormat": "pool threads"
+        },
+        {
+          "refId": "C",
+          "expr": "dotnet_threadpool_pending_work_items{job=~\"$job\"}",
+          "legendFormat": "pending items"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+# Vapor local/production composition.
+#
+#   docker compose up -d                          # control plane + agent
+#   docker compose --profile observability up -d  # + Prometheus + Grafana
+#
+# Override credentials in production via environment or a .env file:
+#   VAPOR_ADMIN_API_KEY, VAPOR_AGENT_API_KEY
+services:
+  controlplane:
+    build:
+      context: .
+      dockerfile: src/Vapor.ControlPlane/Dockerfile
+    image: vapor/controlplane:local
+    restart: unless-stopped
+    ports:
+      - "${VAPOR_CONTROLPLANE_PORT:-8080}:8080"
+    environment:
+      Vapor_ADMIN_API_KEY: "${VAPOR_ADMIN_API_KEY:-admin-dev-token}"
+      Vapor_AGENT_API_KEYS: "${VAPOR_AGENT_API_KEYS:-agent-dev-token}"
+      Vapor_DB_PATH: /app/data/controlplane.db
+      Vapor_AUDIT_DB_PATH: /app/data/audit.db
+    volumes:
+      - controlplane-data:/app/data
+    healthcheck:
+      # Bash /dev/tcp works without curl/wget in the runtime image.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080; printf \"GET /healthz HTTP/1.0\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  agent:
+    build:
+      context: .
+      dockerfile: src/Vapor.Agent/Dockerfile
+    image: vapor/agent:local
+    restart: unless-stopped
+    environment:
+      AGENT_ID: "${VAPOR_AGENT_ID:-agent-1}"
+      AGENT_REGION: "${VAPOR_AGENT_REGION:-eu-west}"
+      AGENT_CONTROLPLANE_WS_URL: ws://controlplane:8080/v1/agent/ws
+      AGENT_API_KEY: "${VAPOR_AGENT_API_KEY:-agent-dev-token}"
+      VAPOR_PLUGINS_DIR: /app/plugins
+      VAPOR_METRICS_HOST: 0.0.0.0
+      VAPOR_METRICS_PORT: "9700"
+    ports:
+      - "${VAPOR_AGENT_METRICS_PORT:-9700}:9700"
+    volumes:
+      - agent-data:/app/.vapor
+    depends_on:
+      controlplane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/9700; printf \"GET /metrics HTTP/1.0\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    profiles: ["observability"]
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  controlplane-data:
+  agent-data:
+  grafana-data:
