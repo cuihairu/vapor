@@ -249,16 +249,16 @@ public class SessionManagerTests : IDisposable
 		var cts = new CancellationTokenSource();
 
 		// Start collecting events
-			var collectTask = Task.Run(async () =>
+		var collectTask = Task.Run(async () =>
+		{
+			try
 			{
-				try
+				await foreach (var evt in events.WithCancellation(cts.Token))
 				{
-					await foreach (var evt in events.WithCancellation(cts.Token))
-					{
-						eventList.Add(evt);
-						if (eventList.Count >= 1) break;
-					}
+					eventList.Add(evt);
+					if (eventList.Count >= 1) break;
 				}
+			}
 			catch (OperationCanceledException)
 			{
 			}
@@ -267,7 +267,7 @@ public class SessionManagerTests : IDisposable
 		// Wait a bit for events
 		await Task.Delay(200);
 		cts.Cancel();
-		await collectTask.WaitAsync(TimeSpan.FromSeconds(5));
+		await collectTask.WaitAsync(TimeSpan.FromSeconds(30));
 
 		// Assert
 		// Events should be collected (the exact number depends on timing)

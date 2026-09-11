@@ -8,7 +8,7 @@ param(
     [switch]$Help
 )
 
-# Allow running net8.0 testhost with only a newer runtime installed (e.g. net9).
+# Allow running testhost when the installed runtime is older than the TFM.
 if (-not $env:DOTNET_ROLL_FORWARD) {
     $env:DOTNET_ROLL_FORWARD = "Major"
 }

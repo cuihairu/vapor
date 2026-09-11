@@ -22,11 +22,14 @@ public class MobileAuthenticatorPluginTests
 
 		Assert.Equal(5, actions.Count);
 		Assert.Equal(
-			new[] { "generate_totp", "generate_confirmation_hash", "sync_steam_time", "get_trade_confirmations", "respond_trade_confirmation" },
+			new[] { "generate_totp", "generate_confirmation_hash", "sync_steam_time", "get_trade_confirmations", "respond_trade_confirmation" }
+				.Order(StringComparer.OrdinalIgnoreCase),
 			actions.Select(a => a.Name).Order(StringComparer.OrdinalIgnoreCase));
 
 		var loggedInOnly = actions.Where(a => a.Metadata.RequiresLogin).Select(a => a.Name).ToList();
-		Assert.Equal(new[] { "get_trade_confirmations", "respond_trade_confirmation" }, loggedInOnly.Order(StringComparer.OrdinalIgnoreCase));
+		Assert.Equal(
+			new[] { "get_trade_confirmations", "respond_trade_confirmation" }.Order(StringComparer.OrdinalIgnoreCase),
+			loggedInOnly.Order(StringComparer.OrdinalIgnoreCase));
 
 		await plugin.ShutdownAsync(CancellationToken.None);
 	}

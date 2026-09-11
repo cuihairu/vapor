@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- .NET SDK 8.x (recommended; 9.x can build via `global.json`)
-  - Note: this repo targets `net8.0`, so running the built apps/tests requires the .NET 8 runtime installed.
+- .NET SDK 10.x (recommended; `global.json` allows any newer SDK)
+  - Note: this repo targets `net10.0`, so running the built apps/tests requires the .NET 10 runtime installed.
 
 ## Build
 

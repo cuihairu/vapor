@@ -513,9 +513,10 @@ static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobT
 				using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 				using var reader = new System.IO.StreamReader(stream);
 
-					while (!cancellationToken.IsCancellationRequested && !reader.EndOfStream)
+					while (!cancellationToken.IsCancellationRequested)
 					{
 						var line = await reader.ReadLineAsync(cancellationToken);
+						if (line is null) break;
 						if (string.IsNullOrWhiteSpace(line)) continue;
 
 						// Parse SSE format: "event: <type>" then "data: <json>"

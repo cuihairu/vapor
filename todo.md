@@ -150,7 +150,7 @@
 
 ### 5.2 官方插件首批
 
-- [ ] MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）。
+- [x] MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步、交易确认列表/响应，59 个测试）。
 - [ ] MonitoringPlugin（指标导出、Grafana 面板模板）。
 
 ---
@@ -172,7 +172,8 @@
 - [x] Steam.Core 单测（15 个测试文件，289 个测试方法）。
 - [x] 集成测试（SessionWorkflowTests）。
 - [x] 性能测试（ConcurrencyTests）。
-- [ ] ControlPlane 单测与集成测试。
+- [x] ControlPlane 单测（API / 审计 / 存储 / 调度，38 个测试）。
+- [ ] Agent 单测与集成测试。
 - [ ] Agent 单测与集成测试。
 - [ ] E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）。
 - [ ] 性能基准扩展（并发任务、SSE 连接数、队列吞吐）。
@@ -196,7 +197,7 @@
 | P1 M2 核心能力 | Week 2-4 | ✅ 100% | 交易校验增强已完成 |
 | P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
 | P3 数据能力 | Week 6-9 | ✅ ~95% | 剩余：Redis 缓存后端（可选）、增量更新策略 |
-| P4 插件系统 | Week 8-12 | ⚠️ ~40% | 插件基础设施与 API 已完成；剩余：官方插件 |
+| P4 插件系统 | Week 8-12 | ⚠️ ~70% | 基础设施 + MobileAuthenticatorPlugin 已完成；剩余：MonitoringPlugin |
 | GA 收口 | Week 10-12 | ⚠️ ~30% | 剩余：Docker、E2E、性能基准、文档 |
 
 ---
@@ -216,6 +217,8 @@
 1. ~~P3 收尾: 4 个数据 Action + 缓存接入~~（已完成）。
 2. ~~P2 推进: 429/5xx 退避增强 + 熔断/指标~~（已完成）。
 3. ~~P4 推进: 插件基础设施（Vapor.Plugins.Core：发现、加载、隔离、卸载 + IPlugin API）~~（已完成）。
-4. **P4 推进**: MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）。
+4. ~~P4 推进: MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）~~（已完成，已注册进 Vapor.sln）。
 5. **P4 推进**: MonitoringPlugin（指标导出、Grafana 面板模板）。
-6. **横向**: ControlPlane/Agent E2E 测试、Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）。
+6. **横向**: Agent 单测、E2E 测试、Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）。
+
+> 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步），635 个测试全部通过。

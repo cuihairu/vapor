@@ -3,8 +3,8 @@
 ## Control plane
 
 Prerequisites:
-- .NET 8 runtime (SDK 8.x recommended)
-  - You may build with a newer SDK (e.g. .NET 9), but running `net8.0` binaries still requires the .NET 8 runtime (or `DOTNET_ROLL_FORWARD=Major`).
+- .NET 10 runtime (SDK 10.x recommended)
+  - A matching runtime for the targeted TFM is required to run binaries/tests.
 
 Environment variables:
 - `ASPNETCORE_URLS` (e.g. `http://127.0.0.1:8080`)

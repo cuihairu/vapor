@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-# Allow running net8.0 testhost with only a newer runtime installed (e.g. net9).
+# Allow running testhost with only an older-than-TFM runtime installed.
 : "${DOTNET_ROLL_FORWARD:=Major}"
 export DOTNET_ROLL_FORWARD
 
