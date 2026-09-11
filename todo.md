@@ -173,8 +173,8 @@
 - [x] 集成测试（SessionWorkflowTests）。
 - [x] 性能测试（ConcurrencyTests）。
 - [x] ControlPlane 单测（API / 审计 / 存储 / 调度，38 个测试）。
-- [ ] Agent 单测与集成测试。
-- [ ] E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）。
+- [x] Agent 单元测试（`Vapor.Agent.Tests`，41 个测试：重连策略默认值/环境变量解析/指数退避封顶/重试上限、任务执行器凭证分支（password/pass 别名、refreshToken/snake_case、无凭证回退存储会话、取消与异常映射）、WebSocket URL 构建）。
+- [x] E2E 测试（`Vapor.E2E.Tests`，5 个测试：spawn 真实 ControlPlane + Agent 进程 + 临时 SQLite/审计库，stub 会话模式隔离 Steam 依赖；覆盖 echo 任务全链路闭环（创建→调度→WS 派发→执行→结果落库）、未知 action 的调度行为（保持 queued + 持续重试 + 取消清理）、job.created 审计断言、未认证/agent key 越权拒绝、healthz）。
 - [ ] 性能基准扩展（并发任务、SSE 连接数、队列吞吐）。
 
 ### 6.3 发布与运维
@@ -198,7 +198,7 @@
 | P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
 | P3 数据能力 | Week 6-9 | ✅ ~95% | 剩余：Redis 缓存后端（可选）、增量更新策略 |
 | P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
-| GA 收口 | Week 10-12 | ⚠️ ~55% | Docker/compose/可观测性已就绪；剩余：Agent 单测、E2E、发布流水线、部署/排障手册 |
+| GA 收口 | Week 10-12 | ⚠️ ~70% | Docker/compose/可观测性/Agent 单测/E2E 已就绪；剩余：发布流水线、部署/排障手册、OpenAPI 完整化 |
 
 ---
 
@@ -220,8 +220,9 @@
 4. ~~P4 推进: MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步）~~（已完成，已注册进 Vapor.sln）。
 5. ~~P4 推进: MonitoringPlugin（指标导出、Grafana 面板模板）~~（已完成：Prometheus 端点 + 面板模板 + compose observability profile）。
 6. ~~横向: Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）~~（已完成）。
-7. **横向**: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）、自动发布流水线。
+7. ~~横向: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）~~（已完成：`Vapor.Agent.Tests` 41 个 + `Vapor.E2E.Tests` 5 个）；**剩余: 自动发布流水线**。
 8. **横向**: 生产部署指南、故障排查手册、OpenAPI 完整化。
 
 > 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
 > 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。
+> 2026-09-11：Agent 单元测试（41 个）+ E2E 测试（5 个，真实双进程闭环）落地；全解决方案 706 个测试通过。

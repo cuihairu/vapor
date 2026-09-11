@@ -190,7 +190,7 @@ static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IA
 }
 
 async Task RunOnce(CancellationToken cancellationToken) {
-	Uri uri = BuildUri(wsUrlBase, agentId, region);
+	Uri uri = AgentWebSocketUri.Build(wsUrlBase, agentId, region);
 
 	using ClientWebSocket ws = new();
 	ws.Options.SetRequestHeader("Authorization", $"Bearer {agentApiKey}");
@@ -266,7 +266,7 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			string? error;
 			IReadOnlyDictionary<string, object?>? output;
 			try {
-				(success, error, output) = await Execute(
+				(success, error, output) = await AgentTaskExecutor.ExecuteAsync(
 					task,
 					sessionManager,
 					logger,
@@ -304,119 +304,6 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			await receiver;
 		} catch {
 		}
-	}
-}
-
-static Uri BuildUri(string baseUrl, string agentId, string region) {
-	var baseUri = new Uri(baseUrl);
-	var ub = new UriBuilder(baseUri);
-
-	string qs = ub.Query;
-	if (qs.StartsWith('?')) {
-		qs = qs[1..];
-	}
-
-	var parts = new List<string>();
-	if (!string.IsNullOrEmpty(qs)) {
-		parts.Add(qs);
-	}
-
-	parts.Add($"agentId={Uri.EscapeDataString(agentId)}");
-	parts.Add($"region={Uri.EscapeDataString(region)}");
-
-	ub.Query = string.Join('&', parts.Where(p => !string.IsNullOrWhiteSpace(p)));
-	return ub.Uri;
-}
-
-static async Task<(bool Success, string? Error, IReadOnlyDictionary<string, object?>? Output)> Execute(
-	JobTask task,
-	ISessionManager sessionManager,
-	ILogger logger,
-	CancellationToken cancellationToken)
-{
-	string action = task.Action.Trim().ToLowerInvariant();
-	string accountName = task.Target;
-
-	try
-	{
-		var payload = task.Payload ?? new Dictionary<string, object?>();
-
-		string password =
-			PayloadReader.GetString(payload, "password") ??
-			PayloadReader.GetString(payload, "pass") ??
-			string.Empty;
-
-		string? accessToken = PayloadReader.GetString(payload, "accessToken") ?? PayloadReader.GetString(payload, "access_token");
-		string? refreshToken = PayloadReader.GetString(payload, "refreshToken") ?? PayloadReader.GetString(payload, "refresh_token");
-
-		BotSession session;
-
-		// If only tokens are provided (no password), try to restore from stored credentials
-		if (string.IsNullOrEmpty(password) && !string.IsNullOrEmpty(refreshToken))
-		{
-			logger.LogInformation("Attempting to restore session for {AccountName} using tokens", accountName);
-
-			var credentials = new AccountCredentials(
-				AccountName: accountName,
-				Password: string.Empty,
-				AccessToken: accessToken,
-				RefreshToken: refreshToken
-			);
-
-			session = await sessionManager.GetOrCreateSessionAsync(
-				accountName,
-				credentials,
-				cancellationToken
-			);
-		}
-		else if (string.IsNullOrEmpty(password))
-		{
-			// No credentials provided, try to restore from stored credentials
-			logger.LogInformation("No credentials provided, attempting to restore session for {AccountName}", accountName);
-			var restoredSession = await ((Vapor.Steam.Core.SessionManager)sessionManager).TryRestoreSessionAsync(accountName, cancellationToken);
-
-			if (restoredSession == null)
-			{
-				return (false, "No credentials provided and no stored session found", null);
-			}
-
-			session = restoredSession;
-		}
-		else
-		{
-			// Password provided, create new session
-			var credentials = new AccountCredentials(
-				AccountName: accountName,
-				Password: password,
-				AuthCode: PayloadReader.GetString(payload, "authCode") ?? PayloadReader.GetString(payload, "auth_code"),
-				TwoFactorCode: PayloadReader.GetString(payload, "twoFactorCode") ?? PayloadReader.GetString(payload, "two_factor_code"),
-				RefreshToken: refreshToken,
-				AccessToken: accessToken
-			);
-
-			session = await sessionManager.GetOrCreateSessionAsync(
-				accountName,
-				credentials,
-				cancellationToken
-			);
-		}
-
-		var result = await session.ExecuteActionAsync(
-			action,
-			payload,
-			cancellationToken
-		);
-
-		return (result.Success, result.Error, result.Output);
-	}
-	catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-	{
-		return (false, "canceled", null);
-	}
-	catch (Exception ex)
-	{
-		logger.LogError(ex, "Execute failed for task {TaskId}", task.Id);
-		return (false, ex.Message, null);
 	}
 }
 
