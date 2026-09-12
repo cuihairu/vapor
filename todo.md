@@ -33,7 +33,7 @@
 
 ---
 
-## 2. P1 阶段：M2 核心能力闭环（~75% 完成）
+## 2. P1 阶段：M2 核心能力闭环（✅ 100% 完成）
 
 ### 2.1 PlayGames 全量实现 ✅ 已完成
 
@@ -79,7 +79,7 @@
 
 ---
 
-## 3. P2 阶段：M5 安全闭环（~70% 完成）
+## 3. P2 阶段：M5 安全闭环（✅ 100% 完成）
 
 ### 3.1 凭证体系（✅ 完成）
 
@@ -181,7 +181,7 @@
 
 ---
 
-## 6. 横向工程化（~30% 完成，并行推进）
+## 6. 横向工程化（✅ 100% 完成，随各阶段并行推进）
 
 ### 6.1 文档与接口
 
@@ -227,6 +227,7 @@
 | P3 数据能力 | Week 6-9 | ✅ 100% | 数据动作 + 分级缓存（内存/Redis）+ 失效闭环已完成 |
 | P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
 | GA 收口 | Week 10-12 | ✅ 100% | Docker/compose/可观测性/E2E/发布流水线/部署与排障手册/OpenAPI 完整化/追踪与 Redis 缓存均已就绪 |
+| P5 规模化运营 | Week 13-16 | 🔄 计划中 | 账户农场编排 + 通知/自动化闭环 + 质量与协议韧性（见第 10 节） |
 
 ---
 
@@ -250,6 +251,36 @@
 6. ~~横向: Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）~~（已完成）。
 7. ~~横向: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）~~（已完成：`Vapor.Agent.Tests` 41 个 + `Vapor.E2E.Tests` 5 个）；**剩余: 自动发布流水线**。
 8. ~~横向: 生产部署指南、故障排查手册、OpenAPI 完整化、自动发布流水线与回滚~~（全部完成：`docs/production.md` + `docs/troubleshooting.md` + OpenAPI 22 端点注解 + release workflow 补齐 GHCR 镜像发布与打包文档）。
+9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: **方向 A 账户农场编排**（对标 ASF bot 管理，补齐 large-scale multi-account 架构核心闭环）→ **方向 C 通知与自动化闭环**（建立在 A 的账户模型上）→ **方向 B 质量与协议韧性**（replay tests 与覆盖率覆盖 A/C 落地后的代码面更划算；统计修正先行）。
+
+---
+
+## 10. P5 阶段：规模化运营（🔄 计划中，2026-09-12 定案）
+
+### 10.1 方向 A：账户农场编排（第一个实施）
+
+- [ ] `/v1/accounts` 资源 CRUD：账户名、期望状态（`offline`/`online`/`idle` + 挂机 appid 列表）、期望 region/agent 标签、备注；凭证不入 CP（沿用 agent 侧 FileCredentialStore 与现有 config/account 体系，CP 只存元数据与期望状态）。
+- [ ] 期望状态编排器 `DesiredStateReconciler`：周期对账（期望 vs `SessionTracker` 实际），为偏离账户挑选 capable agent → 下发 login job → 掉线自动重登录；agent 下线时按标签重平衡到其它 agent。
+- [ ] 编排策略可配置：每 agent 并发账户上限、对账间隔、重试上限与冷静期（防登录风暴）、dry-run 模式（只报告偏差不执行）。
+- [ ] 账户生命周期动作：enable / disable / remove（disable 停会话不清配置，remove 清理）。
+- [ ] 账户聚合视图：`GET /v1/accounts/{name}`（期望状态、当前 agent、实时会话状态、最近任务结果、待处理验证码）+ `GET /v1/accounts` 列表过滤（按状态/region/agent）。
+- [ ] jobs/sessions API 补按账户过滤；编排决策与账户变更接入审计日志。
+- [ ] E2E 测试：声明账户 → 自动分配 stub agent 登录 → kill agent → 重平衡到备用 agent。
+
+### 10.2 方向 C：通知与自动化闭环（第二个实施）
+
+- [ ] 核心通知系统：`INotificationSink` 抽象 + webhook 实现（HMAC 签名、指数退避重试、失败隔离），订阅 EventBroker 事件流（job/session/auth/风控）；规则化过滤（事件类型、账户、region）。
+- [ ] 2FA/验证码自动提交闭环：`AuthCodeNeeded`/`TwoFactorCodeNeeded` 事件 → 优先由 MobileAuthenticator 插件（本地 TOTP + 确认哈希）自动应答 → 无本地密钥时回落人工 SSE 通道；全自动模式需显式开启。
+- [ ] 计划任务：job 增加 schedule 字段（interval 或 cron 表达式）创建周期任务；处理 missed/overlap 策略（跳过或排队）；持久化下次触发时间（复用 tasks 表迁移模式）。
+- [ ] ControlPlane /metrics 补通知派发指标（sent/failed/retried）与编排指标（accounts_by_state、reconcile_actions_total）。
+
+### 10.3 方向 B：质量与协议韧性（第三个实施）
+
+- [ ] 统计修正（可先行）：TESTING.md 测试统计刷新（当前停更于 268，实际 822）；P1/P2/横向过时标题修正（已完成）。
+- [ ] SteamKit2 协议适配层（风险清单承诺）：提取 `ISteamTransport` 类隔离接口，SteamKit2 类型不外泄出 Core 内部，协议升级只动适配层。
+- [ ] contract tests（风险清单承诺）：Steam Web API 响应用录制 JSON fixture（GetGameInfo/GetPrice/GetMarketListings/SearchGames）离线回放，防上游响应结构漂移导致解析静默失败。
+- [ ] replay tests（风险清单承诺）：ControlPlane↔Agent WS 任务派发协议录制回放（消息序列快照测试）。
+- [ ] 覆盖率 44.6% → 60%+：优先 Agent（25.1%：TaskExecutor/会话泵/WS 客户端分支）、Protocol（44.4%）；补齐后更新 CI 门禁与 TESTING.md 基线数字。
 
 > 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
 > 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。
