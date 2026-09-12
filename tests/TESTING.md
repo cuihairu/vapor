@@ -4,181 +4,144 @@
 
 ## 测试项目结构
 
+`tests/` 下 8 个测试项目(外加 1 个供插件基础设施测试使用的示例插件程序集):
+
 ```
 tests/
-└── Vapor.Steam.Core.Tests/
-    ├── Unit/
-    │   ├── Actions/
-    │   │   ├── PingActionTests.cs        (15 tests, ~180 lines)
-    │   │   ├── EchoActionTests.cs        (15 tests, ~220 lines)
-    │   │   ├── LoginActionTests.cs       (12 tests, ~160 lines)
-    │   │   ├── IdleActionTests.cs        (16 tests, ~210 lines)
-    │   │   └── RedeemKeyActionTests.cs   (19 tests, ~280 lines)
-    │   ├── ActionRegistryTests.cs        (13 tests, ~180 lines)
-    │   ├── BotSessionTests.cs            (22 tests, ~320 lines)
-    │   ├── SessionManagerTests.cs        (21 tests, ~280 lines)
-    │   ├── SteamClientManagerTests.cs    (15 tests, ~200 lines)
-    │   ├── ModelsTests.cs                (55 tests, ~620 lines)
-    │   └── EdgeCaseTests.cs              (40 tests, ~540 lines)
-    ├── Integration/
-    │   └── SessionWorkflowTests.cs       (15 tests, ~280 lines)
-    ├── Performance/
-    │   └── ConcurrencyTests.cs           (10 tests, ~420 lines)
-    ├── README.md
-    └── Vapor.Steam.Core.Tests.csproj
-
-tests/
-├── Vapor.Plugins.Core.Tests/            (85 tests: manifest/discovery/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置扩展/信任与权限)
-├── Vapor.Plugins.MarketWatch.Tests/     (24 tests: watch 存储/阈值评估/三个 watch action/轮询告警与 webhook/插件宿主实战加载)
-└── Vapor.Plugins.TestPlugin/            (插件基础设施测试用的示例插件程序集)
+├── Vapor.Steam.Core.Tests/               (558 tests)
+│   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
+│   ├── Integration/                      会话工作流 + Redis 缓存(门控)
+│   └── Performance/                      并发与压力
+├── Vapor.ControlPlane.Tests/             (140 tests)
+│   └── Performance/                      队列吞吐/派发/SSE 扇出基准
+├── Vapor.Plugins.Core.Tests/             (85 tests)
+├── Vapor.Plugins.MobileAuthenticator.Tests/ (44 tests)
+├── Vapor.Agent.Tests/                    (41 tests)
+├── Vapor.Plugins.MarketWatch.Tests/      (24 tests)
+├── Vapor.Plugins.Monitoring.Tests/       (21 tests)
+├── Vapor.E2E.Tests/                      (6 tests,真实双进程)
+└── Vapor.Plugins.TestPlugin/             插件基础设施测试用示例插件
 ```
 
 ## 测试统计
 
-| 指标 | 数值 |
-|------|------|
-| 测试类 | 13 |
-| 测试方法 | 268 |
-| 测试代码行数 | ~3,900+ |
-| 测试与生产代码比例 | ~3.7:1 |
+| 测试项目 | 数量 | 覆盖范围 |
+|----------|------|----------|
+| Vapor.Steam.Core.Tests | 558 | 动作、会话状态机、交易校验、凭据/加密、数据缓存、Steam Web 客户端 |
+| Vapor.ControlPlane.Tests | 140 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 |
+| Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
+| Vapor.Plugins.MobileAuthenticator.Tests | 44 | TOTP、确认哈希、移动交易确认、shared secret 持久化、插件宿主实战加载 |
+| Vapor.Agent.Tests | 41 | 重连退避策略、任务执行器、WS URI 构造 |
+| Vapor.Plugins.MarketWatch.Tests | 24 | watch 存储/阈值评估/轮询告警与 webhook/插件宿主实战加载 |
+| Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
+| Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
+| **合计** | **919** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+
+> 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
 ## 测试分类
 
-### 单元测试 (Unit Tests) - 233 个测试
+### Steam.Core(558 个测试)
 
-#### Actions 测试 (77 个测试)
-| 测试类 | 测试数量 | 说明 |
-|--------|----------|------|
-| PingActionTests | 15 | 心跳动作测试 |
-| EchoActionTests | 15 | 回显动作测试 |
-| LoginActionTests | 12 | 登录动作测试 |
-| IdleActionTests | 16 | 空闲动作测试 |
-| RedeemKeyActionTests | 19 | Key 激活测试 |
+#### 动作(Actions)
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| RedeemKeyActionTests | 24 | Key 激活(含遮罩与边界) |
+| IdleActionTests | 23 | 空闲动作(含 PlayGamesPayloadParser 12 个) |
+| LoginActionTests | 17 | 登录动作 |
+| PlayGamesActionTests | 7 | 挂机游玩 |
+| DataActionsTests | 22 | 数据动作(游戏信息/价格/市场/搜索) |
+| EchoActionTests / PingActionTests | 27 | 回显/心跳 |
+| ActionRegistryTests | 16 | 注册表(执行观察者 4 个另计) |
+| SendTradeOffer / AcceptTradeOffer / DeclineTradeOffer / CancelTradeOffer ActionTests | 12 | 交易动作 |
+| GetInventoryActionTests | 4 | 库存读取 |
 
-#### 核心组件测试 (96 个测试)
-| 测试类 | 测试数量 | 说明 |
-|--------|----------|------|
-| ActionRegistryTests | 13 | 动作注册表测试 |
-| BotSessionTests | 22 | 会话状态机测试 |
-| SessionManagerTests | 21 | 会话管理器测试 |
-| SteamClientManagerTests | 15 | Steam 客户端管理器测试 |
-| ModelsTests | 55 | 数据模型和枚举测试 |
-| EdgeCaseTests | 40 | 边界和异常场景测试 |
+#### 会话与核心组件
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| BotSessionTests | 26 | 会话状态机 |
+| SessionManagerTests | 24 | 会话管理器 |
+| SteamClientManagerTests | 23 | Steam 客户端管理器 |
+| ModelsTests | 41 | 数据模型和枚举 |
+| EdgeCaseTests | 23 | 边界和异常场景 |
+| SessionWorkflowTests(集成) | 19 | 完整工作流 |
+| ConcurrencyTests(性能) | 9 | 并发和压力 |
+| TwoFactorAutoResponderTests | 6 | 2FA 自动应答(本地 TOTP 闭环) |
+| TokenRefreshTests / LoginFlowTests / RedeemKeyFlowTests | 5 | 认证与激活流程 |
 
-#### ModelsTests 详细 (55 个测试)
-- SessionState 枚举测试 (5 tests)
-- SessionEventType 枚举测试 (3 tests)
-- ActionMetadata 测试 (5 tests)
-- ActionResult 测试 (5 tests)
-- AccountCredentials 测试 (9 tests)
-- SessionEvent 测试 (8 tests)
+#### 交易安全层(Trade Safety)
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| TradeOfferStateMachineTests | 29 | 报价状态机 |
+| TradeActionValidationTests | 15 | 交易动作校验 |
+| TradeAssetValidatorTests | 13 | 资产校验 |
+| TradeRateLimiterTests | 10 | 频控 |
+| TradeUrlParamsTests / TradeUrlParamsExtendedTests | 7 | 报价 URL 参数 |
 
-#### EdgeCaseTests 详细 (40 个测试)
-- 空值和空字符串测试 (8 tests)
-- Unicode 和编码测试 (6 tests)
-- ActionRegistry 边界测试 (4 tests)
-- SessionManager 边界测试 (3 tests)
-- BotSession 边界测试 (3 tests)
-- CancellationToken 边界测试 (2 tests)
-- 数据类型边界测试 (2 tests)
+#### 安全与凭据
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| FileCredentialStoreTests | 15 | 凭据存储(加密落盘/备份恢复/权限收紧/shared secret) |
+| VaporCryptoHelper(Encryption)Tests | 16 | AES-GCM 加密助手 |
+| CredentialStoreRotatorTests | 5 | 密钥轮换 |
+| RedactingLoggerProviderTests / SensitiveDataRedactorTests | 10 | 日志脱敏 |
+| AgentReconnectPolicyTests | 4 | Agent 重连策略 |
 
-### 集成测试 (Integration Tests) - 26 个测试
+#### 数据与 Web 客户端
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| MemoryVaporCacheTests | 21 | 内存缓存(TTL/SWR/单飞行去重) |
+| RedisCacheEntryTests | 11 | Redis 信封编解码/新鲜度判定(纯逻辑,无需 Redis) |
+| RedisVaporCacheIntegrationTests(集成,门控) | 11 | Redis 端到端(需 `VAPOR_TEST_REDIS`) |
+| SteamStoreApiClientTests | 9 | 商店 API 客户端(解析) |
+| SteamWebHandlerResilienceTests | 8 | 429/5xx 退避重试与熔断 |
+| HttpCircuitBreakerTests | 8 | 熔断器状态机 |
+| GameModelsTests | 4 | 游戏数据模型 |
 
-| 测试类 | 测试数量 | 说明 |
-|--------|----------|------|
-| SessionWorkflowTests | 15 | 完整工作流测试 |
-| RedisVaporCacheIntegrationTests | 11 | Redis 缓存端到端（需 `VAPOR_TEST_REDIS`） |
+#### Steam 认证
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| SteamTotpTests | 13 | Steam TOTP(本地 2FA 码生成) |
+| SteamTimeSynchronizerTests | 5 | Steam 服务器时间同步 |
 
-#### SessionWorkflowTests 详细
-1. 完整工作流：创建会话并执行动作
-2. 多账户独立会话
-3. 会话移除后阻止执行
-4. 动作顺序执行
-5. 同一会话上的并发动作
-6. 无效动作返回失败
-7. 需要登录的动作在未登录时失败
-8. 使用有效 Key 激活成功
-9. 缺失 Key 返回失败
-10. 列出所有活动会话
-11. 事件订阅接收事件
-12. 账户名大小写不敏感
-13. 不同持续时间的 Idle 动作
-14. Echo 动作保持负载完整性
-15. 多账户独立会话执行
+### ControlPlane(140 个测试)
 
-#### RedisVaporCacheIntegrationTests 详细
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| ScheduleClockTests | 16 | 周期计划时钟(interval/cron/触发点计数) |
+| DesiredStateReconcilerTests | 16 | 账户编排(登录派发/退避/节流/重平衡/dry-run) |
+| SqliteJobStoreTests | 14 | job 存储(并发/迁移/周期模板) |
+| NotificationTests | 14 | 通知规则/webhook 签名/派发隔离 |
+| AccountStoreTests | 13 | 账户存储(ConfigVersion 并发) |
+| AccountApiTests | 12 | `/v1/accounts` REST |
+| RecurringJobSchedulerTests | 10 | 周期任务触发/missed/overlap/退役 |
+| ControlPlaneApiTests | 9 | REST API(鉴权/任务/SSE/计划 job) |
+| TaskSchedulerServiceTests | 7 | 任务派发/终态机制 |
+| SqliteAuditStoreTests | 7 | 审计存储 |
+| AuditApiTests | 6 | 审计查询 API |
+| TracingTests | 4 | OpenTelemetry 追踪注入 |
+| AgentRegistryTests | 4 | Agent 注册表 |
+| EventBrokerTests | 3 | 事件总线 |
+| ControlPlaneBenchmarks(性能) | 4 | 吞吐/派发/扇出基准 |
 
-`RedisVaporCache` 的端到端行为（写读、TTL 过期、单飞行去重、SWR 即时陈旧
-返回 + 后台刷新、前缀失效、Clear/Remove、跨实例命中）。**门控**：设置
-`VAPOR_TEST_REDIS`（StackExchange.Redis 连接串，如 `localhost:6379`）才真正
-执行，未设置时每个测试输出 skip 说明后早退——本地无 Redis 也能全绿。
-CI 中由 `integration-redis` job（Redis service 容器）真跑；纯逻辑部分
-（信封编解码/新鲜度判定）在 `RedisCacheEntryTests` 中无 Redis 覆盖。
+### 插件体系(174 个测试)
 
-### 性能测试 (Performance Tests) - 10 个测试
+- **Plugins.Core(85)**:清单解析(8)、发现(5)、加载(10)、卸载与 ALC 回收(5)、信任与权限(18)、事件分发(6)、配置扩展(15)、插件 API 与 SemVer 兼容(11,含 TryParseVersion theory 展开)
+- **MobileAuthenticator(44)**:动作含 save_shared_secret(22)、确认客户端解析(8)、确认哈希(8)、设备 ID(3)、插件加载与 6-action 断言(3)、shared secret 存储行为(3,位于 Steam.Core 的 FileCredentialStoreTests)
+- **MarketWatch(24)**:watch 存储/阈值评估/三个 watch action/轮询告警与 webhook/插件宿主实战加载
+- **Monitoring(21)**:指标注册表(9)/HTTP 服务(6)/插件生命周期(6)
 
-| 测试类 | 测试数量 | 说明 |
-|--------|----------|------|
-| ConcurrencyTests | 10 | 并发和压力测试 |
+### Agent(41 个测试)
 
-#### ConcurrencyTests 详细
-1. 并发创建会话 (50 线程 × 10 会话)
-2. 同一会话上的并发动作执行 (100 个动作)
-3. 多会话上的并发动作执行 (20 会话 × 10 动作)
-4. 快速会话创建和销毁压力测试 (100 次迭代 × 5 会话)
-5. 并发获取或创建同一账户 (100 个线程)
-6. 大负载内存压力测试 (1000 个键 × 100 字符值)
-7. 并发移除和访问
-8. ActionRegistry 并发注册线程安全
-9. 多个并发事件订阅 (20 个订阅)
+重连退避策略(25)、任务执行器(12)、WS URI 构造(4)。Agent 主循环(会话泵/WS 客户端/任务派发闭环)由 **E2E 套件以真实子进程覆盖**——单测统计与覆盖率均测不到。
 
-## 测试覆盖的功能点
+### E2E(6 个测试)
 
-### Actions 功能
-- ✅ 元数据验证
-- ✅ 成功/失败结果处理
-- ✅ 输出数据结构验证
-- ✅ 负载处理 (空、单值、多值、嵌套、数组)
-- ✅ 特殊字符处理 (emoji, unicode)
-- ✅ 大负载处理
-- ✅ 参数类型验证
-- ✅ 并发执行
-- ✅ 取消令牌支持
-- ✅ Key 遮罩安全处理
-
-### 核心组件功能
-- ✅ 动作注册表管理
-- ✅ 会话状态机转换
-- ✅ 会话生命周期管理
-- ✅ 多会话管理
-- ✅ 大小写不敏感账户名
-- ✅ 事件发布和订阅
-- ✅ 命令队列处理
-- ✅ 认证码/2FA 码处理
-- ✅ 并发安全
-- ✅ 资源释放
-
-### 边界和异常场景
-- ✅ 空值和空字符串处理
-- ✅ Unicode 和特殊字符处理
-- ✅ 超长字符串处理
-- ✅ 空负载处理
-- ✅ 已取消的令牌处理
-- ✅ 多次释放资源
-- ✅ 重复操作处理
-- ✅ 并发竞态条件
-
-### 集成场景
-- ✅ 完整工作流执行
-- ✅ 多账户独立操作
-- ✅ 动作链执行
-- ✅ 并发场景
-- ✅ 错误处理和恢复
-- ✅ 事件流
+真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。覆盖:健康检查、job 全链路(创建→派发→执行→回报→REST 读取 output)、任务取消、SSE 事件流、2FA 挑战人工提交、账户声明→自动分配→kill agent→重平衡。
 
 ## 运行测试
 
-> 提示：测试目标框架为 `net8.0`。推荐安装 .NET 8 runtime；如果你只安装了更高版本 runtime，可设置 `DOTNET_ROLL_FORWARD=Major`（`./scripts/run-tests.sh` / `.\scripts\run-tests.ps1` 已默认设置）。
+> 测试目标框架为 `net10.0`（.NET SDK 10.x）。`./scripts/run-tests.sh` / `.\scripts\run-tests.ps1` 已默认设置 `DOTNET_ROLL_FORWARD=Major`。
 
 ### 基本命令
 
@@ -235,35 +198,37 @@ dotnet test --filter "FullyQualifiedName~ConcurrencyTests"
 ### 生成代码覆盖率报告
 
 ```bash
-# 推荐（OpenCover，输出到 */TestResults/coverage/coverage.opencover.xml）
-./scripts/run-tests.sh --coverage
-
-# 或者直接用 dotnet（需要 test 项目引用 coverlet.msbuild）
-dotnet test tests/Vapor.Steam.Core.Tests/Vapor.Steam.Core.Tests.csproj \
-  -c Release \
-  /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./TestResults/coverage/
+# 推荐（整个解决方案，coverlet.collector，输出到 */TestResults/*/coverage.cobertura.xml）
+./scripts/run-tests.sh -c
 
 # HTML 报告（可选，需要 ReportGenerator）
 dotnet tool install -g dotnet-reportgenerator-globaltool
-reportgenerator -reports:**/TestResults/coverage/coverage.opencover.xml -targetdir:**/TestResults/coveragereport
+reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./TestResults/coveragereport
 ```
 
 ## 代码覆盖率
 
-测试项目已配置 Coverlet 代码覆盖率工具。
+8 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告，覆盖整个解决方案。
 
-### 配置文件
+### 当前基线（2026-09-12，行覆盖约 44.6%）
 
-- `Directory.Build.props` - 全局测试设置
-- `.run/settings.run.xml` - Visual Studio 运行配置
+| 项目 | 行覆盖 |
+|------|--------|
+| Monitoring | 89.3% |
+| ControlPlane | 74.6% |
+| MobileAuthenticator | 75.6% |
+| Steam.Core | 68.6% |
+| Plugins.Core | 67.0% |
+| Protocol | 44.4% |
+| Agent | 25.1%（另有 E2E 真实子进程覆盖，插桩测不到） |
+
+> Agent 单测测不到的主循环（WS 客户端/会话泵/任务派发闭环）由 E2E 套件以真实双进程覆盖；E2E 6 个测试是独立进程，不计入覆盖率插桩。
 
 ### 排除项
 
-- 测试项目本身 (`[Vapor.Steam.Core.Tests]*`)
-- xUnit 框架 (`[xunit.*]*`)
-- Moq 框架 (`[Moq]*`)
-- Microsoft 命名空间 (`[Microsoft.*]*`)
-- System 命名空间 (`[System.*]*`)
+- 测试项目自身与 `Vapor.Plugins.TestPlugin`
+- xUnit / Moq 框架程序集
+- Microsoft / System 命名空间
 
 ## 测试框架和工具
 
@@ -330,15 +295,15 @@ mockDependency.Verify(d => d.Method("expected"), Times.Once);
 
 测试可以轻松集成到 CI/CD 流程中：
 
-```yaml
-# GitHub Actions 示例
-- name: Run Tests
-  run: dotnet test Vapor.sln -c Release --verbosity normal
+CI（`.github/workflows/ci.yml`）在 Ubuntu Release 上跑全解决方案测试并上传覆盖率：
 
-- name: Upload Coverage
+```yaml
+- name: Test with coverage (Ubuntu Release)
+  run: ./scripts/run-tests.sh -c
+- name: Upload coverage to Codecov (Ubuntu Release)
   uses: codecov/codecov-action@v5
   with:
-    files: "**/TestResults/coverage/coverage.opencover.xml"
+    files: "**/TestResults/*/coverage.cobertura.xml"
 ```
 
 ## 性能基准
