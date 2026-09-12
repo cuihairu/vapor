@@ -60,6 +60,29 @@ are in [docker.md](docker.md).
 
 ### Steps
 
+### Images
+
+Released tags publish versioned images to GHCR
+(`ghcr.io/cuihairu/vapor/controlplane:<X.Y.Z>` and `.../agent:<X.Y.Z>`;
+official releases also move `:latest`). To run them instead of building
+locally, create a `docker-compose.override.yml`:
+
+```yaml
+services:
+  controlplane:
+    image: ghcr.io/cuihairu/vapor/controlplane:1.0.0
+    build: null
+  agent:
+    image: ghcr.io/cuihairu/vapor/agent:1.0.0
+    build: null
+```
+
+Compose merges the override automatically; `build: null` disables the
+local build so the published image is used. Pin a specific version in
+production and roll back by pinning the previous one.
+
+### Secrets
+
 1. Create a `.env` next to `docker-compose.yml` with strong secrets:
 
    ```bash
@@ -124,13 +147,14 @@ stopped SQLite database are always consistent.
 
 Upgrades:
 
-1. Pull/rebuild the new images and review `CHANGELOG.md`.
+1. Pull the new images (or rebuild locally) and review `CHANGELOG.md`.
 2. `docker compose up -d` — SQLite schema migrations are applied
    automatically on first start; old databases gain new columns in place
    (no dump/restore needed).
-3. Roll back by starting the previous image tag; note that databases
-   migrated by a newer version keep the added columns, which older
-   versions ignore safely.
+3. Roll back by pinning the previous image tag in the override file and
+   re-running `docker compose up -d`; note that databases migrated by a
+   newer version keep the added columns, which older versions ignore
+   safely.
 
 ## Scaling out agents
 
