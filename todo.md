@@ -175,7 +175,9 @@
 	- [x] 配置（manifest configuration + env 覆盖）：check_interval_seconds（默认 300，下限 10）/ threshold_percent（默认 10）/ country / webhook_url；`PluginConfigurationExtensions` 补 `GetDecimal`。
 	- [x] 干净 Shutdown（停轮询、释放 WebHandler）+ `IAsyncDisposable`；清单声明 trust=official + permissions=[actions]。
 	- [x] 测试 24 个：store/阈值评估、action 全流程、轮询→告警→webhook 集成（fake client + handler）、**经真实 PluginManager/ALC 实战加载验证权限门禁与 Action 注册**。
-- [ ] 方向 4：插件开发指南文档（docs/plugins.md：清单、生命周期、能力接口、配置、隔离卸载、调试）。
+- [x] 方向 4：插件开发指南文档。
+	- [x] `docs/plugins.md`：快速上手、清单全字段（含 trust/permissions/configuration）、生命周期七步、SemVer 兼容规则、信任与权限模型（最小权限默认 + 宿主策略）、四个能力接口示例、配置扩展方法与 env 覆盖、宿主服务、隔离与卸载规则（共享契约/私有依赖/Shutdown 清理/静态泄漏）、调试技巧、官方插件清单、打包清单。
+	- [x] README docs 索引加链接；production.md 新增 "Plugins" 小节（加载失败隔离、宿主策略、MarketWatch 配置矩阵）；architecture.md 可扩展性描述更新为真实插件系统。
 
 ---
 

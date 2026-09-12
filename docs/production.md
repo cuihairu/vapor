@@ -90,6 +90,28 @@ The connection is opened with `abortConnect=false`, so the agent starts even
 while Redis is briefly unreachable; cache operations then fail fast (actions
 fall through to the live fetch) until the connection recovers.
 
+#### Plugins
+
+Plugins live in `VAPOR_PLUGINS_DIR` (default `./plugins`), one subdirectory
+per plugin with a `plugin.json` manifest; the image ships the official
+Monitoring plugin preinstalled. Loading, trust gating, permissions and the
+manifest format are documented in the
+[plugin development guide](plugins.md). Operational notes:
+
+- Load failures are isolated — a broken plugin is logged and skipped, the
+  agent still starts; check the startup log's load report for reasons
+  (incompatible API version, trust below the host's floor, invalid manifest).
+- The host policy (`MinimumTrust`, `RequirePermissionsDeclared`) is set in
+  code when constructing the `PluginManager`; plugins declare their trust and
+  permissions in the manifest and capabilities without a declaration are
+  stripped (minimal trust).
+- Plugin behaviour is configured through the manifest `configuration` section
+  with environment-variable overrides, e.g. the Market Watch plugin reads
+  `market.check_interval_seconds`, `market.threshold_percent`,
+  `market.country` and `market.webhook_url` (env:
+  `VAPOR_MARKETWATCH_INTERVAL_SECONDS`, `VAPOR_MARKETWATCH_THRESHOLD_PERCENT`,
+  `VAPOR_MARKETWATCH_COUNTRY`, `VAPOR_MARKETWATCH_WEBHOOK_URL`).
+
 ### Steps
 
 ### Images

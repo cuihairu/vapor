@@ -26,7 +26,7 @@ Implementation language: **C#/.NET** (to stay close to ASF patterns and ecosyste
 - **Actions layer**: all external operations are expressed as actions invoked on a session, enabling reuse from API, CLI, or jobs.
 - **API as a first-class interface**: typed endpoints + consistent responses + OpenAPI.
 - **Events**: stream logs/state transitions to clients (ASF uses WebSocket for logs; we extend that to job/session events).
-- **Extensibility**: plugin-like action registry and optional custom endpoints in the agent.
+- **Extensibility**: a real plugin system in the agent — isolated (collectible ALC) loading with a manifest, SemVer API compatibility, trust/permission gating and capability interfaces for actions, commands, web routes and session events (see `docs/plugins.md`).
 
 ## High-level architecture
 

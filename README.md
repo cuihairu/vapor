@@ -26,6 +26,7 @@ API-controlled, headless Steam automation platform designed for large-scale batc
 - Local run: `docs/running.md`
 - Docker & Compose: `docs/docker.md`
 - Production deployment: `docs/production.md`
+- Plugin development: `docs/plugins.md`
 - Troubleshooting: `docs/troubleshooting.md`
 
 ## Testing
