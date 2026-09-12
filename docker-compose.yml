@@ -43,6 +43,8 @@ services:
       VAPOR_PLUGINS_DIR: /app/plugins
       VAPOR_METRICS_HOST: 0.0.0.0
       VAPOR_METRICS_PORT: "9700"
+      # Shared cache backend across agent replicas; see docs/production.md
+      # - VAPOR_REDIS: "redis:6379"
     ports:
       - "${VAPOR_AGENT_METRICS_PORT:-9700}:9700"
     volumes:

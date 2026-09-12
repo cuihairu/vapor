@@ -16,7 +16,8 @@ using Vapor.Steam.Core.Logging;
 using Vapor.Agent;
 using Vapor.Plugins.Core;
 
-static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) switch {
+static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) switch
+{
 	{ Length: > 0 } v => v,
 	_ => throw new InvalidOperationException($"{key} is required")
 };
@@ -61,9 +62,22 @@ var serviceCollection = new ServiceCollection()
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
 	.AddSingleton<CancelTradeOfferAction>(p => new CancelTradeOfferAction(
 		p.GetRequiredService<ILogger<CancelTradeOfferAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
-	.AddSingleton<Vapor.Steam.Core.Caching.IVaporCache>(p => new Vapor.Steam.Core.Caching.MemoryVaporCache(
-		new Vapor.Steam.Core.Caching.MemoryVaporCacheOptions { Capacity = 4096, DefaultTtl = TimeSpan.FromMinutes(10) }))
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()));
+
+// Cache backend: Redis when VAPOR_REDIS points at a server, in-memory otherwise.
+string redisConfiguration = Environment.GetEnvironmentVariable("VAPOR_REDIS") ?? string.Empty;
+if (!string.IsNullOrWhiteSpace(redisConfiguration))
+{
+	serviceCollection.AddSingleton<Vapor.Steam.Core.Caching.IVaporCache>(_ =>
+		Vapor.Steam.Core.Caching.RedisVaporCache.CreateFromConnectionString(redisConfiguration));
+}
+else
+{
+	serviceCollection.AddSingleton<Vapor.Steam.Core.Caching.IVaporCache>(p => new Vapor.Steam.Core.Caching.MemoryVaporCache(
+		new Vapor.Steam.Core.Caching.MemoryVaporCacheOptions { Capacity = 4096, DefaultTtl = TimeSpan.FromMinutes(10) }));
+}
+
+serviceCollection
 	.AddSingleton<GetGameInfoAction>(p => new GetGameInfoAction(
 		p.GetRequiredService<ILogger<GetGameInfoAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
@@ -82,7 +96,8 @@ var serviceCollection = new ServiceCollection()
 
 // Distributed tracing: enabled when the standard OTLP endpoint variable is set.
 // Without it no OpenTelemetry SDK is registered and the ActivitySource stays inert.
-if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"))) {
+if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")))
+{
 	serviceCollection.AddOpenTelemetry()
 		.ConfigureResource(resource => resource.AddService("vapor-agent"))
 		.WithTracing(tracing => tracing
@@ -95,6 +110,9 @@ var serviceProvider = serviceCollection.BuildServiceProvider();
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
 var actionRegistry = serviceProvider.GetRequiredService<IActionRegistry>();
 var sessionManager = serviceProvider.GetRequiredService<ISessionManager>();
+logger.LogInformation(
+	"Cache backend: {CacheBackend}",
+	string.IsNullOrWhiteSpace(redisConfiguration) ? "memory" : "redis");
 logger.LogInformation(
 	"Agent reconnect policy: initialDelayMs={InitialDelayMs}, maxDelayMs={MaxDelayMs}, backoffFactor={BackoffFactor}, maxRetries={MaxRetries}",
 	reconnectPolicy.InitialDelay.TotalMilliseconds,
@@ -138,13 +156,19 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 _ = Task.Run(() => PollAuthChallengesAsync(agentId, region, wsUrlBase, agentApiKey, sessionManager, logger, cts.Token), cts.Token);
 
 var consecutiveFailures = 0;
-while (!cts.IsCancellationRequested) {
-	try {
+while (!cts.IsCancellationRequested)
+{
+	try
+	{
 		await RunOnce(cts.Token);
 		consecutiveFailures = 0;
-	} catch (OperationCanceledException) when (cts.IsCancellationRequested) {
+	}
+	catch (OperationCanceledException) when (cts.IsCancellationRequested)
+	{
 		break;
-	} catch (Exception ex) {
+	}
+	catch (Exception ex)
+	{
 		consecutiveFailures++;
 		Console.Error.WriteLine($"agent disconnected: {SensitiveDataRedactor.Redact(ex.Message)}");
 
@@ -166,17 +190,21 @@ while (!cts.IsCancellationRequested) {
 	}
 }
 
-if (pluginManager is not null) {
+if (pluginManager is not null)
+{
 	await pluginManager.DisposeAsync();
 }
 
-static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger) {
+static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger)
+{
 	var pluginsDir = Environment.GetEnvironmentVariable("VAPOR_PLUGINS_DIR");
-	if (string.IsNullOrWhiteSpace(pluginsDir)) {
+	if (string.IsNullOrWhiteSpace(pluginsDir))
+	{
 		pluginsDir = Path.Combine(AppContext.BaseDirectory, "plugins");
 	}
 
-	if (!Directory.Exists(pluginsDir)) {
+	if (!Directory.Exists(pluginsDir))
+	{
 		logger.LogDebug("No plugins directory found at {PluginsDirectory}; skipping plugin load", pluginsDir);
 		return null;
 	}
@@ -186,19 +214,24 @@ static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IA
 		new DefaultPluginHostServices(loggerFactory, services),
 		loggerFactory);
 
-	manager.PluginLoaded += (_, e) => {
-		foreach (var action in e.Plugin.Actions) {
+	manager.PluginLoaded += (_, e) =>
+	{
+		foreach (var action in e.Plugin.Actions)
+		{
 			actionRegistry.Register(action);
 		}
 	};
-	manager.PluginUnloading += (_, e) => {
-		foreach (var action in e.Plugin.Actions) {
+	manager.PluginUnloading += (_, e) =>
+	{
+		foreach (var action in e.Plugin.Actions)
+		{
 			actionRegistry.Unregister(action.Name);
 		}
 	};
 
 	var report = await manager.LoadAllAsync(pluginsDir);
-	foreach (var failure in report.Failures) {
+	foreach (var failure in report.Failures)
+	{
 		logger.LogWarning("Plugin load failure: {Failure}", SensitiveDataRedactor.Redact(failure));
 	}
 
@@ -206,7 +239,8 @@ static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IA
 	return manager;
 }
 
-async Task RunOnce(CancellationToken cancellationToken) {
+async Task RunOnce(CancellationToken cancellationToken)
+{
 	Uri uri = AgentWebSocketUri.Build(wsUrlBase, agentId, region);
 
 	using ClientWebSocket ws = new();
@@ -227,42 +261,58 @@ async Task RunOnce(CancellationToken cancellationToken) {
 	var hello = new AgentHello(agentId, region, capabilities, null);
 	await SendLocked(ws, sendGate, new WSMessage("hello", hello, null, null), cancellationToken);
 
-	var receiver = Task.Run(async () => {
-		try {
-			while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
+	var receiver = Task.Run(async () =>
+	{
+		try
+		{
+			while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open)
+			{
 				WSMessage msg = await Receive<WSMessage>(ws, cancellationToken);
-				if (string.Equals(msg.Type, "task", StringComparison.Ordinal) && msg.Task != null) {
+				if (string.Equals(msg.Type, "task", StringComparison.Ordinal) && msg.Task != null)
+				{
 					// Keep the whole message: TraceHeaders carries the dispatch span context.
 					await tasks.Writer.WriteAsync(msg, cancellationToken);
 					continue;
 				}
 
-				if (string.Equals(msg.Type, "task_cancel", StringComparison.Ordinal) && msg.TaskCancel != null) {
+				if (string.Equals(msg.Type, "task_cancel", StringComparison.Ordinal) && msg.TaskCancel != null)
+				{
 					bool matches;
-					lock (executionGate) {
+					lock (executionGate)
+					{
 						matches =
-							currentTaskCts != null &&
-							string.Equals(currentTaskId, msg.TaskCancel.TaskId, StringComparison.Ordinal) &&
-							currentAttempt == msg.TaskCancel.Attempt;
+						  currentTaskCts != null &&
+						  string.Equals(currentTaskId, msg.TaskCancel.TaskId, StringComparison.Ordinal) &&
+						  currentAttempt == msg.TaskCancel.Attempt;
 					}
 
-					if (matches) {
-						try {
+					if (matches)
+					{
+						try
+						{
 							currentTaskCts!.Cancel();
-						} catch {
+						}
+						catch
+						{
 						}
 					}
 				}
 			}
-		} catch {
+		}
+		catch
+		{
 			// Receiver loop stops; outer loop will reconnect.
-		} finally {
+		}
+		finally
+		{
 			tasks.Writer.TryComplete();
 		}
 	}, cancellationToken);
 
-	try {
-		while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
+	try
+	{
+		while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open)
+		{
 			WSMessage dispatch = await tasks.Reader.ReadAsync(cancellationToken);
 			JobTask task = dispatch.Task!;
 
@@ -271,7 +321,8 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			using var executeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, executeCts.Token);
 
-			lock (executionGate) {
+			lock (executionGate)
+			{
 				currentTaskCts = executeCts;
 				currentTaskId = task.Id;
 				currentAttempt = task.Attempt;
@@ -286,8 +337,10 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			string? error;
 			IReadOnlyDictionary<string, object?>? output;
 			string? replyTraceparent;
-			using (Activity? execute = VaporAgentTracing.StartExecuteSpan(task, dispatch.TraceHeaders)) {
-				try {
+			using (Activity? execute = VaporAgentTracing.StartExecuteSpan(task, dispatch.TraceHeaders))
+			{
+				try
+				{
 					(success, error, output) = await AgentTaskExecutor.ExecuteAsync(
 						task,
 						sessionManager,
@@ -297,8 +350,11 @@ async Task RunOnce(CancellationToken cancellationToken) {
 
 					execute?.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, error);
 					replyTraceparent = execute?.Id;
-				} finally {
-					lock (executionGate) {
+				}
+				finally
+				{
+					lock (executionGate)
+					{
 						currentTaskCts = null;
 						currentTaskId = null;
 						currentAttempt = 0;
@@ -316,12 +372,16 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			);
 
 			heartbeatCts.Cancel();
-			try {
+			try
+			{
 				await heartbeatTask;
-			} catch (OperationCanceledException) when (heartbeatCts.IsCancellationRequested) {
+			}
+			catch (OperationCanceledException) when (heartbeatCts.IsCancellationRequested)
+			{
 			}
 
-			if (!executeCts.IsCancellationRequested) {
+			if (!executeCts.IsCancellationRequested)
+			{
 				await SendLocked(ws, sendGate, new WSMessage(
 					"task_result", null, null, result,
 					TraceHeaders: replyTraceparent != null
@@ -329,26 +389,35 @@ async Task RunOnce(CancellationToken cancellationToken) {
 						: null), cancellationToken);
 			}
 		}
-	} finally {
-		try {
+	}
+	finally
+	{
+		try
+		{
 			await receiver;
-		} catch {
+		}
+		catch
+		{
 		}
 	}
 }
 
-static async Task<T> Receive<T>(ClientWebSocket ws, CancellationToken cancellationToken) {
+static async Task<T> Receive<T>(ClientWebSocket ws, CancellationToken cancellationToken)
+{
 	ArraySegment<byte> chunk = new(new byte[16 * 1024]);
 	using var ms = new MemoryStream();
 
-	while (true) {
+	while (true)
+	{
 		WebSocketReceiveResult r = await ws.ReceiveAsync(chunk, cancellationToken);
-		if (r.MessageType == WebSocketMessageType.Close) {
+		if (r.MessageType == WebSocketMessageType.Close)
+		{
 			throw new IOException("websocket closed");
 		}
 
 		ms.Write(chunk.Array!, chunk.Offset, r.Count);
-		if (r.EndOfMessage) {
+		if (r.EndOfMessage)
+		{
 			break;
 		}
 	}
@@ -356,23 +425,31 @@ static async Task<T> Receive<T>(ClientWebSocket ws, CancellationToken cancellati
 	return JsonSerializer.Deserialize<T>(ms.ToArray(), JsonDefaults.Options) ?? throw new InvalidOperationException("invalid json");
 }
 
-static async Task Send<T>(ClientWebSocket ws, T value, CancellationToken cancellationToken) {
+static async Task Send<T>(ClientWebSocket ws, T value, CancellationToken cancellationToken)
+{
 	byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonDefaults.Options);
 	await ws.SendAsync(bytes, WebSocketMessageType.Text, true, cancellationToken);
 }
 
-static async Task SendLocked<T>(ClientWebSocket ws, SemaphoreSlim sendGate, T value, CancellationToken cancellationToken) {
+static async Task SendLocked<T>(ClientWebSocket ws, SemaphoreSlim sendGate, T value, CancellationToken cancellationToken)
+{
 	await sendGate.WaitAsync(cancellationToken);
-	try {
+	try
+	{
 		await Send(ws, value, cancellationToken);
-	} finally {
+	}
+	finally
+	{
 		sendGate.Release();
 	}
 }
 
-static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobTask task, CancellationToken cancellationToken) {
-	static async Task SendHeartbeat(ClientWebSocket ws, SemaphoreSlim sendGate, JobTask task, CancellationToken cancellationToken) {
-		if (ws.State != WebSocketState.Open) {
+static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobTask task, CancellationToken cancellationToken)
+{
+	static async Task SendHeartbeat(ClientWebSocket ws, SemaphoreSlim sendGate, JobTask task, CancellationToken cancellationToken)
+	{
+		if (ws.State != WebSocketState.Open)
+		{
 			return;
 		}
 
@@ -381,28 +458,34 @@ static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobT
 		await SendLocked(ws, sendGate, msg, cancellationToken);
 	}
 
-	try {
+	try
+	{
 		await SendHeartbeat(ws, sendGate, task, cancellationToken);
 
 		using PeriodicTimer timer = new(TimeSpan.FromSeconds(5));
-		while (await timer.WaitForNextTickAsync(cancellationToken)) {
+		while (await timer.WaitForNextTickAsync(cancellationToken))
+		{
 			await SendHeartbeat(ws, sendGate, task, cancellationToken);
 		}
-	} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
-	} catch {
+	}
+	catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+	{
+	}
+	catch
+	{
 		// Best-effort: if the websocket is disconnected or errors, don't fail the task itself.
 	}
 }
 
-	static async Task PollAuthChallengesAsync(
-		string agentId,
-		string region,
-		string wsUrlBase,
-		string agentApiKey,
-		ISessionManager sessionManager,
-		ILogger logger,
-		CancellationToken cancellationToken)
-	{
+static async Task PollAuthChallengesAsync(
+	string agentId,
+	string region,
+	string wsUrlBase,
+	string agentApiKey,
+	ISessionManager sessionManager,
+	ILogger logger,
+	CancellationToken cancellationToken)
+{
 	try
 	{
 		// Build HTTP base URL from WebSocket URL
@@ -430,84 +513,84 @@ static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobT
 				using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 				using var reader = new System.IO.StreamReader(stream);
 
-					while (!cancellationToken.IsCancellationRequested)
+				while (!cancellationToken.IsCancellationRequested)
+				{
+					var line = await reader.ReadLineAsync(cancellationToken);
+					if (line is null) break;
+					if (string.IsNullOrWhiteSpace(line)) continue;
+
+					// Parse SSE format: "event: <type>" then "data: <json>"
+					if (line.StartsWith("event: ", StringComparison.Ordinal))
 					{
-						var line = await reader.ReadLineAsync(cancellationToken);
-						if (line is null) break;
-						if (string.IsNullOrWhiteSpace(line)) continue;
-
-						// Parse SSE format: "event: <type>" then "data: <json>"
-						if (line.StartsWith("event: ", StringComparison.Ordinal))
+						var eventType = line["event: ".Length..].Trim();
+						var dataLine = await reader.ReadLineAsync(cancellationToken);
+						if (dataLine?.StartsWith("data: ", StringComparison.Ordinal) == true)
 						{
-							var eventType = line["event: ".Length..].Trim();
-							var dataLine = await reader.ReadLineAsync(cancellationToken);
-							if (dataLine?.StartsWith("data: ", StringComparison.Ordinal) == true)
+							var jsonData = dataLine["data: ".Length..];
+							try
 							{
-								var jsonData = dataLine["data: ".Length..];
-								try
+								if (eventType is not ("auth.code_provided_email" or "auth.code_provided_totp" or "auth.code_provided_2fa"))
 								{
-									if (eventType is not ("auth.code_provided_email" or "auth.code_provided_totp" or "auth.code_provided_2fa"))
-									{
-										continue;
-									}
-
-									using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonData);
-									var root = jsonDoc.RootElement;
-
-									if (!root.TryGetProperty("accountName", out var accountNameProp))
-									{
-										continue;
-									}
-
-									var accountName = accountNameProp.GetString();
-									if (string.IsNullOrWhiteSpace(accountName))
-									{
-										continue;
-									}
-
-									if (!root.TryGetProperty("code", out var codeProp))
-									{
-										logger.LogWarning("Auth code event missing code for {AccountName}", accountName);
-										continue;
-									}
-
-									var code = codeProp.GetString();
-									if (string.IsNullOrWhiteSpace(code))
-									{
-										logger.LogWarning("Auth code event has empty code for {AccountName}", accountName);
-										continue;
-									}
-
-									var session = await sessionManager.GetSessionAsync(accountName, cancellationToken);
-									if (session == null)
-									{
-										logger.LogWarning("Auth code received but no active session for {AccountName}", accountName);
-										continue;
-									}
-
-									if (eventType == "auth.code_provided_email")
-									{
-										logger.LogInformation("Applying email auth code for {AccountName}", accountName);
-										session.ProvideAuthCode(code);
-									}
-									else
-									{
-										logger.LogInformation("Applying 2FA code for {AccountName}", accountName);
-										session.Provide2FACode(code);
-									}
+									continue;
 								}
-								catch (System.Text.Json.JsonException ex)
+
+								using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonData);
+								var root = jsonDoc.RootElement;
+
+								if (!root.TryGetProperty("accountName", out var accountNameProp))
 								{
-									logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
+									continue;
 								}
-								catch (Exception ex)
+
+								var accountName = accountNameProp.GetString();
+								if (string.IsNullOrWhiteSpace(accountName))
 								{
-									logger.LogWarning(ex, "Failed to handle auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
+									continue;
 								}
+
+								if (!root.TryGetProperty("code", out var codeProp))
+								{
+									logger.LogWarning("Auth code event missing code for {AccountName}", accountName);
+									continue;
+								}
+
+								var code = codeProp.GetString();
+								if (string.IsNullOrWhiteSpace(code))
+								{
+									logger.LogWarning("Auth code event has empty code for {AccountName}", accountName);
+									continue;
+								}
+
+								var session = await sessionManager.GetSessionAsync(accountName, cancellationToken);
+								if (session == null)
+								{
+									logger.LogWarning("Auth code received but no active session for {AccountName}", accountName);
+									continue;
+								}
+
+								if (eventType == "auth.code_provided_email")
+								{
+									logger.LogInformation("Applying email auth code for {AccountName}", accountName);
+									session.ProvideAuthCode(code);
+								}
+								else
+								{
+									logger.LogInformation("Applying 2FA code for {AccountName}", accountName);
+									session.Provide2FACode(code);
+								}
+							}
+							catch (System.Text.Json.JsonException ex)
+							{
+								logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
+							}
+							catch (Exception ex)
+							{
+								logger.LogWarning(ex, "Failed to handle auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
 							}
 						}
 					}
 				}
+			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 			{
 				break;

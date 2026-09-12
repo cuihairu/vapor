@@ -215,14 +215,21 @@ Agent enables it via `AddRedactingConsole()`.
 - Models: `GameInfo`, `ItemInfo`, `PriceOverview`, `GameSearchResult`,
   `MarketListing`/`MarketListingsPage` (with cache key helpers and `FetchedAt`
   freshness markers).
-- `IVaporCache` abstraction with `MemoryVaporCache` implementation: per-entry
+- `IVaporCache` abstraction with two implementations: per-entry
   TTL (default 10 min), LRU eviction, hit/miss/stale-hit counters, single-flight
   factory deduplication (cache stampede protection), injectable clock for
   testing, prefix-based invalidation (`RemoveByPrefix`) and a
   stale-while-revalidate mode (`GetOrSetStaleWhileRevalidateAsync`: within a
   grace window after the fresh TTL expires, requests are served instantly from
   the stale entry while a single background refresh repopulates it).
-  Redis-backed implementations can be added behind the same interface.
+  - `MemoryVaporCache` (default): in-process, injectable clock.
+  - `RedisVaporCache` (opt-in via `VAPOR_REDIS`): stores JSON envelopes under
+    `vapor:cache:<key>` with absolute fresh/stale expiry timestamps (Redis TTL
+    is only the outer safety net), shares entries across agent replicas,
+    deduplicates SWR refreshes across instances with a `SET NX PX` lock +
+    token-checked release, invalidates by prefix via `SCAN`, and clears only
+    its own indexed keys (never `FLUSHDB`). `Count` is approximate (shared
+    index-set size); hit/miss counters remain per-process.
 - Tiered freshness policy (`SteamCacheTtl`): each data kind gets a fresh TTL and
   stale window sized to how often it changes — search 1h/6h, game info
   30min/2h, market listings 5min/30min, prices 3min/15min (staleness tolerated

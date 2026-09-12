@@ -110,7 +110,7 @@
 
 ---
 
-## 4. P3 阶段：M4 数据与爬虫能力（~30% 完成）
+## 4. P3 阶段：M4 数据与爬虫能力（✅ 100% 完成）
 
 ### 4.1 Steam Web API 客户端产品化（✅ 完成）
 
@@ -124,7 +124,7 @@
 - [x] `GameInfo` / `ItemInfo` / `PriceOverview` / `GameSearchResult` 数据模型定义（含缓存 key 生成与 FetchedAt 新鲜度标记）。
 - [x] 缓存层落地（`IVaporCache` 接口 + `MemoryVaporCache`：TTL、LRU 淘汰、hit/miss 统计、单飞行防击穿、可注入时钟）。
 - [x] 增量更新策略与缓存失效策略（`SteamCacheTtl` 分级新鲜度：search 1h/6h、game 30min/2h、market 5min/30min、price 3min/15min；`GetOrSetStaleWhileRevalidateAsync` 过期宽限窗口内即时返回旧值 + 后台单飞行刷新；`force_refresh` payload 强制拉取回填；`RemoveByPrefix` 前缀失效 + `cache_invalidate` Action（prefix/clear_all）；Monitoring 增 `vapor_cache_stale_hits_total`）。
-- [ ] 可选 Redis 后端实现（接口已就绪）。
+- [x] 可选 Redis 后端实现（`RedisVaporCache`：`VAPOR_REDIS` 启用，JSON 信封 + 绝对新鲜/陈旧过期时间戳，跨实例 SWR 单飞行锁（SET NX PX + token 释放），SCAN 前缀失效，仅清理自身索引键不 FLUSHDB；`RedisCacheEntryTests` 纯逻辑测试 + `VAPOR_TEST_REDIS` 门控集成测试，CI 有专属 Redis service job）。
 
 ### 4.3 新动作（✅ 完成）
 
@@ -198,7 +198,7 @@
 | P0 构建恢复 | Week 1 | ✅ 100% | 已完成 |
 | P1 M2 核心能力 | Week 2-4 | ✅ 100% | 交易校验增强已完成 |
 | P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
-| P3 数据能力 | Week 6-9 | ✅ ~98% | 剩余：Redis 缓存后端（可选）；增量更新/失效策略已完成 |
+| P3 数据能力 | Week 6-9 | ✅ 100% | 数据动作 + 分级缓存（内存/Redis）+ 失效闭环已完成 |
 | P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
 | GA 收口 | Week 10-12 | ⚠️ ~70% | Docker/compose/可观测性/Agent 单测/E2E 已就绪；剩余：发布流水线、部署/排障手册、OpenAPI 完整化 |
 

@@ -48,8 +48,6 @@ are in [docker.md](docker.md).
 ### Agent
 
 | Variable | Required | Default | Notes |
-
-| Variable | Required | Default | Notes |
 |----------|----------|---------|-------|
 | `AGENT_ID` | yes | — | Unique, stable id (shows up in `/v1/agents`) |
 | `AGENT_REGION` | yes | — | Region used for task routing |
@@ -57,11 +55,40 @@ are in [docker.md](docker.md).
 | `AGENT_API_KEY` | yes | — | Must be one of `Vapor_AGENT_API_KEYS` |
 | `VAPOR_PLUGINS_DIR` | no | — | Plugin directory; the image ships Monitoring preinstalled |
 | `VAPOR_METRICS_HOST` / `VAPOR_METRICS_PORT` | no | `:9700` | Prometheus endpoint, also the agent healthcheck |
+| `VAPOR_REDIS` | no | off | StackExchange.Redis connection string (e.g. `redis:6379`); switches the data cache from in-memory to Redis |
 | `AGENT_RECONNECT_INITIAL_DELAY_MS` | no | `500` | Reconnect backoff start |
 | `AGENT_RECONNECT_MAX_DELAY_MS` | no | `10000` | Reconnect backoff ceiling |
 | `AGENT_RECONNECT_BACKOFF_FACTOR` | no | `2` | Exponential factor |
 | `AGENT_RECONNECT_MAX_RETRIES` | no | `0` | `0` = retry forever |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | no | off | OTLP endpoint; enables distributed tracing export |
+
+#### Cache backend (Redis)
+
+Without `VAPOR_REDIS` the agent caches store data (game info, prices, market
+listings) in-process (`MemoryVaporCache`). Setting `VAPOR_REDIS` switches the
+same `IVaporCache` contract to `RedisVaporCache`, which:
+
+- shares entries across agent replicas in a region (`vapor:cache:<key>` JSON
+  envelopes with absolute fresh/stale expiry timestamps),
+- deduplicates stale-while-revalidate refreshes across instances via a
+  short-lived `SET NX PX` lock with token-checked release,
+- removes keys by prefix with `SCAN` (invalidation via `cache_invalidate`
+  works identically), and never `FLUSHDB`es the server.
+
+When composing with Docker, add a Redis service and point the agent at it:
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+  agent:
+    environment:
+      VAPOR_REDIS: "redis:6379"
+```
+
+The connection is opened with `abortConnect=false`, so the agent starts even
+while Redis is briefly unreachable; cache operations then fail fast (actions
+fall through to the live fetch) until the connection recovers.
 
 ### Steps
 

@@ -81,11 +81,12 @@ tests/
 - CancellationToken 边界测试 (2 tests)
 - 数据类型边界测试 (2 tests)
 
-### 集成测试 (Integration Tests) - 15 个测试
+### 集成测试 (Integration Tests) - 26 个测试
 
 | 测试类 | 测试数量 | 说明 |
 |--------|----------|------|
 | SessionWorkflowTests | 15 | 完整工作流测试 |
+| RedisVaporCacheIntegrationTests | 11 | Redis 缓存端到端（需 `VAPOR_TEST_REDIS`） |
 
 #### SessionWorkflowTests 详细
 1. 完整工作流：创建会话并执行动作
@@ -103,6 +104,15 @@ tests/
 13. 不同持续时间的 Idle 动作
 14. Echo 动作保持负载完整性
 15. 多账户独立会话执行
+
+#### RedisVaporCacheIntegrationTests 详细
+
+`RedisVaporCache` 的端到端行为（写读、TTL 过期、单飞行去重、SWR 即时陈旧
+返回 + 后台刷新、前缀失效、Clear/Remove、跨实例命中）。**门控**：设置
+`VAPOR_TEST_REDIS`（StackExchange.Redis 连接串，如 `localhost:6379`）才真正
+执行，未设置时每个测试输出 skip 说明后早退——本地无 Redis 也能全绿。
+CI 中由 `integration-redis` job（Redis service 容器）真跑；纯逻辑部分
+（信封编解码/新鲜度判定）在 `RedisCacheEntryTests` 中无 Redis 覆盖。
 
 ### 性能测试 (Performance Tests) - 10 个测试
 
@@ -193,6 +203,9 @@ dotnet test --filter "FullyQualifiedName~Unit"
 
 # 只运行集成测试
 dotnet test --filter "FullyQualifiedName~Integration"
+
+# 跑 Redis 集成测试（需本地或容器 Redis；未设 VAPOR_TEST_REDIS 时自动跳过）
+VAPOR_TEST_REDIS=localhost:6379 dotnet test --filter "FullyQualifiedName~RedisVaporCacheIntegrationTests"
 
 # 只运行性能测试
 dotnet test --filter "FullyQualifiedName~Performance"
