@@ -6,7 +6,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Vapor.ControlPlane;
+using Vapor.Protocol;
 using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
@@ -307,12 +309,132 @@ public sealed class AccountApiTests
 		Assert.Equal("alice", doc.RootElement.GetProperty("sessions")[0].GetProperty("accountName").GetString());
 	}
 
-	private static TestFactory CreateFactory()
+	[Fact]
+	public async Task GetTradeOffers_RequireAuthorization()
 	{
-		return new TestFactory();
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/trade-offers");
+
+		Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
 	}
 
-	private sealed class TestFactory : WebApplicationFactory<Program>
+	[Fact]
+	public async Task GetTradeOffers_AccountMissing_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/trade-offers");
+
+		Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task GetTradeOffers_AgentReportsFinished_ReturnsOffers()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTradeOffersTaskAsync(store, success: true, cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/trade-offers");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.NotEmpty(doc.RootElement.GetProperty("job_id").GetString()!);
+		JsonElement offers = doc.RootElement.GetProperty("offers");
+		Assert.Equal(1, offers.GetProperty("received_count").GetInt32());
+		Assert.Equal("43591234567890", offers.GetProperty("received_offers")[0].GetProperty("trade_offer_id").GetString());
+		Assert.Equal("Active", offers.GetProperty("received_offers")[0].GetProperty("state").GetString());
+	}
+
+	[Fact]
+	public async Task GetTradeOffers_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTradeOffersTaskAsync(store, success: false, cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/trade-offers");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("agent refused", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task GetTradeOffers_StillPending_Returns202WithJobId()
+	{
+		TradeOffersReader.WaitWindow = TimeSpan.FromMilliseconds(400);
+		TradeOffersReader.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/trade-offers");
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+		}
+		finally
+		{
+			TradeOffersReader.WaitWindow = TimeSpan.FromSeconds(30);
+			TradeOffersReader.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
+	/// <summary>Plays the agent side: claims the queued get_trade_offers task and reports a result.</summary>
+	private static async Task RespondToFirstTradeOffersTaskAsync(IJobStore store, bool success, CancellationToken ct)
+	{
+		while (!ct.IsCancellationRequested)
+		{
+			JobTask? claimed = await store.ClaimNextQueuedTask("us-east", ct);
+			if (claimed is { Action: "get_trade_offers" })
+			{
+				var output = new Dictionary<string, object?>
+				{
+					["received_count"] = 1,
+					["received_offers"] = new List<Dictionary<string, object?>>
+					{
+						new() { ["trade_offer_id"] = "43591234567890", ["state"] = "Active" }
+					}
+				};
+				await store.SetTaskResult(
+					new TaskResult(claimed.Id, success, success ? null : "agent refused", success ? output : null, DateTimeOffset.UtcNow),
+					ct);
+				return;
+			}
+
+			await Task.Delay(25, ct);
+		}
+	}
+
+	private static TestFactory CreateFactory(bool removeHosted = false)
+	{
+		return new TestFactory(removeHosted);
+	}
+
+	private sealed class TestFactory(bool removeHosted) : WebApplicationFactory<Program>
 	{
 		protected override void ConfigureWebHost(IWebHostBuilder builder)
 		{
@@ -326,6 +448,13 @@ public sealed class AccountApiTests
 				services.AddSingleton<IJobStore>(sp => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();
+				if (removeHosted)
+				{
+					// The synchronous trade-offers endpoint races its own fake agent
+					// responder; background dispatchers would claim/fail the task first.
+					services.RemoveAll<IHostedService>();
+					services.RemoveAll<IHostedLifecycleService>();
+				}
 			});
 		}
 	}

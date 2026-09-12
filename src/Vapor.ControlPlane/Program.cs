@@ -526,6 +526,54 @@ app.MapPost("/v1/accounts/{name}/disable", async (HttpContext ctx, Config cfg, I
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
+app.MapGet("/v1/accounts/{name}/trade-offers", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, bool? activeOnly) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name.Trim());
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	bool activeOnlyValue = activeOnly ?? true;
+	TradeOffersReadResult read = await TradeOffersReader.ReadAsync(store, spec.AccountName, activeOnlyValue, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"trade_offers.read",
+		accountName: spec.AccountName,
+		jobId: read.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["activeOnly"] = activeOnlyValue,
+			["outcome"] = read.Status.ToString()
+		});
+
+	if (read.Status == JobTaskStatus.Finished)
+	{
+		return Results.Ok(new { job_id = read.JobId, account = spec.AccountName, offers = read.Output });
+	}
+
+	if (read.Status != JobTaskStatus.Queued)
+	{
+		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
+	}
+
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+})
+	.WithTags("Accounts")
+	.WithSummary("List an account's trade offers (dispatches get_trade_offers and waits for the agent; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
 app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadRequest<ErrorResponse>, UnauthorizedHttpResult, ProblemHttpResult>> (
 	HttpContext ctx,
 	Config cfg,

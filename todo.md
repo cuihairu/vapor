@@ -300,7 +300,7 @@
 
 ### 11.2 P6-2 交易与确认闭环（GA 出口条件，安全底座已备）
 
-- [ ] 交易报价读取：incoming/outgoing 报价列表拉取并入 CP（REST 化），复用既有脱敏与审计。
+- [x] 交易报价读取：incoming/outgoing 报价列表拉取并入 CP（REST 化），复用既有脱敏与审计（✅ 2026-09-12 见下方日志）。
 - [ ] 报价接受/拒绝：基于 MobileAuthenticator 既有确认哈希/响应能力；**自动接受必须按账户显式策略开启**（默认人工 SSE 通知，对齐验证码红线）。
 - [ ] 批量确认 action：交易/市场确认批量处理（对标 Watt 批量确认）。
 - [ ] 报价发送（loot）：向指定好友转移库存；优先级低于前三项。
@@ -341,3 +341,4 @@
 > 2026-09-12：P6 立项：对标五个同类产品（ASF / Watt Toolkit / Steam Game Idler / steamguard-cli / Idle Master Extended）完成功能矩阵（`docs/feature-matrix.md`，7 能力域 30+ 项）。结论：平台层（多节点舰队编排/任务系统/插件/可观测性）全场独有；差距集中在 Steam 功能纵深，恰为 GA 出口条件 #2 未闭环项。P6 四组候选立项（§11）：卡牌 farming 闭环 → 交易与确认闭环 → 互操作与认领 → 后置待决（Dashboard/市场挂单/QR 登录/成就）；明确不采用网络加速/账号切换/通用 TOTP/游戏内脚本。
 > 2026-09-12：P6-1 ①徽章页解析落地：`SteamBadgesClient`（解析徽章页 HTML 得各 app 剩余卡牌掉落——该页是掉落数唯一来源，Web API 无对应字段）+ `get_card_drops` 动作（SWR 缓存 10min + force_refresh/cache_ttl_seconds，输出按剩余张数降序）。徽章页登录门控不可匿名录制，fixture 按三方解析器互证构造（ASF CardsFarmer.cs 的 `card_drop_info_dialog_{id}` appid 载体 / steam-game-idler scraper.rs 的 `steam://run/{id}` 载体与 `progress_info_bold`/`pagelink` 文案 / Greasy Fork userscript 的 DOM 层级），`l=english` 强制语言防本地化漂移；分页逐页抓取（后续页失败跳过、首页失败抛错）。24 个新测试（解析变体 13 + 契约回放 3 + 动作 8），Steam.Core 573→597，总 961→985。P6-1 剩余：②smart farming 调度、③IdleApps 排除名单。
 > 2026-09-12：**P6-1 全部完成（①+②+③，卡牌 farming 闭环 GA 出口条件达成）**。②smart farming 调度：`AccountDesiredState.Farm = 3` 新期望状态，`DesiredStateReconciler` 编排 farm 循环——周期派发 `get_card_drops`（CP 只知 accountName，`steam_id` 缺省经 `SteamWebHandler.TryResolveOwnSteamId()` 从会话 cookie 反解，四 cookie 名变体 + 最小值校验），从任务 output（SQLite JSON 往返后 drops 为 JsonElement，解析双形态兼容 Dictionary/JsonElement）构建 `FarmQueue`，`play_games` 挂队首（按剩余张数降序），刷新周期 `Vapor_RECONCILE_FARM_REFRESH_SECONDS`（默认 300s）重查，队首掉完自动切换下一个，全空 stop 保留在线；farm 查询失败只记 LastDeviation，绝不消耗 login 失败预算。③排除名单：Farm 模式下 `IdleApps` 语义变为排除名单（黑名单，对齐 ASF Blacklist），Idle 模式仍为白名单；spec 变更重置 farm 队列。7 个编排器新测试（初始派发/排除过滤/轮换/停机/刷新间隔/JSON 往返/Farm→Online 切换）+ Protocol Farm 枚举往返 2 + AccountApi farm 1 + 动作 cookie 反解 2。ControlPlane 147→155，Protocol 20→22，Steam.Core 597→599，总 985→997 全过。
+> 2026-09-12：P6-2 ①交易报价读取落地（REST 化）：`get_trade_offers` 动作（IEconService `GetTradeOffers/v1`，payload `active_only` 默认 true，输出 sent/received 双列表——offer 级 id/partner/state/计数/message/时间戳 + item 级 app/context/asset/class/instance，ulong 大值一律字符串防 JS 精度丢失）；CP 新增同步查询端点 `GET /v1/accounts/{name}/trade-offers`——`TradeOffersReader` 创建单 target job 并有界轮询（30s 窗口/200ms 间隔），Finished→200 返回 offers、Failed/Canceled→502、窗口内未回报→202+job_id 降级客户端轮询 `/v1/jobs/{id}`；写入 `trade_offers.read` 审计（复用既有脱敏）。测试：动作 8（fake trade client）+ API 5（TestFactory 移除后台调度器 + ClaimNextQueuedTask 模拟 agent 认领回报），Steam.Core 599→607、ControlPlane 155→160，总 997→1010 全过。
