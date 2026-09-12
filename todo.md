@@ -295,8 +295,8 @@
 ### 11.1 P6-1 卡牌 farming 闭环（GA 出口条件，平台杠杆最大）
 
 - [x] 徽章页解析：拉取玩家徽章/卡牌掉落页，得出各 app 剩余掉落张数（✅ 2026-09-12 `SteamBadgesClient` + `get_card_drops` 动作。徽章页 HTML 是剩余掉落唯一来源且登录门控、不可匿名录制——fixture 按三方解析器互证构造（ASF CardsFarmer.cs / steam-game-idler scraper.rs / Greasy Fork userscript：`badge_row` 行切分、appid 双载体 `card_drop_info_dialog_{id}` 与 `steam://run/{id}`、`progress_info_bold` 掉落文案、`pagelink` 分页、`l=english` 强制语言），来源已在 fixture 头注明，结构漂移时按契约测试失败重录真实页。动作默认 SWR 缓存 10min，`force_refresh`/`cache_ttl_seconds` 可控；解析变体单测 + 契约回放 + 分页/失败语义 + 缓存共 24 测）。
-- [ ] smart farming 调度：剩余掉落 > 0 的 app 进 idle 队列，掉完自动切换下一个；与 DesiredStateReconciler 整合——`Idle` 期望状态从"指定 appIds"升级为 farm 策略模式（调度在 CP 编排层，动作面只加"查剩余掉落"action）。
-- [ ] 挂机排除名单：IdleApps 补充排除（黑名单）语义，对齐 ASF `Blacklist`。
+- [x] smart farming 调度：剩余掉落 > 0 的 app 进 idle 队列，掉完自动切换下一个；与 DesiredStateReconciler 整合——`Idle` 期望状态从"指定 appIds"升级为 farm 策略模式（调度在 CP 编排层，动作面只加"查剩余掉落"action）（✅ 2026-09-12 见下方日志）。
+- [x] 挂机排除名单：IdleApps 补充排除（黑名单）语义，对齐 ASF `Blacklist`（✅ 2026-09-12 随 smart farming 一并落地：Farm 模式下 IdleApps 解释为排除名单，Idle 模式仍为白名单）。
 
 ### 11.2 P6-2 交易与确认闭环（GA 出口条件，安全底座已备）
 
@@ -340,3 +340,4 @@
 > 2026-09-12：**P5 全部完成（方向 A/C/B 三方向收官）**。方向 B 五子项收口：统计修正 / contract tests（抓到真实上游漂移并双路径修复）/ WS 协议 replay tests / ISteamTransport 协议适配层 / 覆盖率管道修复 + 真实基线（整体行覆盖 74.3%，Protocol 89.1%，测试总数 961，全部过；codecov 门禁 70% 上线）。
 > 2026-09-12：P6 立项：对标五个同类产品（ASF / Watt Toolkit / Steam Game Idler / steamguard-cli / Idle Master Extended）完成功能矩阵（`docs/feature-matrix.md`，7 能力域 30+ 项）。结论：平台层（多节点舰队编排/任务系统/插件/可观测性）全场独有；差距集中在 Steam 功能纵深，恰为 GA 出口条件 #2 未闭环项。P6 四组候选立项（§11）：卡牌 farming 闭环 → 交易与确认闭环 → 互操作与认领 → 后置待决（Dashboard/市场挂单/QR 登录/成就）；明确不采用网络加速/账号切换/通用 TOTP/游戏内脚本。
 > 2026-09-12：P6-1 ①徽章页解析落地：`SteamBadgesClient`（解析徽章页 HTML 得各 app 剩余卡牌掉落——该页是掉落数唯一来源，Web API 无对应字段）+ `get_card_drops` 动作（SWR 缓存 10min + force_refresh/cache_ttl_seconds，输出按剩余张数降序）。徽章页登录门控不可匿名录制，fixture 按三方解析器互证构造（ASF CardsFarmer.cs 的 `card_drop_info_dialog_{id}` appid 载体 / steam-game-idler scraper.rs 的 `steam://run/{id}` 载体与 `progress_info_bold`/`pagelink` 文案 / Greasy Fork userscript 的 DOM 层级），`l=english` 强制语言防本地化漂移；分页逐页抓取（后续页失败跳过、首页失败抛错）。24 个新测试（解析变体 13 + 契约回放 3 + 动作 8），Steam.Core 573→597，总 961→985。P6-1 剩余：②smart farming 调度、③IdleApps 排除名单。
+> 2026-09-12：**P6-1 全部完成（①+②+③，卡牌 farming 闭环 GA 出口条件达成）**。②smart farming 调度：`AccountDesiredState.Farm = 3` 新期望状态，`DesiredStateReconciler` 编排 farm 循环——周期派发 `get_card_drops`（CP 只知 accountName，`steam_id` 缺省经 `SteamWebHandler.TryResolveOwnSteamId()` 从会话 cookie 反解，四 cookie 名变体 + 最小值校验），从任务 output（SQLite JSON 往返后 drops 为 JsonElement，解析双形态兼容 Dictionary/JsonElement）构建 `FarmQueue`，`play_games` 挂队首（按剩余张数降序），刷新周期 `Vapor_RECONCILE_FARM_REFRESH_SECONDS`（默认 300s）重查，队首掉完自动切换下一个，全空 stop 保留在线；farm 查询失败只记 LastDeviation，绝不消耗 login 失败预算。③排除名单：Farm 模式下 `IdleApps` 语义变为排除名单（黑名单，对齐 ASF Blacklist），Idle 模式仍为白名单；spec 变更重置 farm 队列。7 个编排器新测试（初始派发/排除过滤/轮换/停机/刷新间隔/JSON 往返/Farm→Online 切换）+ Protocol Farm 枚举往返 2 + AccountApi farm 1 + 动作 cookie 反解 2。ControlPlane 147→155，Protocol 20→22，Steam.Core 597→599，总 985→997 全过。

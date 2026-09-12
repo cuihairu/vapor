@@ -12,12 +12,14 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	public DesiredStateReconcilerTests()
 	{
 		DesiredStateReconciler.LoginInFlightWindow = TimeSpan.Zero;
+		DesiredStateReconciler.CardDropsInFlightWindow = TimeSpan.Zero;
 	}
 
 	public void Dispose()
 	{
 		DesiredStateReconciler.LoginInFlightWindow = TimeSpan.FromSeconds(150);
 		DesiredStateReconciler.PlayInFlightWindow = TimeSpan.FromSeconds(120);
+		DesiredStateReconciler.CardDropsInFlightWindow = TimeSpan.FromSeconds(150);
 	}
 
 	[Fact]
@@ -318,6 +320,218 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.Empty(jobs.Created);
 	}
 
+	// ── smart farming (DesiredState.Farm) ──
+
+	/// <summary>
+	/// Farming tests drive several reconcile passes per play job and need the
+	/// play window settled immediately; Dispose restores the real window.
+	/// </summary>
+	private static void ZeroPlayInFlightWindow() =>
+		DesiredStateReconciler.PlayInFlightWindow = TimeSpan.Zero;
+
+	/// <summary>Builds a get_card_drops task output payload (in-memory dictionary form).</summary>
+	private static IReadOnlyDictionary<string, object?> DropsOutput(params (uint AppId, int Drops)[] drops) =>
+		new Dictionary<string, object?>
+		{
+			["drops"] = drops.Select(d => (object)new Dictionary<string, object?>
+			{
+				["app_id"] = (long)d.AppId,
+				["drops_remaining"] = (long)d.Drops
+			}).ToList()
+		};
+
+	[Fact]
+	public async Task FarmAccount_DispatchesCardDropsThenIdlesFirstApp()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Pass 1: no queue yet → refresh via a get_card_drops job.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Single(jobs.Created);
+		Assert.Equal("get_card_drops", jobs.Created[0].Action);
+		Assert.Equal("desired-state", jobs.Created[0].Meta!["orchestrator"]);
+		Assert.Equal(1, reconciler.CardDropsDispatched);
+
+		// Pass 2: query finished with two apps having drops → idle the first.
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutput((220, 6), (620, 1));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(2, jobs.Created.Count);
+		Assert.Equal("play_games", jobs.Created[1].Action);
+		Assert.Equal("220", jobs.Created[1].Payload!["games"]);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.True(view.Idling);
+		Assert.Equal(220U, view.FarmingAppId);
+		Assert.Equal([220U, 620U], view.FarmQueue);
+		Assert.NotNull(view.FarmQueueCheckedAt);
+	}
+
+	[Fact]
+	public async Task FarmQueue_IdleAppsActAsExclusionList()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, new[] { "220" }, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutput((220, 6), (620, 1));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal("620", jobs.Created[1].Payload!["games"]);
+		Assert.Equal([620U], reconciler.GetOrchestrationView("alice")!.FarmQueue);
+	}
+
+	[Fact]
+	public async Task FarmRotation_OnRefreshMovesToNextApp()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Queue [220, 620] and start farming 220.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutput((220, 6), (620, 1));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null); // play job completes silently
+
+		// While 220 still has drops and the refresh interval has not elapsed, nothing happens.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal(2, jobs.Created.Count);
+
+		// A spec update forces a queue refresh; the new report no longer lists 220.
+		accounts.Upsert("alice", true, AccountDesiredState.Farm, null, null, null, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal(3, jobs.Created.Count);
+		Assert.Equal("get_card_drops", jobs.Created[2].Action);
+		jobs.Outcomes["task-3-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-3-0"] = DropsOutput((620, 1));
+
+		// Settling the refresh rotates to the next game with drops.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal(4, jobs.Created.Count);
+		Assert.Equal("play_games", jobs.Created[3].Action);
+		Assert.Equal("620", jobs.Created[3].Payload!["games"]);
+		Assert.Equal(620U, reconciler.GetOrchestrationView("alice")!.FarmingAppId);
+	}
+
+	[Fact]
+	public async Task FarmComplete_WithEmptyQueue_StopsIdling()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutput((220, 6));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.True(reconciler.GetOrchestrationView("alice")!.Idling);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+
+		// Refresh reports no drops anywhere → stop idling, keep the session online.
+		accounts.Upsert("alice", true, AccountDesiredState.Farm, null, null, null, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-3-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-3-0"] = DropsOutput();
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// job 1 = card drops, job 2 = play 220, job 3 = card drops refresh, job 4 = stop.
+		Assert.Equal(4, jobs.Created.Count);
+		Assert.Equal("play_games", jobs.Created[3].Action);
+		Assert.Equal("stop", jobs.Created[3].Payload!["action"]);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.False(view.Idling);
+		Assert.Null(view.FarmingAppId);
+	}
+
+	[Fact]
+	public async Task FarmRefresh_RespectsInterval()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutput((220, 6));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// Only the initial card-drops query ran; the interval gates further queries.
+		Assert.Single(jobs.Created.Where(j => j.Action == "get_card_drops"));
+	}
+
+	[Fact]
+	public void ExtractFarmQueue_SurvivesJsonRoundTripAndFilters()
+	{
+		var spec = new AccountSpec("alice", true, AccountDesiredState.Farm, new[] { "570" });
+
+		// Simulate the SQLite JSON round-trip: numbers become JsonElement objects.
+		var raw = DropsOutput((220, 6), (570, 3), (620, 0));
+		string json = System.Text.Json.JsonSerializer.Serialize(raw);
+		var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(json);
+
+		List<uint> queue = DesiredStateReconciler.ExtractFarmQueue(roundTripped, spec);
+
+		// 570 excluded (IdleApps), 620 filtered (zero drops), order preserved.
+		Assert.Equal([220U], queue);
+		Assert.Empty(DesiredStateReconciler.ExtractFarmQueue(null, spec));
+		Assert.Empty(DesiredStateReconciler.ExtractFarmQueue(new Dictionary<string, object?>(), spec));
+	}
+
+	[Fact]
+	public async Task FarmToOnlineSwitch_StopsIdlingAndClearsQueue()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = new();
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		accounts.Upsert("alice", true, AccountDesiredState.Farm, null, null, null, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutput((220, 6));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.True(reconciler.GetOrchestrationView("alice")!.Idling);
+
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		// Settle the in-flight play job so Idling survives to the Online pass.
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Equal("stop", jobs.Created[2].Payload!["action"]);
+		Assert.False(view.Idling);
+		Assert.Null(view.FarmingAppId);
+		Assert.Null(view.FarmQueue);
+	}
+
 	// ── fixtures ──
 
 	private static AccountStore NewAccounts(params (string Name, bool Enabled, AccountDesiredState State, string[]? Apps, string? Region, string? Agent)[] specs)
@@ -351,7 +565,8 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		IAuditStore? auditStore = null,
 		int cooldownSeconds = 60,
 		int maxLoginAttempts = 3,
-		bool dryRun = false)
+		bool dryRun = false,
+		int farmRefreshSeconds = 300)
 	{
 		var cfg = new Config(
 			"admin",
@@ -367,6 +582,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			ReconcileMaxLoginAttempts: maxLoginAttempts,
 			ReconcileLoginCooldownSeconds: cooldownSeconds,
 			ReconcileSessionStalenessSeconds: 120,
+			ReconcileFarmRefreshSeconds: farmRefreshSeconds,
 			ReconcileDryRun: dryRun);
 
 		return new DesiredStateReconciler(
@@ -404,6 +620,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 
 		public List<CreateJobRequest> Created { get; } = [];
 		public Dictionary<string, (JobTaskStatus Status, string? Error)> Outcomes { get; } = new();
+		public Dictionary<string, IReadOnlyDictionary<string, object?>?> Outputs { get; } = new();
 		public List<string> Cancelled { get; } = [];
 
 		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
@@ -429,7 +646,8 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			return Task.FromResult(new JobWithTasks(
 				job.Job,
 				job.Tasks.Select(t => Outcomes.TryGetValue(t.Id, out (JobTaskStatus Status, string? Error) outcome)
-					? new JobTask(t.Id, t.JobId, t.Target, t.Action, t.Region, t.Payload, outcome.Status, t.Attempt, t.CreatedAt, t.UpdatedAt, outcome.Error, t.Output)
+					? new JobTask(t.Id, t.JobId, t.Target, t.Action, t.Region, t.Payload, outcome.Status, t.Attempt, t.CreatedAt, t.UpdatedAt, outcome.Error,
+						Outputs.TryGetValue(t.Id, out IReadOnlyDictionary<string, object?>? output) ? output : t.Output)
 					: t)
 					.ToList()));
 		}

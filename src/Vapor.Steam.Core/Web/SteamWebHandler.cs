@@ -228,6 +228,33 @@ public sealed class SteamWebHandler : IDisposable
 		return allCookies;
 	}
 
+	/// <summary>
+	/// Resolves the logged-on user's SteamID from the session cookies (the
+	/// steamlogin cookies encode it as "steamid%7C%7Ctoken"). Returns null when
+	/// the cookies do not carry a usable identity.
+	/// </summary>
+	public ulong? TryResolveOwnSteamId()
+	{
+		var cookies = GetAllCookies();
+
+		foreach (string cookieName in new[] { "steamLoginSecure", "steamLogin", "steamlogin[secure]", "steamlogin" })
+		{
+			if (!cookies.TryGetValue(cookieName, out string? value) || string.IsNullOrEmpty(value))
+			{
+				continue;
+			}
+
+			// Cookie format: "<steamid>%7C%7C<token>" (URL-encoded pipe separators).
+			string steamIdPart = value.Split("%7C%7C")[0].Split('|')[0];
+			if (ulong.TryParse(steamIdPart, out ulong steamId) && steamId >= 76561197960265728UL)
+			{
+				return steamId;
+			}
+		}
+
+		return null;
+	}
+
 	private async Task<SteamWebResponse> SendRequestAsync(
 		System.Net.Http.HttpMethod method,
 		Uri url,

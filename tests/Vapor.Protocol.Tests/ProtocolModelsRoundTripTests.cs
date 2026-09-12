@@ -149,6 +149,30 @@ public sealed class ProtocolModelsRoundTripTests
 	}
 
 	[Fact]
+	public void AccountSpec_RoundTrips_FarmStateWithExclusionApps()
+	{
+		var spec = new AccountSpec(
+			"alice", Enabled: true, AccountDesiredState.Farm,
+			IdleApps: new[] { "730" }, Region: "us-east", AgentId: null,
+			Note: "smart farming", Version: new ConfigVersion(1, DateTimeOffset.Parse("2026-09-12T06:00:00Z"), "admin"));
+
+		AccountSpec parsed = RoundTrip(spec);
+
+		Assert.Equal(AccountDesiredState.Farm, parsed.DesiredState);
+		Assert.Equal(new[] { "730" }, parsed.IdleApps!.ToArray());
+	}
+
+	[Fact]
+	public void AccountDesiredState_Farm_SerializesAsCamelCaseName()
+	{
+		string json = JsonSerializer.Serialize(
+			new AccountSpec("alice", Enabled: true, AccountDesiredState.Farm),
+			JsonDefaults.Options);
+
+		Assert.Contains("\"desiredState\":\"farm\"", json);
+	}
+
+	[Fact]
 	public void AccountConfig_RoundTrips_WithPasswordFormat()
 	{
 		var config = new AccountConfig(

@@ -73,6 +73,29 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task PutAccount_FarmState_AcceptsIdleAppsAsExclusionList()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage put = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			enabled = true,
+			desiredState = "farm",
+			idleApps = new[] { "730" }
+		});
+
+		Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+		string body = await put.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement spec = doc.RootElement.GetProperty("spec");
+
+		Assert.Equal("farm", spec.GetProperty("desiredState").GetString());
+		Assert.Equal(1, spec.GetProperty("idleApps").GetArrayLength());
+	}
+
+	[Fact]
 	public async Task PutAccount_ReplacesExistingSpec()
 	{
 		await using var factory = CreateFactory();

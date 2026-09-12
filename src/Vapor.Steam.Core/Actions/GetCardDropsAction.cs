@@ -54,21 +54,30 @@ public sealed class GetCardDropsAction : IAction
 		IReadOnlyDictionary<string, object?> payload,
 		CancellationToken cancellationToken)
 	{
-		var steamIdParam = PayloadReader.GetString(payload, "steam_id");
-		if (string.IsNullOrEmpty(steamIdParam))
-		{
-			return new ActionResult(false, "steam_id parameter is required", null);
-		}
-
-		if (!ulong.TryParse(steamIdParam, out var steamId))
-		{
-			return new ActionResult(false, "Invalid steam_id parameter", null);
-		}
-
 		var webHandler = session.SteamWebHandler;
 		if (webHandler == null)
 		{
 			return new ActionResult(false, "Steam web handler not available", null);
+		}
+
+		// steam_id is optional: when omitted, resolve the session's own SteamID
+		// from its cookies (what the orchestrator relies on — the control plane
+		// only knows account names).
+		var steamIdParam = PayloadReader.GetString(payload, "steam_id");
+		ulong steamId;
+		if (string.IsNullOrEmpty(steamIdParam))
+		{
+			ulong? resolved = webHandler.TryResolveOwnSteamId();
+			if (resolved is null)
+			{
+				return new ActionResult(false, "steam_id parameter is required when the session cookies do not carry a SteamID (is the session logged on?)", null);
+			}
+
+			steamId = resolved.Value;
+		}
+		else if (!ulong.TryParse(steamIdParam, out steamId))
+		{
+			return new ActionResult(false, "Invalid steam_id parameter", null);
 		}
 
 		int? ttlSeconds = PayloadReader.GetInt32(payload, "cache_ttl_seconds");

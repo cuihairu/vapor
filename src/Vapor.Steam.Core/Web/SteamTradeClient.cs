@@ -540,24 +540,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 	{
 		ThrowIfDisposed();
 
-		var cookies = _webHandler.GetAllCookies();
-
-		foreach (string cookieName in new[] { "steamlogin[secure]", "steamlogin" })
-		{
-			if (!cookies.TryGetValue(cookieName, out var value) || string.IsNullOrEmpty(value))
-			{
-				continue;
-			}
-
-			// Cookie format: "<steamid>%7C%7C<token>" (URL-encoded pipe separators).
-			string steamIdPart = value.Split("%7C%7C")[0].Split('|')[0];
-			if (ulong.TryParse(steamIdPart, out ulong steamId) && steamId >= 76561197960265728UL)
-			{
-				return steamId;
-			}
-		}
-
-		return null;
+		return _webHandler.TryResolveOwnSteamId();
 	}
 
 	private async Task<string?> GetApiKeyAsync(CancellationToken cancellationToken)

@@ -12,7 +12,16 @@ public enum AccountDesiredState
 	Online = 1,
 
 	/// <summary>The account should be logged on and idling the configured apps.</summary>
-	Idle = 2
+	Idle = 2,
+
+	/// <summary>
+	/// Smart card farming: the orchestrator polls the account's remaining card
+	/// drops (community badges page), idles games that still have drops and
+	/// rotates to the next one as they run out. In this state
+	/// <see cref="AccountSpec.IdleApps"/> is interpreted as an exclusion list
+	/// (apps that must never be farmed) instead of the Idle whitelist.
+	/// </summary>
+	Farm = 3
 }
 
 /// <summary>

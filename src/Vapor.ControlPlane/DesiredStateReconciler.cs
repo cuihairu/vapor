@@ -28,11 +28,14 @@ public sealed class DesiredStateReconciler : BackgroundService
 	private const string OrchestratorMeta = "desired-state";
 	private const string LoginAction = "login";
 	private const string PlayGamesAction = "play_games";
+	private const string CardDropsAction = "get_card_drops";
 
 	/// <summary>A dispatched login job normally finishes well inside its 60s timeout; past this window the outcome is queried.</summary>
 	internal static TimeSpan LoginInFlightWindow = TimeSpan.FromSeconds(150);
 	/// <summary>Same idea for play_games jobs (30s timeout).</summary>
 	internal static TimeSpan PlayInFlightWindow = TimeSpan.FromSeconds(120);
+	/// <summary>Same idea for get_card_drops jobs (120s timeout).</summary>
+	internal static TimeSpan CardDropsInFlightWindow = TimeSpan.FromSeconds(150);
 	/// <summary>Backoff ceiling for consecutive login failures.</summary>
 	private static readonly TimeSpan MaxCooldown = TimeSpan.FromMinutes(15);
 	private static readonly HashSet<string> TransitionalStates = new(StringComparer.Ordinal)
@@ -56,6 +59,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 	private long _loginsDispatched;
 	private long _playsDispatched;
+	private long _cardDropsDispatched;
 	private long _rebalances;
 	private long _unassignments;
 	private long _throttledSkips;
@@ -66,6 +70,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 	public long LoginsDispatched => Interlocked.Read(ref _loginsDispatched);
 	/// <summary>play_games jobs dispatched since startup.</summary>
 	public long PlaysDispatched => Interlocked.Read(ref _playsDispatched);
+	/// <summary>get_card_drops jobs dispatched since startup (smart farming queue refreshes).</summary>
+	public long CardDropsDispatched => Interlocked.Read(ref _cardDropsDispatched);
 	/// <summary>Accounts moved to a different agent after their assigned agent disappeared.</summary>
 	public long Rebalances => Interlocked.Read(ref _rebalances);
 	/// <summary>Assignments dropped because the desired state became offline or the account was disabled.</summary>
@@ -184,11 +190,14 @@ public sealed class DesiredStateReconciler : BackgroundService
 		CancellationToken cancellationToken)
 	{
 		// A spec update resets the failure budget, giving operators a lever to un-throttle.
+		// It also invalidates the farm queue — the exclusion list may have changed.
 		if (runtime.SpecVersion != spec.Version?.Version)
 		{
 			runtime.SpecVersion = spec.Version?.Version;
 			runtime.LoginAttempts = 0;
 			runtime.NextAttemptAt = DateTimeOffset.MinValue;
+			runtime.FarmQueue = null;
+			runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
 		}
 
 		// 1. Assigned agent disappeared → drop the assignment and rebalance below.
@@ -205,6 +214,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			runtime.ActiveJobId = null;
 			runtime.ActiveJobAction = null;
 			runtime.Idling = false;
+			runtime.FarmingAppId = null;
 			Interlocked.Increment(ref _rebalances);
 			await RecordActionAsync(spec, null, "rebalanced", $"agent '{lost}' disconnected", cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
@@ -236,13 +246,24 @@ public sealed class DesiredStateReconciler : BackgroundService
 				await SettleActiveJobAsync(spec, runtime, cancellationToken).ConfigureAwait(false);
 			}
 
+			if (spec.DesiredState == AccountDesiredState.Farm)
+			{
+				await ReconcileFarmAsync(spec, runtime, connected, load, now, cancellationToken).ConfigureAwait(false);
+				return;
+			}
+
+			// Leaving the farm state drops its queue bookkeeping.
+			runtime.FarmQueue = null;
+			runtime.FarmingAppId = null;
+			runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
+
 			if (spec.DesiredState == AccountDesiredState.Idle && spec.IdleApps is { Count: > 0 } && !runtime.Idling && now >= runtime.NextAttemptAt)
 			{
-				await DispatchPlayAsync(spec, runtime, connected, load, stop: false, cancellationToken).ConfigureAwait(false);
+				await DispatchPlayAsync(spec, runtime, connected, load, stop: false, cancellationToken: cancellationToken).ConfigureAwait(false);
 			}
 			else if (spec.DesiredState == AccountDesiredState.Online && runtime.Idling)
 			{
-				await DispatchPlayAsync(spec, runtime, connected, load, stop: true, cancellationToken).ConfigureAwait(false);
+				await DispatchPlayAsync(spec, runtime, connected, load, stop: true, cancellationToken: cancellationToken).ConfigureAwait(false);
 			}
 
 			return;
@@ -351,10 +372,223 @@ public sealed class DesiredStateReconciler : BackgroundService
 		runtime.ActiveJobId = null;
 		runtime.ActiveJobAction = null;
 		runtime.Idling = false;
+		runtime.FarmQueue = null;
+		runtime.FarmingAppId = null;
+		runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
 		runtime.LastAction = "unassigned";
 		runtime.LastActionAt = DateTimeOffset.UtcNow;
 		Interlocked.Increment(ref _unassignments);
 		await RecordActionAsync(spec, null, "unassigned", reason, cancellationToken: cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Smart-farming loop for a connected account in the <see cref="AccountDesiredState.Farm"/>
+	/// state: periodically refreshes the card-drop queue by dispatching a
+	/// get_card_drops job, then idles the first queued game. When a refresh
+	/// shows the current game has run out of drops it rotates to the next one;
+	/// with an empty queue it stops idling but keeps the session online.
+	/// Farm query failures only mark a deviation and wait for the next refresh
+	/// interval — they never consume the login failure budget.
+	/// </summary>
+	private async Task ReconcileFarmAsync(
+		AccountSpec spec,
+		AccountRuntime runtime,
+		Dictionary<string, ConnectedAgent> connected,
+		Dictionary<string, int> load,
+		DateTimeOffset now,
+		CancellationToken cancellationToken)
+	{
+		// A card-drops query (or play job) is still in flight — wait for it.
+		if (runtime.ActiveJobId is not null)
+		{
+			return;
+		}
+
+		bool refreshDue = runtime.FarmQueue is null
+			|| now - runtime.FarmQueueCheckedAt >= TimeSpan.FromSeconds(_cfg.ReconcileFarmRefreshSeconds);
+		if (refreshDue)
+		{
+			ConnectedAgent? agent = PickAgent(spec, connected, load, CardDropsAction);
+			if (agent is null)
+			{
+				Interlocked.Increment(ref _noAgentSkips);
+				runtime.LastDeviation = "no capable agent available";
+				return;
+			}
+
+			if (!await GuardDryRunAsync(spec, runtime, $"would dispatch get_card_drops to agent '{agent.Hello.AgentId}'", cancellationToken).ConfigureAwait(false))
+			{
+				return;
+			}
+
+			JobWithTasks job = await _jobs.CreateJob(
+				new CreateJobRequest(
+					Action: CardDropsAction,
+					Region: spec.Region,
+					Targets: [spec.AccountName],
+					Payload: new Dictionary<string, object?>(),
+					Meta: new Dictionary<string, string> { ["orchestrator"] = OrchestratorMeta }),
+				cancellationToken).ConfigureAwait(false);
+
+			runtime.AssignedAgent = agent.Hello.AgentId;
+			runtime.ActiveJobId = job.Job.Id;
+			runtime.ActiveJobAction = CardDropsAction;
+			runtime.ActiveJobDispatchedAt = now;
+			runtime.LastAction = "card_drops_dispatched";
+			runtime.LastActionAt = now;
+			runtime.LastDeviation = null;
+			load[agent.Hello.AgentId] = load.GetValueOrDefault(agent.Hello.AgentId) + 1;
+			Interlocked.Increment(ref _cardDropsDispatched);
+
+			await RecordActionAsync(spec, job.Job.Id, "card_drops_dispatched",
+				reason: runtime.FarmQueue is null ? "initial farm queue" : "farm queue refresh",
+				agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
+			return;
+		}
+
+		// The queue is fresh — act on it.
+		List<uint> queue = runtime.FarmQueue!;
+		if (runtime.FarmingAppId is uint farming && queue.Contains(farming))
+		{
+			return; // current game still has drops
+		}
+
+		if (queue.Count > 0)
+		{
+			await DispatchPlayAsync(spec, runtime, connected, load, stop: false, farmAppId: queue[0], cancellationToken).ConfigureAwait(false);
+		}
+		else if (runtime.Idling || runtime.FarmingAppId is not null)
+		{
+			// Everything is farmed out: stop idling, keep the session online.
+			await DispatchPlayAsync(spec, runtime, connected, load, stop: true, cancellationToken: cancellationToken).ConfigureAwait(false);
+		}
+	}
+
+	/// <summary>
+	/// Rebuilds the farm queue from a get_card_drops task output. Entries are
+	/// kept in report order (drops-remaining descending as produced by the
+	/// action); the account's IdleApps list is the farm exclusion list. Accepts
+	/// both in-memory dictionaries and JsonElement objects (SQLite round-trip).
+	/// A missing/invalid output yields an empty queue — treated as "nothing to
+	/// farm", never as a query failure.
+	/// </summary>
+	internal static List<uint> ExtractFarmQueue(IReadOnlyDictionary<string, object?>? output, AccountSpec spec)
+	{
+		var excluded = new HashSet<string>(StringComparer.Ordinal);
+		foreach (string app in spec.IdleApps ?? [])
+		{
+			excluded.Add(app.Trim());
+		}
+
+		var queue = new List<uint>();
+		if (output is null || !output.TryGetValue("drops", out object? raw) || raw is null)
+		{
+			return queue;
+		}
+
+		void Collect(object? entry)
+		{
+			if (!TryReadDropEntry(entry, out uint appId, out int remaining))
+			{
+				return;
+			}
+
+			if (remaining > 0 && appId != 0 && !excluded.Contains(appId.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+			{
+				queue.Add(appId);
+			}
+		}
+
+		// After the SQLite JSON round-trip the array (and its entries) are JsonElements;
+		// freshly dispatched outputs carry in-memory dictionaries.
+		if (raw is System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Array } jsonArray)
+		{
+			foreach (System.Text.Json.JsonElement entry in jsonArray.EnumerateArray())
+			{
+				Collect(entry);
+			}
+		}
+		else if (raw is System.Collections.IEnumerable entries and not string)
+		{
+			foreach (object? entry in entries)
+			{
+				Collect(entry);
+			}
+		}
+
+		return queue;
+	}
+
+	private static bool TryReadDropEntry(object? entry, out uint appId, out int remaining)
+	{
+		appId = 0;
+		remaining = 0;
+
+		if (entry is Dictionary<string, object?> dict)
+		{
+			return TryGetNumber(dict, "app_id", out long id)
+				&& TryGetNumber(dict, "drops_remaining", out long drops)
+				&& Normalize(id, drops, out appId, out remaining);
+		}
+
+		if (entry is System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Object } element)
+		{
+			return TryGetNumberFromElement(element, "app_id", out long jsonId)
+				&& TryGetNumberFromElement(element, "drops_remaining", out long jsonDrops)
+				&& Normalize(jsonId, jsonDrops, out appId, out remaining);
+		}
+
+		return false;
+	}
+
+	private static bool Normalize(long id, long drops, out uint appId, out int remaining)
+	{
+		appId = 0;
+		remaining = 0;
+		if (id is > 0 and <= uint.MaxValue && drops is > 0 and <= int.MaxValue)
+		{
+			appId = (uint)id;
+			remaining = (int)drops;
+			return true;
+		}
+
+		return false;
+	}
+
+	private static bool TryGetNumberFromElement(System.Text.Json.JsonElement element, string name, out long value)
+	{
+		value = 0;
+		return element.TryGetProperty(name, out System.Text.Json.JsonElement property)
+			&& property.ValueKind == System.Text.Json.JsonValueKind.Number
+			&& property.TryGetInt64(out value);
+	}
+
+	private static bool TryGetNumber(Dictionary<string, object?> dict, string key, out long value)
+	{
+		value = 0;
+		if (!dict.TryGetValue(key, out object? raw) || raw is null)
+		{
+			return false;
+		}
+
+		switch (raw)
+		{
+			case long l:
+				value = l;
+				return true;
+			case int i:
+				value = i;
+				return true;
+			case double d:
+				value = (long)d;
+				return true;
+			case System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } element:
+				return element.TryGetInt64(out value);
+			case string s:
+				return long.TryParse(s, out value);
+			default:
+				return false;
+		}
 	}
 
 	private async Task DispatchPlayAsync(
@@ -363,7 +597,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 		Dictionary<string, ConnectedAgent> connected,
 		Dictionary<string, int> load,
 		bool stop,
-		CancellationToken cancellationToken)
+		uint? farmAppId = null,
+		CancellationToken cancellationToken = default)
 	{
 		ConnectedAgent? agent = PickAgent(spec, connected, load, PlayGamesAction);
 		if (agent is null)
@@ -379,7 +614,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 		}
 
 		var payload = new Dictionary<string, object?>();
-		if (!stop && spec.IdleApps is { Count: > 0 })
+		if (!stop && spec.DesiredState == AccountDesiredState.Farm && farmAppId is uint app)
+		{
+			payload["games"] = app.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		}
+		else if (!stop && spec.IdleApps is { Count: > 0 })
 		{
 			payload["games"] = string.Join(",", spec.IdleApps);
 		}
@@ -402,6 +641,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 		runtime.ActiveJobAction = PlayGamesAction;
 		runtime.ActiveJobDispatchedAt = DateTimeOffset.UtcNow;
 		runtime.Idling = !stop;
+		runtime.FarmingAppId = stop ? null : farmAppId;
 		runtime.NextAttemptAt = runtime.ActiveJobDispatchedAt + Cooldown(1);
 		runtime.LastAction = stop ? "stop_dispatched" : "idle_dispatched";
 		runtime.LastActionAt = runtime.ActiveJobDispatchedAt;
@@ -409,8 +649,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 		load[agent.Hello.AgentId] = load.GetValueOrDefault(agent.Hello.AgentId) + 1;
 		Interlocked.Increment(ref _playsDispatched);
 
+		string reason = stop
+			? (spec.DesiredState == AccountDesiredState.Farm ? "farm queue empty" : "desired online")
+			: (farmAppId is not null ? $"farm app {farmAppId}" : "desired idle");
 		await RecordActionAsync(spec, job.Job.Id, stop ? "stop_dispatched" : "idle_dispatched",
-			reason: stop ? "desired online" : "desired idle", agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
+			reason: reason, agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -437,6 +680,33 @@ public sealed class DesiredStateReconciler : BackgroundService
 		runtime.ActiveJobId = null;
 		runtime.ActiveJobAction = null;
 
+		// Card-drops query outcomes feed the farm queue; they never count into
+		// the login failure budget. A failed query just waits for the next
+		// refresh interval (CheckedAt is stamped regardless of the outcome).
+		if (string.Equals(action, CardDropsAction, StringComparison.Ordinal))
+		{
+			runtime.FarmQueueCheckedAt = DateTimeOffset.UtcNow;
+			JobTask? dropsTask = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
+				?? outcome.Tasks.FirstOrDefault();
+			if (dropsTask is null)
+			{
+				return;
+			}
+
+			if (dropsTask.Status == JobTaskStatus.Finished)
+			{
+				runtime.FarmQueue = ExtractFarmQueue(dropsTask.Output, spec);
+				_logger.LogInformation("Farm queue for {AccountName} refreshed: {Count} app(s) with drops",
+					spec.AccountName, runtime.FarmQueue.Count);
+			}
+			else
+			{
+				runtime.LastDeviation = $"job {action} outcome: {dropsTask.Status} {dropsTask.Error}".TrimEnd();
+			}
+
+			return;
+		}
+
 		JobTask? task = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
 			?? outcome.Tasks.FirstOrDefault();
 
@@ -455,6 +725,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			if (string.Equals(action, PlayGamesAction, StringComparison.Ordinal))
 			{
 				runtime.Idling = false;
+				runtime.FarmingAppId = null;
 			}
 
 			await CancelJobAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -463,6 +734,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 		else if (string.Equals(action, PlayGamesAction, StringComparison.Ordinal) && task.Status == JobTaskStatus.Canceled)
 		{
 			runtime.Idling = false;
+			runtime.FarmingAppId = null;
 		}
 	}
 
@@ -567,7 +839,12 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 	private TimeSpan InFlightWindow(string? action)
 	{
-		return string.Equals(action, PlayGamesAction, StringComparison.Ordinal) ? PlayInFlightWindow : LoginInFlightWindow;
+		if (string.Equals(action, PlayGamesAction, StringComparison.Ordinal))
+		{
+			return PlayInFlightWindow;
+		}
+
+		return string.Equals(action, CardDropsAction, StringComparison.Ordinal) ? CardDropsInFlightWindow : LoginInFlightWindow;
 	}
 
 	/// <summary>Exponential backoff: base, 2x, 4x … capped at 15 minutes. Zero base disables cooldowns.</summary>
@@ -641,6 +918,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 			LoginAttempts: runtime.LoginAttempts,
 			NextAttemptAt: runtime.NextAttemptAt == DateTimeOffset.MinValue ? null : runtime.NextAttemptAt,
 			Idling: runtime.Idling,
+			FarmingAppId: runtime.FarmingAppId,
+			FarmQueue: runtime.FarmQueue,
+			FarmQueueCheckedAt: runtime.FarmQueueCheckedAt == DateTimeOffset.MinValue ? null : runtime.FarmQueueCheckedAt,
 			LastAction: runtime.LastAction,
 			LastActionAt: runtime.LastActionAt == DateTimeOffset.MinValue ? null : runtime.LastActionAt,
 			LastDeviation: runtime.LastDeviation
@@ -656,6 +936,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 		public int LoginAttempts;
 		public DateTimeOffset NextAttemptAt = DateTimeOffset.MinValue;
 		public bool Idling;
+		public List<uint>? FarmQueue;
+		public uint? FarmingAppId;
+		public DateTimeOffset FarmQueueCheckedAt = DateTimeOffset.MinValue;
 		public string? LastCountedFailureKey;
 		public int? SpecVersion;
 		public DateTimeOffset LastActionAt = DateTimeOffset.MinValue;
@@ -672,7 +955,10 @@ public sealed record AccountOrchestrationView(
 	int LoginAttempts,
 	DateTimeOffset? NextAttemptAt,
 	bool Idling,
-	string? LastAction,
-	DateTimeOffset? LastActionAt,
-	string? LastDeviation
+	uint? FarmingAppId = null,
+	IReadOnlyList<uint>? FarmQueue = null,
+	DateTimeOffset? FarmQueueCheckedAt = null,
+	string? LastAction = null,
+	DateTimeOffset? LastActionAt = null,
+	string? LastDeviation = null
 );

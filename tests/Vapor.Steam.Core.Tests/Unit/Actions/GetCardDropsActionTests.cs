@@ -85,7 +85,34 @@ public sealed class GetCardDropsActionTests : IDisposable
 		var result = await action.ExecuteAsync(CreateSession(webHandler), new Dictionary<string, object?>(), CancellationToken.None);
 
 		Assert.False(result.Success);
-		Assert.Equal("steam_id parameter is required", result.Error);
+		Assert.StartsWith("steam_id parameter is required", result.Error);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_WithoutSteamId_ResolvesOwnSteamIdFromCookies()
+	{
+		var (webHandler, fake) = CreateWebHandler();
+		webHandler.SetSessionCookies("session-1", "76561197960265728%7C%7Ctoken");
+		ServePagedBadges(fake);
+		var action = CreateAction(webHandler);
+
+		var result = await action.ExecuteAsync(CreateSession(webHandler), new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("76561197960265728", result.Output!["steam_id"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_WithoutSteamId_AndUnusableCookies_ReturnsError()
+	{
+		var (webHandler, _) = CreateWebHandler();
+		webHandler.SetSessionCookies("session-1", "not-a-steamid%7C%7Ctoken");
+		var action = CreateAction(webHandler);
+
+		var result = await action.ExecuteAsync(CreateSession(webHandler), new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.StartsWith("steam_id parameter is required", result.Error);
 	}
 
 	[Fact]

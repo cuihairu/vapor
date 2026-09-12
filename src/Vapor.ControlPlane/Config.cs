@@ -14,6 +14,7 @@ public sealed record Config(
 	int ReconcileMaxLoginAttempts = 3,
 	int ReconcileLoginCooldownSeconds = 60,
 	int ReconcileSessionStalenessSeconds = 120,
+	int ReconcileFarmRefreshSeconds = 300,
 	bool ReconcileDryRun = false,
 	string? WebhookNotificationsUrl = null,
 	string? WebhookNotificationsSecret = null,
@@ -40,6 +41,7 @@ public sealed record Config(
 		int reconcileMaxLoginAttempts = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS"), out int maxLoginAttempts) && maxLoginAttempts > 0 ? maxLoginAttempts : 3;
 		int reconcileLoginCooldownSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS"), out int loginCooldown) && loginCooldown >= 0 ? loginCooldown : 60;
 		int reconcileSessionStalenessSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_SESSION_STALENESS_SECONDS"), out int staleness) && staleness > 0 ? staleness : 120;
+		int reconcileFarmRefreshSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_FARM_REFRESH_SECONDS"), out int farmRefresh) && farmRefresh > 0 ? farmRefresh : 300;
 		bool reconcileDryRun = string.Equals(Environment.GetEnvironmentVariable("Vapor_RECONCILE_DRY_RUN"), "true", StringComparison.OrdinalIgnoreCase);
 		string? webhookUrl = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_URL");
 		string? webhookSecret = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_SECRET");
@@ -57,7 +59,7 @@ public sealed record Config(
 			agentApiKeys.Add(key);
 		}
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs);
 	}
 }
 
