@@ -157,7 +157,7 @@ public sealed class MonitoringPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 			actionsRegistered = _actionRegistry?.ListNames().Count ?? 0,
 			cache = _cache is null
 				? null
-				: new { entries = _cache.Count, hits = _cache.Hits, misses = _cache.Misses },
+				: new { entries = _cache.Count, hits = _cache.Hits, misses = _cache.Misses, staleHits = _cache.StaleHits },
 			executionsTotal = _metrics.SumSeries("vapor_action_executions_total")
 		};
 
@@ -190,6 +190,7 @@ public sealed class MonitoringPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		{
 			_metrics.CounterSet("vapor_cache_hits_total", "Cache hits since process start.", _cache.Hits);
 			_metrics.CounterSet("vapor_cache_misses_total", "Cache misses since process start.", _cache.Misses);
+			_metrics.CounterSet("vapor_cache_stale_hits_total", "Stale-while-revalidate serves since process start.", _cache.StaleHits);
 			_metrics.GaugeSet("vapor_cache_entries", "Live entries in the Vapor cache.", _cache.Count);
 		}
 	}

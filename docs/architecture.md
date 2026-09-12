@@ -216,13 +216,24 @@ Agent enables it via `AddRedactingConsole()`.
   `MarketListing`/`MarketListingsPage` (with cache key helpers and `FetchedAt`
   freshness markers).
 - `IVaporCache` abstraction with `MemoryVaporCache` implementation: per-entry
-  TTL (default 10 min), LRU eviction, hit/miss counters, single-flight factory
-  deduplication (cache stampede protection), injectable clock for testing.
+  TTL (default 10 min), LRU eviction, hit/miss/stale-hit counters, single-flight
+  factory deduplication (cache stampede protection), injectable clock for
+  testing, prefix-based invalidation (`RemoveByPrefix`) and a
+  stale-while-revalidate mode (`GetOrSetStaleWhileRevalidateAsync`: within a
+  grace window after the fresh TTL expires, requests are served instantly from
+  the stale entry while a single background refresh repopulates it).
   Redis-backed implementations can be added behind the same interface.
+- Tiered freshness policy (`SteamCacheTtl`): each data kind gets a fresh TTL and
+  stale window sized to how often it changes — search 1h/6h, game info
+  30min/2h, market listings 5min/30min, prices 3min/15min (staleness tolerated
+  only while a background refresh is in flight).
 - Store data actions (`get_game_info`, `search_games`, `get_price`,
   `get_market_listings`) resolve data through `SteamStoreApiClient`
   (appdetails / storesearch / community market endpoints) and are cached by
-  default; callers can override TTL per call via `cache_ttl_seconds` (0 disables).
+  default; callers can override TTL per call via `cache_ttl_seconds` (0
+  disables), force a fresh fetch that repopulates the cache via
+  `force_refresh: true`, and expire data on demand via the `cache_invalidate`
+  action (`prefix` or `clear_all`).
 
 ## HTTP Resilience
 

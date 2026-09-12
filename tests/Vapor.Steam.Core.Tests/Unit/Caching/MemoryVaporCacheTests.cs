@@ -238,6 +238,191 @@ public sealed class MemoryVaporCacheTests
 
 	private static TimeSpan TimeSpanMinutes(double minutes) => TimeSpan.FromMinutes(minutes);
 
+	// --- Stale-while-revalidate ---
+
+	[Fact]
+	public async Task StaleWhileRevalidate_ServesStaleWithinGraceWindowAndRefreshesInBackground()
+	{
+		using var cache = Create(new MemoryVaporCacheOptions { DefaultTtl = null });
+		int factoryCalls = 0;
+
+		await cache.SetStaleWhileRevalidateAsync("price:730", new FakePayload { Value = "v1" }, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10));
+
+		_now += TimeSpan.FromMinutes(6); // fresh TTL lapsed, stale window active
+
+		var served = await cache.GetOrSetStaleWhileRevalidateAsync(
+			"price:730",
+			ct => { factoryCalls++; return Task.FromResult<FakePayload?>(new FakePayload { Value = "v2" }); },
+			TimeSpan.FromMinutes(5),
+			TimeSpan.FromMinutes(10));
+
+		// Stale value is served instantly; the refresh runs in the background.
+		Assert.NotNull(served);
+		Assert.Equal("v1", served.Value);
+		Assert.Equal(1, cache.StaleHits);
+
+		await WaitForAsync(() => factoryCalls > 0);
+		await WaitForAsync(async () => (await cache.GetAsync<FakePayload>("price:730"))?.Value == "v2");
+
+		// Once refreshed the entry is fresh again and factory is not called again.
+		var now = await cache.GetOrSetStaleWhileRevalidateAsync(
+			"price:730",
+			ct => { factoryCalls++; return Task.FromResult<FakePayload?>(new FakePayload { Value = "v3" }); },
+			TimeSpan.FromMinutes(5),
+			TimeSpan.FromMinutes(10));
+		Assert.Equal("v2", now!.Value);
+		Assert.Equal(1, factoryCalls);
+	}
+
+	[Fact]
+	public async Task StaleWhileRevalidate_FreshEntryServedWithoutFactoryCall()
+	{
+		using var cache = Create(new MemoryVaporCacheOptions { DefaultTtl = null });
+		int factoryCalls = 0;
+
+		await cache.SetStaleWhileRevalidateAsync("key", new FakePayload { Value = "fresh" }, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10));
+
+		var served = await cache.GetOrSetStaleWhileRevalidateAsync(
+			"key",
+			ct => { factoryCalls++; return Task.FromResult<FakePayload?>(null); },
+			TimeSpan.FromMinutes(5),
+			TimeSpan.FromMinutes(10));
+
+		Assert.Equal("fresh", served!.Value);
+		Assert.Equal(0, factoryCalls);
+		Assert.Equal(1, cache.Hits);
+		Assert.Equal(0, cache.StaleHits);
+	}
+
+	[Fact]
+	public async Task StaleWhileRevalidate_AfterGraceWindow_FetchesFreshSynchronously()
+	{
+		using var cache = Create(new MemoryVaporCacheOptions { DefaultTtl = null });
+		int factoryCalls = 0;
+
+		await cache.SetStaleWhileRevalidateAsync("key", new FakePayload { Value = "old" }, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10));
+
+		_now += TimeSpan.FromMinutes(20); // beyond fresh TTL and stale window
+
+		var served = await cache.GetOrSetStaleWhileRevalidateAsync(
+			"key",
+			ct => { factoryCalls++; return Task.FromResult<FakePayload?>(new FakePayload { Value = "new" }); },
+			TimeSpan.FromMinutes(5),
+			TimeSpan.FromMinutes(10));
+
+		Assert.Equal("new", served!.Value);
+		Assert.Equal(1, factoryCalls);
+		Assert.Equal(0, cache.StaleHits);
+		Assert.Equal(1, cache.Misses);
+	}
+
+	[Fact]
+	public async Task StaleWhileRevalidate_BackgroundRefreshFailure_KeepsStaleUntilWindowEnds()
+	{
+		using var cache = Create(new MemoryVaporCacheOptions { DefaultTtl = null });
+		bool failRefresh = true;
+
+		await cache.SetStaleWhileRevalidateAsync("key", new FakePayload { Value = "stale" }, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10));
+
+		_now += TimeSpan.FromMinutes(6);
+
+		var served = await cache.GetOrSetStaleWhileRevalidateAsync(
+			"key",
+			ct => failRefresh ? throw new InvalidOperationException("store down") : Task.FromResult<FakePayload?>(new FakePayload { Value = "new" }),
+			TimeSpan.FromMinutes(5),
+			TimeSpan.FromMinutes(10));
+
+		// The refresh failed, yet the stale value is still served.
+		Assert.Equal("stale", served!.Value);
+
+		// A later read inside the stale window still serves stale and retries the refresh;
+		// once the factory is allowed to succeed the entry converges.
+		failRefresh = false;
+		var retried = await cache.GetOrSetStaleWhileRevalidateAsync(
+			"key",
+			ct => failRefresh ? throw new InvalidOperationException("store down") : Task.FromResult<FakePayload?>(new FakePayload { Value = "new" }),
+			TimeSpan.FromMinutes(5),
+			TimeSpan.FromMinutes(10));
+		Assert.Equal("stale", retried!.Value);
+
+		await WaitForAsync(async () => (await cache.GetAsync<FakePayload>("key"))?.Value == "new");
+
+		_now += TimeSpan.FromMinutes(20);
+		var after = await cache.GetOrSetStaleWhileRevalidateAsync(
+			"key",
+			ct => Task.FromResult<FakePayload?>(new FakePayload { Value = "newest" }),
+			TimeSpan.FromMinutes(5),
+			TimeSpan.FromMinutes(10));
+		Assert.Equal("newest", after!.Value);
+	}
+
+	[Fact]
+	public async Task GetOrSetAsync_EntriesWithoutStaleWindow_ExpireDirectly()
+	{
+		using var cache = Create(new MemoryVaporCacheOptions { DefaultTtl = null });
+		int factoryCalls = 0;
+
+		var first = await cache.GetOrSetAsync(
+			"key",
+			ct => { factoryCalls++; return Task.FromResult<FakePayload?>(new FakePayload { Value = "v1" }); },
+			TimeSpan.FromMinutes(5));
+
+		_now += TimeSpan.FromMinutes(6); // expired, no stale window was set
+
+		var second = await cache.GetOrSetAsync(
+			"key",
+			ct => { factoryCalls++; return Task.FromResult<FakePayload?>(new FakePayload { Value = "v2" }); },
+			TimeSpan.FromMinutes(5));
+
+		Assert.Equal("v1", first!.Value);
+		Assert.Equal("v2", second!.Value);
+		Assert.Equal(2, factoryCalls);
+		Assert.Equal(0, cache.StaleHits);
+	}
+
+	// --- Prefix invalidation ---
+
+	[Fact]
+	public async Task RemoveByPrefix_RemovesOnlyMatchingKeysAndReturnsCount()
+	{
+		using var cache = Create();
+
+		await cache.SetAsync("price:730:us", new FakePayload { Value = "a" });
+		await cache.SetAsync("price:730:de", new FakePayload { Value = "b" });
+		await cache.SetAsync("game:730", new FakePayload { Value = "c" });
+
+		int removed = cache.RemoveByPrefix("price:730");
+
+		Assert.Equal(2, removed);
+		Assert.Null(await cache.GetAsync<FakePayload>("price:730:us"));
+		Assert.Null(await cache.GetAsync<FakePayload>("price:730:de"));
+		Assert.NotNull(await cache.GetAsync<FakePayload>("game:730"));
+
+		Assert.Equal(0, cache.RemoveByPrefix("price:730"));
+	}
+
+	private static async Task WaitForAsync(Func<bool> condition, int timeoutMs = 5000)
+	{
+		var sw = System.Diagnostics.Stopwatch.StartNew();
+		while (!condition() && sw.ElapsedMilliseconds < timeoutMs)
+		{
+			await Task.Delay(10);
+		}
+
+		Assert.True(condition(), "Condition not met within timeout");
+	}
+
+	private static async Task WaitForAsync(Func<Task<bool>> condition, int timeoutMs = 5000)
+	{
+		var sw = System.Diagnostics.Stopwatch.StartNew();
+		while (!await condition() && sw.ElapsedMilliseconds < timeoutMs)
+		{
+			await Task.Delay(10);
+		}
+
+		Assert.True(await condition(), "Condition not met within timeout");
+	}
+
 	private sealed class FakePayload
 	{
 		public string Value { get; init; } = string.Empty;

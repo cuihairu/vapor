@@ -305,6 +305,145 @@ public sealed class DataActionsTests : IDisposable
 		clientMock.Verify(c => c.GetMarketListingsAsync(730U, 0, 20, It.IsAny<CancellationToken>()), Times.Once);
 	}
 
+	// --- Cache invalidation & force refresh ---
+
+	[Fact]
+	public async Task GetGameInfo_ForceRefresh_BypassesCacheAndRepopulates()
+	{
+		var first = SampleGame();
+		first = first with { Name = "Old Name" };
+		var refreshed = SampleGame() with { Name = "New Name" };
+
+		var clientMock = new Mock<ISteamStoreApiClient>(MockBehavior.Strict);
+		clientMock
+			.SetupSequence(c => c.GetGameInfoAsync(730U, "us", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(first)
+			.ReturnsAsync(refreshed);
+
+		using var cache = new MemoryVaporCache();
+		var action = new GetGameInfoAction(
+			NullLogger<GetGameInfoAction>.Instance,
+			_ => clientMock.Object,
+			cache);
+
+		var session = CreateSession();
+
+		var cached = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["app_id"] = "730" }, CancellationToken.None);
+		var forced = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["app_id"] = "730", ["force_refresh"] = true }, CancellationToken.None);
+
+		Assert.True(cached.Success);
+		Assert.True(forced.Success);
+		clientMock.Verify(c => c.GetGameInfoAsync(730U, "us", It.IsAny<CancellationToken>()), Times.Exactly(2));
+
+		// The forced fetch repopulated the entry, so a follow-up read stays cached.
+		var again = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["app_id"] = "730" }, CancellationToken.None);
+		Assert.True(again.Success);
+		Assert.Equal("New Name", ((GameInfo)again.Output!["game"]!).Name);
+		clientMock.Verify(c => c.GetGameInfoAsync(730U, "us", It.IsAny<CancellationToken>()), Times.Exactly(2));
+	}
+
+	[Fact]
+	public async Task GetPrice_StaleWhileRevalidate_ServesInstantlyAfterFreshTtl()
+	{
+		var price = new PriceOverview
+		{
+			Currency = "USD",
+			Initial = 1999,
+			Final = 999,
+			FinalFormatted = "$9.99"
+		};
+		var clientMock = new Mock<ISteamStoreApiClient>(MockBehavior.Strict);
+		clientMock
+			.Setup(c => c.GetPriceAsync(730U, "us", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(price);
+
+		var clock = new DateTimeOffset(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
+		using var cache = new MemoryVaporCache(new MemoryVaporCacheOptions { DefaultTtl = null }, () => clock);
+		var action = new GetPriceAction(
+			NullLogger<GetPriceAction>.Instance,
+			_ => clientMock.Object,
+			cache);
+
+		var session = CreateSession();
+		var payload = new Dictionary<string, object?> { ["app_id"] = "730" };
+
+		// First call fills the cache (3-minute fresh tier).
+		Assert.True((await action.ExecuteAsync(session, payload, CancellationToken.None)).Success);
+		clientMock.Verify(c => c.GetPriceAsync(730U, "us", It.IsAny<CancellationToken>()), Times.Once);
+
+		// After the fresh TTL but within the stale window, the cached price is served
+		// and the refresh runs in the background (which the mock serves as well).
+		clock += TimeSpan.FromMinutes(5);
+		var stale = await action.ExecuteAsync(session, payload, CancellationToken.None);
+		Assert.True(stale.Success);
+		Assert.Equal(1, cache.StaleHits);
+		clientMock.Verify(c => c.GetPriceAsync(730U, "us", It.IsAny<CancellationToken>()), Times.AtMost(2));
+	}
+
+	[Fact]
+	public async Task InvalidateCache_ByPrefix_RemovesOnlyMatchingEntries()
+	{
+		using var cache = new MemoryVaporCache();
+		await cache.SetAsync("price:730:us", new CacheProbe());
+		await cache.SetAsync("game:730", new CacheProbe());
+
+		var action = new InvalidateCacheAction(NullLogger<InvalidateCacheAction>.Instance, cache);
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["prefix"] = "price:730" },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(1, result.Output!["removed"]);
+		Assert.Equal(1, cache.Count); // game:730 survives
+	}
+
+	[Fact]
+	public async Task InvalidateCache_ClearAll_RemovesEverything()
+	{
+		using var cache = new MemoryVaporCache();
+		await cache.SetAsync("price:730:us", new CacheProbe());
+		await cache.SetAsync("game:730", new CacheProbe());
+
+		var action = new InvalidateCacheAction(NullLogger<InvalidateCacheAction>.Instance, cache);
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["clear_all"] = true },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(2, result.Output!["removed"]);
+		Assert.Equal(0, cache.Count);
+		Assert.Equal(true, result.Output["cleared_all"]);
+	}
+
+	[Fact]
+	public async Task InvalidateCache_WithoutPrefixOrClearAll_Fails()
+	{
+		var action = new InvalidateCacheAction(NullLogger<InvalidateCacheAction>.Instance, new MemoryVaporCache());
+		var result = await action.ExecuteAsync(CreateSession(), new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("prefix", result.Error);
+	}
+
+	[Fact]
+	public async Task InvalidateCache_WithoutConfiguredCache_Fails()
+	{
+		var action = new InvalidateCacheAction(NullLogger<InvalidateCacheAction>.Instance, cache: null);
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["clear_all"] = true },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("No cache", result.Error);
+	}
+
+	private sealed class CacheProbe
+	{
+	}
+
 	// --- Metadata ---
 
 	[Theory]

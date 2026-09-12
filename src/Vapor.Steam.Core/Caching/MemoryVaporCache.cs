@@ -35,6 +35,8 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 
 	public long Misses { get; private set; }
 
+	public long StaleHits { get; private set; }
+
 	public Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
 	{
 		ArgumentException.ThrowIfNullOrEmpty(key);
@@ -60,7 +62,29 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 
 		cancellationToken.ThrowIfCancellationRequested();
 
-		DateTimeOffset? expiresAt = ResolveExpiry(ttl);
+		return SetEntryAsync(key, value, ttl, staleTtl: null, cancellationToken);
+	}
+
+	public Task SetStaleWhileRevalidateAsync<T>(
+		string key,
+		T value,
+		TimeSpan ttl,
+		TimeSpan staleTtl,
+		CancellationToken cancellationToken = default) where T : class
+	{
+		ArgumentException.ThrowIfNullOrEmpty(key);
+		ArgumentNullException.ThrowIfNull(value);
+
+		cancellationToken.ThrowIfCancellationRequested();
+
+		return SetEntryAsync(key, value, ttl, staleTtl, cancellationToken);
+	}
+
+	private Task SetEntryAsync<T>(string key, T value, TimeSpan? ttl, TimeSpan? staleTtl, CancellationToken cancellationToken) where T : class
+	{
+		DateTimeOffset now = _utcNow();
+		DateTimeOffset? expiresAt = ResolveExpiry(ttl, now);
+		DateTimeOffset? staleExpiresAt = expiresAt.HasValue && staleTtl.HasValue ? expiresAt.Value + staleTtl.Value : null;
 
 		lock (_gate)
 		{
@@ -68,13 +92,14 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 			{
 				existing.Value = value;
 				existing.ExpiresAt = expiresAt;
+				existing.StaleExpiresAt = staleExpiresAt;
 				_lru.Remove(existing.Node);
 				_lru.AddFirst(existing.Node);
 			}
 			else
 			{
 				var node = new LinkedListNode<string>(key);
-				_entries[key] = new CacheEntry(value, expiresAt, node);
+				_entries[key] = new CacheEntry(value, expiresAt, staleExpiresAt, node);
 				_lru.AddFirst(node);
 
 				EvictBeyondCapacityLocked();
@@ -134,6 +159,141 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 		}
 	}
 
+	public async Task<T?> GetOrSetStaleWhileRevalidateAsync<T>(
+		string key,
+		Func<CancellationToken, Task<T?>> factory,
+		TimeSpan ttl,
+		TimeSpan staleTtl,
+		CancellationToken cancellationToken = default) where T : class
+	{
+		ArgumentException.ThrowIfNullOrEmpty(key);
+		ArgumentNullException.ThrowIfNull(factory);
+
+		DateTimeOffset now = _utcNow();
+		object? staleValue = null;
+		Task<object?>? fillTask = null;
+
+		lock (_gate)
+		{
+			if (_entries.TryGetValue(key, out var entry))
+			{
+				if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value > now)
+				{
+					// Fresh: serve directly and touch LRU.
+					Hits++;
+					_lru.Remove(entry.Node);
+					_lru.AddFirst(entry.Node);
+					return entry.Value as T;
+				}
+
+				if (entry.StaleExpiresAt.HasValue && entry.StaleExpiresAt.Value > now)
+				{
+					// Stale but servable: return it and refresh in the background.
+					StaleHits++;
+					staleValue = entry.Value;
+					if (!_inFlight.TryGetValue(key, out var existing) || existing.IsCompleted)
+					{
+						_ = StartBackgroundRefreshAsync(key, factory, ttl, staleTtl);
+					}
+				}
+				else
+				{
+					// Beyond the stale window: treat as missing.
+					_entries.Remove(key);
+					_lru.Remove(entry.Node);
+					Misses++;
+				}
+			}
+			else
+			{
+				Misses++;
+			}
+
+			if (staleValue is null)
+			{
+				// Synchronous fill path (same single-flight machinery as GetOrSetAsync).
+				if (!_inFlight.TryGetValue(key, out var pending) || pending.IsCompleted)
+				{
+					pending = CreateAndCacheAsync(key, factory, ttl, cancellationToken, staleTtl);
+					_inFlight[key] = pending;
+				}
+
+				fillTask = pending;
+			}
+		}
+
+		if (staleValue is not null)
+		{
+			return staleValue as T;
+		}
+
+		return await fillTask!.ConfigureAwait(false) is T typed ? typed : null;
+	}
+
+	/// <summary>Fire-and-forget SWR refresh; failure keeps the stale entry until its stale window lapses.</summary>
+	private async Task StartBackgroundRefreshAsync<T>(
+		string key,
+		Func<CancellationToken, Task<T?>> factory,
+		TimeSpan ttl,
+		TimeSpan staleTtl) where T : class
+	{
+		Task<object?> refresh = RunBackgroundRefreshAsync(key, factory, ttl, staleTtl);
+		_inFlight[key] = refresh;
+
+		try
+		{
+			await refresh.ConfigureAwait(false);
+		}
+		catch
+		{
+			// Swallow: the stale entry stays servable until the stale window ends.
+		}
+		finally
+		{
+			lock (_gate)
+			{
+				if (_inFlight.TryGetValue(key, out var current) && current == refresh)
+				{
+					_inFlight.Remove(key);
+				}
+			}
+		}
+	}
+
+	private async Task<object?> RunBackgroundRefreshAsync<T>(
+		string key,
+		Func<CancellationToken, Task<T?>> factory,
+		TimeSpan ttl,
+		TimeSpan staleTtl) where T : class
+	{
+		T? value = await factory(CancellationToken.None).ConfigureAwait(false);
+		if (value is not null)
+		{
+			await SetEntryAsync(key, value, ttl, staleTtl, CancellationToken.None).ConfigureAwait(false);
+		}
+
+		return value;
+	}
+
+	public int RemoveByPrefix(string prefix)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(prefix);
+
+		lock (_gate)
+		{
+			List<string> matches = _entries.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+			foreach (string key in matches)
+			{
+				if (_entries.Remove(key, out var entry))
+				{
+					_lru.Remove(entry.Node);
+				}
+			}
+
+			return matches.Count;
+		}
+	}
+
 	public bool Remove(string key)
 	{
 		ArgumentException.ThrowIfNullOrEmpty(key);
@@ -168,7 +328,8 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 		string key,
 		Func<CancellationToken, Task<T?>> factory,
 		TimeSpan? ttl,
-		CancellationToken cancellationToken) where T : class
+		CancellationToken cancellationToken,
+		TimeSpan? staleTtl = null) where T : class
 	{
 		try
 		{
@@ -176,7 +337,7 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 
 			if (value != null)
 			{
-				await SetAsync(key, value, ttl, cancellationToken).ConfigureAwait(false);
+				await SetEntryAsync(key, value, ttl, staleTtl, cancellationToken).ConfigureAwait(false);
 			}
 
 			return value;
@@ -213,10 +374,10 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 		return false;
 	}
 
-	private DateTimeOffset? ResolveExpiry(TimeSpan? ttl)
+	private DateTimeOffset? ResolveExpiry(TimeSpan? ttl, DateTimeOffset now)
 	{
 		TimeSpan? effective = ttl ?? _options.DefaultTtl;
-		return effective.HasValue ? _utcNow() + effective.Value : null;
+		return effective.HasValue ? now + effective.Value : null;
 	}
 
 	private void EvictBeyondCapacityLocked()
@@ -234,11 +395,14 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 		}
 	}
 
-	private sealed class CacheEntry(object value, DateTimeOffset? expiresAt, LinkedListNode<string> node)
+	private sealed class CacheEntry(object value, DateTimeOffset? expiresAt, DateTimeOffset? staleExpiresAt, LinkedListNode<string> node)
 	{
 		public object Value { get; set; } = value;
 
 		public DateTimeOffset? ExpiresAt { get; set; } = expiresAt;
+
+		/// <summary>Stale-while-revalidate window end; null for entries written without a stale window.</summary>
+		public DateTimeOffset? StaleExpiresAt { get; set; } = staleExpiresAt;
 
 		public LinkedListNode<string> Node { get; } = node;
 	}

@@ -75,6 +75,9 @@ var serviceCollection = new ServiceCollection()
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
 	.AddSingleton<GetMarketListingsAction>(p => new GetMarketListingsAction(
 		p.GetRequiredService<ILogger<GetMarketListingsAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
+	.AddSingleton<InvalidateCacheAction>(p => new InvalidateCacheAction(
+		p.GetRequiredService<ILogger<InvalidateCacheAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()));
 
 // Distributed tracing: enabled when the standard OTLP endpoint variable is set.

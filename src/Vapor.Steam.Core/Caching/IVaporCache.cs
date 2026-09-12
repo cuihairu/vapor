@@ -15,9 +15,20 @@ public interface IVaporCache
 	/// <summary>Cache miss counter (observability).</summary>
 	long Misses { get; }
 
+	/// <summary>Stale hit counter: reads served from expired-but-still-servable entries (observability).</summary>
+	long StaleHits { get; }
+
 	Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class;
 
 	Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken cancellationToken = default) where T : class;
+
+	/// <summary>Stores a value with a fresh TTL plus a stale-while-revalidate grace window.</summary>
+	Task SetStaleWhileRevalidateAsync<T>(
+		string key,
+		T value,
+		TimeSpan ttl,
+		TimeSpan staleTtl,
+		CancellationToken cancellationToken = default) where T : class;
 
 	/// <summary>
 	/// Returns the cached value when present and fresh; otherwise invokes
@@ -30,6 +41,22 @@ public interface IVaporCache
 		Func<CancellationToken, Task<T?>> factory,
 		TimeSpan? ttl = null,
 		CancellationToken cancellationToken = default) where T : class;
+
+	/// <summary>
+	/// Stale-while-revalidate variant of <see cref="IVaporCache.GetOrSetAsync{T}"/>:
+	/// within <paramref name="staleTtl"/> after the fresh TTL expires, the cached
+	/// value is still returned immediately while a single background refresh
+	/// repopulates the entry; after that the entry behaves as missing.
+	/// </summary>
+	Task<T?> GetOrSetStaleWhileRevalidateAsync<T>(
+		string key,
+		Func<CancellationToken, Task<T?>> factory,
+		TimeSpan ttl,
+		TimeSpan staleTtl,
+		CancellationToken cancellationToken = default) where T : class;
+
+	/// <summary>Removes every entry whose key starts with <paramref name="prefix"/>; returns the number of entries removed.</summary>
+	int RemoveByPrefix(string prefix);
 
 	bool Remove(string key);
 
