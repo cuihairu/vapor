@@ -8,7 +8,13 @@ public sealed record Config(
 	bool EnableSwagger,
 	string AuditDbPath = "data/audit.db",
 	int TaskMaxDispatchAttempts = 10,
-	int TaskDispatchRetryDelayMs = 2000
+	int TaskDispatchRetryDelayMs = 2000,
+	int ReconcileIntervalSeconds = 15,
+	int ReconcileMaxAccountsPerAgent = 25,
+	int ReconcileMaxLoginAttempts = 3,
+	int ReconcileLoginCooldownSeconds = 60,
+	int ReconcileSessionStalenessSeconds = 120,
+	bool ReconcileDryRun = false
 )
 {
 	/// <summary>Max dispatch attempts per task before it fails permanently; 0 or less means unlimited retries.</summary>
@@ -24,6 +30,12 @@ public sealed record Config(
 		string auditDbPath = Environment.GetEnvironmentVariable("Vapor_AUDIT_DB_PATH") ?? "data/audit.db";
 		int taskMaxDispatchAttempts = int.TryParse(Environment.GetEnvironmentVariable("Vapor_TASK_MAX_DISPATCH_ATTEMPTS"), out int attempts) ? attempts : 10;
 		int taskDispatchRetryDelayMs = int.TryParse(Environment.GetEnvironmentVariable("Vapor_TASK_DISPATCH_RETRY_DELAY_MS"), out int delayMs) && delayMs >= 0 ? delayMs : 2000;
+		int reconcileIntervalSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_INTERVAL_SECONDS"), out int reconcileInterval) ? reconcileInterval : 15;
+		int reconcileMaxAccountsPerAgent = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_MAX_ACCOUNTS_PER_AGENT"), out int maxPerAgent) && maxPerAgent > 0 ? maxPerAgent : 25;
+		int reconcileMaxLoginAttempts = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS"), out int maxLoginAttempts) && maxLoginAttempts > 0 ? maxLoginAttempts : 3;
+		int reconcileLoginCooldownSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS"), out int loginCooldown) && loginCooldown >= 0 ? loginCooldown : 60;
+		int reconcileSessionStalenessSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_SESSION_STALENESS_SECONDS"), out int staleness) && staleness > 0 ? staleness : 120;
+		bool reconcileDryRun = string.Equals(Environment.GetEnvironmentVariable("Vapor_RECONCILE_DRY_RUN"), "true", StringComparison.OrdinalIgnoreCase);
 
 		HashSet<string> agentApiKeys = new(StringComparer.Ordinal);
 		foreach (string key in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -35,7 +47,7 @@ public sealed record Config(
 			agentApiKeys.Add(key);
 		}
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileDryRun);
 	}
 }
 

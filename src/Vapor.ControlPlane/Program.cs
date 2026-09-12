@@ -37,6 +37,8 @@ builder.Services.AddSingleton<IAuditStore>(sp =>
 builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<TaskSchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TaskSchedulerService>());
+builder.Services.AddSingleton<DesiredStateReconciler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateReconciler>());
 
 // Distributed tracing: enabled when the standard OTLP endpoint variable is set.
 // Without it no OpenTelemetry SDK is registered and the ActivitySources stay inert.
@@ -97,7 +99,7 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler) =>
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler) =>
 {
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
@@ -119,6 +121,25 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 	sb.Append("vapor_controlplane_dispatch_failures_total{reason=\"no_capable_agent\"} ").Append(scheduler.DispatchNoCapableAgent).Append('\n');
 	sb.Append("vapor_controlplane_dispatch_failures_total{reason=\"enqueue_failed\"} ").Append(scheduler.DispatchEnqueueFailed).Append('\n');
 	sb.Append("vapor_controlplane_dispatch_failures_total{reason=\"attempts_exhausted\"} ").Append(scheduler.DispatchAttemptsExhausted).Append('\n');
+
+	sb.Append("# HELP vapor_controlplane_accounts_by_desired_state Declared accounts by desired state.\n");
+	sb.Append("# TYPE vapor_controlplane_accounts_by_desired_state gauge\n");
+	IReadOnlyList<AccountSpec> accountSpecs = accounts.List();
+	foreach (AccountDesiredState state in Enum.GetValues<AccountDesiredState>())
+	{
+		sb.Append("vapor_controlplane_accounts_by_desired_state{state=\"").Append(state).Append("\"} ")
+			.Append(accountSpecs.Count(a => a.DesiredState == state)).Append('\n');
+	}
+
+	sb.Append("# HELP vapor_controlplane_reconcile_actions_total Desired-state orchestration actions since startup.\n");
+	sb.Append("# TYPE vapor_controlplane_reconcile_actions_total counter\n");
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"login_dispatched\"} ").Append(reconciler.LoginsDispatched).Append('\n');
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"idle_dispatched\"} ").Append(reconciler.PlaysDispatched).Append('\n');
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"rebalanced\"} ").Append(reconciler.Rebalances).Append('\n');
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"unassigned\"} ").Append(reconciler.Unassignments).Append('\n');
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"throttled_skip\"} ").Append(reconciler.ThrottledSkips).Append('\n');
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"no_agent_skip\"} ").Append(reconciler.NoAgentSkips).Append('\n');
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"dry_run_deviation\"} ").Append(reconciler.DryRunDeviations).Append('\n');
 
 	ctx.Response.Headers.ContentType = "text/plain; version=0.0.4; charset=utf-8";
 	return Results.Text(sb.ToString());
