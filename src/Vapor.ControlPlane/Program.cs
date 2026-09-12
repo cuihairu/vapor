@@ -21,12 +21,14 @@ builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddSingleton<AuthChallengeTracker>();
 builder.Services.AddSingleton<ConfigStore>();
 
-builder.Services.AddSingleton<IJobStore>(sp => {
+builder.Services.AddSingleton<IJobStore>(sp =>
+{
 	var cfg = sp.GetRequiredService<Config>();
 	return new SqliteJobStore(cfg.DbPath);
 });
 
-builder.Services.AddSingleton<IAuditStore>(sp => {
+builder.Services.AddSingleton<IAuditStore>(sp =>
+{
 	var cfg = sp.GetRequiredService<Config>();
 	return new SqliteAuditStore(cfg.AuditDbPath);
 });
@@ -37,7 +39,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<TaskSchedulerServi
 
 // Distributed tracing: enabled when the standard OTLP endpoint variable is set.
 // Without it no OpenTelemetry SDK is registered and the ActivitySources stay inert.
-if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"))) {
+if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")))
+{
 	builder.Services.AddOpenTelemetry()
 		.ConfigureResource(resource => resource.AddService("vapor-controlplane"))
 		.WithTracing(tracing => tracing
@@ -47,10 +50,12 @@ if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER
 }
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options => {
+builder.Services.AddSwaggerGen(options =>
+{
 	options.SwaggerDoc("v1", new OpenApiInfo { Title = "Vapor Control Plane API", Version = "v1" });
 
-	options.AddSecurityDefinition("bearer", new OpenApiSecurityScheme {
+	options.AddSecurityDefinition("bearer", new OpenApiSecurityScheme
+	{
 		Type = SecuritySchemeType.Http,
 		Scheme = "bearer",
 		BearerFormat = "token",
@@ -65,7 +70,8 @@ builder.Services.AddSwaggerGen(options => {
 	});
 });
 
-builder.Services.ConfigureHttpJsonOptions(options => {
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
 	options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
 	options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
 	options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
@@ -78,7 +84,8 @@ app.UseStaticFiles();
 app.UseWebSockets();
 
 var cfg = app.Services.GetRequiredService<Config>();
-if (cfg.EnableSwagger) {
+if (cfg.EnableSwagger)
+{
 	app.UseSwagger();
 	app.UseSwaggerUI();
 }
@@ -89,13 +96,15 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler) => {
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler) =>
+{
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
 	var sb = new System.Text.StringBuilder();
 	sb.Append("# HELP vapor_controlplane_tasks_by_status Task count by status across all jobs.\n");
 	sb.Append("# TYPE vapor_controlplane_tasks_by_status gauge\n");
-	foreach (JobTaskStatus status in Enum.GetValues<JobTaskStatus>()) {
+	foreach (JobTaskStatus status in Enum.GetValues<JobTaskStatus>())
+	{
 		sb.Append("vapor_controlplane_tasks_by_status{status=\"").Append(status).Append("\"} ")
 			.Append(taskCounts.GetValueOrDefault(status)).Append('\n');
 	}
@@ -123,8 +132,10 @@ app.MapGet("/", () => Results.Redirect("/admin.html"))
 	.WithSummary("Redirect to the admin UI")
 	.Produces(302);
 
-app.MapGet("/v1/agents", (HttpContext ctx, Config cfg, AgentRegistry agents) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/agents", (HttpContext ctx, Config cfg, AgentRegistry agents) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
@@ -136,12 +147,15 @@ app.MapGet("/v1/agents", (HttpContext ctx, Config cfg, AgentRegistry agents) => 
 	.Produces(200)
 	.Produces<ErrorResponse>(401);
 
-app.MapGet("/v1/config", (HttpContext ctx, Config cfg, ConfigStore configStore) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/config", (HttpContext ctx, Config cfg, ConfigStore configStore) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
-	return Results.Ok(new {
+	return Results.Ok(new
+	{
 		global = configStore.GetGlobal(),
 		accounts = configStore.ListAccounts()
 	});
@@ -151,8 +165,10 @@ app.MapGet("/v1/config", (HttpContext ctx, Config cfg, ConfigStore configStore) 
 	.Produces(200)
 	.Produces<ErrorResponse>(401);
 
-app.MapPut("/v1/config/global", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, PutGlobalConfigRequest req) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapPut("/v1/config/global", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, PutGlobalConfigRequest req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
@@ -174,12 +190,15 @@ app.MapPut("/v1/config/global", async (HttpContext ctx, Config cfg, IAuditStore 
 	.Produces(200)
 	.Produces<ErrorResponse>(401);
 
-app.MapPut("/v1/config/account/{name}", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, string name, PutAccountConfigRequest req) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapPut("/v1/config/account/{name}", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, string name, PutAccountConfigRequest req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
-	if (string.IsNullOrWhiteSpace(name)) {
+	if (string.IsNullOrWhiteSpace(name))
+	{
 		return Results.BadRequest(new ErrorResponse("account name is required"));
 	}
 
@@ -213,16 +232,20 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 	IAuditStore audit,
 	IEventBroker events,
 	CreateJobRequest req
-) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return TypedResults.Unauthorized();
 	}
 
-	if (string.IsNullOrWhiteSpace(req.Action)) {
+	if (string.IsNullOrWhiteSpace(req.Action))
+	{
 		return TypedResults.BadRequest(new ErrorResponse("action is required"));
 	}
 
-	if (req.Targets is not { Count: > 0 }) {
+	if (req.Targets is not { Count: > 0 })
+	{
 		return TypedResults.BadRequest(new ErrorResponse("targets is required"));
 	}
 
@@ -251,8 +274,10 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 	.Produces<ErrorResponse>(400)
 	.Produces(401);
 
-app.MapGet("/v1/jobs", async Task<Results<Ok<object>, UnauthorizedHttpResult, ProblemHttpResult>> (HttpContext ctx, Config cfg, IJobStore store, int? limit) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/jobs", async Task<Results<Ok<object>, UnauthorizedHttpResult, ProblemHttpResult>> (HttpContext ctx, Config cfg, IJobStore store, int? limit) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return TypedResults.Unauthorized();
 	}
 
@@ -270,15 +295,20 @@ app.MapGet("/v1/jobs/{jobId}", async Task<Results<Ok<JobWithTasks>, NotFound<Err
 	Config cfg,
 	IJobStore store,
 	string jobId
-) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return TypedResults.Unauthorized();
 	}
 
-	try {
+	try
+	{
 		var jwt = await store.GetJob(jobId, ctx.RequestAborted);
 		return TypedResults.Ok(jwt);
-	} catch (NotFoundException) {
+	}
+	catch (NotFoundException)
+	{
 		return TypedResults.NotFound(new ErrorResponse("job not found"));
 	}
 })
@@ -296,26 +326,34 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	IEventBroker events,
 	AgentRegistry agents,
 	string jobId
-) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
-	try {
+	try
+	{
 		var cancels = await store.CancelJob(jobId, ctx.RequestAborted);
 		events.Publish(jobId, "job.canceled", null);
 		await WriteAuditLog(auditLogger, audit, ctx, "job.canceled", jobId: jobId, details: new Dictionary<string, object?> { ["cancelCount"] = cancels.Count });
 
-		if (cancels.Count > 0) {
-			foreach (var agent in agents.ListConnected()) {
-				foreach (var cancel in cancels) {
+		if (cancels.Count > 0)
+		{
+			foreach (var agent in agents.ListConnected())
+			{
+				foreach (var cancel in cancels)
+				{
 					agent.EnqueueTaskCancel(cancel);
 				}
 			}
 		}
 
 		return Results.Ok(new { ok = true });
-	} catch (NotFoundException) {
+	}
+	catch (NotFoundException)
+	{
 		return Results.NotFound(new ErrorResponse("job not found"));
 	}
 })
@@ -325,15 +363,20 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	.Produces<ErrorResponse>(404)
 	.Produces(401);
 
-app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, IJobStore store, IEventBroker events, string jobId) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, IJobStore store, IEventBroker events, string jobId) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
 		return;
 	}
 
-	try {
+	try
+	{
 		_ = await store.GetJob(jobId, ctx.RequestAborted);
-	} catch (NotFoundException) {
+	}
+	catch (NotFoundException)
+	{
 		ctx.Response.StatusCode = StatusCodes.Status404NotFound;
 		await ctx.Response.WriteAsJsonAsync(new ErrorResponse("job not found"), cancellationToken: ctx.RequestAborted);
 
@@ -347,7 +390,8 @@ app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, I
 	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
 	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-	await foreach (var e in events.Subscribe(ctx.RequestAborted, jobId)) {
+	await foreach (var e in events.Subscribe(ctx.RequestAborted, jobId))
+	{
 		var json = JsonSerializer.Serialize(e, Vapor.Protocol.JsonDefaults.Options);
 		await ctx.Response.WriteAsync($"event: {e.Type}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
@@ -360,8 +404,10 @@ app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, I
 	.Produces(404);
 
 // Global job events stream (all jobs)
-app.MapGet("/v1/jobs/events", async Task (HttpContext ctx, Config cfg, IEventBroker events) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/jobs/events", async Task (HttpContext ctx, Config cfg, IEventBroker events) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
 		return;
 	}
@@ -373,7 +419,8 @@ app.MapGet("/v1/jobs/events", async Task (HttpContext ctx, Config cfg, IEventBro
 	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
 	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-	await foreach (var e in events.Subscribe(ctx.RequestAborted, "*")) {
+	await foreach (var e in events.Subscribe(ctx.RequestAborted, "*"))
+	{
 		var json = JsonSerializer.Serialize(e, Vapor.Protocol.JsonDefaults.Options);
 		await ctx.Response.WriteAsync($"event: {e.Type}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
@@ -385,8 +432,10 @@ app.MapGet("/v1/jobs/events", async Task (HttpContext ctx, Config cfg, IEventBro
 	.Produces(401);
 
 // Session events streaming endpoint
-app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
 		return;
 	}
@@ -398,7 +447,8 @@ app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEven
 	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
 	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-	await foreach (var e in events.SubscribeSessions(ctx.RequestAborted, accountName)) {
+	await foreach (var e in events.SubscribeSessions(ctx.RequestAborted, accountName))
+	{
 		var json = JsonSerializer.Serialize(e, Vapor.Protocol.JsonDefaults.Options);
 		await ctx.Response.WriteAsync($"event: session.{e.EventType}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
@@ -410,11 +460,13 @@ app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEven
 	.Produces(401);
 
 // Auth challenge events streaming endpoint
-app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) => {
+app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) =>
+{
 	var auth = GetAuthorization(ctx);
 	var isAdmin = Auth.TryAdmin(cfg, auth, out _);
 	var isAgent = !isAdmin && Auth.TryAgent(cfg, auth, out _);
-	if (!isAdmin && !isAgent) {
+	if (!isAdmin && !isAgent)
+	{
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
 		return;
 	}
@@ -426,8 +478,10 @@ app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg
 	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
 	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-	await foreach (var e in events.SubscribeAuthChallenges(ctx.RequestAborted, accountName)) {
-		if (isAgent && !e.ChallengeType.StartsWith("code_provided_", StringComparison.Ordinal)) {
+	await foreach (var e in events.SubscribeAuthChallenges(ctx.RequestAborted, accountName))
+	{
+		if (isAgent && !e.ChallengeType.StartsWith("code_provided_", StringComparison.Ordinal))
+		{
 			continue;
 		}
 		var payload = isAdmin && e.ChallengeType.StartsWith("code_provided_", StringComparison.Ordinal)
@@ -444,8 +498,10 @@ app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg
 	.Produces(401);
 
 // List pending auth challenges (useful for UI refresh)
-app.MapGet("/v1/auth/challenges", (HttpContext ctx, Config cfg, AuthChallengeTracker tracker) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/auth/challenges", (HttpContext ctx, Config cfg, AuthChallengeTracker tracker) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
@@ -465,31 +521,39 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", async (
 	AuthChallengeTracker tracker,
 	string accountName,
 	Dictionary<string, string?> body
-) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
-	if (!body.TryGetValue("code", out var code) || string.IsNullOrWhiteSpace(code)) {
+	if (!body.TryGetValue("code", out var code) || string.IsNullOrWhiteSpace(code))
+	{
 		return Results.BadRequest(new ErrorResponse("code is required"));
 	}
 
 	code = code.Trim();
 
-	if (!body.TryGetValue("type", out var type) || string.IsNullOrWhiteSpace(type)) {
+	if (!body.TryGetValue("type", out var type) || string.IsNullOrWhiteSpace(type))
+	{
 		type = "email"; // Default to email guard
-	} else {
+	}
+	else
+	{
 		type = type.Trim().ToLowerInvariant();
 	}
 
-	type = type switch {
+	type = type switch
+	{
 		"email" => "email",
 		"totp" => "totp",
 		"2fa" => "2fa",
 		_ => null
 	};
 
-	if (type == null) {
+	if (type == null)
+	{
 		return Results.BadRequest(new ErrorResponse("type must be one of: email, totp, 2fa"));
 	}
 
@@ -519,12 +583,15 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", async (
 	.Produces<ErrorResponse>(401);
 
 // List active agents with their sessions
-app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agents) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agents) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
-	var list = agents.ListConnected().Select(a => new {
+	var list = agents.ListConnected().Select(a => new
+	{
 		id = a.Hello.AgentId,
 		region = a.Hello.Region,
 		capabilities = a.Hello.Capabilities,
@@ -548,14 +615,17 @@ app.MapPost("/v1/sessions/events", async (
 	SessionTracker sessions,
 	AuthChallengeTracker challenges,
 	SessionEventRequest req
-) => {
+) =>
+{
 	// Allow both admin and agent tokens for this endpoint
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _) &&
-	    !Auth.TryAgent(cfg, GetAuthorization(ctx), out _)) {
+		!Auth.TryAgent(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
-	if (string.IsNullOrWhiteSpace(req.AccountName)) {
+	if (string.IsNullOrWhiteSpace(req.AccountName))
+	{
 		return Results.BadRequest(new ErrorResponse("accountName is required"));
 	}
 
@@ -579,7 +649,8 @@ app.MapPost("/v1/sessions/events", async (
 		});
 
 	// Persist login-relevant transitions as dedicated audit records.
-	if (IsLoginAuditEvent(normalizedType, state)) {
+	if (IsLoginAuditEvent(normalizedType, state))
+	{
 		await WriteAuditLog(
 			auditLogger,
 			audit,
@@ -594,7 +665,8 @@ app.MapPost("/v1/sessions/events", async (
 	}
 
 	// Publish auth challenge events when sessions require user input
-	if (IsAuthChallengeRequired(normalizedType, state)) {
+	if (IsAuthChallengeRequired(normalizedType, state))
+	{
 		var challengeType =
 			string.Equals(normalizedType, "2fa_required", StringComparison.Ordinal) ||
 			string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal)
@@ -611,7 +683,9 @@ app.MapPost("/v1/sessions/events", async (
 		);
 		challenges.Upsert(evt);
 		events.PublishAuthChallenge(req.AccountName, challengeType, req.Message);
-	} else {
+	}
+	else
+	{
 		// Clear any stale "needs code/2FA" prompt once the session progresses.
 		challenges.Clear(req.AccountName);
 	}
@@ -625,8 +699,10 @@ app.MapPost("/v1/sessions/events", async (
 	.Produces(401);
 
 // List active sessions
-app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg, SessionTracker sessions) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg, SessionTracker sessions) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
@@ -649,12 +725,15 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 	string? jobId,
 	long? fromMs,
 	long? toMs
-) => {
-	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
+) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
 		return Results.Unauthorized();
 	}
 
-	if (fromMs.HasValue && toMs.HasValue && fromMs.Value > toMs.Value) {
+	if (fromMs.HasValue && toMs.HasValue && fromMs.Value > toMs.Value)
+	{
 		return Results.BadRequest(new ErrorResponse("fromMs must not be greater than toMs"));
 	}
 
@@ -679,21 +758,25 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 	.Produces<ErrorResponse>(400)
 	.Produces<ErrorResponse>(401);
 
-app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IAuditStore audit, IEventBroker events) => {
-	if (!Auth.TryAgent(cfg, GetAuthorization(ctx), out _)) {
+app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IAuditStore audit, IEventBroker events) =>
+{
+	if (!Auth.TryAgent(cfg, GetAuthorization(ctx), out _))
+	{
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
 		return;
 	}
 
-	if (!ctx.WebSockets.IsWebSocketRequest) {
+	if (!ctx.WebSockets.IsWebSocketRequest)
+	{
 		ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
 		await ctx.Response.WriteAsJsonAsync(new ErrorResponse("websocket required"), cancellationToken: ctx.RequestAborted);
 		return;
 	}
 
-	var agentId = (string?) ctx.Request.Query["agentId"];
-	var region = (string?) ctx.Request.Query["region"];
-	if (string.IsNullOrWhiteSpace(agentId) || string.IsNullOrWhiteSpace(region)) {
+	var agentId = (string?)ctx.Request.Query["agentId"];
+	var region = (string?)ctx.Request.Query["region"];
+	if (string.IsNullOrWhiteSpace(agentId) || string.IsNullOrWhiteSpace(region))
+	{
 		ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
 		await ctx.Response.WriteAsJsonAsync(new ErrorResponse("agentId and region are required"), cancellationToken: ctx.RequestAborted);
 		return;
@@ -702,7 +785,8 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 	using var ws = await ctx.WebSockets.AcceptWebSocketAsync();
 
 	var first = await WebSocketJson.Receive<WSMessage>(ws, ctx.RequestAborted);
-	if (!string.Equals(first.Type, "hello", StringComparison.Ordinal) || first.Hello == null || first.Hello.AgentId != agentId || first.Hello.Region != region) {
+	if (!string.Equals(first.Type, "hello", StringComparison.Ordinal) || first.Hello == null || first.Hello.AgentId != agentId || first.Hello.Region != region)
+	{
 		await ws.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, "hello required", ctx.RequestAborted);
 		return;
 	}
@@ -710,51 +794,66 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 	var agent = registry.Register(first.Hello, ws, ctx.RequestAborted);
 	events.Publish(null, "agent.connected", new Dictionary<string, object?> { ["agentId"] = agent.Hello.AgentId, ["region"] = agent.Hello.Region });
 
-	try {
-		while (!ctx.RequestAborted.IsCancellationRequested && ws.State == System.Net.WebSockets.WebSocketState.Open) {
+	try
+	{
+		while (!ctx.RequestAborted.IsCancellationRequested && ws.State == System.Net.WebSockets.WebSocketState.Open)
+		{
 			var msg = await WebSocketJson.Receive<WSMessage>(ws, ctx.RequestAborted);
-			switch (msg) {
+			switch (msg)
+			{
 				default:
-					if (string.Equals(msg.Type, "task_heartbeat", StringComparison.Ordinal) && msg.TaskHeartbeat != null) {
-						try {
+					if (string.Equals(msg.Type, "task_heartbeat", StringComparison.Ordinal) && msg.TaskHeartbeat != null)
+					{
+						try
+						{
 							_ = await store.HeartbeatTask(msg.TaskHeartbeat.TaskId, msg.TaskHeartbeat.Attempt, ctx.RequestAborted);
-						} catch (NotFoundException) {
+						}
+						catch (NotFoundException)
+						{
 						}
 					}
-				if (string.Equals(msg.Type, "task_result", StringComparison.Ordinal) && msg.TaskResult != null) {
-					// Continue the distributed trace: parent the result span onto the
-					// agent's task.execute span via the traceparent it returned.
-					ActivityContext resultParent = default;
-					bool hasResultParent = VaporTracing.TryExtractContext(msg.TraceHeaders, out resultParent);
-					using Activity? resultSpan = VaporTracing.Source.StartActivity("task.result", ActivityKind.Consumer, hasResultParent ? resultParent : default);
-					resultSpan?.SetTag("vapor.task_id", msg.TaskResult.TaskId);
-					resultSpan?.SetStatus(msg.TaskResult.Success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, msg.TaskResult.Error);
+					if (string.Equals(msg.Type, "task_result", StringComparison.Ordinal) && msg.TaskResult != null)
+					{
+						// Continue the distributed trace: parent the result span onto the
+						// agent's task.execute span via the traceparent it returned.
+						ActivityContext resultParent = default;
+						bool hasResultParent = VaporTracing.TryExtractContext(msg.TraceHeaders, out resultParent);
+						using Activity? resultSpan = VaporTracing.Source.StartActivity("task.result", ActivityKind.Consumer, hasResultParent ? resultParent : default);
+						resultSpan?.SetTag("vapor.task_id", msg.TaskResult.TaskId);
+						resultSpan?.SetStatus(msg.TaskResult.Success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, msg.TaskResult.Error);
 
-					try {
-						var (task, job) = await store.SetTaskResult(msg.TaskResult, ctx.RequestAborted);
-						events.Publish(task.JobId, "task.finished", new Dictionary<string, object?> { ["taskId"] = task.Id, ["success"] = msg.TaskResult.Success, ["job"] = job.Status.ToString() });
+						try
+						{
+							var (task, job) = await store.SetTaskResult(msg.TaskResult, ctx.RequestAborted);
+							events.Publish(task.JobId, "task.finished", new Dictionary<string, object?> { ["taskId"] = task.Id, ["success"] = msg.TaskResult.Success, ["job"] = job.Status.ToString() });
 
-						if (IsSensitiveTaskAction(task.Action)) {
-							await WriteAuditLog(
-								auditLogger,
-								audit,
-								ctx,
-								"task.result.reported",
-								accountName: task.Target,
-								jobId: task.JobId,
-								details: new Dictionary<string, object?> {
-									["action"] = task.Action,
-									["taskId"] = task.Id,
-									["success"] = msg.TaskResult.Success
-								});
+							if (IsSensitiveTaskAction(task.Action))
+							{
+								await WriteAuditLog(
+									auditLogger,
+									audit,
+									ctx,
+									"task.result.reported",
+									accountName: task.Target,
+									jobId: task.JobId,
+									details: new Dictionary<string, object?>
+									{
+										["action"] = task.Action,
+										["taskId"] = task.Id,
+										["success"] = msg.TaskResult.Success
+									});
+							}
 						}
-					} catch (NotFoundException) {
+						catch (NotFoundException)
+						{
+						}
 					}
-				}
 					break;
 			}
 		}
-	} finally {
+	}
+	finally
+	{
 		registry.Unregister(agent.Hello.AgentId);
 		events.Publish(null, "agent.disconnected", new Dictionary<string, object?> { ["agentId"] = agent.Hello.AgentId, ["region"] = agent.Hello.Region });
 	}
@@ -766,19 +865,24 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 
 app.Run();
 
-static StringValues GetAuthorization(HttpContext ctx) {
-	if (ctx.Request.Headers.TryGetValue("Authorization", out var header) && !StringValues.IsNullOrEmpty(header)) {
+static StringValues GetAuthorization(HttpContext ctx)
+{
+	if (ctx.Request.Headers.TryGetValue("Authorization", out var header) && !StringValues.IsNullOrEmpty(header))
+	{
 		return header;
 	}
 
-	if (ctx.Request.Query.TryGetValue("authorization", out var token) && token.Count > 0 && !string.IsNullOrWhiteSpace(token[0])) {
+	if (ctx.Request.Query.TryGetValue("authorization", out var token) && token.Count > 0 && !string.IsNullOrWhiteSpace(token[0]))
+	{
 		var rawValue = token[0];
-		if (string.IsNullOrWhiteSpace(rawValue)) {
+		if (string.IsNullOrWhiteSpace(rawValue))
+		{
 			return StringValues.Empty;
 		}
 
 		var raw = rawValue.Trim();
-		if (raw.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) {
+		if (raw.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+		{
 			return new StringValues(raw);
 		}
 
@@ -788,46 +892,59 @@ static StringValues GetAuthorization(HttpContext ctx) {
 	return StringValues.Empty;
 }
 
-static string ToSnakeCase(string value) {
-	if (string.IsNullOrWhiteSpace(value)) {
+static string ToSnakeCase(string value)
+{
+	if (string.IsNullOrWhiteSpace(value))
+	{
 		return string.Empty;
 	}
 
 	var s = value.Trim();
 	var sb = new System.Text.StringBuilder(s.Length + 8);
-	for (int i = 0; i < s.Length; i++) {
+	for (int i = 0; i < s.Length; i++)
+	{
 		char c = s[i];
-		if (c == '-' || c == ' ') {
+		if (c == '-' || c == ' ')
+		{
 			sb.Append('_');
 			continue;
 		}
 
-		if (char.IsUpper(c)) {
-			if (i > 0 && sb.Length > 0 && sb[sb.Length - 1] != '_') {
+		if (char.IsUpper(c))
+		{
+			if (i > 0 && sb.Length > 0 && sb[sb.Length - 1] != '_')
+			{
 				sb.Append('_');
 			}
 			sb.Append(char.ToLowerInvariant(c));
-		} else {
+		}
+		else
+		{
 			sb.Append(char.ToLowerInvariant(c));
 		}
 	}
 	return sb.ToString();
 }
 
-static string NormalizeSessionEventType(string? eventType) {
-	if (string.IsNullOrWhiteSpace(eventType)) {
+static string NormalizeSessionEventType(string? eventType)
+{
+	if (string.IsNullOrWhiteSpace(eventType))
+	{
 		return "state_changed";
 	}
 
 	var v = eventType.Trim();
 	bool hasUpper = false;
-	for (int i = 0; i < v.Length; i++) {
-		if (char.IsUpper(v[i])) {
+	for (int i = 0; i < v.Length; i++)
+	{
+		if (char.IsUpper(v[i]))
+		{
 			hasUpper = true;
 			break;
 		}
 	}
-	return v switch {
+	return v switch
+	{
 		"StateChanged" => "state_changed",
 		"Connected" => "connected",
 		"Disconnected" => "disconnected",
@@ -837,14 +954,16 @@ static string NormalizeSessionEventType(string? eventType) {
 	};
 }
 
-static bool IsAuthChallengeRequired(string normalizedEventType, string state) {
+static bool IsAuthChallengeRequired(string normalizedEventType, string state)
+{
 	if (string.Equals(normalizedEventType, "auth_code_required", StringComparison.Ordinal) ||
-	    string.Equals(normalizedEventType, "2fa_required", StringComparison.Ordinal)) {
+		string.Equals(normalizedEventType, "2fa_required", StringComparison.Ordinal))
+	{
 		return true;
 	}
 
 	return string.Equals(state, "ConnectingWaitAuthCode", StringComparison.Ordinal) ||
-	       string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal);
+		   string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal);
 }
 
 static async Task WriteAuditLog(
@@ -875,31 +994,38 @@ static async Task WriteAuditLog(
 		jobId: jobId,
 		details: details);
 
-	try {
+	try
+	{
 		await auditStore.RecordAsync(entry, ctx.RequestAborted);
-	} catch (OperationCanceledException) {
+	}
+	catch (OperationCanceledException)
+	{
 		throw;
-	} catch (Exception ex) {
+	}
+	catch (Exception ex)
+	{
 		// Audit persistence must never block the API response.
 		logger.LogError(ex, "Failed to persist audit entry {Action}", action);
 	}
 }
 
-static bool IsLoginAuditEvent(string normalizedEventType, string state) {
+static bool IsLoginAuditEvent(string normalizedEventType, string state)
+{
 	return string.Equals(state, "LoggedOn", StringComparison.Ordinal) ||
-	       string.Equals(state, "LoginFailed", StringComparison.Ordinal) ||
-	       string.Equals(state, "LoggedOff", StringComparison.Ordinal) ||
-	       string.Equals(state, "Disconnected", StringComparison.Ordinal) ||
-	       normalizedEventType.Contains("login", StringComparison.OrdinalIgnoreCase);
+		   string.Equals(state, "LoginFailed", StringComparison.Ordinal) ||
+		   string.Equals(state, "LoggedOff", StringComparison.Ordinal) ||
+		   string.Equals(state, "Disconnected", StringComparison.Ordinal) ||
+		   normalizedEventType.Contains("login", StringComparison.OrdinalIgnoreCase);
 }
 
-static bool IsSensitiveTaskAction(string action) {
+static bool IsSensitiveTaskAction(string action)
+{
 	return action.StartsWith("SendTradeOffer", StringComparison.OrdinalIgnoreCase) ||
-	       action.StartsWith("AcceptTradeOffer", StringComparison.OrdinalIgnoreCase) ||
-	       action.StartsWith("DeclineTradeOffer", StringComparison.OrdinalIgnoreCase) ||
-	       action.StartsWith("CancelTradeOffer", StringComparison.OrdinalIgnoreCase) ||
-	       action.StartsWith("GetInventory", StringComparison.OrdinalIgnoreCase) ||
-	       action.StartsWith("RedeemKey", StringComparison.OrdinalIgnoreCase);
+		   action.StartsWith("AcceptTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+		   action.StartsWith("DeclineTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+		   action.StartsWith("CancelTradeOffer", StringComparison.OrdinalIgnoreCase) ||
+		   action.StartsWith("GetInventory", StringComparison.OrdinalIgnoreCase) ||
+		   action.StartsWith("RedeemKey", StringComparison.OrdinalIgnoreCase);
 }
 
 static string GetAuditActor(HttpContext ctx)

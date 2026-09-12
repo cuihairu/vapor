@@ -3,15 +3,18 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
-public sealed class EventBrokerTests {
+public sealed class EventBrokerTests
+{
 	[Fact]
-	public async Task GlobalSubscriberReceivesSystemEventWithoutJobId() {
+	public async Task GlobalSubscriberReceivesSystemEventWithoutJobId()
+	{
 		var broker = new EventBroker();
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
 		Task<Protocol.Event> next = ReadNextEventAsync(broker, "*", cts.Token);
 
-		broker.Publish(null, "agent.connected", new Dictionary<string, object?> {
+		broker.Publish(null, "agent.connected", new Dictionary<string, object?>
+		{
 			["agentId"] = "agent-1",
 			["region"] = "local"
 		});
@@ -25,7 +28,8 @@ public sealed class EventBrokerTests {
 	}
 
 	[Fact]
-	public async Task JobSubscriberOnlyReceivesMatchingJobEvents() {
+	public async Task JobSubscriberOnlyReceivesMatchingJobEvents()
+	{
 		var broker = new EventBroker();
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -43,7 +47,8 @@ public sealed class EventBrokerTests {
 	}
 
 	[Fact]
-	public async Task GlobalSubscriberReceivesJobAndSystemEvents() {
+	public async Task GlobalSubscriberReceivesJobAndSystemEvents()
+	{
 		var broker = new EventBroker();
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -55,29 +60,36 @@ public sealed class EventBrokerTests {
 		List<Protocol.Event> events = await collect;
 
 		Assert.Collection(events,
-			first => {
+			first =>
+			{
 				Assert.Equal("job.created", first.Type);
 				Assert.Equal("job-1", first.JobId);
 			},
-			second => {
+			second =>
+			{
 				Assert.Equal("agent.disconnected", second.Type);
 				Assert.Null(second.JobId);
 			});
 	}
 
-	private static async Task<Protocol.Event> ReadNextEventAsync(EventBroker broker, string key, CancellationToken cancellationToken) {
-		await foreach (Protocol.Event evt in broker.Subscribe(cancellationToken, key)) {
+	private static async Task<Protocol.Event> ReadNextEventAsync(EventBroker broker, string key, CancellationToken cancellationToken)
+	{
+		await foreach (Protocol.Event evt in broker.Subscribe(cancellationToken, key))
+		{
 			return evt;
 		}
 
 		throw new InvalidOperationException("Expected at least one event.");
 	}
 
-	private static async Task<List<Protocol.Event>> CollectEventsAsync(EventBroker broker, string key, int count, CancellationToken cancellationToken) {
+	private static async Task<List<Protocol.Event>> CollectEventsAsync(EventBroker broker, string key, int count, CancellationToken cancellationToken)
+	{
 		List<Protocol.Event> events = [];
-		await foreach (Protocol.Event evt in broker.Subscribe(cancellationToken, key)) {
+		await foreach (Protocol.Event evt in broker.Subscribe(cancellationToken, key))
+		{
 			events.Add(evt);
-			if (events.Count == count) {
+			if (events.Count == count)
+			{
 				return events;
 			}
 		}

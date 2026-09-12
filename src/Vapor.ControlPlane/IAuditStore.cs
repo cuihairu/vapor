@@ -30,13 +30,15 @@ public sealed record AuditQuery(
 /// <summary>
 /// Durable audit log storage. Entries are persisted with sensitive values redacted.
 /// </summary>
-public interface IAuditStore {
+public interface IAuditStore
+{
 	Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken);
 	Task<IReadOnlyList<AuditEntry>> QueryAsync(AuditQuery query, CancellationToken cancellationToken);
 	Task<int> CountAsync(AuditQuery query, CancellationToken cancellationToken);
 }
 
-public static class AuditStoreExtensions {
+public static class AuditStoreExtensions
+{
 	/// <summary>
 	/// Creates an audit entry with a generated id and current timestamp.
 	/// </summary>
@@ -46,7 +48,8 @@ public static class AuditStoreExtensions {
 		string? remoteIp = null,
 		string? accountName = null,
 		string? jobId = null,
-		IReadOnlyDictionary<string, object?>? details = null) {
+		IReadOnlyDictionary<string, object?>? details = null)
+	{
 		return new AuditEntry(
 			Id: Id.New(),
 			Timestamp: DateTimeOffset.UtcNow,

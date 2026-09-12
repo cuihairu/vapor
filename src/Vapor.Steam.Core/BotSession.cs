@@ -31,7 +31,7 @@ public sealed class BotSession : IDisposable
 	private readonly SteamWebHandler? _steamWebHandler;
 	private readonly object _startLock = new();
 	private int _disposed;
-	
+
 	private SessionState _state = SessionState.Disconnected;
 	private DateTimeOffset _lastHeartbeat = DateTimeOffset.UtcNow;
 	private Task? _backgroundTask;
@@ -85,7 +85,7 @@ public sealed class BotSession : IDisposable
 		CancellationToken cancellationToken = default)
 	{
 		var tcs = new TaskCompletionSource<SessionCommandResult>();
-		
+
 		var cmd = new SessionCommand(
 			Guid.NewGuid().ToString(),
 			SessionCommandType.ExecuteAction,
@@ -325,16 +325,16 @@ public sealed class BotSession : IDisposable
 			_logger.LogInformation("Auth code provided for {AccountName}", _accountName);
 			_steamClientManager?.SetAuthCode(_accountName, cmd.ActionName!);
 			SetState(SessionState.Connecting, "auth code provided; retrying login");
-				_commandChannel.Writer.TryWrite(new SessionCommand(
-					Guid.NewGuid().ToString(),
-					SessionCommandType.Login,
-					null,
-					null,
-					null,
-					CancellationToken.None
-				));
-			}
+			_commandChannel.Writer.TryWrite(new SessionCommand(
+				Guid.NewGuid().ToString(),
+				SessionCommandType.Login,
+				null,
+				null,
+				null,
+				CancellationToken.None
+			));
 		}
+	}
 
 	private void Handle2FACode(SessionCommand cmd)
 	{
@@ -343,16 +343,16 @@ public sealed class BotSession : IDisposable
 			_logger.LogInformation("2FA code provided for {AccountName}", _accountName);
 			_steamClientManager?.SetTwoFactorCode(_accountName, cmd.ActionName!);
 			SetState(SessionState.Connecting, "2FA code provided; retrying login");
-				_commandChannel.Writer.TryWrite(new SessionCommand(
-					Guid.NewGuid().ToString(),
-					SessionCommandType.Login,
-					null,
-					null,
-					null,
-					CancellationToken.None
-				));
-			}
+			_commandChannel.Writer.TryWrite(new SessionCommand(
+				Guid.NewGuid().ToString(),
+				SessionCommandType.Login,
+				null,
+				null,
+				null,
+				CancellationToken.None
+			));
 		}
+	}
 
 	private async Task HandleDisconnect(SessionCommand cmd)
 	{
@@ -435,12 +435,12 @@ public sealed class BotSession : IDisposable
 	private async Task DisconnectInternalAsync(CancellationToken cancellationToken)
 	{
 		SetState(SessionState.Disconnecting, null);
-		
+
 		if (_steamClientManager != null)
 		{
 			await _steamClientManager.DisconnectAsync().ConfigureAwait(false);
 		}
-		
+
 		await Task.Delay(100, cancellationToken).ConfigureAwait(false);
 		SetState(SessionState.Disconnected, "disconnected");
 	}

@@ -134,8 +134,8 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		try
 		{
 			if (_credentials.TryGetValue(accountName, out var creds)
-			    && creds.AccessToken != null
-			    && creds.AccessTokenExpiresAt > DateTimeOffset.UtcNow)
+				&& creds.AccessToken != null
+				&& creds.AccessTokenExpiresAt > DateTimeOffset.UtcNow)
 			{
 				return new StoredAccessToken(creds.AccessToken, creds.AccessTokenExpiresAt.Value);
 			}
@@ -179,7 +179,7 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		try
 		{
 			return _credentials.ContainsKey(accountName) &&
-			       _credentials[accountName].RefreshToken != null;
+				   _credentials[accountName].RefreshToken != null;
 		}
 		finally
 		{
@@ -280,8 +280,8 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		bool isV1 = false;
 
 		if (document.RootElement.ValueKind == JsonValueKind.Object &&
-		    document.RootElement.TryGetProperty("version", out var versionElement) &&
-		    versionElement.TryGetInt32(out int version))
+			document.RootElement.TryGetProperty("version", out var versionElement) &&
+			versionElement.TryGetInt32(out int version))
 		{
 			if (version > CurrentFormatVersion)
 			{
@@ -289,7 +289,7 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 			}
 
 			if (!document.RootElement.TryGetProperty("accounts", out var accountsElement) ||
-			    accountsElement.ValueKind != JsonValueKind.Object)
+				accountsElement.ValueKind != JsonValueKind.Object)
 			{
 				throw new InvalidOperationException("Credential store file is missing the accounts object");
 			}

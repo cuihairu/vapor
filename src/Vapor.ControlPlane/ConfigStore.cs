@@ -2,12 +2,14 @@ using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
-public sealed class ConfigStore {
+public sealed class ConfigStore
+{
 	private readonly object _gate = new();
 	private GlobalConfig _global;
 	private readonly Dictionary<string, AccountConfig> _accounts = new(StringComparer.OrdinalIgnoreCase);
 
-	public ConfigStore() {
+	public ConfigStore()
+	{
 		var now = DateTimeOffset.UtcNow;
 		_global = new GlobalConfig(
 			Version: new ConfigVersion(1, now, "system"),
@@ -15,22 +17,28 @@ public sealed class ConfigStore {
 		);
 	}
 
-	public GlobalConfig GetGlobal() {
-		lock (_gate) {
+	public GlobalConfig GetGlobal()
+	{
+		lock (_gate)
+		{
 			return _global;
 		}
 	}
 
-	public IReadOnlyList<AccountConfig> ListAccounts() {
-		lock (_gate) {
+	public IReadOnlyList<AccountConfig> ListAccounts()
+	{
+		lock (_gate)
+		{
 			return _accounts.Values
 				.OrderBy(account => account.AccountName, StringComparer.OrdinalIgnoreCase)
 				.ToList();
 		}
 	}
 
-	public GlobalConfig SetGlobal(IReadOnlyDictionary<string, object?>? settings, string? updatedBy) {
-		lock (_gate) {
+	public GlobalConfig SetGlobal(IReadOnlyDictionary<string, object?>? settings, string? updatedBy)
+	{
+		lock (_gate)
+		{
 			var now = DateTimeOffset.UtcNow;
 			int nextVersion = _global.Version.Version + 1;
 			_global = new GlobalConfig(
@@ -47,12 +55,15 @@ public sealed class ConfigStore {
 		string? region,
 		IReadOnlyList<string>? labels,
 		IReadOnlyDictionary<string, object?>? settings,
-		string? updatedBy) {
-		if (string.IsNullOrWhiteSpace(accountName)) {
+		string? updatedBy)
+	{
+		if (string.IsNullOrWhiteSpace(accountName))
+		{
 			throw new ArgumentException("accountName is required", nameof(accountName));
 		}
 
-		lock (_gate) {
+		lock (_gate)
+		{
 			var normalizedAccountName = accountName.Trim();
 			var now = DateTimeOffset.UtcNow;
 			_accounts.TryGetValue(normalizedAccountName, out var existing);

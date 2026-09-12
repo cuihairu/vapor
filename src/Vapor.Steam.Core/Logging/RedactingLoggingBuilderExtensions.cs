@@ -24,7 +24,7 @@ public static class RedactingLoggingBuilderExtensions
 		{
 			ServiceDescriptor descriptor = builder.Services[i];
 			if (descriptor.ServiceType == typeof(ILoggerProvider) &&
-			    descriptor.ImplementationType == typeof(ConsoleLoggerProvider))
+				descriptor.ImplementationType == typeof(ConsoleLoggerProvider))
 			{
 				builder.Services.RemoveAt(i);
 			}

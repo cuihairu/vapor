@@ -57,8 +57,8 @@ public static class CredentialStoreRotator
 
 		Dictionary<string, StoredAccount>? accounts;
 		if (document.RootElement.ValueKind == JsonValueKind.Object &&
-		    document.RootElement.TryGetProperty("accounts", out var accountsElement) &&
-		    accountsElement.ValueKind == JsonValueKind.Object)
+			document.RootElement.TryGetProperty("accounts", out var accountsElement) &&
+			accountsElement.ValueKind == JsonValueKind.Object)
 		{
 			accounts = accountsElement.Deserialize<Dictionary<string, StoredAccount>>(JsonOptions);
 		}

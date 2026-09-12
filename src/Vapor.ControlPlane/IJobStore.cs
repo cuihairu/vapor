@@ -2,7 +2,8 @@ using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
-public interface IJobStore {
+public interface IJobStore
+{
 	Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken);
 	Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken);
 	Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken);

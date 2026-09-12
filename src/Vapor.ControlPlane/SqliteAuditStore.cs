@@ -9,21 +9,26 @@ namespace Vapor.ControlPlane;
 /// SQLite-backed durable audit log.
 /// Sensitive detail values are redacted before persistence.
 /// </summary>
-public sealed class SqliteAuditStore : IAuditStore, IDisposable {
+public sealed class SqliteAuditStore : IAuditStore, IDisposable
+{
 	private readonly SqliteConnection _connection;
 	private readonly SemaphoreSlim _mutex = new(1, 1);
 	private readonly bool _inMemory;
 
-	public SqliteAuditStore(string dbPath) {
-		if (string.IsNullOrWhiteSpace(dbPath)) {
+	public SqliteAuditStore(string dbPath)
+	{
+		if (string.IsNullOrWhiteSpace(dbPath))
+		{
 			throw new ArgumentException("DB path is required", nameof(dbPath));
 		}
 
 		_inMemory = string.Equals(dbPath, ":memory:", StringComparison.Ordinal);
 
-		if (!_inMemory) {
+		if (!_inMemory)
+		{
 			string? dir = Path.GetDirectoryName(dbPath);
-			if (!string.IsNullOrEmpty(dir)) {
+			if (!string.IsNullOrEmpty(dir))
+			{
 				Directory.CreateDirectory(dir);
 			}
 		}
@@ -34,15 +39,18 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable {
 		Migrate();
 	}
 
-	public void Dispose() {
+	public void Dispose()
+	{
 		_connection.Dispose();
 		_mutex.Dispose();
 	}
 
-	public async Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken) {
+	public async Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
+	{
 		ArgumentNullException.ThrowIfNull(entry);
 
-		if (string.IsNullOrWhiteSpace(entry.Action)) {
+		if (string.IsNullOrWhiteSpace(entry.Action))
+		{
 			throw new ArgumentException("audit action is required", nameof(entry));
 		}
 
@@ -50,7 +58,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable {
 		string redactedDetails = SensitiveDataRedactor.Redact(detailsJson);
 
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
 				INSERT INTO audit_logs (id, ts_ms, action, actor, remote_ip, account_name, job_id, details_json)
@@ -65,85 +74,104 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable {
 			cmd.Parameters.AddWithValue("$jobId", (object?)entry.JobId ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$details", redactedDetails);
 			await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<IReadOnlyList<AuditEntry>> QueryAsync(AuditQuery query, CancellationToken cancellationToken) {
+	public async Task<IReadOnlyList<AuditEntry>> QueryAsync(AuditQuery query, CancellationToken cancellationToken)
+	{
 		ArgumentNullException.ThrowIfNull(query);
 
 		(int limit, int offset) = NormalizePaging(query);
 
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			using var cmd = _connection.CreateCommand();
 			BuildQueryCommand(cmd, query, limit, offset, withPaging: true);
 
 			List<AuditEntry> entries = [];
 			using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
 				entries.Add(ReadEntryRow(reader));
 			}
 
 			return entries;
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<int> CountAsync(AuditQuery query, CancellationToken cancellationToken) {
+	public async Task<int> CountAsync(AuditQuery query, CancellationToken cancellationToken)
+	{
 		ArgumentNullException.ThrowIfNull(query);
 
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			using var cmd = _connection.CreateCommand();
 			BuildQueryCommand(cmd, query, 0, 0, withPaging: false);
 			object? result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 			return result is long count ? (int)count : 0;
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	private static (int Limit, int Offset) NormalizePaging(AuditQuery query) {
+	private static (int Limit, int Offset) NormalizePaging(AuditQuery query)
+	{
 		int limit = query.Limit <= 0 ? 100 : Math.Min(query.Limit, 500);
 		int offset = Math.Max(query.Offset, 0);
 		return (limit, offset);
 	}
 
-	private static void BuildQueryCommand(SqliteCommand cmd, AuditQuery query, int limit, int offset, bool withPaging) {
+	private static void BuildQueryCommand(SqliteCommand cmd, AuditQuery query, int limit, int offset, bool withPaging)
+	{
 		var where = new List<string>();
 		var order = withPaging ? "ORDER BY ts_ms DESC, id DESC" : "";
 
-		if (!string.IsNullOrWhiteSpace(query.Action)) {
+		if (!string.IsNullOrWhiteSpace(query.Action))
+		{
 			where.Add("action = $action");
 			cmd.Parameters.AddWithValue("$action", query.Action.Trim());
 		}
 
-		if (!string.IsNullOrWhiteSpace(query.AccountName)) {
+		if (!string.IsNullOrWhiteSpace(query.AccountName))
+		{
 			where.Add("account_name = $account");
 			cmd.Parameters.AddWithValue("$account", query.AccountName.Trim());
 		}
 
-		if (!string.IsNullOrWhiteSpace(query.JobId)) {
+		if (!string.IsNullOrWhiteSpace(query.JobId))
+		{
 			where.Add("job_id = $jobId");
 			cmd.Parameters.AddWithValue("$jobId", query.JobId.Trim());
 		}
 
-		if (query.From is { } from) {
+		if (query.From is { } from)
+		{
 			where.Add("ts_ms >= $fromMs");
 			cmd.Parameters.AddWithValue("$fromMs", from.ToUnixTimeMilliseconds());
 		}
 
-		if (query.To is { } to) {
+		if (query.To is { } to)
+		{
 			where.Add("ts_ms <= $toMs");
 			cmd.Parameters.AddWithValue("$toMs", to.ToUnixTimeMilliseconds());
 		}
 
 		string whereClause = where.Count > 0 ? $"WHERE {string.Join(" AND ", where)}" : "";
 
-		if (withPaging) {
+		if (withPaging)
+		{
 			cmd.CommandText = $"""
 				SELECT id, ts_ms, action, actor, remote_ip, account_name, job_id, details_json
 				FROM audit_logs
@@ -153,7 +181,9 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable {
 				""";
 			cmd.Parameters.AddWithValue("$limit", limit);
 			cmd.Parameters.AddWithValue("$offset", offset);
-		} else {
+		}
+		else
+		{
 			cmd.CommandText = $"""
 				SELECT COUNT(*)
 				FROM audit_logs
@@ -162,7 +192,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable {
 		}
 	}
 
-	private static AuditEntry ReadEntryRow(SqliteDataReader reader) {
+	private static AuditEntry ReadEntryRow(SqliteDataReader reader)
+	{
 		string id = reader.GetString(0);
 		long tsMs = reader.GetInt64(1);
 		string action = reader.GetString(2);
@@ -186,7 +217,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable {
 		);
 	}
 
-	private void Migrate() {
+	private void Migrate()
+	{
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
 			CREATE TABLE IF NOT EXISTS audit_logs (

@@ -8,14 +8,17 @@ namespace Vapor.ControlPlane;
 /// without a listener the source is inert (<see cref="ActivitySource.StartActivity"/>
 /// returns null) and costs essentially nothing.
 /// </summary>
-public static class VaporTracing {
+public static class VaporTracing
+{
 	public const string SourceName = "Vapor.ControlPlane";
 
 	public static readonly ActivitySource Source = new(SourceName, "1.0.0");
 
 	/// <summary>Wraps the activity's W3C id as a traceparent header for tunnel propagation.</summary>
-	public static IReadOnlyDictionary<string, string>? InjectTraceparent(Activity? activity) {
-		if (activity is null || activity.Id is null) {
+	public static IReadOnlyDictionary<string, string>? InjectTraceparent(Activity? activity)
+	{
+		if (activity is null || activity.Id is null)
+		{
 			return null;
 		}
 
@@ -23,7 +26,8 @@ public static class VaporTracing {
 	}
 
 	/// <summary>Parses a traceparent header set produced by <see cref="InjectTraceparent"/>.</summary>
-	public static bool TryExtractContext(IReadOnlyDictionary<string, string>? traceHeaders, out ActivityContext context) {
+	public static bool TryExtractContext(IReadOnlyDictionary<string, string>? traceHeaders, out ActivityContext context)
+	{
 		context = default;
 		return traceHeaders is not null
 			&& traceHeaders.TryGetValue("traceparent", out string? traceparent)

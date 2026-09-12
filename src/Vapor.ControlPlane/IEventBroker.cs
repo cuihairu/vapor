@@ -2,7 +2,8 @@ using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
-public interface IEventBroker {
+public interface IEventBroker
+{
 	void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload);
 	void PublishSession(string accountName, string eventType, string state, string? message = null);
 	void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null);

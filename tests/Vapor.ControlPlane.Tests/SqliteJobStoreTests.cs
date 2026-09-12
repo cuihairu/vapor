@@ -5,9 +5,11 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
-public sealed class SqliteJobStoreTests {
+public sealed class SqliteJobStoreTests
+{
 	[Fact]
-	public async Task HeartbeatTaskReturnsTrueOnlyForMatchingRunningAttempt() {
+	public async Task HeartbeatTaskReturnsTrueOnlyForMatchingRunningAttempt()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -26,7 +28,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task SetTaskResultMarksSuccessfulSingleTaskJobAsFinished() {
+	public async Task SetTaskResultMarksSuccessfulSingleTaskJobAsFinished()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -59,7 +62,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task SetTaskResultMarksJobFailedWhenAnyTaskFails() {
+	public async Task SetTaskResultMarksJobFailedWhenAnyTaskFails()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -81,7 +85,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task SetTaskResultRejectsAttemptMismatch() {
+	public async Task SetTaskResultRejectsAttemptMismatch()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -98,7 +103,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task RequeueTaskMovesJobBackToQueuedWhenNoOtherWorkRemains() {
+	public async Task RequeueTaskMovesJobBackToQueuedWhenNoOtherWorkRemains()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -113,14 +119,16 @@ public sealed class SqliteJobStoreTests {
 
 		JobWithTasks job = await store.GetJob(created.Job.Id, cts.Token);
 		Assert.Equal(JobStatus.Queued, job.Job.Status);
-		Assert.Collection(job.Tasks, task => {
+		Assert.Collection(job.Tasks, task =>
+		{
 			Assert.Equal(JobTaskStatus.Queued, task.Status);
 			Assert.Equal(1, task.Attempt);
 		});
 	}
 
 	[Fact]
-	public async Task RequeueStaleRunningTasksMovesStaleRunningTaskBackToQueued() {
+	public async Task RequeueStaleRunningTasksMovesStaleRunningTaskBackToQueued()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -143,7 +151,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task RequeueStaleRunningTasksKeepsJobRunningWhenOtherRunningTasksRemain() {
+	public async Task RequeueStaleRunningTasksKeepsJobRunningWhenOtherRunningTasksRemain()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -166,7 +175,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task RequeueTaskWithDelay_PostponesNextClaimUntilDelayElapses() {
+	public async Task RequeueTaskWithDelay_PostponesNextClaimUntilDelayElapses()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -192,7 +202,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task FailRunningTask_MarksTaskFailedWithErrorAndFailsJob() {
+	public async Task FailRunningTask_MarksTaskFailedWithErrorAndFailsJob()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -212,14 +223,16 @@ public sealed class SqliteJobStoreTests {
 
 		JobWithTasks persisted = await store.GetJob(created.Job.Id, cts.Token);
 		Assert.Equal(JobStatus.Failed, persisted.Job.Status);
-		Assert.Collection(persisted.Tasks, task => {
+		Assert.Collection(persisted.Tasks, task =>
+		{
 			Assert.Equal(JobTaskStatus.Failed, task.Status);
 			Assert.Equal("no capable agent available", task.Error);
 		});
 	}
 
 	[Fact]
-	public async Task FailRunningTask_RejectsNonRunningTask() {
+	public async Task FailRunningTask_RejectsNonRunningTask()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -232,7 +245,8 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task GetTaskStatusCounts_AggregatesAcrossAllJobs() {
+	public async Task GetTaskStatusCounts_AggregatesAcrossAllJobs()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -254,13 +268,16 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task SetTaskResult_PersistsOutputAndErrorAcrossReopen() {
+	public async Task SetTaskResult_PersistsOutputAndErrorAcrossReopen()
+	{
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
-		try {
+		try
+		{
 			JobWithTasks created;
 			string taskId;
 			int attempt;
-			using (var store = new SqliteJobStore(dbPath)) {
+			using (var store = new SqliteJobStore(dbPath))
+			{
 				using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
 				created = await store.CreateJob(
@@ -284,7 +301,8 @@ public sealed class SqliteJobStoreTests {
 			}
 
 			// Reopen the database to prove output/error survive a restart.
-			using (var reopened = new SqliteJobStore(dbPath)) {
+			using (var reopened = new SqliteJobStore(dbPath))
+			{
 				using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 				JobWithTasks refreshed = await reopened.GetJob(created.Job.Id, cts.Token);
 
@@ -295,15 +313,19 @@ public sealed class SqliteJobStoreTests {
 				Assert.Equal(42, ((System.Text.Json.JsonElement?)task.Output!["errorCode"])!.Value.GetInt32());
 				Assert.Equal("rate limited", task.Output!["detail"]?.ToString());
 			}
-		} finally {
-			if (File.Exists(dbPath)) {
+		}
+		finally
+		{
+			if (File.Exists(dbPath))
+			{
 				File.Delete(dbPath);
 			}
 		}
 	}
 
 	[Fact]
-	public async Task SetTaskResult_SuccessfulTaskWithoutOutput_StaysNull() {
+	public async Task SetTaskResult_SuccessfulTaskWithoutOutput_StaysNull()
+	{
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
@@ -326,15 +348,18 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
-	public async Task Migrate_AddsNewColumnsToLegacyDatabase() {
+	public async Task Migrate_AddsNewColumnsToLegacyDatabase()
+	{
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
 		string jobId = "legacy-job";
 		string taskId = "legacy-task";
 		long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-		try {
+		try
+		{
 			// Build a pre-migration database: tasks table without error / next_attempt_at_ms.
-			using (var setup = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}")) {
+			using (var setup = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+			{
 				setup.Open();
 				using var cmd = setup.CreateCommand();
 				cmd.CommandText = """
@@ -370,12 +395,15 @@ public sealed class SqliteJobStoreTests {
 			(JobTask failed, Job job) = await store.FailRunningTask(taskId, "no capable agent available", cts.Token);
 			Assert.Equal(JobTaskStatus.Failed, failed.Status);
 			Assert.Equal(JobStatus.Failed, job.Status);
-		} finally {
+		}
+		finally
+		{
 			File.Delete(dbPath);
 		}
 	}
 
-	private static void MarkNextAttemptAt(SqliteJobStore store, string taskId, DateTimeOffset nextAttemptAt) {
+	private static void MarkNextAttemptAt(SqliteJobStore store, string taskId, DateTimeOffset nextAttemptAt)
+	{
 		var connectionField = typeof(SqliteJobStore).GetField("_connection", BindingFlags.Instance | BindingFlags.NonPublic);
 		Assert.NotNull(connectionField);
 		var connection = (Microsoft.Data.Sqlite.SqliteConnection?)connectionField!.GetValue(store);
@@ -388,7 +416,8 @@ public sealed class SqliteJobStoreTests {
 		cmd.ExecuteNonQuery();
 	}
 
-	private static void MarkTaskStale(SqliteJobStore store, string taskId, DateTimeOffset updatedAt) {
+	private static void MarkTaskStale(SqliteJobStore store, string taskId, DateTimeOffset updatedAt)
+	{
 		var connectionField = typeof(SqliteJobStore).GetField("_connection", BindingFlags.Instance | BindingFlags.NonPublic);
 		Assert.NotNull(connectionField);
 		var connection = (Microsoft.Data.Sqlite.SqliteConnection?)connectionField!.GetValue(store);

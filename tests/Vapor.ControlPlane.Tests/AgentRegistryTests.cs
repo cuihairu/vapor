@@ -6,9 +6,11 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
-public sealed class AgentRegistryTests {
+public sealed class AgentRegistryTests
+{
 	[Fact]
-	public void RegionsAndListAreReturnedInDeterministicOrder() {
+	public void RegionsAndListAreReturnedInDeterministicOrder()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 
@@ -21,7 +23,8 @@ public sealed class AgentRegistryTests {
 	}
 
 	[Fact]
-	public void PickWithActionReturnsFirstCapableAgentInRegion() {
+	public void PickWithActionReturnsFirstCapableAgentInRegion()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 
@@ -41,7 +44,8 @@ public sealed class AgentRegistryTests {
 	}
 
 	[Fact]
-	public void PickWithActionTreatsMissingCapabilitiesAsSupportsAll() {
+	public void PickWithActionTreatsMissingCapabilitiesAsSupportsAll()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 
@@ -54,7 +58,8 @@ public sealed class AgentRegistryTests {
 	}
 
 	[Fact]
-	public void PickReturnsNullWhenNoCapableAgentExists() {
+	public void PickReturnsNullWhenNoCapableAgentExists()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 
@@ -67,43 +72,52 @@ public sealed class AgentRegistryTests {
 		Assert.Null(registry.Pick("missing-region"));
 	}
 
-	private sealed class NoopWebSocket : WebSocket {
+	private sealed class NoopWebSocket : WebSocket
+	{
 		public override WebSocketCloseStatus? CloseStatus => null;
 		public override string? CloseStatusDescription => null;
 		public override WebSocketState State => WebSocketState.Open;
 		public override string SubProtocol => string.Empty;
 
-		public override void Abort() {
+		public override void Abort()
+		{
 		}
 
-		public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) {
+		public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+		{
 			return Task.CompletedTask;
 		}
 
-		public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) {
+		public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+		{
 			return Task.CompletedTask;
 		}
 
-		public override void Dispose() {
+		public override void Dispose()
+		{
 		}
 
-		public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) {
+		public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
+		{
 			var payload = Encoding.UTF8.GetBytes("{}");
 			payload.AsSpan().CopyTo(buffer.AsSpan());
 			return Task.FromResult(new WebSocketReceiveResult(payload.Length, WebSocketMessageType.Text, true));
 		}
 
-		public override ValueTask<ValueWebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken) {
+		public override ValueTask<ValueWebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+		{
 			var payload = Encoding.UTF8.GetBytes("{}");
 			payload.AsSpan().CopyTo(buffer.Span);
 			return ValueTask.FromResult(new ValueWebSocketReceiveResult(payload.Length, WebSocketMessageType.Text, true));
 		}
 
-		public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) {
+		public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
+		{
 			return Task.CompletedTask;
 		}
 
-		public override ValueTask SendAsync(ReadOnlyMemory<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) {
+		public override ValueTask SendAsync(ReadOnlyMemory<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
+		{
 			return ValueTask.CompletedTask;
 		}
 	}

@@ -4,18 +4,23 @@ using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
-public sealed class SqliteJobStore : IJobStore, IDisposable {
+public sealed class SqliteJobStore : IJobStore, IDisposable
+{
 	private readonly SqliteConnection _connection;
 	private readonly SemaphoreSlim _mutex = new(1, 1);
 
-	public SqliteJobStore(string dbPath) {
-		if (string.IsNullOrWhiteSpace(dbPath)) {
+	public SqliteJobStore(string dbPath)
+	{
+		if (string.IsNullOrWhiteSpace(dbPath))
+		{
 			throw new ArgumentException("DB path is required", nameof(dbPath));
 		}
 
-		if (!string.Equals(dbPath, ":memory:", StringComparison.Ordinal)) {
+		if (!string.Equals(dbPath, ":memory:", StringComparison.Ordinal))
+		{
 			string? dir = Path.GetDirectoryName(dbPath);
-			if (!string.IsNullOrEmpty(dir)) {
+			if (!string.IsNullOrEmpty(dir))
+			{
 				Directory.CreateDirectory(dir);
 			}
 		}
@@ -26,14 +31,17 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		Migrate();
 	}
 
-	public void Dispose() {
+	public void Dispose()
+	{
 		_connection.Dispose();
 		_mutex.Dispose();
 	}
 
-	public async Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken) {
+	public async Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			DateTimeOffset now = DateTimeOffset.UtcNow;
 			long nowMs = now.ToUnixTimeMilliseconds();
 
@@ -43,7 +51,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			string metaJson = JsonSerializer.Serialize(request.Meta ?? new Dictionary<string, string>(), JsonDefaults.Options);
 
 			using var tx = _connection.BeginTransaction();
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.Transaction = tx;
 				cmd.CommandText = """
 					INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms)
@@ -61,7 +70,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			}
 
 			List<JobTask> tasks = new(request.Targets.Count);
-			foreach (string target in request.Targets) {
+			foreach (string target in request.Targets)
+			{
 				string taskId = Id.New();
 				string payloadJson = JsonSerializer.Serialize(request.Payload ?? new Dictionary<string, object?>(), JsonDefaults.Options);
 
@@ -111,25 +121,33 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			);
 
 			return new JobWithTasks(job, tasks);
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken) {
+	public async Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			Job job = await ReadJob(jobId, cancellationToken).ConfigureAwait(false);
 			IReadOnlyList<JobTask> tasks = await ReadTasks(jobId, cancellationToken).ConfigureAwait(false);
 			return new JobWithTasks(job, tasks);
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken) {
+	public async Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
 				SELECT id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms
@@ -141,25 +159,31 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 
 			List<Job> jobs = new(limit);
 			using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
 				jobs.Add(ReadJobRow(reader));
 			}
 
 			return jobs;
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) {
+	public async Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			var now = DateTimeOffset.UtcNow;
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 			using var tx = _connection.BeginTransaction();
 
 			long updated;
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.Transaction = tx;
 				cmd.CommandText = "UPDATE jobs SET status = $status, updated_at_ms = $updated WHERE id = $id;";
 				cmd.Parameters.AddWithValue("$status", JobStatus.Canceled.ToString());
@@ -168,12 +192,14 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 			}
 
-			if (updated == 0) {
+			if (updated == 0)
+			{
 				throw new NotFoundException("job not found");
 			}
 
 			List<TaskCancel> running = [];
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.Transaction = tx;
 				cmd.CommandText = """
 					SELECT id, attempt
@@ -183,43 +209,50 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				cmd.Parameters.AddWithValue("$jobId", jobId);
 				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+				{
 					string taskId = reader.GetString(0);
 					int attempt = reader.GetInt32(1);
 					running.Add(new TaskCancel(taskId, attempt, now, "job canceled"));
 				}
 			}
 
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.Transaction = tx;
 				cmd.CommandText = """
 					UPDATE tasks
 					SET status = $status, updated_at_ms = $updated
 					WHERE job_id = $jobId AND status IN ($queued, $running);
 					""";
-			cmd.Parameters.AddWithValue("$status", JobTaskStatus.Canceled.ToString());
-			cmd.Parameters.AddWithValue("$updated", nowMs);
-			cmd.Parameters.AddWithValue("$jobId", jobId);
-			cmd.Parameters.AddWithValue("$queued", JobTaskStatus.Queued.ToString());
-			cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
-			await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-		}
+				cmd.Parameters.AddWithValue("$status", JobTaskStatus.Canceled.ToString());
+				cmd.Parameters.AddWithValue("$updated", nowMs);
+				cmd.Parameters.AddWithValue("$jobId", jobId);
+				cmd.Parameters.AddWithValue("$queued", JobTaskStatus.Queued.ToString());
+				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+				await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			}
 
 			tx.Commit();
 			return running;
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) {
+	public async Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			using var tx = _connection.BeginTransaction();
 
 			JobTask? task = null;
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.Transaction = tx;
 				cmd.CommandText = """
 					SELECT id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms, error, output_json
@@ -233,17 +266,20 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				cmd.Parameters.AddWithValue("$now", nowMs);
 
 				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-				if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+				if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+				{
 					task = ReadTaskRow(reader);
 				}
 			}
 
-			if (task == null) {
+			if (task == null)
+			{
 				tx.Commit();
 				return null;
 			}
 
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.Transaction = tx;
 				cmd.CommandText = """
 					UPDATE tasks
@@ -256,13 +292,15 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				cmd.Parameters.AddWithValue("$queued", JobTaskStatus.Queued.ToString());
 
 				long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-				if (updated == 0) {
+				if (updated == 0)
+				{
 					tx.Commit();
 					return null;
 				}
 			}
 
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.Transaction = tx;
 				cmd.CommandText = """
 					UPDATE jobs
@@ -279,26 +317,32 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			tx.Commit();
 
 			// Return the in-memory view of the updated task (attempt/status/updatedAt).
-			return task with {
+			return task with
+			{
 				Status = JobTaskStatus.Running,
 				Attempt = task.Attempt + 1,
 				UpdatedAt = DateTimeOffset.UtcNow
 			};
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) {
+	public async Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			string? jobId = await ReadTaskJobId(taskId, cancellationToken).ConfigureAwait(false);
-			if (jobId == null) {
+			if (jobId == null)
+			{
 				return;
 			}
 
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-			long nextAttemptAtMs = nowMs + (long) (retryDelay?.TotalMilliseconds ?? 0);
+			long nextAttemptAtMs = nowMs + (long)(retryDelay?.TotalMilliseconds ?? 0);
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
 				UPDATE tasks
@@ -312,22 +356,28 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 
 			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-			if (updated > 0) {
+			if (updated > 0)
+			{
 				await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
 			}
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) {
+	public async Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-			long cutoffMs = nowMs - (long) taskLease.TotalMilliseconds;
+			long cutoffMs = nowMs - (long)taskLease.TotalMilliseconds;
 			HashSet<string> affectedJobIds = [];
 
-			using (var select = _connection.CreateCommand()) {
+			using (var select = _connection.CreateCommand())
+			{
 				select.CommandText = """
 					SELECT DISTINCT job_id
 					FROM tasks
@@ -337,7 +387,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				select.Parameters.AddWithValue("$cutoff", cutoffMs);
 
 				using var reader = await select.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+				{
 					affectedJobIds.Add(reader.GetString(0));
 				}
 			}
@@ -354,21 +405,27 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			cmd.Parameters.AddWithValue("$cutoff", cutoffMs);
 
 			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-			if (updated > 0) {
-				foreach (string jobId in affectedJobIds) {
+			if (updated > 0)
+			{
+				foreach (string jobId in affectedJobIds)
+				{
 					await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
 				}
 			}
 
-			return (int) updated;
-		} finally {
+			return (int)updated;
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) {
+	public async Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
 			using var cmd = _connection.CreateCommand();
@@ -384,37 +441,48 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 
 			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 			return updated > 0;
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken) {
+	public async Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			Dictionary<JobTaskStatus, int> counts = new();
-			using (var cmd = _connection.CreateCommand()) {
+			using (var cmd = _connection.CreateCommand())
+			{
 				cmd.CommandText = "SELECT status, COUNT(*) FROM tasks GROUP BY status;";
 
 				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+				{
 					string raw = reader.GetString(0);
 					int n = reader.GetInt32(1);
-					if (Enum.TryParse<JobTaskStatus>(raw, true, out var st)) {
+					if (Enum.TryParse<JobTaskStatus>(raw, true, out var st))
+					{
 						counts[st] = n;
 					}
 				}
 			}
 
 			return counts;
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) {
+	public async Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
 			JobTaskStatus newStatus = result.Success ? JobTaskStatus.Finished : JobTaskStatus.Failed;
@@ -427,7 +495,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				cmd.CommandText = "SELECT job_id, status, attempt FROM tasks WHERE id = $id;";
 				cmd.Parameters.AddWithValue("$id", result.TaskId);
 				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-				if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+				if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+				{
 					throw new NotFoundException("task not found");
 				}
 
@@ -436,15 +505,18 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				currentAttempt = reader.GetInt32(2);
 			}
 
-			if (string.IsNullOrEmpty(jobId)) {
+			if (string.IsNullOrEmpty(jobId))
+			{
 				throw new NotFoundException("task not found");
 			}
 
-			if (!Enum.TryParse<JobTaskStatus>(currentStatusRaw, true, out var currentStatus) || currentStatus != JobTaskStatus.Running) {
+			if (!Enum.TryParse<JobTaskStatus>(currentStatusRaw, true, out var currentStatus) || currentStatus != JobTaskStatus.Running)
+			{
 				throw new NotFoundException("task not running");
 			}
 
-			if (result.Attempt > 0 && currentAttempt != result.Attempt) {
+			if (result.Attempt > 0 && currentAttempt != result.Attempt)
+			{
 				throw new NotFoundException("task attempt mismatch");
 			}
 
@@ -465,7 +537,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				cmd.Parameters.AddWithValue("$id", result.TaskId);
 				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 				long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-				if (updated == 0) {
+				if (updated == 0)
+				{
 					throw new NotFoundException("task not running");
 				}
 			}
@@ -477,14 +550,18 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			JobTask task = tasks.First(t => t.Id == result.TaskId);
 
 			return (task, job);
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	public async Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) {
+	public async Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken)
+	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
-		try {
+		try
+		{
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 			string jobId;
 
@@ -493,7 +570,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				cmd.CommandText = "SELECT job_id FROM tasks WHERE id = $id;";
 				cmd.Parameters.AddWithValue("$id", taskId);
 				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-				if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+				if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+				{
 					throw new NotFoundException("task not found");
 				}
 
@@ -514,7 +592,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 
 				long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-				if (updated == 0) {
+				if (updated == 0)
+				{
 					throw new NotFoundException("task not running");
 				}
 			}
@@ -526,12 +605,15 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			JobTask task = tasks.First(t => t.Id == taskId);
 
 			return (task, job);
-		} finally {
+		}
+		finally
+		{
 			_mutex.Release();
 		}
 	}
 
-	private void Migrate() {
+	private void Migrate()
+	{
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
 			PRAGMA foreign_keys = ON;
@@ -578,39 +660,48 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		EnsureColumn("tasks", "output_json", "TEXT");
 	}
 
-	private void EnsureColumn(string table, string column, string definition) {
+	private void EnsureColumn(string table, string column, string definition)
+	{
 		HashSet<string> existing = new(StringComparer.Ordinal);
-		using (var cmd = _connection.CreateCommand()) {
+		using (var cmd = _connection.CreateCommand())
+		{
 			cmd.CommandText = $"PRAGMA table_info({table});";
 			using var reader = cmd.ExecuteReader();
-			while (reader.Read()) {
+			while (reader.Read())
+			{
 				existing.Add(reader.GetString(1));
 			}
 		}
 
-		if (!existing.Contains(column)) {
+		if (!existing.Contains(column))
+		{
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
 			cmd.ExecuteNonQuery();
 		}
 	}
 
-	private async Task RecomputeJob(string jobId, CancellationToken cancellationToken) {
+	private async Task RecomputeJob(string jobId, CancellationToken cancellationToken)
+	{
 		Job job = await ReadJob(jobId, cancellationToken).ConfigureAwait(false);
-		if (job.Status == JobStatus.Canceled) {
+		if (job.Status == JobStatus.Canceled)
+		{
 			return;
 		}
 
 		Dictionary<JobTaskStatus, int> counts = new();
-		using (var cmd = _connection.CreateCommand()) {
+		using (var cmd = _connection.CreateCommand())
+		{
 			cmd.CommandText = "SELECT status, COUNT(*) FROM tasks WHERE job_id = $jobId GROUP BY status;";
 			cmd.Parameters.AddWithValue("$jobId", jobId);
 
 			using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
 				string raw = reader.GetString(0);
 				int n = reader.GetInt32(1);
-				if (Enum.TryParse<JobTaskStatus>(raw, true, out var st)) {
+				if (Enum.TryParse<JobTaskStatus>(raw, true, out var st))
+				{
 					counts[st] = n;
 				}
 			}
@@ -623,15 +714,24 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		int canceled = counts.GetValueOrDefault(JobTaskStatus.Canceled);
 
 		JobStatus newStatus = JobStatus.Finished;
-		if (running > 0) {
+		if (running > 0)
+		{
 			newStatus = JobStatus.Running;
-		} else if (failed > 0) {
+		}
+		else if (failed > 0)
+		{
 			newStatus = JobStatus.Failed;
-		} else if (queued > 0 && (finished > 0 || canceled > 0)) {
+		}
+		else if (queued > 0 && (finished > 0 || canceled > 0))
+		{
 			newStatus = JobStatus.Running;
-		} else if (queued > 0) {
+		}
+		else if (queued > 0)
+		{
 			newStatus = JobStatus.Queued;
-		} else if (canceled > 0 && finished == 0 && failed == 0) {
+		}
+		else if (canceled > 0 && finished == 0 && failed == 0)
+		{
 			newStatus = JobStatus.Canceled;
 		}
 
@@ -644,7 +744,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 	}
 
-	private async Task<string?> ReadTaskJobId(string taskId, CancellationToken cancellationToken) {
+	private async Task<string?> ReadTaskJobId(string taskId, CancellationToken cancellationToken)
+	{
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = "SELECT job_id FROM tasks WHERE id = $id;";
 		cmd.Parameters.AddWithValue("$id", taskId);
@@ -652,7 +753,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		return value?.ToString();
 	}
 
-	private async Task<Job> ReadJob(string jobId, CancellationToken cancellationToken) {
+	private async Task<Job> ReadJob(string jobId, CancellationToken cancellationToken)
+	{
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
 			SELECT id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms
@@ -662,14 +764,16 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		cmd.Parameters.AddWithValue("$id", jobId);
 
 		using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-		if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+		if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+		{
 			throw new NotFoundException("job not found");
 		}
 
 		return ReadJobRow(reader);
 	}
 
-	private static Job ReadJobRow(SqliteDataReader reader) {
+	private static Job ReadJobRow(SqliteDataReader reader)
+	{
 		string id = reader.GetString(0);
 		string action = reader.GetString(1);
 		string region = reader.GetString(2);
@@ -695,7 +799,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		);
 	}
 
-	private async Task<IReadOnlyList<JobTask>> ReadTasks(string jobId, CancellationToken cancellationToken) {
+	private async Task<IReadOnlyList<JobTask>> ReadTasks(string jobId, CancellationToken cancellationToken)
+	{
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
 			SELECT id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms, error, output_json
@@ -707,14 +812,16 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 
 		using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 		List<JobTask> tasks = [];
-		while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+		while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+		{
 			tasks.Add(ReadTaskRow(reader));
 		}
 
 		return tasks;
 	}
 
-	private static JobTask ReadTaskRow(SqliteDataReader reader) {
+	private static JobTask ReadTaskRow(SqliteDataReader reader)
+	{
 		string id = reader.GetString(0);
 		string jobId = reader.GetString(1);
 		string target = reader.GetString(2);

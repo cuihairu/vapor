@@ -7,9 +7,11 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
-public sealed class TaskSchedulerServiceTests {
+public sealed class TaskSchedulerServiceTests
+{
 	[Fact]
-	public async Task DispatchOnce_DispatchesQueuedTaskToCapableAgent() {
+	public async Task DispatchOnce_DispatchesQueuedTaskToCapableAgent()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 		registry.Register(
@@ -34,7 +36,8 @@ public sealed class TaskSchedulerServiceTests {
 	}
 
 	[Fact]
-	public async Task DispatchOnce_RequeuesTaskAndPublishesDispatchFailureWhenNoCapableAgentExists() {
+	public async Task DispatchOnce_RequeuesTaskAndPublishesDispatchFailureWhenNoCapableAgentExists()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 		registry.Register(
@@ -56,7 +59,8 @@ public sealed class TaskSchedulerServiceTests {
 	}
 
 	[Fact]
-	public async Task DispatchOnce_RequeuesTaskAndPublishesEnqueueFailureWhenAgentQueueRejectsTask() {
+	public async Task DispatchOnce_RequeuesTaskAndPublishesEnqueueFailureWhenAgentQueueRejectsTask()
+	{
 		var registry = new AgentRegistry();
 		AddAgent(registry, CreateFullAgent("agent-1", "local", "login"));
 
@@ -74,7 +78,8 @@ public sealed class TaskSchedulerServiceTests {
 	}
 
 	[Fact]
-	public async Task DispatchOnce_FailsTaskPermanentlyWhenDispatchAttemptsExhausted() {
+	public async Task DispatchOnce_FailsTaskPermanentlyWhenDispatchAttemptsExhausted()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 		registry.Register(
@@ -98,7 +103,8 @@ public sealed class TaskSchedulerServiceTests {
 	}
 
 	[Fact]
-	public async Task DispatchOnce_KeepsRetryingWithDelayWhileAttemptsRemain() {
+	public async Task DispatchOnce_KeepsRetryingWithDelayWhileAttemptsRemain()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 		registry.Register(
@@ -122,7 +128,8 @@ public sealed class TaskSchedulerServiceTests {
 	}
 
 	[Fact]
-	public async Task DispatchOnce_RetriesForeverWhenAttemptLimitDisabled() {
+	public async Task DispatchOnce_RetriesForeverWhenAttemptLimitDisabled()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 		registry.Register(
@@ -143,7 +150,8 @@ public sealed class TaskSchedulerServiceTests {
 	}
 
 	[Fact]
-	public async Task DispatchOnce_RequeuesStaleTasksOnlyOnceWithinFiveSecondWindow() {
+	public async Task DispatchOnce_RequeuesStaleTasksOnlyOnceWithinFiveSecondWindow()
+	{
 		var store = new FakeJobStore();
 		var scheduler = new TaskSchedulerService(new AgentRegistry(), store, new RecordingEventBroker(), CreateConfig());
 		SetLastRequeueAt(scheduler, DateTimeOffset.UtcNow - TimeSpan.FromSeconds(10));
@@ -157,7 +165,8 @@ public sealed class TaskSchedulerServiceTests {
 
 	private static Config CreateConfig() => new("", new HashSet<string>(StringComparer.Ordinal), "test.db", 300, false);
 
-	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0) {
+	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0)
+	{
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 		return new JobTask(
 			taskId,
@@ -172,18 +181,21 @@ public sealed class TaskSchedulerServiceTests {
 			now);
 	}
 
-	private static void AddAgent(AgentRegistry registry, ConnectedAgent agent) {
+	private static void AddAgent(AgentRegistry registry, ConnectedAgent agent)
+	{
 		FieldInfo field = typeof(AgentRegistry).GetField("_agents", BindingFlags.Instance | BindingFlags.NonPublic) ?? throw new InvalidOperationException("Missing agent registry field.");
 		var agents = (System.Collections.Concurrent.ConcurrentDictionary<string, ConnectedAgent>)field.GetValue(registry)!;
 		agents[agent.Hello.AgentId] = agent;
 	}
 
-	private static void SetLastRequeueAt(TaskSchedulerService scheduler, DateTimeOffset value) {
+	private static void SetLastRequeueAt(TaskSchedulerService scheduler, DateTimeOffset value)
+	{
 		FieldInfo field = typeof(TaskSchedulerService).GetField("_lastRequeueAt", BindingFlags.Instance | BindingFlags.NonPublic) ?? throw new InvalidOperationException("Missing scheduler field.");
 		field.SetValue(scheduler, value);
 	}
 
-	private static ConnectedAgent CreateFullAgent(string agentId, string region, string supportedAction) {
+	private static ConnectedAgent CreateFullAgent(string agentId, string region, string supportedAction)
+	{
 		var agent = new ConnectedAgent(
 			new AgentHello(agentId, region, new Dictionary<string, bool> { [supportedAction] = true }, null),
 			new NoopWebSocket());
@@ -195,7 +207,8 @@ public sealed class TaskSchedulerServiceTests {
 		return agent;
 	}
 
-	private sealed class FakeJobStore : IJobStore {
+	private sealed class FakeJobStore : IJobStore
+	{
 		public Queue<JobTask> QueuedTasks { get; init; } = new();
 		public List<string> ClaimRegions { get; } = [];
 		public List<string> RequeuedTaskIds { get; } = [];
@@ -211,39 +224,47 @@ public sealed class TaskSchedulerServiceTests {
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
 
-		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) {
+		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken)
+		{
 			ClaimRegions.Add(region);
-			if (QueuedTasks.Count == 0) {
+			if (QueuedTasks.Count == 0)
+			{
 				return Task.FromResult<JobTask?>(null);
 			}
 
 			return Task.FromResult<JobTask?>(QueuedTasks.Dequeue());
 		}
 
-		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) {
+		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken)
+		{
 			RequeuedTaskIds.Add(taskId);
 			RequeueDelays.Add(retryDelay);
 			return Task.CompletedTask;
 		}
 
-		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) {
+		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken)
+		{
 			FailedTaskIds.Add(taskId);
-			return Task.FromResult((CreateTask(taskId, "job-1", "local", "login") with {
+			return Task.FromResult((CreateTask(taskId, "job-1", "local", "login") with
+			{
 				Status = JobTaskStatus.Failed,
 				Error = error,
 			}, new Job("job-1", "login", "local", [], null, JobStatus.Failed, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
 		}
 
-		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) {
+		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken)
+		{
 			StaleRequeueLeases.Add(taskLease);
 			return Task.FromResult(0);
 		}
 	}
 
-	private sealed class RecordingEventBroker : IEventBroker {
+	private sealed class RecordingEventBroker : IEventBroker
+	{
 		public List<Event> Events { get; } = [];
 
-		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload) {
+		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload)
+		{
 			Events.Add(new Event(Guid.NewGuid().ToString("N"), jobId, type, DateTimeOffset.UtcNow, payload));
 		}
 
@@ -254,43 +275,52 @@ public sealed class TaskSchedulerServiceTests {
 		public IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges(CancellationToken cancellationToken, string? accountName = null) => throw new NotSupportedException();
 	}
 
-	private class NoopWebSocket : WebSocket {
+	private class NoopWebSocket : WebSocket
+	{
 		public override WebSocketCloseStatus? CloseStatus => null;
 		public override string? CloseStatusDescription => null;
 		public override WebSocketState State => WebSocketState.Open;
 		public override string SubProtocol => string.Empty;
 
-		public override void Abort() {
+		public override void Abort()
+		{
 		}
 
-		public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) {
+		public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+		{
 			return Task.CompletedTask;
 		}
 
-		public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) {
+		public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+		{
 			return Task.CompletedTask;
 		}
 
-		public override void Dispose() {
+		public override void Dispose()
+		{
 		}
 
-		public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) {
+		public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
+		{
 			var payload = Encoding.UTF8.GetBytes("{}");
 			payload.AsSpan().CopyTo(buffer.AsSpan());
 			return Task.FromResult(new WebSocketReceiveResult(payload.Length, WebSocketMessageType.Text, true));
 		}
 
-		public override ValueTask<ValueWebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken) {
+		public override ValueTask<ValueWebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+		{
 			var payload = Encoding.UTF8.GetBytes("{}");
 			payload.AsSpan().CopyTo(buffer.Span);
 			return ValueTask.FromResult(new ValueWebSocketReceiveResult(payload.Length, WebSocketMessageType.Text, true));
 		}
 
-		public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) {
+		public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
+		{
 			return Task.CompletedTask;
 		}
 
-		public override ValueTask SendAsync(ReadOnlyMemory<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) {
+		public override ValueTask SendAsync(ReadOnlyMemory<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
+		{
 			return ValueTask.CompletedTask;
 		}
 	}

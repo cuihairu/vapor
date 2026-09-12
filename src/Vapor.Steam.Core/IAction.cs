@@ -5,9 +5,9 @@ namespace Vapor.Steam.Core;
 public interface IAction
 {
 	string Name { get; }
-	
+
 	ActionMetadata Metadata { get; }
-	
+
 	Task<ActionResult> ExecuteAsync(
 		BotSession session,
 		IReadOnlyDictionary<string, object?> payload,

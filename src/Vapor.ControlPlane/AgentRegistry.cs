@@ -5,7 +5,8 @@ using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
-public sealed class AgentRegistry {
+public sealed class AgentRegistry
+{
 	private readonly ConcurrentDictionary<string, ConnectedAgent> _agents = new(StringComparer.Ordinal);
 
 	public IReadOnlyList<AgentHello> List() => _agents.Values.Select(a => a.Hello).OrderBy(a => a.Region, StringComparer.Ordinal).ThenBy(a => a.AgentId, StringComparer.Ordinal).ToList();
@@ -14,9 +15,11 @@ public sealed class AgentRegistry {
 
 	public IReadOnlyList<string> Regions() => _agents.Values.Select(a => a.Hello.Region).Distinct(StringComparer.Ordinal).OrderBy(r => r, StringComparer.Ordinal).ToList();
 
-	public ConnectedAgent? Pick(string region) {
+	public ConnectedAgent? Pick(string region)
+	{
 		var candidates = _agents.Values.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal)).OrderBy(a => a.Hello.AgentId, StringComparer.Ordinal).ToList();
-		if (candidates.Count == 0) {
+		if (candidates.Count == 0)
+		{
 			return null;
 		}
 
@@ -24,12 +27,14 @@ public sealed class AgentRegistry {
 		return candidates[0];
 	}
 
-	public ConnectedAgent? Pick(string region, string action) {
+	public ConnectedAgent? Pick(string region, string action)
+	{
 		var candidates = _agents.Values
 			.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal) && a.SupportsAction(action))
 			.OrderBy(a => a.Hello.AgentId, StringComparer.Ordinal)
 			.ToList();
-		if (candidates.Count == 0) {
+		if (candidates.Count == 0)
+		{
 			return null;
 		}
 
@@ -37,7 +42,8 @@ public sealed class AgentRegistry {
 		return candidates[0];
 	}
 
-	public ConnectedAgent Register(AgentHello hello, WebSocket socket, CancellationToken cancellationToken) {
+	public ConnectedAgent Register(AgentHello hello, WebSocket socket, CancellationToken cancellationToken)
+	{
 		var agent = new ConnectedAgent(hello, socket);
 		_agents[hello.AgentId] = agent;
 		agent.StartSendLoop(cancellationToken);
@@ -48,33 +54,41 @@ public sealed class AgentRegistry {
 	public void Unregister(string agentId) => _agents.TryRemove(agentId, out _);
 }
 
-public sealed class ConnectedAgent {
+public sealed class ConnectedAgent
+{
 	public AgentHello Hello { get; }
 	public DateTimeOffset ConnectedAt { get; } = DateTimeOffset.UtcNow;
 
 	private readonly WebSocket _socket;
 	private readonly Channel<WSMessage> _send = Channel.CreateBounded<WSMessage>(new BoundedChannelOptions(1024) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
 
-	public ConnectedAgent(AgentHello hello, WebSocket socket) {
+	public ConnectedAgent(AgentHello hello, WebSocket socket)
+	{
 		Hello = hello;
 		_socket = socket;
 	}
 
-	public bool EnqueueTask(JobTask task, IReadOnlyDictionary<string, string>? traceHeaders = null) {
+	public bool EnqueueTask(JobTask task, IReadOnlyDictionary<string, string>? traceHeaders = null)
+	{
 		return _send.Writer.TryWrite(new WSMessage(Type: "task", Hello: null, Task: task, TaskResult: null, TraceHeaders: traceHeaders));
 	}
 
-	public bool EnqueueTaskCancel(TaskCancel cancel) {
+	public bool EnqueueTaskCancel(TaskCancel cancel)
+	{
 		return _send.Writer.TryWrite(new WSMessage(Type: "task_cancel", Hello: null, Task: null, TaskResult: null, TaskHeartbeat: null, TaskCancel: cancel));
 	}
 
-	public bool SupportsAction(string action) {
-		if (Hello.Capabilities is not { Count: > 0 }) {
+	public bool SupportsAction(string action)
+	{
+		if (Hello.Capabilities is not { Count: > 0 })
+		{
 			return true;
 		}
 
-		foreach (var kvp in Hello.Capabilities) {
-			if (kvp.Value && string.Equals(kvp.Key, action, StringComparison.OrdinalIgnoreCase)) {
+		foreach (var kvp in Hello.Capabilities)
+		{
+			if (kvp.Value && string.Equals(kvp.Key, action, StringComparison.OrdinalIgnoreCase))
+			{
 				return true;
 			}
 		}
@@ -82,15 +96,22 @@ public sealed class ConnectedAgent {
 		return false;
 	}
 
-	public void StartSendLoop(CancellationToken cancellationToken) {
-		_ = Task.Run(async () => {
-			try {
-				while (await _send.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false)) {
-					while (_send.Reader.TryRead(out WSMessage? msg)) {
+	public void StartSendLoop(CancellationToken cancellationToken)
+	{
+		_ = Task.Run(async () =>
+		{
+			try
+			{
+				while (await _send.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
+				{
+					while (_send.Reader.TryRead(out WSMessage? msg))
+					{
 						await WebSocketJson.Send(_socket, msg, cancellationToken).ConfigureAwait(false);
 					}
 				}
-			} catch {
+			}
+			catch
+			{
 				// Socket loop stops; control plane will unregister on read loop exit.
 			}
 		}, cancellationToken);

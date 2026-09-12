@@ -52,8 +52,8 @@ public static class Program
 		}
 
 		if (string.IsNullOrWhiteSpace(storePath) ||
-		    string.IsNullOrWhiteSpace(oldKeySpec) ||
-		    string.IsNullOrWhiteSpace(newKeySpec))
+			string.IsNullOrWhiteSpace(oldKeySpec) ||
+			string.IsNullOrWhiteSpace(newKeySpec))
 		{
 			PrintUsage();
 			return 2;

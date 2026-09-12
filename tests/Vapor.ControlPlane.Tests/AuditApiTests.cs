@@ -11,9 +11,11 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
-public sealed class AuditApiTests {
+public sealed class AuditApiTests
+{
 	[Fact]
-	public async Task AuditLogs_RequiresAuthorization() {
+	public async Task AuditLogs_RequiresAuthorization()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 
@@ -23,15 +25,18 @@ public sealed class AuditApiTests {
 	}
 
 	[Fact]
-	public async Task JobCreation_IsPersistedToAuditLogsWithRedactedPayload() {
+	public async Task JobCreation_IsPersistedToAuditLogsWithRedactedPayload()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 
-		using HttpResponseMessage created = await client.PostAsJsonAsync("/v1/jobs", new {
+		using HttpResponseMessage created = await client.PostAsJsonAsync("/v1/jobs", new
+		{
 			action = "ping",
 			targets = new[] { "acct-1" },
-			payload = new Dictionary<string, object?> {
+			payload = new Dictionary<string, object?>
+			{
 				["message"] = "hello",
 				["password"] = "super-secret",
 				["authCode"] = "987654"
@@ -55,12 +60,14 @@ public sealed class AuditApiTests {
 	}
 
 	[Fact]
-	public async Task AuthCodeSubmission_IsPersistedWithRedactedCode() {
+	public async Task AuthCodeSubmission_IsPersistedWithRedactedCode()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 
-		using HttpResponseMessage submit = await client.PostAsJsonAsync("/v1/auth/challenges/alice/code", new {
+		using HttpResponseMessage submit = await client.PostAsJsonAsync("/v1/auth/challenges/alice/code", new
+		{
 			code = "4321ab",
 			type = "2fa"
 		});
@@ -80,12 +87,14 @@ public sealed class AuditApiTests {
 	}
 
 	[Fact]
-	public async Task LoginSessionEvent_IsPersistedAsDedicatedAuditEntry() {
+	public async Task LoginSessionEvent_IsPersistedAsDedicatedAuditEntry()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-token");
 
-		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/sessions/events", new {
+		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/sessions/events", new
+		{
 			accountName = "alice",
 			eventType = "state_changed",
 			state = "LoggedOn",
@@ -107,7 +116,8 @@ public sealed class AuditApiTests {
 	}
 
 	[Fact]
-	public async Task AuditLogs_RejectsInvalidTimeRange() {
+	public async Task AuditLogs_RejectsInvalidTimeRange()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
@@ -118,7 +128,8 @@ public sealed class AuditApiTests {
 	}
 
 	[Fact]
-	public async Task AuditLogs_SupportsPaginationMetadata() {
+	public async Task AuditLogs_SupportsPaginationMetadata()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
@@ -134,14 +145,18 @@ public sealed class AuditApiTests {
 		Assert.Equal(10, doc.RootElement.GetProperty("offset").GetInt32());
 	}
 
-	private static TestFactory CreateFactory() {
+	private static TestFactory CreateFactory()
+	{
 		return new TestFactory();
 	}
 
-	private sealed class TestFactory : WebApplicationFactory<Program> {
-		protected override void ConfigureWebHost(IWebHostBuilder builder) {
+	private sealed class TestFactory : WebApplicationFactory<Program>
+	{
+		protected override void ConfigureWebHost(IWebHostBuilder builder)
+		{
 			builder.UseEnvironment("Development");
-			builder.ConfigureServices(services => {
+			builder.ConfigureServices(services =>
+			{
 				services.RemoveAll<IJobStore>();
 				services.RemoveAll<IAuditStore>();
 				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, ":memory:", 300, false, ":memory:"));

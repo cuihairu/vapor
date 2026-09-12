@@ -139,13 +139,13 @@ public sealed class SteamWebHandler : IDisposable
 	public CircuitBreakerState CircuitState => _circuitBreaker.State;
 
 	/// <summary>
-/// Gets the underlying HttpClient for advanced scenarios.
-/// </summary>
+	/// Gets the underlying HttpClient for advanced scenarios.
+	/// </summary>
 	public HttpClient HttpClient => _httpClient;
 
 	/// <summary>
-/// Performs a GET request to the specified URL.
-/// </summary>
+	/// Performs a GET request to the specified URL.
+	/// </summary>
 	public async Task<SteamWebResponse> GetAsync(
 		Uri url,
 		Dictionary<string, string>? headers = null,
@@ -160,8 +160,8 @@ public sealed class SteamWebHandler : IDisposable
 	}
 
 	/// <summary>
-/// Performs a POST request to the specified URL.
-/// </summary>
+	/// Performs a POST request to the specified URL.
+	/// </summary>
 	public async Task<SteamWebResponse> PostAsync(
 		Uri url,
 		HttpContent? content,
@@ -177,7 +177,7 @@ public sealed class SteamWebHandler : IDisposable
 	}
 
 	/// <summary>
-/// Sets session cookies for Steam authentication.
+	/// Sets session cookies for Steam authentication.
 	/// </summary>
 	public void SetSessionCookies(string sessionId, string steamLoginSecure)
 	{
@@ -199,8 +199,8 @@ public sealed class SteamWebHandler : IDisposable
 	}
 
 	/// <summary>
-/// Clears all session and login cookies.
-/// </summary>
+	/// Clears all session and login cookies.
+	/// </summary>
 	public void ClearCookies()
 	{
 		_sessionCookies.Clear();
@@ -209,8 +209,8 @@ public sealed class SteamWebHandler : IDisposable
 	}
 
 	/// <summary>
-/// Gets all current cookies as a dictionary.
-/// </summary>
+	/// Gets all current cookies as a dictionary.
+	/// </summary>
 	public IReadOnlyDictionary<string, string> GetAllCookies()
 	{
 		var allCookies = new Dictionary<string, string>();
@@ -359,7 +359,7 @@ public sealed class SteamWebHandler : IDisposable
 	private int ResolveRetryAfterMs(IReadOnlyDictionary<string, string> responseHeaders)
 	{
 		if (responseHeaders.TryGetValue("Retry-After", out var value) &&
-		    int.TryParse(value.Trim(), out int seconds) && seconds > 0)
+			int.TryParse(value.Trim(), out int seconds) && seconds > 0)
 		{
 			int capped = Math.Min(seconds, _config.MaxRetryAfterSeconds);
 			return capped * 1000;

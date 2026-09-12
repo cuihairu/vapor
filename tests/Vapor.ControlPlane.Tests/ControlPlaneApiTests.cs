@@ -16,9 +16,11 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
-public sealed class ControlPlaneApiTests {
+public sealed class ControlPlaneApiTests
+{
 	[Fact]
-	public async Task Healthz_ReturnsOk() {
+	public async Task Healthz_ReturnsOk()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 
@@ -28,7 +30,8 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
-	public async Task Metrics_ExposesTaskStatusAndAgentGauges() {
+	public async Task Metrics_ExposesTaskStatusAndAgentGauges()
+	{
 		await using TestFactory factory = CreateFactory();
 		using var client = factory.CreateClient();
 
@@ -50,7 +53,8 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
-	public async Task AdminConfig_RequiresAuthorization() {
+	public async Task AdminConfig_RequiresAuthorization()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 
@@ -60,7 +64,8 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
-	public async Task AdminConfig_ReturnsEmptyStateWithValidToken() {
+	public async Task AdminConfig_ReturnsEmptyStateWithValidToken()
+	{
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
@@ -75,12 +80,14 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
-	public async Task SessionEvents_UpdateTrackerAndExposeSessionList() {
+	public async Task SessionEvents_UpdateTrackerAndExposeSessionList()
+	{
 		await using TestFactory factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 
-		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/sessions/events", new {
+		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/sessions/events", new
+		{
 			accountName = "alice",
 			eventType = "StateChanged",
 			state = "ConnectingWait2FA",
@@ -97,12 +104,14 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
-	public async Task SessionEvents_CreateAuthChallengeAndAllowSubmission() {
+	public async Task SessionEvents_CreateAuthChallengeAndAllowSubmission()
+	{
 		await using TestFactory factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 
-		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/sessions/events", new {
+		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/sessions/events", new
+		{
 			accountName = "alice",
 			eventType = "AuthCodeNeeded",
 			state = "ConnectingWaitAuthCode",
@@ -114,7 +123,8 @@ public sealed class ControlPlaneApiTests {
 		using HttpResponseMessage challenges = await client.GetAsync("/v1/auth/challenges");
 		Assert.Equal(HttpStatusCode.OK, challenges.StatusCode);
 
-		using HttpResponseMessage submit = await client.PostAsJsonAsync("/v1/auth/challenges/alice/code", new {
+		using HttpResponseMessage submit = await client.PostAsJsonAsync("/v1/auth/challenges/alice/code", new
+		{
 			code = "123456",
 			type = "2fa"
 		});
@@ -127,7 +137,8 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
-	public async Task AuthChallengeEventsStream_AllowsAdminAndRedactsCodeProvidedPayload() {
+	public async Task AuthChallengeEventsStream_AllowsAdminAndRedactsCodeProvidedPayload()
+	{
 		await using TestFactory factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
@@ -148,7 +159,8 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
-	public async Task AuthChallengeEventsStream_AllowsAgentAndFiltersNonCodeProvidedEvents() {
+	public async Task AuthChallengeEventsStream_AllowsAgentAndFiltersNonCodeProvidedEvents()
+	{
 		await using TestFactory factory = CreateFactory();
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-token");
@@ -169,17 +181,21 @@ public sealed class ControlPlaneApiTests {
 		Assert.Contains("\"code\":\"123456\"", dataLine);
 	}
 
-	private static TestFactory CreateFactory() {
+	private static TestFactory CreateFactory()
+	{
 		return new TestFactory();
 	}
 
 	// Internal so the performance benchmarks can spin up the same API host.
-	internal sealed class TestFactory : WebApplicationFactory<Program> {
+	internal sealed class TestFactory : WebApplicationFactory<Program>
+	{
 		public RecordingEventBroker Events { get; } = new();
 
-		protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder) {
+		protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
+		{
 			builder.UseEnvironment("Development");
-			builder.ConfigureServices(services => {
+			builder.ConfigureServices(services =>
+			{
 				services.RemoveAll<IJobStore>();
 				services.RemoveAll<IEventBroker>();
 				services.RemoveAll<SessionTracker>();
@@ -193,7 +209,8 @@ public sealed class ControlPlaneApiTests {
 		}
 	}
 
-	private sealed class FakeJobStore : IJobStore {
+	private sealed class FakeJobStore : IJobStore
+	{
 		/// <summary>Queued count served by <see cref="GetTaskStatusCounts"/> (for the /metrics test).</summary>
 		public int QueuedTasks { get; set; }
 
@@ -212,7 +229,8 @@ public sealed class ControlPlaneApiTests {
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
 	}
 
-	internal sealed class RecordingEventBroker : IEventBroker {
+	internal sealed class RecordingEventBroker : IEventBroker
+	{
 		private readonly object _gate = new();
 		private readonly List<AuthSubscription> _authSubscriptions = [];
 		private readonly List<JobSubscription> _jobSubscriptions = [];
@@ -222,67 +240,83 @@ public sealed class ControlPlaneApiTests {
 		private readonly TaskCompletionSource _authSubscriptionReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
 		/// <summary>Active job-event subscriptions (mirrors <see cref="EventBroker"/> semantics; used by benchmarks).</summary>
-		public int ActiveJobSubscriptions {
+		public int ActiveJobSubscriptions
+		{
 			get { lock (_gate) { return _jobSubscriptions.Count; } }
 		}
 
-		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload) {
+		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload)
+		{
 			var evt = new Event(Guid.NewGuid().ToString("N"), jobId, type, DateTimeOffset.UtcNow, payload);
 			Events.Add(evt);
 
 			// Mirror the real broker: exact-jobId subscribers plus "*" global ones.
 			List<ChannelWriter<Event>> writers;
-			lock (_gate) {
+			lock (_gate)
+			{
 				writers = _jobSubscriptions
 					.Where(sub => sub.JobId == "*" || string.Equals(sub.JobId, jobId, StringComparison.Ordinal))
 					.Select(sub => sub.Channel.Writer)
 					.ToList();
 			}
 
-			foreach (var writer in writers) {
+			foreach (var writer in writers)
+			{
 				_ = writer.TryWrite(evt);
 			}
 		}
 
-		public void PublishSession(string accountName, string eventType, string state, string? message = null) {
-			Events.Add(new Event(Guid.NewGuid().ToString("N"), null, $"session.{eventType}", DateTimeOffset.UtcNow, new Dictionary<string, object?> {
+		public void PublishSession(string accountName, string eventType, string state, string? message = null)
+		{
+			Events.Add(new Event(Guid.NewGuid().ToString("N"), null, $"session.{eventType}", DateTimeOffset.UtcNow, new Dictionary<string, object?>
+			{
 				["accountName"] = accountName,
 				["state"] = state,
 				["message"] = message
 			}));
 		}
 
-		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null) {
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+		{
 			var evt = new AuthChallengeEvent(Guid.NewGuid().ToString("N"), accountName, challengeType, message, code, DateTimeOffset.UtcNow, null);
 			AuthChallengeEvents.Add(evt);
 
 			List<ChannelWriter<AuthChallengeEvent>> writers;
-			lock (_gate) {
+			lock (_gate)
+			{
 				writers = _authSubscriptions
 					.Where(sub => sub.AccountName == null || string.Equals(sub.AccountName, accountName, StringComparison.OrdinalIgnoreCase))
 					.Select(sub => sub.Channel.Writer)
 					.ToList();
 			}
 
-			foreach (var writer in writers) {
+			foreach (var writer in writers)
+			{
 				_ = writer.TryWrite(evt);
 			}
 		}
 
-		public async IAsyncEnumerable<Event> Subscribe([EnumeratorCancellation] CancellationToken cancellationToken, string jobId) {
+		public async IAsyncEnumerable<Event> Subscribe([EnumeratorCancellation] CancellationToken cancellationToken, string jobId)
+		{
 			var channel = Channel.CreateUnbounded<Event>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
 			var subscription = new JobSubscription(channel, jobId);
 
-			lock (_gate) {
+			lock (_gate)
+			{
 				_jobSubscriptions.Add(subscription);
 			}
 
-			try {
-				await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken)) {
+			try
+			{
+				await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken))
+				{
 					yield return evt;
 				}
-			} finally {
-				lock (_gate) {
+			}
+			finally
+			{
+				lock (_gate)
+				{
 					_jobSubscriptions.Remove(subscription);
 				}
 				channel.Writer.TryComplete();
@@ -290,21 +324,28 @@ public sealed class ControlPlaneApiTests {
 		}
 
 		public IAsyncEnumerable<SessionEvent> SubscribeSessions(CancellationToken cancellationToken, string? accountName = null) => Empty<SessionEvent>();
-		public async IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges([EnumeratorCancellation] CancellationToken cancellationToken, string? accountName = null) {
+		public async IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges([EnumeratorCancellation] CancellationToken cancellationToken, string? accountName = null)
+		{
 			var channel = Channel.CreateUnbounded<AuthChallengeEvent>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
 			var subscription = new AuthSubscription(channel, accountName);
 
-			lock (_gate) {
+			lock (_gate)
+			{
 				_authSubscriptions.Add(subscription);
 				_authSubscriptionReady.TrySetResult();
 			}
 
-			try {
-				await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken)) {
+			try
+			{
+				await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken))
+				{
 					yield return evt;
 				}
-			} finally {
-				lock (_gate) {
+			}
+			finally
+			{
+				lock (_gate)
+				{
 					_authSubscriptions.Remove(subscription);
 				}
 				channel.Writer.TryComplete();
@@ -313,7 +354,8 @@ public sealed class ControlPlaneApiTests {
 
 		public Task WaitForAuthSubscriptionAsync() => _authSubscriptionReady.Task;
 
-		private static async IAsyncEnumerable<T> Empty<T>() {
+		private static async IAsyncEnumerable<T> Empty<T>()
+		{
 			await Task.CompletedTask;
 			yield break;
 		}

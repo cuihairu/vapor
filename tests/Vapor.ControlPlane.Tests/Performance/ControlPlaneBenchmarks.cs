@@ -18,22 +18,26 @@ namespace Vapor.ControlPlane.Tests.Performance;
 /// Assertions use generous upper bounds so slow CI machines never flake;
 /// the numbers they print are the actual baselines to watch over time.
 /// </summary>
-public class ControlPlaneBenchmarks {
+public class ControlPlaneBenchmarks
+{
 	private readonly ITestOutputHelper _output;
 
-	public ControlPlaneBenchmarks(ITestOutputHelper output) {
+	public ControlPlaneBenchmarks(ITestOutputHelper output)
+	{
 		_output = output;
 	}
 
 	[Fact]
-	public async Task QueueThroughput_CreateClaimFinishCycle() {
+	public async Task QueueThroughput_CreateClaimFinishCycle()
+	{
 		const int jobCount = 500;
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
 		var createSw = Stopwatch.StartNew();
 		List<string> jobIds = [];
-		for (int i = 0; i < jobCount; i++) {
+		for (int i = 0; i < jobCount; i++)
+		{
 			JobWithTasks created = await store.CreateJob(
 				new CreateJobRequest("ping", "local", [$"acct-{i}"], null, null),
 				cts.Token);
@@ -44,7 +48,8 @@ public class ControlPlaneBenchmarks {
 
 		var cycleSw = Stopwatch.StartNew();
 		int claimed = 0;
-		while (await store.ClaimNextQueuedTask("local", cts.Token) is { } task) {
+		while (await store.ClaimNextQueuedTask("local", cts.Token) is { } task)
+		{
 			await store.SetTaskResult(
 				new TaskResult(task.Id, true, null, null, DateTimeOffset.UtcNow, task.Attempt),
 				cts.Token);
@@ -57,7 +62,8 @@ public class ControlPlaneBenchmarks {
 		_output.WriteLine($"cycle:   {claimed} claim+finish in {cycleSw.ElapsedMilliseconds} ms ({claimed / Math.Max(cycleSw.Elapsed.TotalSeconds, 0.001):F0}/s)");
 
 		Assert.Equal(jobCount, claimed);
-		foreach (string jobId in jobIds) {
+		foreach (string jobId in jobIds)
+		{
 			JobWithTasks job = await store.GetJob(jobId, cts.Token);
 			Assert.Equal(JobStatus.Finished, job.Job.Status);
 		}
@@ -69,13 +75,15 @@ public class ControlPlaneBenchmarks {
 	}
 
 	[Fact]
-	public async Task ConcurrentClaimers_EveryTaskDispatchedExactlyOnce() {
+	public async Task ConcurrentClaimers_EveryTaskDispatchedExactlyOnce()
+	{
 		const int jobCount = 200;
 		const int claimerCount = 4;
 		using var store = new SqliteJobStore(":memory:");
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
 
-		for (int i = 0; i < jobCount; i++) {
+		for (int i = 0; i < jobCount; i++)
+		{
 			await store.CreateJob(
 				new CreateJobRequest("ping", "local", [$"acct-{i}"], null, null),
 				cts.Token);
@@ -86,12 +94,14 @@ public class ControlPlaneBenchmarks {
 
 		// All claimers use the jobs' region ("local"), simulating several
 		// agents in the same region racing for the oldest queued task.
-		IEnumerable<Task> claimers = Enumerable.Range(0, claimerCount).Select(_ => Task.Run(async () => {
-			while (await store.ClaimNextQueuedTask("local", cts.Token) is { } task) {
+		IEnumerable<Task> claimers = Enumerable.Range(0, claimerCount).Select(_ => Task.Run(async () =>
+		{
+			while (await store.ClaimNextQueuedTask("local", cts.Token) is { } task)
+			{
 				claimsPerTask.AddOrUpdate(task.Id, 1, (_, n) => n + 1);
 				await store.SetTaskResult(
-					new TaskResult(task.Id, true, null, null, DateTimeOffset.UtcNow, task.Attempt),
-					cts.Token);
+				new TaskResult(task.Id, true, null, null, DateTimeOffset.UtcNow, task.Attempt),
+				cts.Token);
 			}
 		}));
 
@@ -108,23 +118,30 @@ public class ControlPlaneBenchmarks {
 	}
 
 	[Fact]
-	public async Task EventBroker_HundredsOfSubscribers_AllReceiveEveryEvent() {
+	public async Task EventBroker_HundredsOfSubscribers_AllReceiveEveryEvent()
+	{
 		const int jobSubscribers = 500;
 		const int globalSubscribers = 100;
 		const int eventCount = 100;
 		var broker = new EventBroker();
 		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
-		async Task<int> Consume(string jobId, CancellationToken token) {
+		async Task<int> Consume(string jobId, CancellationToken token)
+		{
 			int seen = 0;
-			try {
-				await foreach (Event _ in broker.Subscribe(token, jobId)) {
+			try
+			{
+				await foreach (Event _ in broker.Subscribe(token, jobId))
+				{
 					seen++;
-					if (seen >= eventCount) {
+					if (seen >= eventCount)
+					{
 						break;
 					}
 				}
-			} catch (OperationCanceledException) {
+			}
+			catch (OperationCanceledException)
+			{
 				// Quiet-window timeout for job-scoped consumers.
 			}
 
@@ -136,7 +153,8 @@ public class ControlPlaneBenchmarks {
 		// unique job ids the publish never touches, so they observe a 2s
 		// quiet window instead of waiting forever.
 		List<Task<int>> jobConsumers = [];
-		for (int i = 0; i < jobSubscribers; i++) {
+		for (int i = 0; i < jobSubscribers; i++)
+		{
 			// Deliberately not disposed: the 2s quiet-window token must stay
 			// alive while the consumer task runs.
 			var quietCts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -149,7 +167,8 @@ public class ControlPlaneBenchmarks {
 		await Task.Delay(200);
 
 		var sw = Stopwatch.StartNew();
-		for (int i = 0; i < eventCount; i++) {
+		for (int i = 0; i < eventCount; i++)
+		{
 			broker.Publish(null, "bench.event", null);
 		}
 
@@ -173,7 +192,8 @@ public class ControlPlaneBenchmarks {
 	}
 
 	[Fact]
-	public async Task SseEndpoint_ConcurrentConnections_AllReceiveEvents() {
+	public async Task SseEndpoint_ConcurrentConnections_AllReceiveEvents()
+	{
 		const int connectionCount = 50;
 		await using ControlPlaneApiTests.TestFactory factory = CreateApiFactory();
 		using var client = factory.CreateClient();
@@ -183,15 +203,18 @@ public class ControlPlaneBenchmarks {
 
 		var readers = new List<Task<bool>>();
 		var swTotal = Stopwatch.StartNew();
-		for (int i = 0; i < connectionCount; i++) {
+		for (int i = 0; i < connectionCount; i++)
+		{
 			readers.Add(ReadFirstJobCreatedEventAsync(client, cts.Token));
 		}
 
 		// Wait until every stream has registered its subscription (mirrors the
 		// real broker), then publish one event that all of them should forward.
 		var swAttach = Stopwatch.StartNew();
-		while (factory.Events.ActiveJobSubscriptions < connectionCount) {
-			if (swAttach.Elapsed > TimeSpan.FromSeconds(10)) {
+		while (factory.Events.ActiveJobSubscriptions < connectionCount)
+		{
+			if (swAttach.Elapsed > TimeSpan.FromSeconds(10))
+			{
 				throw new TimeoutException(
 					$"only {factory.Events.ActiveJobSubscriptions}/{connectionCount} SSE subscriptions attached after 10s");
 			}
@@ -213,29 +236,36 @@ public class ControlPlaneBenchmarks {
 
 	private static ControlPlaneApiTests.TestFactory CreateApiFactory() => new();
 
-	private static async Task<bool> ReadFirstJobCreatedEventAsync(HttpClient client, CancellationToken cancellationToken) {
-		try {
+	private static async Task<bool> ReadFirstJobCreatedEventAsync(HttpClient client, CancellationToken cancellationToken)
+	{
+		try
+		{
 			using HttpRequestMessage request = new(HttpMethod.Get, "/v1/jobs/events");
 			using HttpResponseMessage response = await client.SendAsync(
 				request,
 				HttpCompletionOption.ResponseHeadersRead,
 				cancellationToken);
 
-			if (response.StatusCode != HttpStatusCode.OK) {
+			if (response.StatusCode != HttpStatusCode.OK)
+			{
 				return false;
 			}
 
 			await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
 			using var reader = new StreamReader(stream, Encoding.UTF8);
 
-			while (await reader.ReadLineAsync(cancellationToken) is { } line) {
-				if (line.StartsWith("event: job.created", StringComparison.Ordinal)) {
+			while (await reader.ReadLineAsync(cancellationToken) is { } line)
+			{
+				if (line.StartsWith("event: job.created", StringComparison.Ordinal))
+				{
 					return true;
 				}
 			}
 
 			return false;
-		} catch (OperationCanceledException) {
+		}
+		catch (OperationCanceledException)
+		{
 			return false;
 		}
 	}

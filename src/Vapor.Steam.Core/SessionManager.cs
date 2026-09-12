@@ -256,7 +256,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	{
 		_cts.Cancel();
 		_cts.Dispose();
-		
+
 		foreach (var session in _sessions.Values)
 		{
 			session.Dispose();

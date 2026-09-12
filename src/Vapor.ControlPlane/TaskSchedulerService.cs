@@ -4,7 +4,8 @@ using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
-public sealed class TaskSchedulerService : BackgroundService {
+public sealed class TaskSchedulerService : BackgroundService
+{
 	private readonly AgentRegistry _agents;
 	private readonly IJobStore _store;
 	private readonly IEventBroker _events;
@@ -22,47 +23,57 @@ public sealed class TaskSchedulerService : BackgroundService {
 	/// <summary>Tasks failed permanently after exhausting the dispatch attempt limit.</summary>
 	public long DispatchAttemptsExhausted => Interlocked.Read(ref _attemptsExhaustedFailures);
 
-	public TaskSchedulerService(AgentRegistry agents, IJobStore store, IEventBroker events, Config cfg) {
+	public TaskSchedulerService(AgentRegistry agents, IJobStore store, IEventBroker events, Config cfg)
+	{
 		_agents = agents;
 		_store = store;
 		_events = events;
 		_cfg = cfg;
 	}
 
-	protected override async Task ExecuteAsync(CancellationToken stoppingToken) {
+	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+	{
 		using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(250));
 
-		while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false)) {
+		while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
+		{
 			await DispatchOnce(stoppingToken).ConfigureAwait(false);
 		}
 	}
 
-	internal async Task DispatchOnce(CancellationToken cancellationToken) {
-		if (DateTimeOffset.UtcNow - _lastRequeueAt >= TimeSpan.FromSeconds(5)) {
+	internal async Task DispatchOnce(CancellationToken cancellationToken)
+	{
+		if (DateTimeOffset.UtcNow - _lastRequeueAt >= TimeSpan.FromSeconds(5))
+		{
 			_ = await _store.RequeueStaleRunningTasks(TimeSpan.FromSeconds(_cfg.TaskLeaseSeconds), cancellationToken).ConfigureAwait(false);
 			_lastRequeueAt = DateTimeOffset.UtcNow;
 		}
 
-		foreach (string region in _agents.Regions()) {
+		foreach (string region in _agents.Regions())
+		{
 			const int maxPerTick = 25;
 
-			for (int i = 0; i < maxPerTick; i++) {
+			for (int i = 0; i < maxPerTick; i++)
+			{
 				JobTask? task = await _store.ClaimNextQueuedTask(region, cancellationToken).ConfigureAwait(false);
-				if (task == null) {
+				if (task == null)
+				{
 					break;
 				}
 
 				using Activity? dispatch = StartDispatchActivity(task, region);
 
 				var agent = _agents.Pick(region, task.Action);
-				if (agent == null) {
+				if (agent == null)
+				{
 					await HandleUndispatchableTaskAsync(task, "task.dispatch_failed", "no capable agent available", cancellationToken, dispatch: dispatch).ConfigureAwait(false);
 					break;
 				}
 
 				dispatch?.SetTag("vapor.agent_id", agent.Hello.AgentId);
 
-				if (!agent.EnqueueTask(task, VaporTracing.InjectTraceparent(dispatch))) {
+				if (!agent.EnqueueTask(task, VaporTracing.InjectTraceparent(dispatch)))
+				{
 					await HandleUndispatchableTaskAsync(task, "task.enqueue_failed", $"agent {agent.Hello.AgentId} send queue unavailable", cancellationToken, agent.Hello.AgentId, dispatch).ConfigureAwait(false);
 					break;
 				}
@@ -72,9 +83,11 @@ public sealed class TaskSchedulerService : BackgroundService {
 		}
 	}
 
-	private static Activity? StartDispatchActivity(JobTask task, string region) {
+	private static Activity? StartDispatchActivity(JobTask task, string region)
+	{
 		Activity? dispatch = VaporTracing.Source.StartActivity("task.dispatch", ActivityKind.Producer);
-		if (dispatch is null) {
+		if (dispatch is null)
+		{
 			return null;
 		}
 
@@ -92,8 +105,10 @@ public sealed class TaskSchedulerService : BackgroundService {
 	/// Handles a claimed task that could not be handed to any agent: retry with a delay while
 	/// attempts remain, otherwise fail the task permanently so it cannot block the queue forever.
 	/// </summary>
-	private async Task HandleUndispatchableTaskAsync(JobTask task, string failureEvent, string error, CancellationToken cancellationToken, string? agentId = null, Activity? dispatch = null) {
-		if (_cfg.HasDispatchAttemptLimit && task.Attempt >= _cfg.TaskMaxDispatchAttempts) {
+	private async Task HandleUndispatchableTaskAsync(JobTask task, string failureEvent, string error, CancellationToken cancellationToken, string? agentId = null, Activity? dispatch = null)
+	{
+		if (_cfg.HasDispatchAttemptLimit && task.Attempt >= _cfg.TaskMaxDispatchAttempts)
+		{
 			Interlocked.Increment(ref _attemptsExhaustedFailures);
 			(JobTask failedTask, Job job) = await _store.FailRunningTask(task.Id, $"dispatch failed after {task.Attempt} attempts: {error}", cancellationToken).ConfigureAwait(false);
 			_events.Publish(failedTask.JobId, "task.failed", new Dictionary<string, object?> { ["taskId"] = failedTask.Id, ["error"] = failedTask.Error, ["job"] = job.Status.ToString() });
@@ -102,9 +117,12 @@ public sealed class TaskSchedulerService : BackgroundService {
 			return;
 		}
 
-		if (string.Equals(failureEvent, "task.dispatch_failed", StringComparison.Ordinal)) {
+		if (string.Equals(failureEvent, "task.dispatch_failed", StringComparison.Ordinal))
+		{
 			Interlocked.Increment(ref _noCapableAgentFailures);
-		} else if (string.Equals(failureEvent, "task.enqueue_failed", StringComparison.Ordinal)) {
+		}
+		else if (string.Equals(failureEvent, "task.enqueue_failed", StringComparison.Ordinal))
+		{
 			Interlocked.Increment(ref _enqueueFailedFailures);
 		}
 
@@ -112,7 +130,8 @@ public sealed class TaskSchedulerService : BackgroundService {
 		await _store.RequeueTask(task.Id, retryDelay, cancellationToken).ConfigureAwait(false);
 
 		var payload = new Dictionary<string, object?> { ["taskId"] = task.Id, ["attempt"] = task.Attempt, ["error"] = error };
-		if (agentId != null) {
+		if (agentId != null)
+		{
 			payload["agentId"] = agentId;
 		}
 

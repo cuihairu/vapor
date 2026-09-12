@@ -96,8 +96,8 @@ public sealed class RedeemKeyAction : IAction
 		}
 
 		bool success = result.Result == EResult.OK ||
-		               result.Result == EResult.AlreadyOwned ||
-		               result.Result == EResult.DuplicateRequest;
+					   result.Result == EResult.AlreadyOwned ||
+					   result.Result == EResult.DuplicateRequest;
 
 		var output = new Dictionary<string, object?>
 		{

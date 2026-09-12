@@ -8,7 +8,8 @@ namespace Vapor.Agent;
 /// OTLP export is only wired up when <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> is set;
 /// without a listener the source is inert and costs essentially nothing.
 /// </summary>
-public static class VaporAgentTracing {
+public static class VaporAgentTracing
+{
 	public const string SourceName = "Vapor.Agent";
 
 	public static readonly ActivitySource Source = new(SourceName, "1.0.0");
@@ -18,14 +19,16 @@ public static class VaporAgentTracing {
 	/// (via the traceparent header on the tunnel message), or to the ambient context
 	/// when no usable header is present.
 	/// </summary>
-	public static Activity? StartExecuteSpan(JobTask task, IReadOnlyDictionary<string, string>? traceHeaders) {
+	public static Activity? StartExecuteSpan(JobTask task, IReadOnlyDictionary<string, string>? traceHeaders)
+	{
 		ActivityContext parent = default;
 		bool hasParent = traceHeaders is not null
 			&& traceHeaders.TryGetValue("traceparent", out string? traceparent)
 			&& ActivityContext.TryParse(traceparent, null, out parent);
 
 		Activity? activity = Source.StartActivity("task.execute", ActivityKind.Consumer, parent);
-		if (activity is null) {
+		if (activity is null)
+		{
 			return null;
 		}
 

@@ -20,7 +20,8 @@ public sealed class SqliteAuditStoreTests : IDisposable
 		string? account = null,
 		string? jobId = null,
 		Dictionary<string, object?>? details = null,
-		DateTimeOffset? timestamp = null) {
+		DateTimeOffset? timestamp = null)
+	{
 		return new AuditEntry(
 			Id: Id.New(),
 			Timestamp: timestamp ?? DateTimeOffset.UtcNow,

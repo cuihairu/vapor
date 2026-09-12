@@ -7,10 +7,13 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
-public sealed class TracingTests {
+public sealed class TracingTests
+{
 	[Fact]
-	public async Task DispatchedTunnelMessage_CarriesTraceparentForAgentExecution() {
-		using ActivityListener listener = new() {
+	public async Task DispatchedTunnelMessage_CarriesTraceparentForAgentExecution()
+	{
+		using ActivityListener listener = new()
+		{
 			ShouldListenTo = source => source.Name is VaporTracing.SourceName or VaporAgentTracing.SourceName,
 			Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
 		};
@@ -49,7 +52,8 @@ public sealed class TracingTests {
 	}
 
 	[Fact]
-	public async Task DispatchFailures_AreCountedByReasonForMetrics() {
+	public async Task DispatchFailures_AreCountedByReasonForMetrics()
+	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
 		// Only supports "ping": a "login" task finds no capable agent.
@@ -82,15 +86,18 @@ public sealed class TracingTests {
 	}
 
 	[Fact]
-	public void TryExtractContext_RejectsMalformedTraceparent() {
+	public void TryExtractContext_RejectsMalformedTraceparent()
+	{
 		Assert.False(VaporTracing.TryExtractContext(new Dictionary<string, string> { ["traceparent"] = "not-a-traceparent" }, out _));
 		Assert.False(VaporTracing.TryExtractContext(null, out _));
 		Assert.False(VaporTracing.TryExtractContext(new Dictionary<string, string>(), out _));
 	}
 
 	[Fact]
-	public void StartExecuteSpan_WithoutUsableTraceparent_StartsIndependentSpan() {
-		using ActivityListener listener = new() {
+	public void StartExecuteSpan_WithoutUsableTraceparent_StartsIndependentSpan()
+	{
+		using ActivityListener listener = new()
+		{
 			ShouldListenTo = source => source.Name == VaporAgentTracing.SourceName,
 			Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
 		};
@@ -98,26 +105,32 @@ public sealed class TracingTests {
 
 		var task = CreateTask("task-1", "job-1", "local", "login");
 		Activity? previous = Activity.Current;
-		try {
+		try
+		{
 			Activity.Current = null;
 
 			using (Activity? malformed = VaporAgentTracing.StartExecuteSpan(
-				task, new Dictionary<string, string> { ["traceparent"] = "garbage" })) {
+				task, new Dictionary<string, string> { ["traceparent"] = "garbage" }))
+			{
 				Assert.NotNull(malformed);
 				Assert.Equal(default, malformed!.ParentSpanId);
 			}
 
-			using (Activity? missing = VaporAgentTracing.StartExecuteSpan(task, null)) {
+			using (Activity? missing = VaporAgentTracing.StartExecuteSpan(task, null))
+			{
 				Assert.NotNull(missing);
 				Assert.Equal(default, missing!.ParentSpanId);
 				Assert.Equal("task-1", missing.GetTagItem("vapor.task_id")?.ToString());
 			}
-		} finally {
+		}
+		finally
+		{
 			Activity.Current = previous;
 		}
 	}
 
-	private static WSMessage ReadQueuedMessage(ConnectedAgent agent) {
+	private static WSMessage ReadQueuedMessage(ConnectedAgent agent)
+	{
 		FieldInfo field = typeof(ConnectedAgent).GetField("_send", BindingFlags.Instance | BindingFlags.NonPublic)
 			?? throw new InvalidOperationException("Missing send channel field.");
 		var channel = (System.Threading.Channels.Channel<WSMessage>)field.GetValue(agent)!;
@@ -125,7 +138,8 @@ public sealed class TracingTests {
 		return message;
 	}
 
-	private static void AddAgent(AgentRegistry registry, ConnectedAgent agent) {
+	private static void AddAgent(AgentRegistry registry, ConnectedAgent agent)
+	{
 		FieldInfo field = typeof(AgentRegistry).GetField("_agents", BindingFlags.Instance | BindingFlags.NonPublic)
 			?? throw new InvalidOperationException("Missing agent registry field.");
 		var agents = (System.Collections.Concurrent.ConcurrentDictionary<string, ConnectedAgent>)field.GetValue(registry)!;
@@ -134,7 +148,8 @@ public sealed class TracingTests {
 
 	private static Config CreateConfig() => new("", new HashSet<string>(StringComparer.Ordinal), "test.db", 300, false);
 
-	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0) {
+	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0)
+	{
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 		return new JobTask(
 			taskId,
@@ -149,17 +164,21 @@ public sealed class TracingTests {
 			now);
 	}
 
-	private sealed class RecordingNoopEventBroker : IEventBroker {
+	private sealed class RecordingNoopEventBroker : IEventBroker
+	{
 		public List<string> Types { get; } = [];
 
-		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload) {
+		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload)
+		{
 			Types.Add(type);
 		}
 
-		public void PublishSession(string accountName, string eventType, string state, string? message = null) {
+		public void PublishSession(string accountName, string eventType, string state, string? message = null)
+		{
 		}
 
-		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null) {
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+		{
 		}
 
 		public IAsyncEnumerable<Event> Subscribe(CancellationToken cancellationToken, string jobId) => throw new NotSupportedException();
@@ -167,7 +186,8 @@ public sealed class TracingTests {
 		public IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges(CancellationToken cancellationToken, string? accountName = null) => throw new NotSupportedException();
 	}
 
-	private sealed class FakeJobStore : IJobStore {
+	private sealed class FakeJobStore : IJobStore
+	{
 		public Queue<JobTask> QueuedTasks { get; init; } = new();
 		public List<string> FailedTaskIds { get; } = [];
 
@@ -185,27 +205,32 @@ public sealed class TracingTests {
 		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => Task.CompletedTask;
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => Task.FromResult(0);
 
-		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) {
+		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken)
+		{
 			FailedTaskIds.Add(taskId);
-			return Task.FromResult((CreateTask(taskId, "job-1", "local", "login") with {
+			return Task.FromResult((CreateTask(taskId, "job-1", "local", "login") with
+			{
 				Status = JobTaskStatus.Failed,
 				Error = error,
 			}, new Job("job-1", "login", "local", [], null, JobStatus.Failed, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
 		}
 	}
 
-	private sealed class NoopWebSocket : System.Net.WebSockets.WebSocket {
+	private sealed class NoopWebSocket : System.Net.WebSockets.WebSocket
+	{
 		public override System.Net.WebSockets.WebSocketCloseStatus? CloseStatus => null;
 		public override string? CloseStatusDescription => null;
 		public override System.Net.WebSockets.WebSocketState State => System.Net.WebSockets.WebSocketState.Open;
 		public override string SubProtocol => string.Empty;
 
-		public override void Abort() {
+		public override void Abort()
+		{
 		}
 
 		public override Task CloseAsync(System.Net.WebSockets.WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
 		public override Task CloseOutputAsync(System.Net.WebSockets.WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
-		public override void Dispose() {
+		public override void Dispose()
+		{
 		}
 
 		public override Task<System.Net.WebSockets.WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) =>

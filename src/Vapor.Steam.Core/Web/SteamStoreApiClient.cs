@@ -61,7 +61,7 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 		{
 			using var doc = JsonDocument.Parse(response.Body);
 			if (!doc.RootElement.TryGetProperty(appId.ToString(), out var appRoot) ||
-			    !appRoot.TryGetProperty("success", out var successElem) || !successElem.GetBoolean())
+				!appRoot.TryGetProperty("success", out var successElem) || !successElem.GetBoolean())
 			{
 				return null;
 			}
@@ -150,7 +150,7 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 		{
 			using var doc = JsonDocument.Parse(response.Body);
 			if (!doc.RootElement.TryGetProperty("listinginfo", out var listingInfo) ||
-			    listingInfo.ValueKind != JsonValueKind.Object)
+				listingInfo.ValueKind != JsonValueKind.Object)
 			{
 				return null;
 			}
@@ -214,16 +214,16 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 
 		DateTimeOffset? releaseDate = null;
 		if (data.TryGetProperty("release_date", out var releaseDateElem) &&
-		    releaseDateElem.TryGetProperty("date", out var releaseDateStr) &&
-		    DateTime.TryParse(releaseDateStr.GetString(), out var parsed))
+			releaseDateElem.TryGetProperty("date", out var releaseDateStr) &&
+			DateTime.TryParse(releaseDateStr.GetString(), out var parsed))
 		{
 			releaseDate = new DateTimeOffset(parsed, TimeSpan.Zero);
 		}
 
 		long? recommendations = null;
 		if (data.TryGetProperty("recommendations", out var recommendationsElem) &&
-		    recommendationsElem.TryGetProperty("total", out var totalElem) &&
-		    totalElem.TryGetInt64(out long total))
+			recommendationsElem.TryGetProperty("total", out var totalElem) &&
+			totalElem.TryGetInt64(out long total))
 		{
 			recommendations = total;
 		}
@@ -242,8 +242,8 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 			RequiresPurchase = !isFree,
 			Price = ParsePriceOverview(data.GetPropertyOrNull("price_overview")),
 			MetacriticScore = data.TryGetProperty("metacritic", out var metacriticElem) &&
-			                  metacriticElem.TryGetProperty("score", out var scoreElem) &&
-			                  scoreElem.TryGetInt32(out int score)
+							  metacriticElem.TryGetProperty("score", out var scoreElem) &&
+							  scoreElem.TryGetInt32(out int score)
 				? score
 				: null,
 			RecommendationsTotal = recommendations,
@@ -276,7 +276,7 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 	private static MarketListing? ParseMarketListing(uint appId, JsonElement listing)
 	{
 		if (!listing.TryGetProperty("listingid", out var listingIdElem) ||
-		    !ulong.TryParse(listingIdElem.GetString(), out ulong listingId))
+			!ulong.TryParse(listingIdElem.GetString(), out ulong listingId))
 		{
 			return null;
 		}

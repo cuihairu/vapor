@@ -1,6 +1,7 @@
 namespace Vapor.Protocol;
 
-public enum JobStatus {
+public enum JobStatus
+{
 	Queued,
 	Running,
 	Finished,
@@ -8,7 +9,8 @@ public enum JobStatus {
 	Canceled
 }
 
-public enum JobTaskStatus {
+public enum JobTaskStatus
+{
 	Queued,
 	Running,
 	Finished,

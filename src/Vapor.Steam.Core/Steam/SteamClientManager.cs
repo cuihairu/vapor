@@ -653,7 +653,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		_connectedTcs.TrySetResult(false);
 	}
 
-		private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
+	private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
 	{
 		var accountName = _activeLoginAccountName;
 		if (string.IsNullOrWhiteSpace(accountName))

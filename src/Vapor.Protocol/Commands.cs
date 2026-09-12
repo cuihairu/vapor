@@ -1,6 +1,7 @@
 namespace Vapor.Protocol;
 
-public enum PermissionLevel {
+public enum PermissionLevel
+{
 	Guest,
 	Operator,
 	Admin
