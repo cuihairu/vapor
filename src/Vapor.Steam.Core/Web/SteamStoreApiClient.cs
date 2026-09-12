@@ -149,6 +149,17 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 		try
 		{
 			using var doc = JsonDocument.Parse(response.Body);
+
+			// Current search-render contract: `results` is an array of per-commodity
+			// aggregates (hash_name / sell_price / asset_description) with `total_count`.
+			// Legacy responses instead expose the `listinginfo` object of individual
+			// listings — keep parsing both so either upstream shape yields data.
+			if (doc.RootElement.TryGetProperty("results", out var results) &&
+				results.ValueKind == JsonValueKind.Array)
+			{
+				return ParseMarketSearchPage(appId, doc.RootElement, results, cappedStart, cappedCount);
+			}
+
 			if (!doc.RootElement.TryGetProperty("listinginfo", out var listingInfo) ||
 				listingInfo.ValueKind != JsonValueKind.Object)
 			{
@@ -310,6 +321,69 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 			InstanceId = instanceId,
 			TotalPrice = totalPrice,
 			CurrencyId = currencyId,
+			FetchedAt = DateTimeOffset.UtcNow
+		};
+	}
+
+	private static MarketListingsPage ParseMarketSearchPage(uint appId, JsonElement root, JsonElement results, int start, int pageSize)
+	{
+		var listings = new List<MarketListing>();
+		foreach (var result in results.EnumerateArray())
+		{
+			var listing = ParseMarketSearchResult(appId, result);
+			if (listing != null)
+			{
+				listings.Add(listing);
+			}
+		}
+
+		int totalCount = root.TryGetProperty("total_count", out var totalElem) && totalElem.TryGetInt32(out int total)
+			? total
+			: start + listings.Count;
+
+		return new MarketListingsPage
+		{
+			AppId = appId,
+			Listings = listings,
+			TotalCount = totalCount,
+			Start = start,
+			PageSize = pageSize
+		};
+	}
+
+	private static MarketListing? ParseMarketSearchResult(uint appId, JsonElement result)
+	{
+		// The hash name is the stable identity of a market aggregate; entries
+		// without it are not actionable for callers.
+		if (result.GetStringProperty("hash_name") is not { } hashName)
+		{
+			return null;
+		}
+
+		ulong classId = 0;
+		if (result.TryGetProperty("asset_description", out var asset))
+		{
+			classId = GetUlong(asset, "classid");
+		}
+
+		decimal? totalPrice = null;
+		if (result.TryGetProperty("sell_price", out var sellPriceElem) && sellPriceElem.TryGetInt64(out long sellPriceCents))
+		{
+			totalPrice = sellPriceCents / 100m;
+		}
+
+		int? sellListings = result.TryGetProperty("sell_listings", out var sellListingsElem) && sellListingsElem.TryGetInt32(out int sellListingsCount)
+			? sellListingsCount
+			: null;
+
+		return new MarketListing
+		{
+			Name = result.GetStringProperty("name"),
+			HashName = hashName,
+			AppId = appId,
+			ClassId = classId,
+			SellListings = sellListings,
+			TotalPrice = totalPrice,
 			FetchedAt = DateTimeOffset.UtcNow
 		};
 	}

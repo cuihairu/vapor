@@ -278,9 +278,9 @@
 
 ### 10.3 方向 B：质量与协议韧性（第三个实施）
 
-- [ ] 统计修正（可先行）：TESTING.md 测试统计刷新（当前停更于 268，实际 822）；P1/P2/横向过时标题修正（已完成）。
+- [x] 统计修正（可先行）：TESTING.md 测试统计刷新（当前停更于 268，实际 822）；P1/P2/横向过时标题修正（已完成）。（✅ 2026-09-12：刷新为全解决方案 919 基线（8 个测试项目逐类明细），覆盖率章节改为 coverlet.collector/cobertura 管道 + 真实 44.6% 基线表，修正 net8.0 过时提示。）
 - [ ] SteamKit2 协议适配层（风险清单承诺）：提取 `ISteamTransport` 类隔离接口，SteamKit2 类型不外泄出 Core 内部，协议升级只动适配层。
-- [ ] contract tests（风险清单承诺）：Steam Web API 响应用录制 JSON fixture（GetGameInfo/GetPrice/GetMarketListings/SearchGames）离线回放，防上游响应结构漂移导致解析静默失败。
+- [x] contract tests（风险清单承诺）：Steam Web API 响应用录制 JSON fixture（GetGameInfo/GetPrice/GetMarketListings/SearchGames）离线回放，防上游响应结构漂移导致解析静默失败。（✅ 2026-09-12：录制 3 个真实响应 fixture（appdetails 620 / storesearch "portal" / market search render 730，精简截断存 `tests/Vapor.Steam.Core.Tests/TestData/`，csproj 复制到输出目录）+ 4 个契约回放测试。**当场抓到真实契约漂移**：market search render 响应已从 `listinginfo`/`total_rowcount` 切换为 `results[]`（`hash_name`/`sell_price` 分/`asset_description.classid`）+ `total_count`，旧解析对线上响应静默返回 null；修复为双路径解析（优先新契约、回落旧契约），`MarketListing` 扩展聚合语义字段 `Name`/`HashName`/`SellListings`（逐挂单字段聚合结果置 0/null），旧契约以内联合成 fixture 保持回归覆盖。Steam.Core 558→562 全过，format OK。）
 - [ ] replay tests（风险清单承诺）：ControlPlane↔Agent WS 任务派发协议录制回放（消息序列快照测试）。
 - [ ] 覆盖率 44.6% → 60%+：优先 Agent（25.1%：TaskExecutor/会话泵/WS 客户端分支）、Protocol（44.4%）；补齐后更新 CI 门禁与 TESTING.md 基线数字。
 
@@ -295,3 +295,4 @@
 > 2026-09-12：10.2 通知系统落地：`INotificationSink` + `WebhookNotificationSink`（HMAC 签名 + 指数退避）+ `NotificationService` 三泵订阅 EventBroker（规则过滤 + 失败隔离，验证码永不外发）+ webhook 配置 5 参数 + 派发 metrics，15 个新测试。
 > 2026-09-12：10.2 2FA 自动提交闭环落地：SteamTotp/SteamTimeSynchronizer 移入 Steam.Core、`ICredentialStore` 扩展加密 SharedSecret、`TwoFactorAutoResponder`（本地 TOTP 自动应答，60s/账户冷却，无 secret 回落人工 SSE）、插件 `save_shared_secret` action、agent 端 `AGENT_2FA_AUTO_SUBMIT` 显式开启 + Steam 时间同步循环；19 个测试迁移或新增（Steam.Core 558 / MobileAuthenticator 44 / Agent 41 全过）。
 > 2026-09-12：10.2 周期任务落地：`POST /v1/jobs` 支持 `schedule`（interval ≥ 5s 或 5 字段 UTC cron/Cronos，missed=skip|run_once、overlap=skip|allow）创建模板 job，`RecurringJobScheduler` 每秒触发派生 job（`meta.scheduledFrom` + `parent_job_id`），停机补跑防风暴、cancel 即停、cron 用尽自动退役、`/metrics` 新增 `schedule_triggers_total{outcome}`；jobs 表自动迁移 4 列 + 2 索引。**方向 C（通知与自动化闭环）至此全部完成**（10.2 剩余 metrics 子项早已随方向 A 与通知提交落地）。
+> 2026-09-12：P5 方向 B 开工（统计修正 + contract tests）：TESTING.md 刷新为 919 真实基线；contract tests 录制 3 个真实 Steam 响应 fixture 离线回放，**当场抓到真实上游漂移**——market search render 已从 `listinginfo`/`total_rowcount` 切换为 `results[]`/`total_count`，旧 `GetMarketListingsAsync` 对线上响应静默返回 null；解析器改双路径（新契约优先、旧契约回落），`MarketListing` 扩展聚合字段（`Name`/`HashName`/`SellListings`）。Steam.Core 558→562。

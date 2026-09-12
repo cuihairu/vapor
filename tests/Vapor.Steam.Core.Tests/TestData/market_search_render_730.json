@@ -1,0 +1,90 @@
+{
+  "success": true,
+  "start": 0,
+  "pagesize": 10,
+  "total_count": 284,
+  "searchdata": {
+    "query": "case",
+    "total_count": 284,
+    "pagesize": 10,
+    "prefix": "searchResults",
+    "class_prefix": "market"
+  },
+  "results": [
+    {
+      "name": "Dreams & Nightmares Case",
+      "hash_name": "Dreams & Nightmares Case",
+      "sell_listings": 482308,
+      "sell_price": 135,
+      "sell_price_text": "1,35€",
+      "app_icon": "https://shared.fastly.steamstatic.com/community_assets/images/apps/730/8dbc71957312bbd3baea65848b545be9eae2a355.jpg",
+      "app_name": "Counter-Strike 2",
+      "asset_description": {
+        "appid": 730,
+        "classid": "4717330486",
+        "background_color": "393b3e",
+        "icon_url": "i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnIV7Kb5OaU-JqfHDzXFle0u4LY8Gy_kkRgisGzcm4v4J3vDOAQmDMdyRvlK7EcmeCU3yw",
+        "tradable": 1,
+        "name": "Dreams & Nightmares Case",
+        "name_color": "b0c3d9",
+        "type": "Base Grade Container",
+        "market_name": "Dreams & Nightmares Case",
+        "market_hash_name": "Dreams & Nightmares Case",
+        "commodity": 1,
+        "market_bucket_group_name": "Dreams & Nightmares Case",
+        "market_bucket_group_id": "G18D2253004"
+      },
+      "sale_price_text": "1,30€"
+    },
+    {
+      "name": "Fever Case",
+      "hash_name": "Fever Case",
+      "sell_listings": 276975,
+      "sell_price": 77,
+      "sell_price_text": "0,77€",
+      "app_icon": "https://shared.fastly.steamstatic.com/community_assets/images/apps/730/8dbc71957312bbd3baea65848b545be9eae2a355.jpg",
+      "app_name": "Counter-Strike 2",
+      "asset_description": {
+        "appid": 730,
+        "classid": "6918191812",
+        "background_color": "393b3e",
+        "icon_url": "i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frncVtqv7MPE8JaHHCj_Dl-wk4-NtFirikURy4jiGwo2udHqVaAEjDZp3EflK7EeSMnMs4w",
+        "tradable": 1,
+        "name": "Fever Case",
+        "name_color": "b0c3d9",
+        "type": "Base Grade Container",
+        "market_name": "Fever Case",
+        "market_hash_name": "Fever Case",
+        "commodity": 1,
+        "market_bucket_group_name": "Fever Case",
+        "market_bucket_group_id": "G18DF363004"
+      },
+      "sale_price_text": "0,74€"
+    },
+    {
+      "name": "Revolution Case",
+      "hash_name": "Revolution Case",
+      "sell_listings": 438558,
+      "sell_price": 27,
+      "sell_price_text": "0,27€",
+      "app_icon": "https://shared.fastly.steamstatic.com/community_assets/images/apps/730/8dbc71957312bbd3baea65848b545be9eae2a355.jpg",
+      "app_name": "Counter-Strike 2",
+      "asset_description": {
+        "appid": 730,
+        "classid": "5189384637",
+        "background_color": "393b3e",
+        "icon_url": "i0CoZ81Ui0m-9KwlBY1L_18myuGuq1wfhWSaZgMttyVfPaERSR0Wqmu7LAocGJKz2lu_XsnXwtmkJjSU91dh8bj35VTqVBP4io_frnAVvfb6aqduc_TFVjTCxbx05OU4S3jilE9w4DzRnImtIy2Sa1JzDJEhRPlK7EcO4U8gfA",
+        "tradable": 1,
+        "name": "Revolution Case",
+        "name_color": "b0c3d9",
+        "type": "Base Grade Container",
+        "market_name": "Revolution Case",
+        "market_hash_name": "Revolution Case",
+        "commodity": 1,
+        "market_bucket_group_name": "Revolution Case",
+        "market_bucket_group_id": "G1890263004"
+      },
+      "sale_price_text": "0,26€"
+    }
+  ]
+}
