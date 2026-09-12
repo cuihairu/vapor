@@ -73,10 +73,41 @@ public static class PluginConfigurationExtensions
 			: fallback;
 	}
 
+	/// <summary>Reads a decimal value; unparsable or out-of-range values fall back.</summary>
+	public static decimal GetDecimal(
+		this IReadOnlyDictionary<string, string> configuration,
+		string key,
+		decimal fallback,
+		string? environmentVariable = null,
+		decimal? min = null,
+		decimal? max = null)
+	{
+		ArgumentNullException.ThrowIfNull(configuration);
+		ArgumentException.ThrowIfNullOrEmpty(key);
+
+		string? fromEnv = environmentVariable is null ? null : Environment.GetEnvironmentVariable(environmentVariable);
+		if (!string.IsNullOrWhiteSpace(fromEnv) && TryParseDecimalInRange(fromEnv, min, max, out decimal envParsed))
+		{
+			return envParsed;
+		}
+
+		return configuration.TryGetValue(key, out string? value) && TryParseDecimalInRange(value, min, max, out decimal parsed)
+			? parsed
+			: fallback;
+	}
+
 	private static bool TryParseIntInRange(string? value, int? min, int? max, out int parsed)
 	{
 		parsed = 0;
 		return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed)
+			&& (!min.HasValue || parsed >= min.Value)
+			&& (!max.HasValue || parsed <= max.Value);
+	}
+
+	private static bool TryParseDecimalInRange(string? value, decimal? min, decimal? max, out decimal parsed)
+	{
+		parsed = 0;
+		return decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out parsed)
 			&& (!min.HasValue || parsed >= min.Value)
 			&& (!max.HasValue || parsed <= max.Value);
 	}

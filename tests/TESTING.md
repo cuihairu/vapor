@@ -28,7 +28,8 @@ tests/
     └── Vapor.Steam.Core.Tests.csproj
 
 tests/
-├── Vapor.Plugins.Core.Tests/            (46 tests: manifest/discovery/SemVer 兼容/加载/卸载/ALC 回收)
+├── Vapor.Plugins.Core.Tests/            (85 tests: manifest/discovery/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置扩展/信任与权限)
+├── Vapor.Plugins.MarketWatch.Tests/     (24 tests: watch 存储/阈值评估/三个 watch action/轮询告警与 webhook/插件宿主实战加载)
 └── Vapor.Plugins.TestPlugin/            (插件基础设施测试用的示例插件程序集)
 ```
 

@@ -169,7 +169,12 @@
 	- [x] `LoadedPlugin.GrantedPermissions` 暴露实际授予的权限；Agent 事件订阅挂接需 granted `events`。
 	- [x] 官方插件清单补 trust=official + permissions 声明（MobileAuthenticator: actions；Monitoring: actions+web）。
 	- [x] 测试：PluginTrustTests（18 个：清单解析规范化/信任门禁/能力剥离/严格策略），Plugins.Core.Tests 共 85 个。
-- [ ] 方向 3：第三个官方插件 MarketWatch（价格阈值监控 + 事件推送，实战检验插件 API）。
+- [x] 方向 3：第三个官方插件 MarketWatch（价格阈值监控 + webhook 推送，实战检验插件 API）。
+	- [x] `Vapor.Plugins.MarketWatch`：market_watch_add/remove/list 三个 Action（app_id + per-watch threshold/cc 覆盖）+ 后台轮询（匿名 SteamWebHandler 拉公开 price overview）。
+	- [x] 移动基线阈值模型：首次取价记基线；涨跌幅 ≥ 阈值触发日志 + webhook JSON 推送并重置基线（稳价不重复告警）。
+	- [x] 配置（manifest configuration + env 覆盖）：check_interval_seconds（默认 300，下限 10）/ threshold_percent（默认 10）/ country / webhook_url；`PluginConfigurationExtensions` 补 `GetDecimal`。
+	- [x] 干净 Shutdown（停轮询、释放 WebHandler）+ `IAsyncDisposable`；清单声明 trust=official + permissions=[actions]。
+	- [x] 测试 24 个：store/阈值评估、action 全流程、轮询→告警→webhook 集成（fake client + handler）、**经真实 PluginManager/ALC 实战加载验证权限门禁与 Action 注册**。
 - [ ] 方向 4：插件开发指南文档（docs/plugins.md：清单、生命周期、能力接口、配置、隔离卸载、调试）。
 
 ---
