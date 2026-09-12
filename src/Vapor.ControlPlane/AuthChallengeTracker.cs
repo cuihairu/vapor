@@ -22,6 +22,16 @@ public sealed class AuthChallengeTracker
 			.OrderByDescending(e => e.Timestamp)
 			.ToList();
 	}
+
+	public AuthChallengeEvent? Get(string accountName)
+	{
+		if (string.IsNullOrWhiteSpace(accountName))
+		{
+			return null;
+		}
+
+		return _pending.TryGetValue(accountName.Trim(), out AuthChallengeEvent? challenge) ? challenge : null;
+	}
 }
 
 

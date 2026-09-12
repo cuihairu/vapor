@@ -198,6 +198,92 @@ public sealed class AccountApiTests
 		Assert.Equal(1, deletedDoc.RootElement.GetProperty("total").GetInt32());
 	}
 
+	[Fact]
+	public async Task GetAccount_ReturnsAggregateViewWithSessionChallengeAndTasks()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "idle", idleApps = new[] { "730" }, region = "us-east" });
+
+		// A session snapshot + a pending 2FA challenge via the normal event endpoint.
+		using HttpResponseMessage evt = await client.PostAsJsonAsync("/v1/sessions/events", new
+		{
+			accountName = "alice",
+			eventType = "state_changed",
+			state = "ConnectingWait2FA",
+			message = "need 2fa"
+		});
+		Assert.Equal(HttpStatusCode.OK, evt.StatusCode);
+
+		// A job targeting alice so the aggregate view has recent tasks.
+		using HttpResponseMessage job = await client.PostAsJsonAsync("/v1/jobs", new { action = "login", targets = new[] { "alice" } });
+		Assert.Equal(HttpStatusCode.Accepted, job.StatusCode);
+
+		using HttpResponseMessage view = await client.GetAsync("/v1/accounts/alice");
+		Assert.Equal(HttpStatusCode.OK, view.StatusCode);
+
+		string body = await view.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement root = doc.RootElement;
+
+		Assert.Equal("idle", root.GetProperty("spec").GetProperty("desiredState").GetString());
+		Assert.Equal("ConnectingWait2FA", root.GetProperty("session").GetProperty("state").GetString());
+		Assert.Equal("2fa_required", root.GetProperty("pendingChallenge").GetProperty("challengeType").GetString());
+		Assert.Equal(1, root.GetProperty("recentTasks").GetArrayLength());
+		Assert.Equal("login", root.GetProperty("recentTasks")[0].GetProperty("action").GetString());
+	}
+
+	[Fact]
+	public async Task GetAccount_MissingReturns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage missing = await client.GetAsync("/v1/accounts/ghost");
+		Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+	}
+
+	[Fact]
+	public async Task ListJobs_SupportsAccountFilter()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		await client.PostAsJsonAsync("/v1/jobs", new { action = "login", targets = new[] { "alice" } });
+		await client.PostAsJsonAsync("/v1/jobs", new { action = "ping", targets = new[] { "bob" } });
+
+		using HttpResponseMessage filtered = await client.GetAsync("/v1/jobs?account=alice");
+		Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+		string body = await filtered.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+
+		Assert.Equal(1, doc.RootElement.GetProperty("jobs").GetArrayLength());
+		Assert.Equal("login", doc.RootElement.GetProperty("jobs")[0].GetProperty("action").GetString());
+	}
+
+	[Fact]
+	public async Task ListSessions_SupportsAccountFilter()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		await client.PostAsJsonAsync("/v1/sessions/events", new { accountName = "alice", eventType = "state_changed", state = "Connected" });
+		await client.PostAsJsonAsync("/v1/sessions/events", new { accountName = "bob", eventType = "state_changed", state = "Disconnected" });
+
+		using HttpResponseMessage filtered = await client.GetAsync("/v1/sessions?account=alice");
+		Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+		string body = await filtered.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+
+		Assert.Equal(1, doc.RootElement.GetProperty("sessions").GetArrayLength());
+		Assert.Equal("alice", doc.RootElement.GetProperty("sessions")[0].GetProperty("accountName").GetString());
+	}
+
 	private static TestFactory CreateFactory()
 	{
 		return new TestFactory();

@@ -6,7 +6,9 @@ public interface IJobStore
 {
 	Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken);
 	Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken);
-	Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken);
+	Task<IReadOnlyList<Job>> ListJobs(int limit, string? account, CancellationToken cancellationToken);
+	/// <summary>Most recent tasks targeting one account, newest first (for the account aggregate view).</summary>
+	Task<IReadOnlyList<JobTask>> ListRecentTasksForTarget(string target, int limit, CancellationToken cancellationToken);
 	Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken);
 	/// <summary>Task counts grouped by status across all jobs (for metrics/monitoring).</summary>
 	Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken);

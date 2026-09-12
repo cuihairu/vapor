@@ -445,8 +445,16 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			return Task.FromResult<IReadOnlyList<TaskCancel>>([]);
 		}
 
-		public Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken)
+		public Task<IReadOnlyList<Job>> ListJobs(int limit, string? account, CancellationToken cancellationToken)
 			=> Task.FromResult<IReadOnlyList<Job>>(_jobs.Values.Select(j => j.Job).ToList());
+
+		public Task<IReadOnlyList<JobTask>> ListRecentTasksForTarget(string target, int limit, CancellationToken cancellationToken)
+			=> Task.FromResult<IReadOnlyList<JobTask>>(_jobs.Values
+				.SelectMany(j => j.Tasks)
+				.Where(t => string.Equals(t.Target, target, StringComparison.OrdinalIgnoreCase))
+				.OrderByDescending(t => t.CreatedAt)
+				.Take(limit)
+				.ToList());
 
 		public Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken)
 			=> Task.FromResult<IReadOnlyDictionary<JobTaskStatus, int>>(new Dictionary<JobTaskStatus, int>());

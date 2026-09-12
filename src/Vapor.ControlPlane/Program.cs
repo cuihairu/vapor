@@ -291,7 +291,15 @@ app.MapGet("/v1/accounts", (HttpContext ctx, Config cfg, AccountStore accounts, 
 	.Produces<ErrorResponse>(400)
 	.Produces<ErrorResponse>(401);
 
-app.MapGet("/v1/accounts/{name}", (HttpContext ctx, Config cfg, AccountStore accounts, string name) =>
+app.MapGet("/v1/accounts/{name}", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	AccountStore accounts,
+	SessionTracker sessions,
+	AuthChallengeTracker challenges,
+	IJobStore store,
+	DesiredStateReconciler reconciler,
+	string name) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
 	{
@@ -304,10 +312,19 @@ app.MapGet("/v1/accounts/{name}", (HttpContext ctx, Config cfg, AccountStore acc
 		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
 	}
 
-	return Results.Ok(new { spec });
+	IReadOnlyList<JobTask> recentTasks = await store.ListRecentTasksForTarget(spec.AccountName, 10, ctx.RequestAborted);
+
+	return Results.Ok(new
+	{
+		spec,
+		session = sessions.Get(spec.AccountName),
+		orchestration = reconciler.GetOrchestrationView(spec.AccountName),
+		pendingChallenge = challenges.Get(spec.AccountName),
+		recentTasks
+	});
 })
 	.WithTags("Accounts")
-	.WithSummary("Get a declared account")
+	.WithSummary("Get an account aggregate view: spec, session, orchestration state, pending challenge and recent tasks")
 	.Produces(200)
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
@@ -509,7 +526,7 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 	.Produces<ErrorResponse>(400)
 	.Produces(401);
 
-app.MapGet("/v1/jobs", async Task<Results<Ok<object>, UnauthorizedHttpResult, ProblemHttpResult>> (HttpContext ctx, Config cfg, IJobStore store, int? limit) =>
+app.MapGet("/v1/jobs", async Task<Results<Ok<object>, UnauthorizedHttpResult, ProblemHttpResult>> (HttpContext ctx, Config cfg, IJobStore store, int? limit, string? account) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
 	{
@@ -517,11 +534,11 @@ app.MapGet("/v1/jobs", async Task<Results<Ok<object>, UnauthorizedHttpResult, Pr
 	}
 
 	int capped = Math.Clamp(limit ?? 50, 1, 500);
-	var jobs = await store.ListJobs(capped, ctx.RequestAborted);
+	var jobs = await store.ListJobs(capped, account, ctx.RequestAborted);
 	return TypedResults.Ok<object>(new { jobs });
 })
 	.WithTags("Jobs")
-	.WithSummary("List recent jobs (limit query parameter, clamped to 1-500, default 50)")
+	.WithSummary("List recent jobs (limit query parameter, clamped to 1-500, default 50; optional account filter)")
 	.Produces(200)
 	.Produces(401);
 
@@ -934,17 +951,21 @@ app.MapPost("/v1/sessions/events", async (
 	.Produces(401);
 
 // List active sessions
-app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg, SessionTracker sessions) =>
+app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg, SessionTracker sessions, string? account) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
 	{
 		return Results.Unauthorized();
 	}
 
-	return Results.Ok(new { sessions = sessions.List() });
+	IReadOnlyList<SessionSnapshot> snapshots = string.IsNullOrWhiteSpace(account)
+		? sessions.List()
+		: sessions.List().Where(s => string.Equals(s.AccountName, account.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+
+	return Results.Ok(new { sessions = snapshots });
 })
 	.WithTags("Sessions")
-	.WithSummary("List known sessions and their latest state")
+	.WithSummary("List known sessions and their latest state (optional account filter)")
 	.Produces(200)
 	.Produces<ErrorResponse>(401);
 

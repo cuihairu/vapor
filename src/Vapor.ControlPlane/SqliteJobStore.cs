@@ -143,18 +143,34 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		}
 	}
 
-	public async Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken)
+	public async Task<IReadOnlyList<Job>> ListJobs(int limit, string? account, CancellationToken cancellationToken)
 	{
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
 			using var cmd = _connection.CreateCommand();
-			cmd.CommandText = """
-				SELECT id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms
-				FROM jobs
-				ORDER BY created_at_ms DESC
-				LIMIT $limit;
-				""";
+			if (string.IsNullOrWhiteSpace(account))
+			{
+				cmd.CommandText = """
+					SELECT id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms
+					FROM jobs
+					ORDER BY created_at_ms DESC
+					LIMIT $limit;
+					""";
+			}
+			else
+			{
+				cmd.CommandText = """
+					SELECT DISTINCT j.id, j.action, j.region, j.targets_json, j.meta_json, j.status, j.created_at_ms, j.updated_at_ms
+					FROM jobs j
+					JOIN tasks t ON t.job_id = j.id
+					WHERE t.target = $account
+					ORDER BY j.created_at_ms DESC
+					LIMIT $limit;
+					""";
+				cmd.Parameters.AddWithValue("$account", account.Trim());
+			}
+
 			cmd.Parameters.AddWithValue("$limit", limit);
 
 			List<Job> jobs = new(limit);
@@ -165,6 +181,38 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			}
 
 			return jobs;
+		}
+		finally
+		{
+			_mutex.Release();
+		}
+	}
+
+	/// <inheritdoc />
+	public async Task<IReadOnlyList<JobTask>> ListRecentTasksForTarget(string target, int limit, CancellationToken cancellationToken)
+	{
+		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				SELECT id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms, error, output_json
+				FROM tasks
+				WHERE target = $target
+				ORDER BY created_at_ms DESC
+				LIMIT $limit;
+				""";
+			cmd.Parameters.AddWithValue("$target", target);
+			cmd.Parameters.AddWithValue("$limit", limit);
+
+			List<JobTask> tasks = new();
+			using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
+				tasks.Add(ReadTaskRow(reader));
+			}
+
+			return tasks;
 		}
 		finally
 		{

@@ -216,7 +216,8 @@ public sealed class ControlPlaneApiTests
 
 		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken) => throw new NotSupportedException();
-		public Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Job>>([]);
+		public Task<IReadOnlyList<Job>> ListJobs(int limit, string? account, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Job>>([]);
+		public Task<IReadOnlyList<JobTask>> ListRecentTasksForTarget(string target, int limit, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<JobTask>>([]);
 		public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<IReadOnlyDictionary<Vapor.Protocol.JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken) =>
 			Task.FromResult<IReadOnlyDictionary<Vapor.Protocol.JobTaskStatus, int>>(
