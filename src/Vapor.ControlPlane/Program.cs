@@ -73,6 +73,29 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.WithSummary("Liveness probe (public, unauthenticated)")
 	.Produces(200);
 
+// Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents) => {
+	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
+
+	var sb = new System.Text.StringBuilder();
+	sb.Append("# HELP vapor_controlplane_tasks_by_status Task count by status across all jobs.\n");
+	sb.Append("# TYPE vapor_controlplane_tasks_by_status gauge\n");
+	foreach (JobTaskStatus status in Enum.GetValues<JobTaskStatus>()) {
+		sb.Append("vapor_controlplane_tasks_by_status{status=\"").Append(status).Append("\"} ")
+			.Append(taskCounts.GetValueOrDefault(status)).Append('\n');
+	}
+
+	sb.Append("# HELP vapor_controlplane_agents_connected Currently connected agents.\n");
+	sb.Append("# TYPE vapor_controlplane_agents_connected gauge\n");
+	sb.Append("vapor_controlplane_agents_connected ").Append(agents.ListConnected().Count()).Append('\n');
+
+	ctx.Response.Headers.ContentType = "text/plain; version=0.0.4; charset=utf-8";
+	return Results.Text(sb.ToString());
+})
+	.WithTags("System")
+	.WithSummary("Prometheus metrics (task counts by status, connected agents)")
+	.Produces(200, contentType: "text/plain");
+
 // Admin UI redirect
 app.MapGet("/", () => Results.Redirect("/admin.html"))
 	.WithTags("System")

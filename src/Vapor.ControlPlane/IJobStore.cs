@@ -7,6 +7,8 @@ public interface IJobStore {
 	Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken);
 	Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken);
 	Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken);
+	/// <summary>Task counts grouped by status across all jobs (for metrics/monitoring).</summary>
+	Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken);
 
 	Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken);
 	/// <summary>Returns a claimed (running) task to the queue; the task becomes claimable again after <paramref name="retryDelay"/>.</summary>

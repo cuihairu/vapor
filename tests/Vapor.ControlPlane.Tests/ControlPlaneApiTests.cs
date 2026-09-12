@@ -28,6 +28,25 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	[Fact]
+	public async Task Metrics_ExposesTaskStatusAndAgentGauges() {
+		await using TestFactory factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		// Seed the store fake so the gauge reflects a queued task.
+		((FakeJobStore)factory.Services.GetRequiredService<IJobStore>()).QueuedTasks = 1;
+
+		using HttpResponseMessage response = await client.GetAsync("/metrics");
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		Assert.Contains("text/plain", response.Content.Headers.ContentType!.ToString());
+		string body = await response.Content.ReadAsStringAsync();
+		Assert.Contains("# TYPE vapor_controlplane_tasks_by_status gauge", body);
+		Assert.Contains("vapor_controlplane_tasks_by_status{status=\"Queued\"} 1", body);
+		Assert.Contains("vapor_controlplane_tasks_by_status{status=\"Running\"} 0", body);
+		Assert.Contains("vapor_controlplane_agents_connected 0", body);
+	}
+
+	[Fact]
 	public async Task AdminConfig_RequiresAuthorization() {
 		await using var factory = CreateFactory();
 		using var client = factory.CreateClient();
@@ -171,10 +190,16 @@ public sealed class ControlPlaneApiTests {
 	}
 
 	private sealed class FakeJobStore : IJobStore {
+		/// <summary>Queued count served by <see cref="GetTaskStatusCounts"/> (for the /metrics test).</summary>
+		public int QueuedTasks { get; set; }
+
 		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Job>>([]);
 		public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<IReadOnlyDictionary<Vapor.Protocol.JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken) =>
+			Task.FromResult<IReadOnlyDictionary<Vapor.Protocol.JobTaskStatus, int>>(
+				new Dictionary<Vapor.Protocol.JobTaskStatus, int> { [Vapor.Protocol.JobTaskStatus.Queued] = QueuedTasks });
 		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) => Task.FromResult<JobTask?>(null);
 		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => Task.CompletedTask;
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => Task.FromResult(0);

@@ -200,11 +200,17 @@ With the observability profile enabled:
 - Agent metrics: `http://<agent>:9700/metrics`
 
 Bundled alert rules (`deploy/prometheus/alerts.yml`, auto-loaded by the
-compose Prometheus): `VaporAgentDown` (scrape failing 1m, critical),
-`VaporAgentTargetMissing` (target gone 2m, critical) and
-`VaporAgentScrapeSlow` (scrape >5s for 5m, warning). Route these via your
-Alertmanager to whatever paging channel you use.
+compose Prometheus) cover both services:
 
-Known gap: the control plane does not yet export Prometheus metrics, so
-job-level alerts (tasks stuck in queued/running, dispatch-failure rates)
-are not expressible yet — track that endpoint in `todo.md`.
+- Agent: `VaporAgentDown` (critical), `VaporAgentTargetMissing` (critical),
+  `VaporAgentScrapeSlow` (warning).
+- Control plane: `VaporControlPlaneDown` (critical),
+  `VaporTasksQueuedBacklog` (tasks queued >15m, warning),
+  `VaporTasksStuckRunning` (tasks running >30m, warning).
+
+Route these via your Alertmanager to whatever paging channel you use.
+
+The control plane exposes Prometheus metrics at `/metrics` (public like
+the agent's endpoint — protect at the network layer):
+`vapor_controlplane_tasks_by_status{status="..."}` and
+`vapor_controlplane_agents_connected`.

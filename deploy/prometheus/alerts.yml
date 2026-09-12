@@ -1,9 +1,8 @@
 # Prometheus alert rules for the Vapor observability stack.
 #
-# These rules cover the signals the agent's /metrics endpoint exposes. The
-# control plane does not yet export Prometheus metrics (task-state gauges and
-# dispatch-failure counters are a tracked gap), so job-level alerts land once
-# that endpoint exists.
+# Covers the agent metrics endpoint (Monitoring plugin, :9700) and the
+# control plane's /metrics endpoint (task counts by status, connected
+# agents).
 #
 # Wired in automatically: docker-compose.yml mounts this file and sets
 # rule_files on the Prometheus config.
@@ -51,3 +50,47 @@ groups:
             compose service state: docker compose ps, then
             docker compose logs agent.
           runbook_url: "https://github.com/cuihairu/vapor/blob/main/docs/troubleshooting.md#agent-never-shows-online"
+
+  - name: vapor-controlplane
+    rules:
+      - alert: VaporControlPlaneDown
+        expr: up{job="vapor-controlplane"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vapor control plane is unreachable"
+          description: >-
+            Prometheus cannot scrape the control plane metrics endpoint
+            ({{ $labels.instance }}) for over a minute. The process may have
+            crashed or lost its network route.
+          runbook_url: "https://github.com/cuihairu/vapor/blob/main/docs/troubleshooting.md#control-plane-fails-to-start"
+
+      - alert: VaporTasksQueuedBacklog
+        expr: vapor_controlplane_tasks_by_status{status="Queued"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tasks sitting in the queue for over 15 minutes"
+          description: >-
+            {{ $value }} task(s) have stayed queued for 15+ minutes. Either no
+            capable agent is online in the task's region, or agents keep
+            failing to claim (check task.dispatch_failed events and the
+            dispatch retry limit).
+          runbook_url: "https://github.com/cuihairu/vapor/blob/main/docs/troubleshooting.md#task-stuck-in-queued"
+
+      - alert: VaporTasksStuckRunning
+        expr: vapor_controlplane_tasks_by_status{status="Running"} > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tasks stuck in running for over 30 minutes"
+          description: >-
+            {{ $value }} task(s) have been running for 30+ minutes. The task
+            lease (Vapor_TASK_LEASE_SECONDS, default 300s) should requeue dead
+            ones, so a persistent count usually means agents are executing
+            very long actions or heartbeats keep the lease alive without
+            progress.
+          runbook_url: "https://github.com/cuihairu/vapor/blob/main/docs/troubleshooting.md#task-stuck-in-running"

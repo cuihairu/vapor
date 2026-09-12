@@ -389,6 +389,29 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		}
 	}
 
+	public async Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken) {
+		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try {
+			Dictionary<JobTaskStatus, int> counts = new();
+			using (var cmd = _connection.CreateCommand()) {
+				cmd.CommandText = "SELECT status, COUNT(*) FROM tasks GROUP BY status;";
+
+				using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+				while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
+					string raw = reader.GetString(0);
+					int n = reader.GetInt32(1);
+					if (Enum.TryParse<JobTaskStatus>(raw, true, out var st)) {
+						counts[st] = n;
+					}
+				}
+			}
+
+			return counts;
+		} finally {
+			_mutex.Release();
+		}
+	}
+
 	public async Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) {
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try {

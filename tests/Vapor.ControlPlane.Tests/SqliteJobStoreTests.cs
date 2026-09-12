@@ -232,6 +232,28 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
+	public async Task GetTaskStatusCounts_AggregatesAcrossAllJobs() {
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		await store.CreateJob(new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+		await store.CreateJob(new CreateJobRequest("ping", "local", ["acct-2"], null, null), cts.Token);
+
+		// Job 1 task: claim + finish. Job 2 task stays queued.
+		JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(claimed);
+		await store.SetTaskResult(
+			new TaskResult(claimed!.Id, true, null, null, DateTimeOffset.UtcNow, claimed.Attempt),
+			cts.Token);
+
+		IReadOnlyDictionary<JobTaskStatus, int> counts = await store.GetTaskStatusCounts(cts.Token);
+
+		Assert.Equal(1, counts.GetValueOrDefault(JobTaskStatus.Queued));
+		Assert.Equal(1, counts.GetValueOrDefault(JobTaskStatus.Finished));
+		Assert.Equal(0, counts.GetValueOrDefault(JobTaskStatus.Running));
+	}
+
+	[Fact]
 	public async Task SetTaskResult_PersistsOutputAndErrorAcrossReopen() {
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
 		try {
