@@ -43,7 +43,11 @@ are in [docker.md](docker.md).
 | `VAPOR_ENCRYPTION_KEY` | recommended | — | ≥32 bytes; encrypts stored credentials (AES-GCM) |
 | `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` | no | off | Escape hatch; do not enable in production |
 
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | off | OTLP endpoint (e.g. `http://tempo:4317`); enables distributed tracing export |
+
 ### Agent
+
+| Variable | Required | Default | Notes |
 
 | Variable | Required | Default | Notes |
 |----------|----------|---------|-------|
@@ -57,6 +61,7 @@ are in [docker.md](docker.md).
 | `AGENT_RECONNECT_MAX_DELAY_MS` | no | `10000` | Reconnect backoff ceiling |
 | `AGENT_RECONNECT_BACKOFF_FACTOR` | no | `2` | Exponential factor |
 | `AGENT_RECONNECT_MAX_RETRIES` | no | `0` | `0` = retry forever |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | off | OTLP endpoint; enables distributed tracing export |
 
 ### Steps
 
@@ -212,5 +217,27 @@ Route these via your Alertmanager to whatever paging channel you use.
 
 The control plane exposes Prometheus metrics at `/metrics` (public like
 the agent's endpoint — protect at the network layer):
-`vapor_controlplane_tasks_by_status{status="..."}` and
-`vapor_controlplane_agents_connected`.
+`vapor_controlplane_tasks_by_status{status="..."}`,
+`vapor_controlplane_agents_connected`, and dispatch failure counters
+`vapor_controlplane_dispatch_failures_total{reason="no_capable_agent"|"enqueue_failed"|"attempts_exhausted"}`.
+
+## Distributed tracing
+
+Both services emit spans through OpenTelemetry (`Vapor.ControlPlane` and
+`Vapor.Agent` activity sources). Tracing is off by default; setting the
+standard `OTEL_EXPORTER_OTLP_ENDPOINT` variable on either service (or both)
+enables OTLP export with the standard OTLP protocol/headers variables.
+
+The trace follows one task end to end across the tunnel:
+
+```
+POST /v1/jobs           → ASP.NET Core server span (control plane)
+  task.dispatch         → producer span; traceparent injected into the WS message
+    task.execute        → agent consumer span (parented via the tunnel traceparent)
+      task.result       → control-plane span continued from the agent's returned traceparent
+```
+
+Any OTLP-compatible backend works (Jaeger, Grafana Tempo, Zipkin-compatible
+collectors). Point both services at the same backend to see the full chain
+in one trace; with the variable unset no exporter is registered and the
+spans are inert (no overhead beyond disabled ActivitySources).

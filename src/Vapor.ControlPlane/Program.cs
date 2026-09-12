@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Primitives;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Vapor.ControlPlane;
 using Vapor.Protocol;
 using Vapor.Steam.Core.Security;
@@ -29,7 +32,19 @@ builder.Services.AddSingleton<IAuditStore>(sp => {
 });
 
 builder.Services.AddSingleton<AgentRegistry>();
-builder.Services.AddHostedService<TaskSchedulerService>();
+builder.Services.AddSingleton<TaskSchedulerService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<TaskSchedulerService>());
+
+// Distributed tracing: enabled when the standard OTLP endpoint variable is set.
+// Without it no OpenTelemetry SDK is registered and the ActivitySources stay inert.
+if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"))) {
+	builder.Services.AddOpenTelemetry()
+		.ConfigureResource(resource => resource.AddService("vapor-controlplane"))
+		.WithTracing(tracing => tracing
+			.AddSource(VaporTracing.SourceName)
+			.AddAspNetCoreInstrumentation()
+			.AddOtlpExporter());
+}
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options => {
@@ -74,7 +89,7 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents) => {
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler) => {
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
 	var sb = new System.Text.StringBuilder();
@@ -88,6 +103,12 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 	sb.Append("# HELP vapor_controlplane_agents_connected Currently connected agents.\n");
 	sb.Append("# TYPE vapor_controlplane_agents_connected gauge\n");
 	sb.Append("vapor_controlplane_agents_connected ").Append(agents.ListConnected().Count()).Append('\n');
+
+	sb.Append("# HELP vapor_controlplane_dispatch_failures_total Task dispatch failures since startup.\n");
+	sb.Append("# TYPE vapor_controlplane_dispatch_failures_total counter\n");
+	sb.Append("vapor_controlplane_dispatch_failures_total{reason=\"no_capable_agent\"} ").Append(scheduler.DispatchNoCapableAgent).Append('\n');
+	sb.Append("vapor_controlplane_dispatch_failures_total{reason=\"enqueue_failed\"} ").Append(scheduler.DispatchEnqueueFailed).Append('\n');
+	sb.Append("vapor_controlplane_dispatch_failures_total{reason=\"attempts_exhausted\"} ").Append(scheduler.DispatchAttemptsExhausted).Append('\n');
 
 	ctx.Response.Headers.ContentType = "text/plain; version=0.0.4; charset=utf-8";
 	return Results.Text(sb.ToString());
@@ -701,6 +722,14 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 						}
 					}
 				if (string.Equals(msg.Type, "task_result", StringComparison.Ordinal) && msg.TaskResult != null) {
+					// Continue the distributed trace: parent the result span onto the
+					// agent's task.execute span via the traceparent it returned.
+					ActivityContext resultParent = default;
+					bool hasResultParent = VaporTracing.TryExtractContext(msg.TraceHeaders, out resultParent);
+					using Activity? resultSpan = VaporTracing.Source.StartActivity("task.result", ActivityKind.Consumer, hasResultParent ? resultParent : default);
+					resultSpan?.SetTag("vapor.task_id", msg.TaskResult.TaskId);
+					resultSpan?.SetStatus(msg.TaskResult.Success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, msg.TaskResult.Error);
+
 					try {
 						var (task, job) = await store.SetTaskResult(msg.TaskResult, ctx.RequestAborted);
 						events.Publish(task.JobId, "task.finished", new Dictionary<string, object?> { ["taskId"] = task.Id, ["success"] = msg.TaskResult.Success, ["job"] = job.Status.ToString() });

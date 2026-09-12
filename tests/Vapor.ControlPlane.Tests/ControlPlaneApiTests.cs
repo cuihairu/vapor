@@ -44,6 +44,9 @@ public sealed class ControlPlaneApiTests {
 		Assert.Contains("vapor_controlplane_tasks_by_status{status=\"Queued\"} 1", body);
 		Assert.Contains("vapor_controlplane_tasks_by_status{status=\"Running\"} 0", body);
 		Assert.Contains("vapor_controlplane_agents_connected 0", body);
+		Assert.Contains("vapor_controlplane_dispatch_failures_total{reason=\"no_capable_agent\"} 0", body);
+		Assert.Contains("vapor_controlplane_dispatch_failures_total{reason=\"enqueue_failed\"} 0", body);
+		Assert.Contains("vapor_controlplane_dispatch_failures_total{reason=\"attempts_exhausted\"} 0", body);
 	}
 
 	[Fact]

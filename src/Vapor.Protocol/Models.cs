@@ -99,6 +99,8 @@ public sealed record WSMessage(
 	JobTask? Task,
 	TaskResult? TaskResult,
 	TaskHeartbeat? TaskHeartbeat = null,
-	TaskCancel? TaskCancel = null
+	TaskCancel? TaskCancel = null,
+	/// <summary>W3C trace-context headers (traceparent) for distributed tracing across the tunnel.</summary>
+	IReadOnlyDictionary<string, string>? TraceHeaders = null
 );
 

@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using System.Threading.Channels;
 using Vapor.Protocol;
 using Vapor.Steam.Core;
@@ -26,7 +29,7 @@ VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
 VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
 var reconnectPolicy = AgentReconnectPolicy.FromEnvironment(Environment.GetEnvironmentVariable);
 
-var serviceProvider = new ServiceCollection()
+var serviceCollection = new ServiceCollection()
 	.AddLogging(configure => configure.AddRedactingConsole())
 	.AddSingleton<IActionRegistry, ActionRegistry>()
 	.AddSingleton<ICredentialStore, FileCredentialStore>()
@@ -72,8 +75,19 @@ var serviceProvider = new ServiceCollection()
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
 	.AddSingleton<GetMarketListingsAction>(p => new GetMarketListingsAction(
 		p.GetRequiredService<ILogger<GetMarketListingsAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
-	.BuildServiceProvider();
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()));
+
+// Distributed tracing: enabled when the standard OTLP endpoint variable is set.
+// Without it no OpenTelemetry SDK is registered and the ActivitySource stays inert.
+if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT"))) {
+	serviceCollection.AddOpenTelemetry()
+		.ConfigureResource(resource => resource.AddService("vapor-agent"))
+		.WithTracing(tracing => tracing
+			.AddSource(VaporAgentTracing.SourceName)
+			.AddOtlpExporter());
+}
+
+var serviceProvider = serviceCollection.BuildServiceProvider();
 
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
 var actionRegistry = serviceProvider.GetRequiredService<IActionRegistry>();
@@ -199,7 +213,7 @@ async Task RunOnce(CancellationToken cancellationToken) {
 	await ws.ConnectAsync(uri, cancellationToken);
 
 	using SemaphoreSlim sendGate = new(1, 1);
-	var tasks = Channel.CreateUnbounded<JobTask>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+	var tasks = Channel.CreateUnbounded<WSMessage>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
 	var executionGate = new object();
 	CancellationTokenSource? currentTaskCts = null;
@@ -215,7 +229,8 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
 				WSMessage msg = await Receive<WSMessage>(ws, cancellationToken);
 				if (string.Equals(msg.Type, "task", StringComparison.Ordinal) && msg.Task != null) {
-					await tasks.Writer.WriteAsync(msg.Task, cancellationToken);
+					// Keep the whole message: TraceHeaders carries the dispatch span context.
+					await tasks.Writer.WriteAsync(msg, cancellationToken);
 					continue;
 				}
 
@@ -245,7 +260,9 @@ async Task RunOnce(CancellationToken cancellationToken) {
 
 	try {
 		while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open) {
-			JobTask task = await tasks.Reader.ReadAsync(cancellationToken);
+			WSMessage dispatch = await tasks.Reader.ReadAsync(cancellationToken);
+			JobTask task = dispatch.Task!;
+
 			Console.WriteLine($"task received: id={task.Id} action={task.Action} target={task.Target}");
 
 			using var executeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -265,18 +282,24 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			bool success;
 			string? error;
 			IReadOnlyDictionary<string, object?>? output;
-			try {
-				(success, error, output) = await AgentTaskExecutor.ExecuteAsync(
-					task,
-					sessionManager,
-					logger,
-					executeCts.Token
-				);
-			} finally {
-				lock (executionGate) {
-					currentTaskCts = null;
-					currentTaskId = null;
-					currentAttempt = 0;
+			string? replyTraceparent;
+			using (Activity? execute = VaporAgentTracing.StartExecuteSpan(task, dispatch.TraceHeaders)) {
+				try {
+					(success, error, output) = await AgentTaskExecutor.ExecuteAsync(
+						task,
+						sessionManager,
+						logger,
+						executeCts.Token
+					);
+
+					execute?.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, error);
+					replyTraceparent = execute?.Id;
+				} finally {
+					lock (executionGate) {
+						currentTaskCts = null;
+						currentTaskId = null;
+						currentAttempt = 0;
+					}
 				}
 			}
 
@@ -296,7 +319,11 @@ async Task RunOnce(CancellationToken cancellationToken) {
 			}
 
 			if (!executeCts.IsCancellationRequested) {
-				await SendLocked(ws, sendGate, new WSMessage("task_result", null, null, result), cancellationToken);
+				await SendLocked(ws, sendGate, new WSMessage(
+					"task_result", null, null, result,
+					TraceHeaders: replyTraceparent != null
+						? new Dictionary<string, string> { ["traceparent"] = replyTraceparent }
+						: null), cancellationToken);
 			}
 		}
 	} finally {

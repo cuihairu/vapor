@@ -60,8 +60,8 @@ public sealed class ConnectedAgent {
 		_socket = socket;
 	}
 
-	public bool EnqueueTask(JobTask task) {
-		return _send.Writer.TryWrite(new WSMessage(Type: "task", Hello: null, Task: task, TaskResult: null));
+	public bool EnqueueTask(JobTask task, IReadOnlyDictionary<string, string>? traceHeaders = null) {
+		return _send.Writer.TryWrite(new WSMessage(Type: "task", Hello: null, Task: task, TaskResult: null, TraceHeaders: traceHeaders));
 	}
 
 	public bool EnqueueTaskCancel(TaskCancel cancel) {

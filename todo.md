@@ -187,7 +187,7 @@
 - [x] docker-compose 本地编排（含 observability profile：Prometheus + Grafana 自动 provisioning）。
 - [x] 自动发布流水线（tag 触发：5 RID zip + GHCR 镜像，正式版更新 :latest；回滚即固定上一镜像 tag，见 `docs/production.md`）。
 - [x] 可观测性：结构化日志（脱敏）、指标（MonitoringPlugin Prometheus 端点 + Grafana 面板 + compose observability profile）。
-- [ ] 可观测性增强：分布式追踪（OpenTelemetry）；告警规则与 ControlPlane /metrics 已完成，dispatch 失败计数器待补。
+- [x] 可观测性增强：分布式追踪（OpenTelemetry，`Vapor.ControlPlane`/`Vapor.Agent` ActivitySource，WSMessage 携带 W3C traceparent 跨隧道传播，`OTEL_EXPORTER_OTLP_ENDPOINT` 启用 OTLP 导出，默认关闭零开销）；dispatch 失败计数器（`vapor_controlplane_dispatch_failures_total{reason=...}`）已进 /metrics。
 
 ---
 
