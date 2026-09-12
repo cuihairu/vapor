@@ -20,6 +20,7 @@ builder.Services.AddSingleton<IEventBroker, EventBroker>();
 builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddSingleton<AuthChallengeTracker>();
 builder.Services.AddSingleton<ConfigStore>();
+builder.Services.AddSingleton<AccountStore>();
 
 builder.Services.AddSingleton<IJobStore>(sp =>
 {
@@ -223,6 +224,219 @@ app.MapPut("/v1/config/account/{name}", async (HttpContext ctx, Config cfg, IAud
 	.WithSummary("Replace per-account settings (enabled, region, labels, settings)")
 	.Produces(200)
 	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
+
+// ── Accounts (declared farm accounts: desired state, assignment hints; credentials stay agent-side) ──
+
+app.MapGet("/v1/accounts", (HttpContext ctx, Config cfg, AccountStore accounts, string? state, string? region, string? agent) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountDesiredState? desiredState = null;
+	if (!string.IsNullOrWhiteSpace(state))
+	{
+		if (!Enum.TryParse(state, ignoreCase: true, out AccountDesiredState parsed))
+		{
+			return Results.BadRequest(new ErrorResponse($"unknown desired state '{state}' (expected offline, online or idle)"));
+		}
+
+		desiredState = parsed;
+	}
+
+	IEnumerable<AccountSpec> matches = accounts.List();
+	if (desiredState is not null)
+	{
+		matches = matches.Where(a => a.DesiredState == desiredState);
+	}
+
+	if (!string.IsNullOrWhiteSpace(region))
+	{
+		matches = matches.Where(a => string.Equals(a.Region, region.Trim(), StringComparison.OrdinalIgnoreCase));
+	}
+
+	if (!string.IsNullOrWhiteSpace(agent))
+	{
+		matches = matches.Where(a => string.Equals(a.AgentId, agent.Trim(), StringComparison.OrdinalIgnoreCase));
+	}
+
+	return Results.Ok(new { accounts = matches });
+})
+	.WithTags("Accounts")
+	.WithSummary("List declared accounts (filter: state, region, agent)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
+
+app.MapGet("/v1/accounts/{name}", (HttpContext ctx, Config cfg, AccountStore accounts, string name) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name);
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	return Results.Ok(new { spec });
+})
+	.WithTags("Accounts")
+	.WithSummary("Get a declared account")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPut("/v1/accounts/{name}", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	IAuditStore audit,
+	AccountStore accounts,
+	string name,
+	PutAccountRequest req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	if (string.IsNullOrWhiteSpace(name))
+	{
+		return Results.BadRequest(new ErrorResponse("account name is required"));
+	}
+
+	AccountSpec spec;
+	try
+	{
+		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy);
+	}
+	catch (ArgumentException ex)
+	{
+		return Results.BadRequest(new ErrorResponse(ex.Message));
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"account.spec.updated",
+		accountName: spec.AccountName,
+		details: new Dictionary<string, object?>
+		{
+			["updatedBy"] = req.UpdatedBy,
+			["enabled"] = spec.Enabled,
+			["desiredState"] = spec.DesiredState.ToString(),
+			["idleApps"] = spec.IdleApps,
+			["region"] = spec.Region,
+			["agentId"] = spec.AgentId,
+			["version"] = spec.Version?.Version
+		});
+	return Results.Ok(new { spec });
+})
+	.WithTags("Accounts")
+	.WithSummary("Declare or replace an account (create or full update)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
+
+app.MapDelete("/v1/accounts/{name}", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, string name) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? removed = accounts.Remove(name);
+	if (removed is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"account.spec.removed",
+		accountName: removed.AccountName,
+		details: new Dictionary<string, object?>
+		{
+			["desiredState"] = removed.DesiredState.ToString(),
+			["version"] = removed.Version?.Version
+		});
+	return Results.NoContent();
+})
+	.WithTags("Accounts")
+	.WithSummary("Remove a declared account")
+	.Produces(204)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPost("/v1/accounts/{name}/enable", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, string name) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.SetEnabled(name, enabled: true);
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"account.enabled",
+		accountName: spec.AccountName,
+		details: new Dictionary<string, object?>
+		{
+			["desiredState"] = spec.DesiredState.ToString(),
+			["version"] = spec.Version?.Version
+		});
+	return Results.Ok(new { spec });
+})
+	.WithTags("Accounts")
+	.WithSummary("Enable a declared account (resumes orchestration, keeps desired state and config)")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPost("/v1/accounts/{name}/disable", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, string name) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.SetEnabled(name, enabled: false);
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"account.disabled",
+		accountName: spec.AccountName,
+		details: new Dictionary<string, object?>
+		{
+			["desiredState"] = spec.DesiredState.ToString(),
+			["version"] = spec.Version?.Version
+		});
+	return Results.Ok(new { spec });
+})
+	.WithTags("Accounts")
+	.WithSummary("Disable a declared account (stops orchestration, keeps desired state and config)")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
 app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadRequest<ErrorResponse>, UnauthorizedHttpResult, ProblemHttpResult>> (
@@ -1056,6 +1270,17 @@ public sealed record PutAccountConfigRequest(
 	string? Region = null,
 	IReadOnlyList<string>? Labels = null,
 	IReadOnlyDictionary<string, object?>? Settings = null,
+	string? UpdatedBy = null
+);
+
+// Request type for declaring/replacing a farm account (desired state metadata only; credentials stay agent-side)
+public sealed record PutAccountRequest(
+	bool Enabled = true,
+	AccountDesiredState DesiredState = AccountDesiredState.Offline,
+	IReadOnlyList<string>? IdleApps = null,
+	string? Region = null,
+	string? AgentId = null,
+	string? Note = null,
 	string? UpdatedBy = null
 );
 
