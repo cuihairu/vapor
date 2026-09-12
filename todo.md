@@ -175,7 +175,7 @@
 - [x] ControlPlane 单测（API / 审计 / 存储 / 调度，38 个测试）。
 - [x] Agent 单元测试（`Vapor.Agent.Tests`，41 个测试：重连策略默认值/环境变量解析/指数退避封顶/重试上限、任务执行器凭证分支（password/pass 别名、refreshToken/snake_case、无凭证回退存储会话、取消与异常映射）、WebSocket URL 构建）。
 - [x] E2E 测试（`Vapor.E2E.Tests`，5 个测试：spawn 真实 ControlPlane + Agent 进程 + 临时 SQLite/审计库，stub 会话模式隔离 Steam 依赖；覆盖 echo 任务全链路闭环（创建→调度→WS 派发→执行→结果落库）、未知 action 的调度行为（保持 queued + 持续重试 + 取消清理）、job.created 审计断言、未认证/agent key 越权拒绝、healthz）。
-- [ ] 性能基准扩展（并发任务、SSE 连接数、队列吞吐）。
+- [x] 性能基准扩展（`Vapor.ControlPlane.Tests/Performance/ControlPlaneBenchmarks.cs`，4 个基准：队列吞吐 500 job 创建 ~5.2k/s + claim/finish ~2k/s、4 并发 claimer 200 任务恰好一次派发、EventBroker 600 订阅者 × 100 事件扇出、50 并发 SSE 连接全收；宽松上限断言防 CI 抖动，实测数字见 `tests/TESTING.md`）。
 
 ### 6.3 发布与运维
 

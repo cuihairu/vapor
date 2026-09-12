@@ -329,7 +329,23 @@ mockDependency.Verify(d => d.Method("expected"), Times.Once);
 
 ## 性能基准
 
-基于测试执行的观察：
+### ControlPlane 基准（`Vapor.ControlPlane.Tests/Performance/ControlPlaneBenchmarks.cs`）
+
+覆盖三个跟踪维度：队列吞吐（SQLite job store）、并发任务派发（多 claimer 竞争）、
+SSE 扇出（HTTP 连接数 + EventBroker 订阅数）。断言只设置宽松上限（30–60s）防止
+CI 抖动；实际数字以本地开发机（.NET 10, Linux x64）实测为准：
+
+| 基准 | 规模 | 实测 |
+|------|------|------|
+| 队列吞吐：job 创建 | 500 jobs | ~5,200/s |
+| 队列吞吐：claim+finish 循环 | 500 tasks | ~2,000/s |
+| 并发 claimer（4 竞争者） | 200 tasks | ~1,760/s，0 重复派发 |
+| EventBroker 扇出 | 600 订阅者 × 100 事件 | ~19ms 全量送达 |
+| SSE 并发连接 | 50 连接 | ~193ms 全部收到事件 |
+
+运行方式：`dotnet test tests/Vapor.ControlPlane.Tests --filter "FullyQualifiedName~Performance"`
+
+### Steam.Core（基于 ConcurrencyTests 的观察）
 
 | 操作 | 预期性能 |
 |------|----------|

@@ -170,7 +170,8 @@ public sealed class ControlPlaneApiTests {
 		return new TestFactory();
 	}
 
-	private sealed class TestFactory : WebApplicationFactory<Program> {
+	// Internal so the performance benchmarks can spin up the same API host.
+	internal sealed class TestFactory : WebApplicationFactory<Program> {
 		public RecordingEventBroker Events { get; } = new();
 
 		protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder) {
@@ -208,16 +209,36 @@ public sealed class ControlPlaneApiTests {
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
 	}
 
-	private sealed class RecordingEventBroker : IEventBroker {
+	internal sealed class RecordingEventBroker : IEventBroker {
 		private readonly object _gate = new();
 		private readonly List<AuthSubscription> _authSubscriptions = [];
+		private readonly List<JobSubscription> _jobSubscriptions = [];
 
 		public List<Event> Events { get; } = [];
 		public List<AuthChallengeEvent> AuthChallengeEvents { get; } = [];
 		private readonly TaskCompletionSource _authSubscriptionReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+		/// <summary>Active job-event subscriptions (mirrors <see cref="EventBroker"/> semantics; used by benchmarks).</summary>
+		public int ActiveJobSubscriptions {
+			get { lock (_gate) { return _jobSubscriptions.Count; } }
+		}
+
 		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload) {
-			Events.Add(new Event(Guid.NewGuid().ToString("N"), jobId, type, DateTimeOffset.UtcNow, payload));
+			var evt = new Event(Guid.NewGuid().ToString("N"), jobId, type, DateTimeOffset.UtcNow, payload);
+			Events.Add(evt);
+
+			// Mirror the real broker: exact-jobId subscribers plus "*" global ones.
+			List<ChannelWriter<Event>> writers;
+			lock (_gate) {
+				writers = _jobSubscriptions
+					.Where(sub => sub.JobId == "*" || string.Equals(sub.JobId, jobId, StringComparison.Ordinal))
+					.Select(sub => sub.Channel.Writer)
+					.ToList();
+			}
+
+			foreach (var writer in writers) {
+				_ = writer.TryWrite(evt);
+			}
 		}
 
 		public void PublishSession(string accountName, string eventType, string state, string? message = null) {
@@ -245,7 +266,26 @@ public sealed class ControlPlaneApiTests {
 			}
 		}
 
-		public IAsyncEnumerable<Event> Subscribe(CancellationToken cancellationToken, string jobId) => Empty<Event>();
+		public async IAsyncEnumerable<Event> Subscribe([EnumeratorCancellation] CancellationToken cancellationToken, string jobId) {
+			var channel = Channel.CreateUnbounded<Event>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+			var subscription = new JobSubscription(channel, jobId);
+
+			lock (_gate) {
+				_jobSubscriptions.Add(subscription);
+			}
+
+			try {
+				await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken)) {
+					yield return evt;
+				}
+			} finally {
+				lock (_gate) {
+					_jobSubscriptions.Remove(subscription);
+				}
+				channel.Writer.TryComplete();
+			}
+		}
+
 		public IAsyncEnumerable<SessionEvent> SubscribeSessions(CancellationToken cancellationToken, string? accountName = null) => Empty<SessionEvent>();
 		public async IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges([EnumeratorCancellation] CancellationToken cancellationToken, string? accountName = null) {
 			var channel = Channel.CreateUnbounded<AuthChallengeEvent>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
@@ -276,5 +316,6 @@ public sealed class ControlPlaneApiTests {
 		}
 
 		private sealed record AuthSubscription(Channel<AuthChallengeEvent> Channel, string? AccountName);
+		private sealed record JobSubscription(Channel<Event> Channel, string JobId);
 	}
 }
