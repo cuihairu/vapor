@@ -14,7 +14,8 @@ public sealed class LoadedPlugin
 		PluginLoadContext loadContext,
 		IReadOnlyList<IAction> actions,
 		IReadOnlyList<IPluginCommand> commands,
-		IReadOnlyList<PluginWebRoute> routes)
+		IReadOnlyList<PluginWebRoute> routes,
+		IReadOnlyList<string> grantedPermissions)
 	{
 		Descriptor = descriptor;
 		Instance = instance;
@@ -22,6 +23,7 @@ public sealed class LoadedPlugin
 		Actions = actions;
 		Commands = commands;
 		Routes = routes;
+		GrantedPermissions = grantedPermissions;
 	}
 
 	public PluginDescriptor Descriptor { get; }
@@ -36,6 +38,12 @@ public sealed class LoadedPlugin
 
 	/// <summary>Web routes contributed by this plugin (empty when it is not an <see cref="IWebApiPlugin"/>).</summary>
 	public IReadOnlyList<PluginWebRoute> Routes { get; }
+
+	/// <summary>
+	/// Permissions actually granted after manifest validation and host policy: declared
+	/// permissions whose matching capability interface the plugin implements.
+	/// </summary>
+	public IReadOnlyList<string> GrantedPermissions { get; }
 
 	internal PluginLoadContext? LoadContext { get; private set; }
 

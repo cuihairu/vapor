@@ -23,7 +23,9 @@ internal static class PluginStaging
 		string apiVersion = "1.0",
 		string pluginId = "vapor.test-plugin",
 		IReadOnlyDictionary<string, string>? configuration = null,
-		string? entryType = null)
+		string? entryType = null,
+		IReadOnlyList<string>? permissions = null,
+		string? trust = null)
 	{
 		var pluginDir = Path.Combine(rootPath, pluginDirName);
 		Directory.CreateDirectory(pluginDir);
@@ -38,6 +40,10 @@ internal static class PluginStaging
 			["description"] = "staged test plugin",
 			["entryAssembly"] = "Vapor.Plugins.TestPlugin.dll",
 			["entryType"] = entryType,
+			// Default to declaring everything the test plugin implements so tests that do
+			// not care about permissions keep their capabilities.
+			["permissions"] = permissions ?? PluginPermissions.All,
+			["trust"] = trust,
 			["configuration"] = configuration
 		};
 
@@ -48,10 +54,11 @@ internal static class PluginStaging
 		return pluginDir;
 	}
 
-	public static PluginManager CreateManager() =>
+	public static PluginManager CreateManager(PluginManagerOptions? options = null) =>
 		new(
 			new DefaultPluginHostServices(NullLoggerFactory.Instance, new ServiceProviderStub()),
-			NullLoggerFactory.Instance);
+			NullLoggerFactory.Instance,
+			options);
 
 	private sealed class ServiceProviderStub : IServiceProvider
 	{

@@ -18,4 +18,15 @@ public sealed record PluginDescriptor(
 		ApiVersion: PluginApi.TryParseVersion(Manifest.ApiVersion, out var a) ? a : new Version(0, 0),
 		Description: Manifest.Description
 	);
+
+	/// <summary>Declared trust level (<see cref="PluginTrust.Unknown"/> when not declared).</summary>
+	public PluginTrust Trust => Manifest.Trust switch
+	{
+		"community" => PluginTrust.Community,
+		"official" => PluginTrust.Official,
+		_ => PluginTrust.Unknown
+	};
+
+	/// <summary>Declared permission names (empty when not declared).</summary>
+	public IReadOnlyList<string> Permissions => Manifest.Permissions ?? [];
 }

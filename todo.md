@@ -162,7 +162,13 @@
 	- [x] MonitoringPlugin 配置读取重构为扩展方法（env 覆盖：VAPOR_METRICS_HOST/PORT/PATH）。
 	- [x] Agent 接线：PluginLoaded/PluginUnloading 事件挂接 dispatcher 注册/移除，退出时 DisposeAsync。
 	- [x] 测试：PluginEventDispatcherTests（6）+ PluginConfigurationExtensionsTests（12），Plugins.Core.Tests 共 67 个。
-- [ ] 方向 2：插件权限/信任模型（plugin.json trust/permissions 声明 + 宿主策略门禁）。
+- [x] 方向 2：插件权限/信任模型。
+	- [x] manifest 新字段：`trust`（unknown/community/official，解析时规范化小写、非法值报错）与 `permissions`（actions/commands/web/events，去重规范化、未知权限报错）。
+	- [x] 宿主策略 `PluginManagerOptions`：`MinimumTrust`（低于门槛的插件在任何插件代码执行前拒绝）+ `RequirePermissionsDeclared`（严格模式：实现能力接口但未声明权限 → 加载失败）。
+	- [x] 最小权限默认：宽松模式下未声明的能力被剥离（Actions/Commands/Routes 不注册、事件订阅不挂 dispatcher）并告警。
+	- [x] `LoadedPlugin.GrantedPermissions` 暴露实际授予的权限；Agent 事件订阅挂接需 granted `events`。
+	- [x] 官方插件清单补 trust=official + permissions 声明（MobileAuthenticator: actions；Monitoring: actions+web）。
+	- [x] 测试：PluginTrustTests（18 个：清单解析规范化/信任门禁/能力剥离/严格策略），Plugins.Core.Tests 共 85 个。
 - [ ] 方向 3：第三个官方插件 MarketWatch（价格阈值监控 + 事件推送，实战检验插件 API）。
 - [ ] 方向 4：插件开发指南文档（docs/plugins.md：清单、生命周期、能力接口、配置、隔离卸载、调试）。
 

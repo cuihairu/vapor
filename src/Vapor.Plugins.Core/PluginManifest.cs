@@ -32,6 +32,18 @@ public sealed record PluginManifest
 	/// </summary>
 	public string? EntryType { get; init; }
 
+	/// <summary>
+	/// Declared trust level ("unknown", "community" or "official"). Normalized to the
+	/// lowercase canonical form during parsing; <see cref="PluginTrust.Unknown"/> when omitted.
+	/// </summary>
+	public string? Trust { get; init; }
+
+	/// <summary>
+	/// Declared permission names (<see cref="PluginPermissions"/>). Normalized to lowercase,
+	/// deduplicated, order-preserving; null when the manifest omits the field.
+	/// </summary>
+	public IReadOnlyList<string>? Permissions { get; init; }
+
 	/// <summary>Free-form configuration values handed to the plugin at initialization.</summary>
 	public IReadOnlyDictionary<string, string>? Configuration { get; init; } =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -87,8 +99,64 @@ public sealed record PluginManifest
 			manifest = manifest with { Configuration = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) };
 		}
 
+		manifest = manifest with
+		{
+			Trust = NormalizeTrust(manifest.Trust, source),
+			Permissions = NormalizePermissions(manifest.Permissions, source)
+		};
+
 		Validate(manifest, source);
 		return manifest;
+	}
+
+	private static string? NormalizeTrust(string? trust, string source)
+	{
+		if (trust is null)
+		{
+			return null;
+		}
+
+		var normalized = trust.Trim().ToLowerInvariant();
+		if (normalized.Length == 0)
+		{
+			return null;
+		}
+
+		if (normalized is not ("unknown" or "community" or "official"))
+		{
+			throw new PluginException(
+				$"Invalid plugin manifest '{source}': 'trust' '{trust}' is not one of: unknown, community, official");
+		}
+
+		return normalized;
+	}
+
+	private static IReadOnlyList<string>? NormalizePermissions(IReadOnlyList<string>? permissions, string source)
+	{
+		if (permissions is null)
+		{
+			return null;
+		}
+
+		var normalized = new List<string>();
+		foreach (var raw in permissions)
+		{
+			var value = raw.Trim().ToLowerInvariant();
+			if (normalized.Contains(value))
+			{
+				continue;
+			}
+
+			if (!PluginPermissions.All.Contains(value))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': permission '{raw}' is not one of: {string.Join(", ", PluginPermissions.All)}");
+			}
+
+			normalized.Add(value);
+		}
+
+		return normalized;
 	}
 
 	private static void Validate(PluginManifest manifest, string source)

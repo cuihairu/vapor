@@ -4,6 +4,10 @@
   "version": "1.0.0",
   "apiVersion": "1.0",
   "description": "Steam mobile authenticator: TOTP code generation, trade confirmation hashes and Steam server time sync.",
+  "trust": "official",
+  "permissions": [
+    "actions"
+  ],
   "entryAssembly": "Vapor.Plugins.MobileAuthenticator.dll",
   "entryType": "Vapor.Plugins.MobileAuthenticator.MobileAuthenticatorPlugin"
 }

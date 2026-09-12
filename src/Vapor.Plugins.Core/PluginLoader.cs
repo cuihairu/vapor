@@ -14,6 +14,7 @@ internal static class PluginLoader
 		PluginDescriptor descriptor,
 		IPluginHostServices hostServices,
 		ILogger logger,
+		PluginManagerOptions options,
 		CancellationToken cancellationToken)
 	{
 		var info = descriptor.Info;
@@ -45,6 +46,20 @@ internal static class PluginLoader
 			throw;
 		}
 
+		// Evaluate permissions before InitializeAsync so strict host policy rejects the
+		// plugin before any of its lifecycle code runs.
+		bool grantedActions, grantedCommands, grantedRoutes, grantedEvents;
+		try
+		{
+			(grantedActions, grantedCommands, grantedRoutes, grantedEvents) =
+				EvaluatePermissions(descriptor, instance, options, logger);
+		}
+		catch
+		{
+			loadContext.Unload();
+			throw;
+		}
+
 		var context = new DefaultPluginContext(info, descriptor.Manifest.Configuration ?? EmptyConfiguration, hostServices);
 		try
 		{
@@ -56,15 +71,76 @@ internal static class PluginLoader
 			throw new PluginException($"Plugin '{info.Id}' failed to initialize: {ex.Message}", ex);
 		}
 
-		var actions = instance is IActionPlugin actionPlugin ? actionPlugin.GetActions().ToArray() : [];
-		var commands = instance is ICommandPlugin commandPlugin ? commandPlugin.GetCommands().ToArray() : [];
-		var routes = instance is IWebApiPlugin webApiPlugin ? webApiPlugin.GetRoutes().ToArray() : [];
+		var actions = grantedActions && instance is IActionPlugin actionPlugin ? actionPlugin.GetActions().ToArray() : [];
+		var commands = grantedCommands && instance is ICommandPlugin commandPlugin ? commandPlugin.GetCommands().ToArray() : [];
+		var routes = grantedRoutes && instance is IWebApiPlugin webApiPlugin ? webApiPlugin.GetRoutes().ToArray() : [];
+
+		var granted = new List<string>(4);
+		if (grantedActions)
+		{
+			granted.Add(PluginPermissions.Actions);
+		}
+
+		if (grantedCommands)
+		{
+			granted.Add(PluginPermissions.Commands);
+		}
+
+		if (grantedRoutes)
+		{
+			granted.Add(PluginPermissions.Web);
+		}
+
+		if (grantedEvents)
+		{
+			granted.Add(PluginPermissions.Events);
+		}
 
 		logger.LogInformation(
-			"Plugin {PluginId} loaded: {ActionCount} action(s), {CommandCount} command(s), {RouteCount} route(s)",
-			info.Id, actions.Length, commands.Length, routes.Length);
+			"Plugin {PluginId} loaded: {ActionCount} action(s), {CommandCount} command(s), {RouteCount} route(s), granted [{Permissions}]",
+			info.Id, actions.Length, commands.Length, routes.Length, string.Join(", ", granted));
 
-		return new LoadedPlugin(descriptor, instance, loadContext, actions, commands, routes);
+		return new LoadedPlugin(descriptor, instance, loadContext, actions, commands, routes, granted);
+	}
+
+	private static (bool Actions, bool Commands, bool Routes, bool Events) EvaluatePermissions(
+		PluginDescriptor descriptor,
+		IPlugin instance,
+		PluginManagerOptions options,
+		ILogger logger)
+	{
+		var id = descriptor.Info.Id;
+		var declared = descriptor.Permissions;
+
+		bool Check(bool wants, string permission)
+		{
+			if (!wants)
+			{
+				return false;
+			}
+
+			if (declared.Contains(permission))
+			{
+				return true;
+			}
+
+			if (options.RequirePermissionsDeclared)
+			{
+				throw new PluginException(
+					$"Plugin '{id}' implements '{permission}' capabilities but does not declare the '{permission}' permission in its manifest");
+			}
+
+			logger.LogWarning(
+				"Plugin {PluginId} implements '{Permission}' capabilities without declaring them in its manifest; capability stripped (minimal trust)",
+				id, permission);
+			return false;
+		}
+
+		return (
+			Check(instance is IActionPlugin, PluginPermissions.Actions),
+			Check(instance is ICommandPlugin, PluginPermissions.Commands),
+			Check(instance is IWebApiPlugin, PluginPermissions.Web),
+			Check(instance is IEventPlugin, PluginPermissions.Events));
 	}
 
 	private static string manifestEntry(PluginDescriptor descriptor) => descriptor.Manifest.EntryAssembly;

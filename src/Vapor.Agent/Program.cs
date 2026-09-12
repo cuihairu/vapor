@@ -229,7 +229,7 @@ static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadP
 			actionRegistry.Register(action);
 		}
 
-		if (e.Plugin.Instance is IEventPlugin eventPlugin)
+		if (e.Plugin.Instance is IEventPlugin eventPlugin && e.Plugin.GrantedPermissions.Contains(PluginPermissions.Events))
 		{
 			eventDispatcher.Add(eventPlugin);
 		}
@@ -241,7 +241,7 @@ static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadP
 			actionRegistry.Unregister(action.Name);
 		}
 
-		if (e.Plugin.Instance is IEventPlugin eventPlugin)
+		if (e.Plugin.Instance is IEventPlugin eventPlugin && e.Plugin.GrantedPermissions.Contains(PluginPermissions.Events))
 		{
 			eventDispatcher.Remove(eventPlugin);
 		}

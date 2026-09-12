@@ -9,6 +9,19 @@ public sealed record PluginManagerOptions
 	/// <see cref="PluginLoadReport.Failures"/> while other plugins continue loading.
 	/// </summary>
 	public bool ThrowOnLoadFailure { get; init; }
+
+	/// <summary>
+	/// Minimum trust level a plugin must declare to be loaded (default: <see cref="PluginTrust.Unknown"/>,
+	/// i.e. no gate). Plugins below the minimum are refused before any plugin code runs.
+	/// </summary>
+	public PluginTrust MinimumTrust { get; init; } = PluginTrust.Unknown;
+
+	/// <summary>
+	/// When true, a plugin implementing a capability interface without declaring the matching
+	/// permission fails to load. When false (default, minimal-trust), the undeclared capability
+	/// is stripped — it is never registered — and a warning is logged.
+	/// </summary>
+	public bool RequirePermissionsDeclared { get; init; }
 }
 
 /// <summary>Outcome of a bulk plugin load.</summary>

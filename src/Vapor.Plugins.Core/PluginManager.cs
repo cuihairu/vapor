@@ -91,12 +91,18 @@ public sealed class PluginManager : IAsyncDisposable
 			throw new PluginException($"Plugin '{info.Id}' is not compatible with this host: {reason}");
 		}
 
+		if (descriptor.Trust < _options.MinimumTrust)
+		{
+			throw new PluginException(
+				$"Plugin '{info.Id}' trust level '{descriptor.Trust}' is below the host minimum '{_options.MinimumTrust}'");
+		}
+
 		if (_loaded.ContainsKey(info.Id))
 		{
 			throw new PluginException($"Plugin '{info.Id}' is already loaded");
 		}
 
-		var plugin = await PluginLoader.LoadAsync(descriptor, _hostServices, _logger, cancellationToken).ConfigureAwait(false);
+		var plugin = await PluginLoader.LoadAsync(descriptor, _hostServices, _logger, _options, cancellationToken).ConfigureAwait(false);
 
 		if (!_loaded.TryAdd(info.Id, plugin))
 		{
