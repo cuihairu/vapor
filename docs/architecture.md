@@ -158,15 +158,23 @@ Modern web-based admin interface (`/admin.html`):
 
 ### API Endpoints
 
+#### Accounts
+- `PUT /v1/accounts/{name}` - Create or replace an account spec (desired state, idle apps, region/agent pinning, note)
+- `GET /v1/accounts` - List accounts (filters: `state`, `region`, `agent`)
+- `GET /v1/accounts/{name}` - Aggregate view (spec + live session + orchestration state + pending challenge + recent tasks)
+- `POST /v1/accounts/{name}/enable` - Enable the account
+- `POST /v1/accounts/{name}/disable` - Disable the account (stops sessions, keeps the spec)
+- `DELETE /v1/accounts/{name}` - Remove the account spec
+
 #### Jobs
 - `POST /v1/jobs` - Create new job
-- `GET /v1/jobs` - List jobs
+- `GET /v1/jobs` - List jobs (filters: `limit`, `account` — jobs whose tasks target the account)
 - `GET /v1/jobs/{id}` - Get job details
 - `POST /v1/jobs/{id}/cancel` - Cancel job
 - `GET /v1/jobs/{id}/events` - Job event stream (SSE)
 
 #### Sessions
-- `GET /v1/sessions` - List active sessions
+- `GET /v1/sessions` - List active sessions (filter: `account`)
 - `GET /v1/sessions/events` - Session event stream (SSE)
 - `POST /v1/sessions/events` - Publish session event (agent)
 
@@ -186,6 +194,36 @@ Audit records cover configuration changes, job lifecycle, auth code submissions,
 login session transitions (`session.login`), and sensitive task results
 (trade/redeem actions, `task.result.reported`). Sensitive detail values
 (passwords, tokens, codes, keys) are redacted before persistence.
+
+### Account Orchestration
+
+Accounts are managed declaratively: operators publish a desired state
+(`offline` / `online` / `idle` with idle app ids, optional region/agent
+pinning, note) through the accounts API and the `DesiredStateReconciler`
+runs a periodic reconcile loop (default 15s) that converges actual session
+state onto it:
+
+- deviating accounts get a login job dispatched to a capable agent —
+  region constraints, capability check and per-agent capacity caps apply,
+  selection is least-loaded then agent-id order (deterministic);
+- `idle` accounts additionally get a `play_games` job, and a stop job when
+  switched back to `online`;
+- observed login failures back off exponentially (cooldown
+  `base × 2^(n-1)`, capped at 15 min) and throttle the account after
+  `MaxLoginAttempts` consecutive failures — updating the spec resets the
+  budget (retry lever for operators);
+- when the assigned agent disconnects, the account is rebalanced to another
+  capable agent and its in-flight orchestration job is cancelled;
+- disabled / `offline` accounts are unassigned and their in-flight jobs
+  cancelled;
+- dry-run mode reports every deviation via audit and metrics without
+  dispatching.
+
+All orchestration decisions are audited (`account.reconciled`,
+`account.spec.updated/enabled/disabled/removed`) and exported as Prometheus
+metrics (`vapor_controlplane_reconcile_actions_total`,
+`vapor_controlplane_accounts_by_desired_state`). Credentials never enter
+the control plane — agents keep them in their local `FileCredentialStore`.
 
 ## Trade Safety Layer
 

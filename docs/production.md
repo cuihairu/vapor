@@ -39,6 +39,12 @@ are in [docker.md](docker.md).
 | `Vapor_TASK_LEASE_SECONDS` | no | `300` | Running tasks whose heartbeat stops for this long are requeued |
 | `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` | no | `10` | Permanent failure threshold for undispatchable tasks; `0` retries forever |
 | `Vapor_TASK_DISPATCH_RETRY_DELAY_MS` | no | `2000` | Backoff before an undispatched task may be claimed again |
+| `Vapor_RECONCILE_INTERVAL_SECONDS` | no | `15` | Account orchestrator reconcile cadence; `<= 0` disables orchestration |
+| `Vapor_RECONCILE_MAX_ACCOUNTS_PER_AGENT` | no | `25` | Capacity cap when the orchestrator assigns accounts to agents |
+| `Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS` | no | `3` | Consecutive failed logins before an account is throttled (reset by updating its spec) |
+| `Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS` | no | `60` | Base of the exponential retry cooldown (`base × 2^(n-1)`, capped at 15 min); `0` disables |
+| `Vapor_RECONCILE_SESSION_STALENESS_SECONDS` | no | `120` | Session snapshots older than this are treated as stale by the orchestrator |
+| `Vapor_RECONCILE_DRY_RUN` | no | off | Report orchestration deviations (audit + metric) without dispatching jobs |
 | `Vapor_ENABLE_SWAGGER` | no | off | Keep off in production |
 | `VAPOR_ENCRYPTION_KEY` | recommended | — | ≥32 bytes; encrypts stored credentials (AES-GCM) |
 | `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` | no | off | Escape hatch; do not enable in production |

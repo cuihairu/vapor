@@ -251,21 +251,23 @@
 6. ~~横向: Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）~~（已完成）。
 7. ~~横向: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）~~（已完成：`Vapor.Agent.Tests` 41 个 + `Vapor.E2E.Tests` 5 个）；**剩余: 自动发布流水线**。
 8. ~~横向: 生产部署指南、故障排查手册、OpenAPI 完整化、自动发布流水线与回滚~~（全部完成：`docs/production.md` + `docs/troubleshooting.md` + OpenAPI 22 端点注解 + release workflow 补齐 GHCR 镜像发布与打包文档）。
-9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: **方向 A 账户农场编排**（对标 ASF bot 管理，补齐 large-scale multi-account 架构核心闭环）→ **方向 C 通知与自动化闭环**（建立在 A 的账户模型上）→ **方向 B 质量与协议韧性**（replay tests 与覆盖率覆盖 A/C 落地后的代码面更划算；统计修正先行）。
+9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: ~~**方向 A 账户农场编排**~~（✅ 已完成：账户 CRUD + DesiredStateReconciler + 生命周期 + 聚合视图 + 账户过滤 + 审计/metrics + E2E 重平衡）→ **方向 C 通知与自动化闭环**（进行中，建立在 A 的账户模型上）→ **方向 B 质量与协议韧性**（replay tests 与覆盖率覆盖 A/C 落地后的代码面更划算；统计修正先行）。
 
 ---
 
-## 10. P5 阶段：规模化运营（🔄 计划中，2026-09-12 定案）
+## 10. P5 阶段：规模化运营（🔄 进行中：A ✅ / C、B 待实施，2026-09-12 定案）
 
-### 10.1 方向 A：账户农场编排（第一个实施）
+### 10.1 方向 A：账户农场编排（✅ 已完成，2026-09-12）
 
-- [ ] `/v1/accounts` 资源 CRUD：账户名、期望状态（`offline`/`online`/`idle` + 挂机 appid 列表）、期望 region/agent 标签、备注；凭证不入 CP（沿用 agent 侧 FileCredentialStore 与现有 config/account 体系，CP 只存元数据与期望状态）。
-- [ ] 期望状态编排器 `DesiredStateReconciler`：周期对账（期望 vs `SessionTracker` 实际），为偏离账户挑选 capable agent → 下发 login job → 掉线自动重登录；agent 下线时按标签重平衡到其它 agent。
-- [ ] 编排策略可配置：每 agent 并发账户上限、对账间隔、重试上限与冷静期（防登录风暴）、dry-run 模式（只报告偏差不执行）。
-- [ ] 账户生命周期动作：enable / disable / remove（disable 停会话不清配置，remove 清理）。
-- [ ] 账户聚合视图：`GET /v1/accounts/{name}`（期望状态、当前 agent、实时会话状态、最近任务结果、待处理验证码）+ `GET /v1/accounts` 列表过滤（按状态/region/agent）。
-- [ ] jobs/sessions API 补按账户过滤；编排决策与账户变更接入审计日志。
-- [ ] E2E 测试：声明账户 → 自动分配 stub agent 登录 → kill agent → 重平衡到备用 agent。
+- [x] `/v1/accounts` 资源 CRUD：账户名、期望状态（`offline`/`online`/`idle` + 挂机 appid 列表）、期望 region/agent 标签、备注；凭证不入 CP（沿用 agent 侧 FileCredentialStore 与现有 config/account 体系，CP 只存元数据与期望状态）。
+- [x] 期望状态编排器 `DesiredStateReconciler`：周期对账（期望 vs `SessionTracker` 实际），为偏离账户挑选 capable agent → 下发 login job → 掉线自动重登录；agent 下线时按标签重平衡到其它 agent。
+- [x] 编排策略可配置：每 agent 并发账户上限、对账间隔、重试上限与冷静期（防登录风暴）、dry-run 模式（只报告偏差不执行）。
+- [x] 账户生命周期动作：enable / disable / remove（disable 停会话不清配置，remove 清理）。
+- [x] 账户聚合视图：`GET /v1/accounts/{name}`（期望状态、当前 agent、实时会话状态、最近任务结果、待处理验证码）+ `GET /v1/accounts` 列表过滤（按状态/region/agent）。
+- [x] jobs/sessions API 补按账户过滤；编排决策与账户变更接入审计日志。
+- [x] E2E 测试：声明账户 → 自动分配 stub agent 登录 → kill agent → 重平衡到备用 agent。
+
+> 实现要点：`AccountSpec`/`AccountStore`（ConfigVersion 乐观并发，凭证不入 CP）；`DesiredStateReconciler` 8 步对账循环（login 派发 / idle 派发 / 失败快照计数 / 指数退避冷静期 `60s × 2^(n-1)` 封顶 15min / 连续失败节流 / spec 版本 bump 重置预算 / dry-run 偏差报告 / agent 丢失重平衡）；编排指标 `vapor_controlplane_reconcile_actions_total` + `accounts_by_desired_state`；审计 action `account.spec.updated/enabled/disabled/removed` + `account.reconciled`。前置修复：agent 端全量会话状态上报（此前仅验证码挑战事件进 CP）。E2E：双 stub agent + kill 首选 agent → 重平衡到备用 agent。
 
 ### 10.2 方向 C：通知与自动化闭环（第二个实施）
 
@@ -289,3 +291,4 @@
 > 2026-09-12：覆盖率体系修复：7 个测试项目统一接入 coverlet.collector（此前 CI 的 codecov 上传指向不存在的文件，从未真正上报）；`run-tests.sh/.ps1` 覆盖率模式扩展到整个解决方案并在收集前清理历史残留报告；CI 新增 Ubuntu Release 覆盖率收集步骤并修正 Codecov glob 为 `**/TestResults/*/coverage.cobertura.xml`。首次取得真实全解决方案基线：**行覆盖约 44.6%**（ControlPlane 74.6%、Monitoring 89.3%、MobileAuthenticator 75.6%、Steam.Core 68.6%、Plugins.Core 67.0%、Protocol 44.4%、Agent 25.1%——Agent 实际另有 41 单测 + 5 E2E 集成覆盖，E2E 跑在子进程中测不到）。
 > 2026-09-12：修复 PluginUnloadTests 的 ALC 回收断言在覆盖率运行下必失败的问题——coverlet instrumentation 持有被插桩 collectible 程序集的强引用导致 ALC 永不可回收（非产品缺陷）；测试现于检测到 coverlet 注入时跳过回收断言，非 coverage 运行仍完整验证（30 秒时间预算轮询）。
 > 2026-09-12：任务 output 持久化落地：tasks 表新增 `output_json` 列（自动迁移旧库），`SetTaskResult` 同时持久化 output 与 error（此前两者均随会话丢弃）；`JobTask` 新增 `Output` 字段并出现在 REST `/v1/jobs/{id}` 响应中；E2E 恢复 output 断言，全链路（Agent 回报 → 存储 → REST）验证通过。
+> 2026-09-12：P5 方向 A 账户农场编排完成（5 个提交）：`/v1/accounts` CRUD + `DesiredStateReconciler` 期望状态编排（周期对账/login 派发/指数退避冷静期/连续失败节流/agent 丢失重平衡/dry-run）+ enable/disable/remove 生命周期 + 聚合视图与列表过滤 + jobs/sessions 按账户过滤 + 编排审计与 metrics + E2E 重平衡测试（E2E 套件 5→6 个）。前置修复：agent 全量会话状态上报（此前普通状态变化不进 CP SessionTracker，编排器无数据可用）。ControlPlane 99 单测 + E2E 6 全过。
