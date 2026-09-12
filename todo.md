@@ -164,8 +164,8 @@
 - [x] 会话引擎文档（`docs/session-engine.md`）。
 - [x] 测试文档（`tests/TESTING.md`）。
 - [ ] OpenAPI 完整化（错误码、示例、鉴权说明）。
-- [ ] 生产部署指南。
-- [ ] 故障排查手册。
+- [x] 生产部署指南（`docs/production.md`：拓扑、配置矩阵、安全加固、备份/升级、扩容、监控）。
+- [x] 故障排查手册（`docs/troubleshooting.md`：诊断工具箱 + 症状→诊断→处置清单）。
 
 ### 6.2 测试体系
 
@@ -221,7 +221,7 @@
 5. ~~P4 推进: MonitoringPlugin（指标导出、Grafana 面板模板）~~（已完成：Prometheus 端点 + 面板模板 + compose observability profile）。
 6. ~~横向: Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）~~（已完成）。
 7. ~~横向: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）~~（已完成：`Vapor.Agent.Tests` 41 个 + `Vapor.E2E.Tests` 5 个）；**剩余: 自动发布流水线**。
-8. **横向**: 生产部署指南、故障排查手册、OpenAPI 完整化。
+8. ~~横向: 生产部署指南、故障排查手册~~（已完成：`docs/production.md` + `docs/troubleshooting.md`）；**剩余: OpenAPI 完整化、自动发布流水线与回滚**。
 
 > 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
 > 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。
