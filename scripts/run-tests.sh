@@ -67,8 +67,8 @@ fi
 echo -e "${GREEN}Vapor 测试运行器${NC}"
 echo "======================================"
 
-# 构建测试命令
-TEST_CMD="dotnet test tests/Vapor.Steam.Core.Tests/Vapor.Steam.Core.Tests.csproj --configuration Release --nologo"
+# 构建测试命令（整个解决方案：单测 + 集成 + 性能 + E2E）
+TEST_CMD="dotnet test Vapor.sln --configuration Release --nologo"
 
 if [ "$VERBOSE" = true ]; then
     TEST_CMD="$TEST_CMD --verbosity normal"
@@ -77,7 +77,7 @@ else
 fi
 
 if [ "$COVERAGE" = true ]; then
-    TEST_CMD="$TEST_CMD /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./TestResults/coverage/"
+    TEST_CMD="$TEST_CMD --collect 'XPlat Code Coverage'"
 fi
 
 if [ -n "$FILTER" ]; then
@@ -98,20 +98,28 @@ else
 fi
 
 # 处理覆盖率报告
+if [ "$COVERAGE" = true ]; then
+    # 清理历史残留的报告，避免旧文件混入本次合并结果
+    find . -path "*/TestResults/*/coverage.cobertura.xml" -delete 2> /dev/null || true
+fi
+
 if [ "$COVERAGE" = true ] && [ $TEST_EXIT_CODE -eq 0 ]; then
     echo ""
     echo -e "${YELLOW}处理覆盖率报告...${NC}"
 
-    # 查找覆盖率文件
-    COVERAGE_FILE=$(find . -path "*/TestResults/coverage/coverage.opencover.xml" | head -n 1)
+    # 查找覆盖率文件（coverlet.collector 每个测试项目生成一份 cobertura 报告）
+    COVERAGE_FILES=$(find . -path "*/TestResults/*/coverage.cobertura.xml" | tr '\n' ' ')
 
-    if [ -n "$COVERAGE_FILE" ]; then
-        echo -e "${GREEN}覆盖率报告已生成: $COVERAGE_FILE${NC}"
+    if [ -n "$COVERAGE_FILES" ]; then
+        echo -e "${GREEN}覆盖率报告已生成:${NC}"
+        for f in $COVERAGE_FILES; do
+            echo "  $f"
+        done
 
         # 尝试显示摘要（如果 reportgenerator 可用）
         if command -v reportgenerator &> /dev/null; then
             REPORT_DIR="./TestResults/coveragereport"
-            reportgenerator -reports:"$COVERAGE_FILE" -targetdir:"$REPORT_DIR" &> /dev/null
+            reportgenerator -reports:"$(echo $COVERAGE_FILES | tr ' ' ';')" -targetdir:"$REPORT_DIR" &> /dev/null
             echo -e "${GREEN}HTML 报告: $REPORT_DIR/index.html${NC}"
         fi
     else

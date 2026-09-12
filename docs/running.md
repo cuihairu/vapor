@@ -12,6 +12,8 @@ Environment variables:
 - `Vapor_AGENT_API_KEYS` (comma-separated; required for agent tunnel)
 - `Vapor_DB_PATH` (default `data/controlplane.db`; use `:memory:` for ephemeral)
 - `Vapor_TASK_LEASE_SECONDS` (default `300`; requeues running tasks that stop heartbeating)
+- `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` (default `10`; tasks that cannot be dispatched — e.g. actions no agent supports — are requeued with a delay and failed permanently after this many attempts; set `0` to retry forever)
+- `Vapor_TASK_DISPATCH_RETRY_DELAY_MS` (default `2000`; delay before an undispatched task can be claimed again)
 - `Vapor_ENABLE_SWAGGER` (set `true` to expose `/swagger`)
 - `VAPOR_ENCRYPTION_KEY` (recommended in production; custom encryption key, minimum 32 bytes)
 - `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` (optional escape hatch for production, not recommended)

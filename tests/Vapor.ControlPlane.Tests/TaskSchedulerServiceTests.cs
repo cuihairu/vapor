@@ -74,6 +74,75 @@ public sealed class TaskSchedulerServiceTests {
 	}
 
 	[Fact]
+	public async Task DispatchOnce_FailsTaskPermanentlyWhenDispatchAttemptsExhausted() {
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		// Attempt equals the configured limit (10): no agent will ever support "login".
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 10));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Empty(store.RequeuedTaskIds);
+		Assert.Equal(new[] { "task-1" }, store.FailedTaskIds);
+		Assert.Single(events.Events);
+		Assert.Equal("task.failed", events.Events[0].Type);
+		Assert.Contains("no capable agent available", events.Events[0].Payload!["error"]?.ToString());
+	}
+
+	[Fact]
+	public async Task DispatchOnce_KeepsRetryingWithDelayWhileAttemptsRemain() {
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 3));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Empty(store.FailedTaskIds);
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Equal(TimeSpan.FromMilliseconds(2000), store.RequeueDelays[0]);
+		Assert.Single(events.Events);
+		Assert.Equal("task.dispatch_failed", events.Events[0].Type);
+		Assert.Equal(3, events.Events[0].Payload!["attempt"]);
+	}
+
+	[Fact]
+	public async Task DispatchOnce_RetriesForeverWhenAttemptLimitDisabled() {
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 1_000));
+		var config = CreateConfig() with { TaskMaxDispatchAttempts = 0 };
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, config);
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Empty(store.FailedTaskIds);
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+	}
+
+	[Fact]
 	public async Task DispatchOnce_RequeuesStaleTasksOnlyOnceWithinFiveSecondWindow() {
 		var store = new FakeJobStore();
 		var scheduler = new TaskSchedulerService(new AgentRegistry(), store, new RecordingEventBroker(), CreateConfig());
@@ -88,7 +157,7 @@ public sealed class TaskSchedulerServiceTests {
 
 	private static Config CreateConfig() => new("", new HashSet<string>(StringComparer.Ordinal), "test.db", 300, false);
 
-	private static JobTask CreateTask(string taskId, string jobId, string region, string action) {
+	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0) {
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 		return new JobTask(
 			taskId,
@@ -98,7 +167,7 @@ public sealed class TaskSchedulerServiceTests {
 			region,
 			null,
 			JobTaskStatus.Queued,
-			0,
+			attempt,
 			now,
 			now);
 	}
@@ -130,6 +199,8 @@ public sealed class TaskSchedulerServiceTests {
 		public Queue<JobTask> QueuedTasks { get; init; } = new();
 		public List<string> ClaimRegions { get; } = [];
 		public List<string> RequeuedTaskIds { get; } = [];
+		public List<TimeSpan?> RequeueDelays { get; } = [];
+		public List<string> FailedTaskIds { get; } = [];
 		public List<TimeSpan> StaleRequeueLeases { get; } = [];
 
 		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -148,9 +219,18 @@ public sealed class TaskSchedulerServiceTests {
 			return Task.FromResult<JobTask?>(QueuedTasks.Dequeue());
 		}
 
-		public Task RequeueTask(string taskId, CancellationToken cancellationToken) {
+		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) {
 			RequeuedTaskIds.Add(taskId);
+			RequeueDelays.Add(retryDelay);
 			return Task.CompletedTask;
+		}
+
+		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) {
+			FailedTaskIds.Add(taskId);
+			return Task.FromResult((CreateTask(taskId, "job-1", "local", "login") with {
+				Status = JobTaskStatus.Failed,
+				Error = error,
+			}, new Job("job-1", "login", "local", [], null, JobStatus.Failed, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
 		}
 
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) {

@@ -176,10 +176,11 @@ public sealed class ControlPlaneApiTests {
 		public Task<IReadOnlyList<Job>> ListJobs(int limit, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Job>>([]);
 		public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) => Task.FromResult<JobTask?>(null);
-		public Task RequeueTask(string taskId, CancellationToken cancellationToken) => Task.CompletedTask;
+		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => Task.CompletedTask;
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => Task.FromResult(0);
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
 	}
 
 	private sealed class RecordingEventBroker : IEventBroker {

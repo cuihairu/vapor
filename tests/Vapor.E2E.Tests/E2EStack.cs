@@ -41,6 +41,10 @@ public sealed class E2EStack : IAsyncLifetime
 				["Vapor_AGENT_API_KEYS"] = AgentApiKey,
 				["Vapor_DB_PATH"] = Path.Combine(_workDir, "controlplane.db"),
 				["Vapor_AUDIT_DB_PATH"] = Path.Combine(_workDir, "audit.db"),
+				// Fail undispatchable tasks quickly so the negative-path test observes the
+				// terminal state within seconds instead of the production default (10 × 2s).
+				["Vapor_TASK_MAX_DISPATCH_ATTEMPTS"] = "3",
+				["Vapor_TASK_DISPATCH_RETRY_DELAY_MS"] = "200",
 			},
 			Path.Combine(_workDir, "controlplane.log"));
 

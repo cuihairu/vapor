@@ -47,7 +47,8 @@ public sealed record JobTask(
 	JobTaskStatus Status,
 	int Attempt,
 	DateTimeOffset CreatedAt,
-	DateTimeOffset UpdatedAt
+	DateTimeOffset UpdatedAt,
+	string? Error = null
 );
 
 public sealed record TaskResult(

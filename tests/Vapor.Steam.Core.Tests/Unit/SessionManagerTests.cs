@@ -248,7 +248,8 @@ public class SessionManagerTests : IDisposable
 		var eventList = new List<SessionEvent>();
 		var cts = new CancellationTokenSource();
 
-		// Start collecting events
+		// Start collecting events. Deliberately no token argument: with one, a busy thread pool
+		// could leave the task canceled before the delegate ever runs, failing the await below.
 		var collectTask = Task.Run(async () =>
 		{
 			try
@@ -262,7 +263,7 @@ public class SessionManagerTests : IDisposable
 			catch (OperationCanceledException)
 			{
 			}
-		}, cts.Token);
+		});
 
 		// Wait a bit for events
 		await Task.Delay(200);

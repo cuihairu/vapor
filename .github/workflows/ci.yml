@@ -40,13 +40,18 @@ jobs:
       run: dotnet build -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo
 
     - name: Test ${{ matrix.configuration }}
+      if: matrix.os != 'ubuntu-latest' || matrix.configuration != 'Release'
       run: dotnet test -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo --verbosity normal
+
+    - name: Test with coverage (Ubuntu Release)
+      if: matrix.os == 'ubuntu-latest' && matrix.configuration == 'Release'
+      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage"
 
     - name: Upload coverage to Codecov (Ubuntu Release)
       if: matrix.os == 'ubuntu-latest' && matrix.configuration == 'Release'
       uses: codecov/codecov-action@v5
       with:
-        files: "**/TestResults/coverage/coverage.opencover.xml"
+        files: "**/TestResults/*/coverage.cobertura.xml"
         fail_ci_if_error: false
 
   docker-build:

@@ -9,9 +9,12 @@ public interface IJobStore {
 	Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken);
 
 	Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken);
-	Task RequeueTask(string taskId, CancellationToken cancellationToken);
+	/// <summary>Returns a claimed (running) task to the queue; the task becomes claimable again after <paramref name="retryDelay"/>.</summary>
+	Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken);
 	Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken);
 	Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken);
 	Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken);
+	/// <summary>Marks a claimed (running) task as failed with a terminal error, e.g. after exhausting dispatch retries.</summary>
+	Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken);
 }
 

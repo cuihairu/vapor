@@ -53,7 +53,7 @@ public sealed class ControlPlaneAgentE2ETests
 	}
 
 	[Fact]
-	public async Task UnknownAction_StaysQueued_WhenNoCapableAgentExists()
+	public async Task UnknownAction_TaskEventuallyFailsWithTerminalError()
 	{
 		JsonElement created = await _stack.CreateJobAsync(new
 		{
@@ -66,38 +66,19 @@ public sealed class ControlPlaneAgentE2ETests
 		string jobId = created.GetProperty("job").GetProperty("id").GetString()
 			?? throw new InvalidOperationException("job id missing from create response");
 
-		try
-		{
-			// The scheduler only routes actions a connected agent declared in its hello, so an
-			// unknown action is never dispatched: the task stays queued while the scheduler keeps
-			// claiming and re-queueing it (attempt counter grows).
-			DateTimeOffset deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(6);
-			int lastAttempt = 0;
-			string status = "<unknown>";
+		// The scheduler only routes actions a connected agent declared in its hello, so an
+		// unknown action is never dispatched. After exhausting the dispatch attempt limit
+		// (configured to 3 fast retries for this stack) the task must reach a terminal
+		// Failed state instead of blocking the queue forever.
+		var (status, task) = await _stack.WaitForJobCompletionAsync(jobId, terminalStatuses: ["Failed"], timeout: TimeSpan.FromSeconds(30));
 
-			while (DateTimeOffset.UtcNow < deadline)
-			{
-				var (jobStatus, job, _, attempt) = await _stack.GetJobStateAsync(jobId);
-				status = jobStatus;
-				lastAttempt = attempt;
+		Assert.Equal("failed", status, ignoreCase: true);
+		string error = task.GetProperty("error").GetString() ?? string.Empty;
+		Assert.Contains("no capable agent available", error, StringComparison.OrdinalIgnoreCase);
+		Assert.True(task.GetProperty("attempt").GetInt32() >= 3, "task should have retried before failing");
 
-				if (!status.Equals("queued", StringComparison.Ordinal))
-				{
-					Assert.Fail($"Task should stay queued with no capable agent, but reached status '{status}'. Job: {job.GetRawText()}");
-				}
-
-				await Task.Delay(500);
-			}
-
-			Assert.True(lastAttempt >= 3,
-				$"Scheduler should keep retrying the undispatchable task, but attempt count only reached {lastAttempt}.");
-		}
-		finally
-		{
-			// Cancel so the stuck task cannot starve jobs created by other tests
-			// (the queue is served oldest-first).
-			await _stack.CancelJobAsync(jobId);
-		}
+		var (jobStatus, _, _, _) = await _stack.GetJobStateAsync(jobId);
+		Assert.Equal("failed", jobStatus, ignoreCase: true);
 	}
 
 	[Fact]

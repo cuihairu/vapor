@@ -54,8 +54,8 @@ if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
 Write-Success "Vapor 测试运行器"
 Write-Output "======================================"
 
-# 构建测试命令
-$testCmd = "dotnet test tests/Vapor.Steam.Core.Tests/Vapor.Steam.Core.Tests.csproj --configuration Release --nologo"
+# 构建测试命令（整个解决方案：单测 + 集成 + 性能 + E2E）
+$testCmd = "dotnet test Vapor.sln --configuration Release --nologo"
 
 if ($Verbose) {
     $testCmd += " --verbosity normal"
@@ -64,7 +64,7 @@ if ($Verbose) {
 }
 
 if ($Coverage) {
-    $testCmd += " /p:CollectCoverage=true /p:CoverletOutputFormat=opencover /p:CoverletOutput=./TestResults/coverage/"
+    $testCmd += " --collect 'XPlat Code Coverage'"
 }
 
 if ($Filter -ne "") {
@@ -83,20 +83,31 @@ if ($exitCode -eq 0) {
 }
 
 # 处理覆盖率报告
+if ($Coverage) {
+    # 清理历史残留的报告，避免旧文件混入本次合并结果
+    Get-ChildItem -Path . -Recurse -Filter "coverage.cobertura.xml" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match "TestResults" } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 if ($Coverage -and $exitCode -eq 0) {
     Write-Output ""
     Write-Warning "处理覆盖率报告..."
 
-    # 查找覆盖率文件
-    $coverageFile = Get-ChildItem -Path . -Recurse -Filter "coverage.opencover.xml" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "TestResults[\\\\/]coverage" } | Select-Object -First 1
+    # 查找覆盖率文件（coverlet.collector 每个测试项目生成一份 cobertura 报告）
+    $coverageFiles = Get-ChildItem -Path . -Recurse -Filter "coverage.cobertura.xml" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match "TestResults" }
 
-    if ($coverageFile) {
-        Write-Success "覆盖率报告已生成: $($coverageFile.FullName)"
+    if ($coverageFiles) {
+        Write-Success "覆盖率报告已生成:"
+        foreach ($file in $coverageFiles) {
+            Write-Output "  $($file.FullName)"
+        }
 
         # 尝试显示摘要（如果 reportgenerator 可用）
         if (Get-Command reportgenerator -ErrorAction SilentlyContinue) {
             $reportDir = ".\TestResults\coveragereport"
-            reportgenerator -reports "$($coverageFile.FullName)" -targetdir $reportDir | Out-Null
+            $reports = ($coverageFiles | ForEach-Object { $_.FullName }) -join ";"
+            reportgenerator -reports $reports -targetdir $reportDir | Out-Null
             Write-Success "HTML 报告: $reportDir\index.html"
         }
     } else {
