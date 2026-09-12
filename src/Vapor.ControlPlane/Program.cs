@@ -68,10 +68,16 @@ if (cfg.EnableSwagger) {
 	app.UseSwaggerUI();
 }
 
-app.MapGet("/healthz", () => Results.Json(new { ok = true }));
+app.MapGet("/healthz", () => Results.Json(new { ok = true }))
+	.WithTags("System")
+	.WithSummary("Liveness probe (public, unauthenticated)")
+	.Produces(200);
 
 // Admin UI redirect
-app.MapGet("/", () => Results.Redirect("/admin.html"));
+app.MapGet("/", () => Results.Redirect("/admin.html"))
+	.WithTags("System")
+	.WithSummary("Redirect to the admin UI")
+	.Produces(302);
 
 app.MapGet("/v1/agents", (HttpContext ctx, Config cfg, AgentRegistry agents) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
@@ -80,7 +86,11 @@ app.MapGet("/v1/agents", (HttpContext ctx, Config cfg, AgentRegistry agents) => 
 
 	var list = agents.List();
 	return Results.Ok(new { agents = list });
-});
+})
+	.WithTags("Agents")
+	.WithSummary("List registered agents (including offline ones)")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
 
 app.MapGet("/v1/config", (HttpContext ctx, Config cfg, ConfigStore configStore) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
@@ -91,7 +101,11 @@ app.MapGet("/v1/config", (HttpContext ctx, Config cfg, ConfigStore configStore) 
 		global = configStore.GetGlobal(),
 		accounts = configStore.ListAccounts()
 	});
-});
+})
+	.WithTags("Config")
+	.WithSummary("Get global and per-account configuration")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
 
 app.MapPut("/v1/config/global", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, PutGlobalConfigRequest req) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
@@ -110,7 +124,11 @@ app.MapPut("/v1/config/global", async (HttpContext ctx, Config cfg, IAuditStore 
 			["settings"] = req.Settings
 		});
 	return Results.Ok(updated);
-});
+})
+	.WithTags("Config")
+	.WithSummary("Replace global settings")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
 
 app.MapPut("/v1/config/account/{name}", async (HttpContext ctx, Config cfg, IAuditStore audit, ConfigStore configStore, string name, PutAccountConfigRequest req) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
@@ -137,7 +155,12 @@ app.MapPut("/v1/config/account/{name}", async (HttpContext ctx, Config cfg, IAud
 			["settings"] = req.Settings
 		});
 	return Results.Ok(updated);
-});
+})
+	.WithTags("Config")
+	.WithSummary("Replace per-account settings (enabled, region, labels, settings)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
 
 app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadRequest<ErrorResponse>, UnauthorizedHttpResult, ProblemHttpResult>> (
 	HttpContext ctx,
@@ -177,7 +200,12 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 		});
 
 	return TypedResults.Accepted($"/v1/jobs/{created.Job.Id}", new CreateJobResponse(created.Job));
-});
+})
+	.WithTags("Jobs")
+	.WithSummary("Create a job (dispatched to a capable agent in the job's region)")
+	.Produces<CreateJobResponse>(202)
+	.Produces<ErrorResponse>(400)
+	.Produces(401);
 
 app.MapGet("/v1/jobs", async Task<Results<Ok<object>, UnauthorizedHttpResult, ProblemHttpResult>> (HttpContext ctx, Config cfg, IJobStore store, int? limit) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
@@ -187,7 +215,11 @@ app.MapGet("/v1/jobs", async Task<Results<Ok<object>, UnauthorizedHttpResult, Pr
 	int capped = Math.Clamp(limit ?? 50, 1, 500);
 	var jobs = await store.ListJobs(capped, ctx.RequestAborted);
 	return TypedResults.Ok<object>(new { jobs });
-});
+})
+	.WithTags("Jobs")
+	.WithSummary("List recent jobs (limit query parameter, clamped to 1-500, default 50)")
+	.Produces(200)
+	.Produces(401);
 
 app.MapGet("/v1/jobs/{jobId}", async Task<Results<Ok<JobWithTasks>, NotFound<ErrorResponse>, UnauthorizedHttpResult, ProblemHttpResult>> (
 	HttpContext ctx,
@@ -205,7 +237,12 @@ app.MapGet("/v1/jobs/{jobId}", async Task<Results<Ok<JobWithTasks>, NotFound<Err
 	} catch (NotFoundException) {
 		return TypedResults.NotFound(new ErrorResponse("job not found"));
 	}
-});
+})
+	.WithTags("Jobs")
+	.WithSummary("Get one job with its tasks (per-task status, attempt, error and output)")
+	.Produces<JobWithTasks>(200)
+	.Produces<ErrorResponse>(404)
+	.Produces(401);
 
 app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	HttpContext ctx,
@@ -237,7 +274,12 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	} catch (NotFoundException) {
 		return Results.NotFound(new ErrorResponse("job not found"));
 	}
-});
+})
+	.WithTags("Jobs")
+	.WithSummary("Cancel all queued/running tasks of a job")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces(401);
 
 app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, IJobStore store, IEventBroker events, string jobId) => {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _)) {
@@ -266,7 +308,12 @@ app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, I
 		await ctx.Response.WriteAsync($"event: {e.Type}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 	}
-});
+})
+	.WithTags("Jobs")
+	.WithSummary("SSE stream of this job's lifecycle events (task.started/finished/failed/dispatch_failed, ...)")
+	.Produces(200, contentType: "text/event-stream")
+	.Produces(401)
+	.Produces(404);
 
 // Global job events stream (all jobs)
 app.MapGet("/v1/jobs/events", async Task (HttpContext ctx, Config cfg, IEventBroker events) => {
@@ -287,7 +334,11 @@ app.MapGet("/v1/jobs/events", async Task (HttpContext ctx, Config cfg, IEventBro
 		await ctx.Response.WriteAsync($"event: {e.Type}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 	}
-});
+})
+	.WithTags("Jobs")
+	.WithSummary("SSE stream of lifecycle events across all jobs")
+	.Produces(200, contentType: "text/event-stream")
+	.Produces(401);
 
 // Session events streaming endpoint
 app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) => {
@@ -308,7 +359,11 @@ app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEven
 		await ctx.Response.WriteAsync($"event: session.{e.EventType}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 	}
-});
+})
+	.WithTags("Sessions")
+	.WithSummary("SSE stream of session events (optionally filtered by accountName)")
+	.Produces(200, contentType: "text/event-stream")
+	.Produces(401);
 
 // Auth challenge events streaming endpoint
 app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) => {
@@ -338,7 +393,11 @@ app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg
 		await ctx.Response.WriteAsync($"event: auth.{e.ChallengeType}\ndata: {json}\n\n", ctx.RequestAborted);
 		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 	}
-});
+})
+	.WithTags("Auth")
+	.WithSummary("SSE stream of login challenges (admin sees all; agents only code_provided_* events)")
+	.Produces(200, contentType: "text/event-stream")
+	.Produces(401);
 
 // List pending auth challenges (useful for UI refresh)
 app.MapGet("/v1/auth/challenges", (HttpContext ctx, Config cfg, AuthChallengeTracker tracker) => {
@@ -347,7 +406,11 @@ app.MapGet("/v1/auth/challenges", (HttpContext ctx, Config cfg, AuthChallengeTra
 	}
 
 	return Results.Ok(new { challenges = tracker.List() });
-});
+})
+	.WithTags("Auth")
+	.WithSummary("List pending login challenges (2FA / auth code prompts)")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
 
 // Submit auth code endpoint
 app.MapPost("/v1/auth/challenges/{accountName}/code", async (
@@ -404,7 +467,12 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", async (
 		});
 
 	return Results.Ok(new { ok = true, accountName, type });
-});
+})
+	.WithTags("Auth")
+	.WithSummary("Submit a login challenge code (type: email, totp, 2fa)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
 
 // List active agents with their sessions
 app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agents) => {
@@ -421,7 +489,11 @@ app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agen
 	});
 
 	return Results.Ok(new { agents = list });
-});
+})
+	.WithTags("Agents")
+	.WithSummary("List currently connected agents with region and capabilities")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
 
 // Receive session events from agents
 app.MapPost("/v1/sessions/events", async (
@@ -501,7 +573,12 @@ app.MapPost("/v1/sessions/events", async (
 	}
 
 	return Results.Ok(new { ok = true });
-});
+})
+	.WithTags("Sessions")
+	.WithSummary("Report a session event (admin or agent token; feeds SSE, tracker and auth challenges)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces(401);
 
 // List active sessions
 app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg, SessionTracker sessions) => {
@@ -510,7 +587,11 @@ app.MapGet("/v1/sessions", (HttpContext ctx, Config cfg, SessionTracker sessions
 	}
 
 	return Results.Ok(new { sessions = sessions.List() });
-});
+})
+	.WithTags("Sessions")
+	.WithSummary("List known sessions and their latest state")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
 
 // Query persisted audit logs
 app.MapGet("/v1/audit/logs", async Task<IResult> (
@@ -547,7 +628,12 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 	int total = await audit.CountAsync(query, ctx.RequestAborted);
 
 	return Results.Ok(new { logs, total, limit = query.Limit, offset = query.Offset });
-});
+})
+	.WithTags("Audit")
+	.WithSummary("Query persisted audit logs (filter by action, account, jobId, time range; limit 1-500)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
 
 app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IAuditStore audit, IEventBroker events) => {
 	if (!Auth.TryAgent(cfg, GetAuthorization(ctx), out _)) {
@@ -620,7 +706,11 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 		registry.Unregister(agent.Hello.AgentId);
 		events.Publish(null, "agent.disconnected", new Dictionary<string, object?> { ["agentId"] = agent.Hello.AgentId, ["region"] = agent.Hello.Region });
 	}
-});
+})
+	.WithTags("Agents")
+	.WithSummary("Agent WebSocket tunnel (agent token; requires agentId/region query params and a hello frame)")
+	.Produces(401)
+	.Produces<ErrorResponse>(400);
 
 app.Run();
 

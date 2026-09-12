@@ -163,7 +163,7 @@
 - [x] 架构文档（`docs/architecture.md`）。
 - [x] 会话引擎文档（`docs/session-engine.md`）。
 - [x] 测试文档（`tests/TESTING.md`）。
-- [ ] OpenAPI 完整化（错误码、示例、鉴权说明）。
+- [x] OpenAPI 完整化（全部 22 个端点补齐 tags/summary/响应码与 ErrorResponse schema 声明；bearer 鉴权文档级声明验证生效）。
 - [x] 生产部署指南（`docs/production.md`：拓扑、配置矩阵、安全加固、备份/升级、扩容、监控）。
 - [x] 故障排查手册（`docs/troubleshooting.md`：诊断工具箱 + 症状→诊断→处置清单）。
 
