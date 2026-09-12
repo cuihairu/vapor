@@ -30,7 +30,6 @@ public sealed class E2EStack : IAsyncLifetime
 		BaseUrl = $"http://127.0.0.1:{port}";
 
 		string controlPlaneDll = TestInfrastructure.FindAppDll("Vapor.ControlPlane", "Vapor.ControlPlane.dll");
-		string agentDll = TestInfrastructure.FindAppDll("Vapor.Agent", "Vapor.Agent.dll");
 
 		_controlPlane = VaporProcess.Start(
 			controlPlaneDll,
@@ -45,29 +44,19 @@ public sealed class E2EStack : IAsyncLifetime
 				// terminal state within seconds instead of the production default (10 × 2s).
 				["Vapor_TASK_MAX_DISPATCH_ATTEMPTS"] = "3",
 				["Vapor_TASK_DISPATCH_RETRY_DELAY_MS"] = "200",
+				// Account orchestration: aggressive timing so orchestration tests observe
+				// reconciliation within seconds instead of the production default (15s interval).
+				["Vapor_RECONCILE_INTERVAL_SECONDS"] = "2",
+				["Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS"] = "3",
+				["Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS"] = "50",
 			},
 			Path.Combine(_workDir, "controlplane.log"));
 
 		try
 		{
-			_agent = VaporProcess.Start(
-				agentDll,
-				new Dictionary<string, string>
-				{
-					["AGENT_ID"] = AgentId,
-					["AGENT_REGION"] = AgentRegion,
-					["AGENT_CONTROLPLANE_WS_URL"] = $"{BaseUrl.Replace("http://", "ws://")}/v1/agent/ws",
-					["AGENT_API_KEY"] = AgentApiKey,
-					["VAPOR_PLUGINS_DIR"] = Path.Combine(_workDir, "plugins-empty"),
-					// Isolate FileCredentialStore (~/.vapor) and any user-profile writes from the developer machine.
-					["HOME"] = Path.Combine(_workDir, "home"),
-					["USERPROFILE"] = Path.Combine(_workDir, "home"),
-				},
-				Path.Combine(_workDir, "agent.log"));
-
 			Http = new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(10) };
 			await WaitForControlPlaneAsync();
-			await WaitForAgentOnlineAsync();
+			_agent = await StartAgentAsync(AgentId, AgentRegion);
 		}
 		catch
 		{
@@ -107,14 +96,52 @@ public sealed class E2EStack : IAsyncLifetime
 			$"Control plane did not become healthy within 30s. Last error: {lastError}. Log:{Environment.NewLine}{_controlPlane!.ReadLogTail()}");
 	}
 
-	private async Task WaitForAgentOnlineAsync()
+	/// <summary>
+	/// Starts an additional agent process against the shared control plane for tests that
+	/// need multi-agent scenarios (e.g. orchestration rebalancing). The caller owns disposal.
+	/// </summary>
+	internal async Task<VaporProcess> StartAgentAsync(string agentId, string region)
+	{
+		string agentDll = TestInfrastructure.FindAppDll("Vapor.Agent", "Vapor.Agent.dll");
+		string homeDir = Path.Combine(_workDir, $"home-{agentId}");
+		Directory.CreateDirectory(homeDir);
+
+		VaporProcess agent = VaporProcess.Start(
+			agentDll,
+			new Dictionary<string, string>
+			{
+				["AGENT_ID"] = agentId,
+				["AGENT_REGION"] = region,
+				["AGENT_CONTROLPLANE_WS_URL"] = $"{BaseUrl.Replace("http://", "ws://")}/v1/agent/ws",
+				["AGENT_API_KEY"] = AgentApiKey,
+				["VAPOR_PLUGINS_DIR"] = Path.Combine(_workDir, "plugins-empty"),
+				// Isolate FileCredentialStore (~/.vapor) and any user-profile writes from the developer machine.
+				["HOME"] = homeDir,
+				["USERPROFILE"] = homeDir,
+			},
+			Path.Combine(_workDir, $"{agentId}.log"));
+
+		try
+		{
+			await WaitForAgentOnlineAsync(agent, agentId);
+		}
+		catch
+		{
+			agent.Dispose();
+			throw;
+		}
+
+		return agent;
+	}
+
+	private async Task WaitForAgentOnlineAsync(VaporProcess process, string agentId)
 	{
 		for (int attempt = 0; attempt < 150; attempt++)
 		{
-			if (_agent!.HasExited)
+			if (process.HasExited)
 			{
 				throw new InvalidOperationException(
-					$"Agent exited early (code {_agent.ExitCode}). Log:{Environment.NewLine}{_agent.ReadLogTail()}");
+					$"Agent '{agentId}' exited early (code {process.ExitCode}). Log:{Environment.NewLine}{process.ReadLogTail()}");
 			}
 
 			try
@@ -129,7 +156,7 @@ public sealed class E2EStack : IAsyncLifetime
 				{
 					foreach (var agent in agents.EnumerateArray())
 					{
-						if (agent.TryGetProperty("agentId", out var id) && id.GetString() == AgentId)
+						if (agent.TryGetProperty("agentId", out var id) && id.GetString() == agentId)
 						{
 							// The scheduler only routes actions the agent declared in its hello;
 							// require the built-in echo action before tests start creating jobs.
@@ -144,7 +171,7 @@ public sealed class E2EStack : IAsyncLifetime
 							}
 
 							throw new InvalidOperationException(
-								$"Agent registered without 'echo' capability: {agent.GetRawText()}");
+								$"Agent '{agentId}' registered without 'echo' capability: {agent.GetRawText()}");
 						}
 					}
 				}
@@ -158,7 +185,7 @@ public sealed class E2EStack : IAsyncLifetime
 		}
 
 		throw new TimeoutException(
-			$"Agent '{AgentId}' never registered with the control plane. Agent log:{Environment.NewLine}{_agent!.ReadLogTail()}");
+			$"Agent '{agentId}' never registered with the control plane. Agent log:{Environment.NewLine}{process.ReadLogTail()}");
 	}
 
 	public async Task<JsonElement> CreateJobAsync(object request)
