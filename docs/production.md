@@ -199,6 +199,12 @@ With the observability profile enabled:
   configure auth before exposing)
 - Agent metrics: `http://<agent>:9700/metrics`
 
-Alerts worth wiring up: control plane `/healthz` failing, agent offline
-(`up{job="agent"} == 0`), tasks stuck in `queued`/`running`, and
-`task.dispatch_failed` / `task.failed` SSE event rates.
+Bundled alert rules (`deploy/prometheus/alerts.yml`, auto-loaded by the
+compose Prometheus): `VaporAgentDown` (scrape failing 1m, critical),
+`VaporAgentTargetMissing` (target gone 2m, critical) and
+`VaporAgentScrapeSlow` (scrape >5s for 5m, warning). Route these via your
+Alertmanager to whatever paging channel you use.
+
+Known gap: the control plane does not yet export Prometheus metrics, so
+job-level alerts (tasks stuck in queued/running, dispatch-failure rates)
+are not expressible yet — track that endpoint in `todo.md`.

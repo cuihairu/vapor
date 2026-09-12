@@ -1,0 +1,53 @@
+# Prometheus alert rules for the Vapor observability stack.
+#
+# These rules cover the signals the agent's /metrics endpoint exposes. The
+# control plane does not yet export Prometheus metrics (task-state gauges and
+# dispatch-failure counters are a tracked gap), so job-level alerts land once
+# that endpoint exists.
+#
+# Wired in automatically: docker-compose.yml mounts this file and sets
+# rule_files on the Prometheus config.
+
+groups:
+  - name: vapor-agent
+    rules:
+      - alert: VaporAgentDown
+        expr: up{job="vapor-agent"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Vapor agent is unreachable"
+          description: >-
+            Prometheus cannot scrape the agent metrics endpoint
+            ({{ $labels.instance }}) for over a minute. The agent process may
+            have crashed, lost its network route to Prometheus, or the
+            metrics listener failed to bind.
+          runbook_url: "https://github.com/cuihairu/vapor/blob/main/docs/troubleshooting.md#metrics-endpoint-unreachable"
+
+      - alert: VaporAgentScrapeSlow
+        expr: scrape_duration_seconds{job="vapor-agent"} > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vapor agent metrics scrape is slow"
+          description: >-
+            Scraping {{ $labels.instance }} took more than 5 seconds for 5
+            minutes (current: {{ $value | humanizeDuration }}). This usually
+            indicates resource starvation on the agent host rather than a
+            metrics-endpoint problem.
+
+      - alert: VaporAgentTargetMissing
+        expr: absent(up{job="vapor-agent"} == 1)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No healthy Vapor agent target"
+          description: >-
+            The vapor-agent scrape target has disappeared from Prometheus
+            entirely (no successful scrape in the last 2 minutes). Check the
+            compose service state: docker compose ps, then
+            docker compose logs agent.
+          runbook_url: "https://github.com/cuihairu/vapor/blob/main/docs/troubleshooting.md#agent-never-shows-online"

@@ -179,13 +179,15 @@
 
 ### 6.3 发布与运维
 
+- [ ] ControlPlane 暴露 Prometheus /metrics 端点（任务状态 gauge、dispatch 失败计数），补齐 job 级告警基础（`deploy/prometheus/alerts.yml` 目前仅覆盖 agent 侧信号）。
+- [x] Prometheus 告警规则（`deploy/prometheus/alerts.yml`：VaporAgentDown / VaporAgentTargetMissing / VaporAgentScrapeSlow，compose 自动挂载加载）。
 - [x] CI/CD 多平台构建（Ubuntu / Windows / macOS，Debug / Release）。
 - [x] Codecov 覆盖率上报。
 - [x] Docker 镜像（ControlPlane + Agent，含 Monitoring 插件、非 root 用户、CI 构建门禁）。
 - [x] docker-compose 本地编排（含 observability profile：Prometheus + Grafana 自动 provisioning）。
-- [ ] 自动发布流水线与回滚策略。
+- [x] 自动发布流水线（tag 触发：5 RID zip + GHCR 镜像，正式版更新 :latest；回滚即固定上一镜像 tag，见 `docs/production.md`）。
 - [x] 可观测性：结构化日志（脱敏）、指标（MonitoringPlugin Prometheus 端点 + Grafana 面板 + compose observability profile）。
-- [ ] 可观测性增强：追踪（OpenTelemetry）、告警规则。
+- [ ] 可观测性增强：分布式追踪（OpenTelemetry）；告警规则已完成（`deploy/prometheus/alerts.yml`），ControlPlane /metrics 与 job 级告警待补。
 
 ---
 
