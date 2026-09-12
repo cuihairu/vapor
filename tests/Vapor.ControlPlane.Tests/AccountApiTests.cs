@@ -380,8 +380,8 @@ public sealed class AccountApiTests
 	[Fact]
 	public async Task GetTradeOffers_StillPending_Returns202WithJobId()
 	{
-		TradeOffersReader.WaitWindow = TimeSpan.FromMilliseconds(400);
-		TradeOffersReader.PollInterval = TimeSpan.FromMilliseconds(25);
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
 		try
 		{
 			await using var factory = CreateFactory(removeHosted: true);
@@ -398,29 +398,169 @@ public sealed class AccountApiTests
 		}
 		finally
 		{
-			TradeOffersReader.WaitWindow = TimeSpan.FromSeconds(30);
-			TradeOffersReader.PollInterval = TimeSpan.FromMilliseconds(200);
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
+	[Fact]
+	public async Task AcceptTradeOffer_RequireAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage accept = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { partnerSteamId = "76561198000000001" });
+		using HttpResponseMessage decline = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/decline", new { });
+
+		Assert.Equal(HttpStatusCode.Unauthorized, accept.StatusCode);
+		Assert.Equal(HttpStatusCode.Unauthorized, decline.StatusCode);
+	}
+
+	[Fact]
+	public async Task AcceptTradeOffer_InvalidRequest_Returns400()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage badOfferId = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/not-a-number/accept", new { partnerSteamId = "76561198000000001" });
+		using HttpResponseMessage missingPartner = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { });
+
+		Assert.Equal(HttpStatusCode.BadRequest, badOfferId.StatusCode);
+		Assert.Equal(HttpStatusCode.BadRequest, missingPartner.StatusCode);
+	}
+
+	[Fact]
+	public async Task AcceptTradeOffer_AgentReportsFinished_ReturnsResult()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "accept_trade_offer", success: true,
+			new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890", ["requires_mobile_confirmation"] = false },
+			null, cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { partnerSteamId = "76561198000000001" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Equal("43591234567890", doc.RootElement.GetProperty("result").GetProperty("trade_offer_id").GetString());
+	}
+
+	[Fact]
+	public async Task AcceptTradeOffer_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "accept_trade_offer", success: false, null, "offer is no longer active", cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { partnerSteamId = "76561198000000001" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("no longer active", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task DeclineTradeOffer_AgentReportsFinished_ReturnsResult()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "decline_trade_offer", success: true,
+			new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890" },
+			null, cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/decline", new { });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Equal("43591234567890", doc.RootElement.GetProperty("result").GetProperty("trade_offer_id").GetString());
+	}
+
+	[Fact]
+	public async Task AcceptTradeOffer_StillPending_Returns202()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { partnerSteamId = "76561198000000001" });
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
 		}
 	}
 
 	/// <summary>Plays the agent side: claims the queued get_trade_offers task and reports a result.</summary>
-	private static async Task RespondToFirstTradeOffersTaskAsync(IJobStore store, bool success, CancellationToken ct)
+	private static Task RespondToFirstTradeOffersTaskAsync(IJobStore store, bool success, CancellationToken ct)
+	{
+		return RespondToFirstTaskAsync(
+			store,
+			"get_trade_offers",
+			success,
+			new Dictionary<string, object?>
+			{
+				["received_count"] = 1,
+				["received_offers"] = new List<Dictionary<string, object?>>
+				{
+					new() { ["trade_offer_id"] = "43591234567890", ["state"] = "Active" }
+				}
+			},
+			"agent refused",
+			ct);
+	}
+
+	/// <summary>Plays the agent side: claims the first queued task for <paramref name="action"/> and reports a result.</summary>
+	private static async Task RespondToFirstTaskAsync(
+		IJobStore store,
+		string action,
+		bool success,
+		Dictionary<string, object?>? output,
+		string? error,
+		CancellationToken ct)
 	{
 		while (!ct.IsCancellationRequested)
 		{
 			JobTask? claimed = await store.ClaimNextQueuedTask("us-east", ct);
-			if (claimed is { Action: "get_trade_offers" })
+			if (claimed is not null && claimed.Action == action)
 			{
-				var output = new Dictionary<string, object?>
-				{
-					["received_count"] = 1,
-					["received_offers"] = new List<Dictionary<string, object?>>
-					{
-						new() { ["trade_offer_id"] = "43591234567890", ["state"] = "Active" }
-					}
-				};
 				await store.SetTaskResult(
-					new TaskResult(claimed.Id, success, success ? null : "agent refused", success ? output : null, DateTimeOffset.UtcNow),
+					new TaskResult(claimed.Id, success, success ? null : error, success ? output : null, DateTimeOffset.UtcNow),
 					ct);
 				return;
 			}
