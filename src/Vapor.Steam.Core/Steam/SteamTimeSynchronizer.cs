@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 
-namespace Vapor.Plugins.MobileAuthenticator;
+namespace Vapor.Steam.Core.Steam;
 
 /// <summary>
 /// Tracks the offset between the local clock and Steam's server time. TOTP codes and
@@ -61,5 +61,31 @@ public sealed class SteamTimeSynchronizer
 		LastSyncedAt = _timeProvider.GetUtcNow();
 
 		_logger?.LogInformation("Steam time synced: offset {OffsetSeconds}s", offset);
+	}
+
+	/// <summary>
+	/// Default server-time query: POSTs to Steam's ITwoFactorService/QueryTime endpoint and
+	/// parses the server_time field from the response. Shared by every consumer that does
+	/// not supply its own query delegate.
+	/// </summary>
+	public static async Task<long> QuerySteamServerTimeAsync(CancellationToken cancellationToken)
+	{
+		using var httpClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+		using var content = new System.Net.Http.FormUrlEncodedContent(new Dictionary<string, string>());
+		using var response = await httpClient.PostAsync(QueryTimeEndpoint, content, cancellationToken).ConfigureAwait(false);
+
+		response.EnsureSuccessStatusCode();
+
+		string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+		using var doc = System.Text.Json.JsonDocument.Parse(body);
+
+		if (doc.RootElement.TryGetProperty("response", out var responseElem)
+			&& responseElem.TryGetProperty("server_time", out var serverTimeElem)
+			&& long.TryParse(serverTimeElem.GetString(), out var serverTime))
+		{
+			return serverTime;
+		}
+
+		throw new InvalidOperationException("Steam QueryTime response did not contain response.server_time");
 	}
 }

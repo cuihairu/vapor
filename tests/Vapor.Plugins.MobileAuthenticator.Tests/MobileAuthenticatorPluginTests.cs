@@ -9,7 +9,7 @@ namespace Vapor.Plugins.MobileAuthenticator.Tests;
 public class MobileAuthenticatorPluginTests
 {
 	[Fact]
-	public async Task Plugin_InitializeAndContributesFiveActions()
+	public async Task Plugin_InitializeAndContributesSixActions()
 	{
 		var plugin = new MobileAuthenticatorPlugin();
 
@@ -20,9 +20,9 @@ public class MobileAuthenticatorPluginTests
 
 		var actions = plugin.GetActions().ToList();
 
-		Assert.Equal(5, actions.Count);
+		Assert.Equal(6, actions.Count);
 		Assert.Equal(
-			new[] { "generate_totp", "generate_confirmation_hash", "sync_steam_time", "get_trade_confirmations", "respond_trade_confirmation" }
+			new[] { "generate_totp", "generate_confirmation_hash", "sync_steam_time", "get_trade_confirmations", "respond_trade_confirmation", "save_shared_secret" }
 				.Order(StringComparer.OrdinalIgnoreCase),
 			actions.Select(a => a.Name).Order(StringComparer.OrdinalIgnoreCase));
 
@@ -70,7 +70,7 @@ public class MobileAuthenticatorPluginTests
 			Assert.Empty(report.Failures);
 			var loaded = Assert.Single(report.Loaded);
 			Assert.Equal("vapor.mobile-authenticator", loaded.Info.Id);
-			Assert.Equal(5, loaded.Actions.Count);
+			Assert.Equal(6, loaded.Actions.Count);
 
 			Assert.True(await manager.UnloadAsync(loaded.Info.Id));
 		}

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
+using Vapor.Steam.Core.Steam;
 
 namespace Vapor.Plugins.MobileAuthenticator;
 
@@ -13,6 +14,7 @@ public sealed class MobileAuthenticatorPlugin : IActionPlugin
 {
 	private SteamTimeSynchronizer? _timeSynchronizer;
 	private ILoggerFactory? _loggerFactory;
+	private Vapor.Steam.Core.Security.ICredentialStore? _credentialStore;
 
 	public PluginInfo Info { get; } = new(
 		Id: "vapor.mobile-authenticator",
@@ -25,8 +27,9 @@ public sealed class MobileAuthenticatorPlugin : IActionPlugin
 	{
 		_loggerFactory = context.Host.LoggerFactory;
 		_timeSynchronizer = new SteamTimeSynchronizer(
-			QueryServerTimeAsync,
+			SteamTimeSynchronizer.QuerySteamServerTimeAsync,
 			logger: _loggerFactory.CreateLogger<SteamTimeSynchronizer>());
+		_credentialStore = context.Host.Services.GetService(typeof(Vapor.Steam.Core.Security.ICredentialStore)) as Vapor.Steam.Core.Security.ICredentialStore;
 		return Task.CompletedTask;
 	}
 
@@ -47,30 +50,6 @@ public sealed class MobileAuthenticatorPlugin : IActionPlugin
 		yield return new SyncSteamTimeAction(_timeSynchronizer, _loggerFactory.CreateLogger<SyncSteamTimeAction>());
 		yield return new GetTradeConfirmationsAction(_loggerFactory.CreateLogger<GetTradeConfirmationsAction>(), _timeSynchronizer);
 		yield return new RespondTradeConfirmationAction(_loggerFactory.CreateLogger<RespondTradeConfirmationAction>(), _timeSynchronizer);
-	}
-
-	/// <summary>
-	/// Default server-time query: POSTs to Steam's ITwoFactorService/QueryTime endpoint and
-	/// parses the server_time field from the response.
-	/// </summary>
-	internal static async Task<long> QueryServerTimeAsync(CancellationToken cancellationToken)
-	{
-		using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-		using var content = new FormUrlEncodedContent(new Dictionary<string, string>());
-		using var response = await httpClient.PostAsync(SteamTimeSynchronizer.QueryTimeEndpoint, content, cancellationToken).ConfigureAwait(false);
-
-		response.EnsureSuccessStatusCode();
-
-		var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-		using var doc = JsonDocument.Parse(body);
-
-		if (doc.RootElement.TryGetProperty("response", out var responseElem)
-			&& responseElem.TryGetProperty("server_time", out var serverTimeElem)
-			&& long.TryParse(serverTimeElem.GetString(), out var serverTime))
-		{
-			return serverTime;
-		}
-
-		throw new InvalidOperationException("Steam QueryTime response did not contain response.server_time");
+		yield return new SaveSharedSecretAction(_loggerFactory.CreateLogger<SaveSharedSecretAction>(), _credentialStore);
 	}
 }

@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace Vapor.Plugins.MobileAuthenticator;
+namespace Vapor.Steam.Core.Steam;
 
 /// <summary>
 /// Generates Steam-style mobile authenticator TOTP codes: 5 characters from the Steam
@@ -56,7 +56,8 @@ public static class SteamTotp
 		return TimeStepSeconds - remainder;
 	}
 
-	internal static byte[] DecodeSecret(string? secretBase64, string paramName)
+	/// <summary>Decodes and validates a base64-encoded shared secret (public: shared with the mobile authenticator plugin).</summary>
+	public static byte[] DecodeSecret(string? secretBase64, string paramName)
 	{
 		if (string.IsNullOrWhiteSpace(secretBase64))
 		{

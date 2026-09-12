@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Vapor.Plugins.MobileAuthenticator;
+using Vapor.Steam.Core.Security;
+using Vapor.Steam.Core.Steam;
 
 namespace Vapor.Plugins.MobileAuthenticator.Tests;
 
@@ -144,6 +146,44 @@ public class AuthenticatorActionTests
 
 		Assert.False(result.Success);
 		Assert.Contains("Steam time sync failed", result.Error);
+	}
+
+	[Fact]
+	public async Task SaveSharedSecret_StoresSecretForSessionAccount()
+	{
+		var store = new FakeCredentialStore();
+		var action = new SaveSharedSecretAction(NullLogger<SaveSharedSecretAction>.Instance, store);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["shared_secret"] = "MTIzNDU2" }, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("MTIzNDU2", store.Secrets["test_account"]);
+		Assert.True((bool)result.Output!["stored"]!);
+	}
+
+	[Fact]
+	public async Task SaveSharedSecret_MissingPayload_Fails()
+	{
+		var action = new SaveSharedSecretAction(NullLogger<SaveSharedSecretAction>.Instance, new FakeCredentialStore());
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("shared_secret", result.Error);
+	}
+
+	[Fact]
+	public async Task SaveSharedSecret_UnavailableCredentialStore_Fails()
+	{
+		var action = new SaveSharedSecretAction(NullLogger<SaveSharedSecretAction>.Instance, credentialStore: null);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["shared_secret"] = "MTIzNDU2" }, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("credential store", result.Error);
 	}
 
 	[Fact]
@@ -328,15 +368,47 @@ public class AuthenticatorActionTests
 		}
 
 		public Task<MobileConfirmationResult> RespondAsync(
-			string identitySecret,
-			ulong confirmationId,
-			ulong nonce,
-			ConfirmationOperation operation,
-			CancellationToken cancellationToken)
+				string identitySecret,
+				ulong confirmationId,
+				ulong nonce,
+				ConfirmationOperation operation,
+				CancellationToken cancellationToken)
 		{
 			LastIdentitySecret = identitySecret;
 			LastRespond = (confirmationId, nonce, operation);
 			return Task.FromResult(OperationResult);
 		}
+	}
+
+	private sealed class FakeCredentialStore : ICredentialStore
+	{
+		public Dictionary<string, string> Secrets { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+		public Task SaveRefreshTokenAsync(string accountName, string refreshToken, CancellationToken cancellationToken = default)
+			=> Task.CompletedTask;
+
+		public Task<string?> GetRefreshTokenAsync(string accountName, CancellationToken cancellationToken = default)
+			=> Task.FromResult<string?>(null);
+
+		public Task SaveAccessTokenAsync(string accountName, StoredAccessToken accessToken, CancellationToken cancellationToken = default)
+			=> Task.CompletedTask;
+
+		public Task<StoredAccessToken?> GetAccessTokenAsync(string accountName, CancellationToken cancellationToken = default)
+			=> Task.FromResult<StoredAccessToken?>(null);
+
+		public Task RevokeCredentialsAsync(string accountName, CancellationToken cancellationToken = default)
+			=> Task.CompletedTask;
+
+		public Task<bool> HasCredentialsAsync(string accountName, CancellationToken cancellationToken = default)
+			=> Task.FromResult(false);
+
+		public Task SaveSharedSecretAsync(string accountName, string sharedSecret, CancellationToken cancellationToken = default)
+		{
+			Secrets[accountName] = sharedSecret;
+			return Task.CompletedTask;
+		}
+
+		public Task<string?> GetSharedSecretAsync(string accountName, CancellationToken cancellationToken = default)
+			=> Task.FromResult(Secrets.TryGetValue(accountName, out string? secret) ? secret : null);
 	}
 }

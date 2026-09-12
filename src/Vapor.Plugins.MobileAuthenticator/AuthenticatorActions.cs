@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core;
+using Vapor.Steam.Core.Security;
+using Vapor.Steam.Core.Steam;
 using Vapor.Steam.Core.Web;
 
 namespace Vapor.Plugins.MobileAuthenticator;
@@ -405,5 +407,63 @@ public sealed class RespondTradeConfirmationAction : IAction
 			default:
 				return false;
 		}
+	}
+}
+
+/// <summary>
+/// "save_shared_secret": stores the account's Steam mobile authenticator shared secret
+/// (base64) in the agent's encrypted credential store so 2FA challenges can be answered
+/// locally. Payload: shared_secret (string, base64).
+/// </summary>
+public sealed class SaveSharedSecretAction : IAction
+{
+	private readonly ILogger<SaveSharedSecretAction> _logger;
+	private readonly ICredentialStore? _credentialStore;
+
+	public SaveSharedSecretAction(ILogger<SaveSharedSecretAction> logger, ICredentialStore? credentialStore = null)
+	{
+		_logger = logger;
+		_credentialStore = credentialStore;
+	}
+
+	public string Name => "save_shared_secret";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Store the account's mobile authenticator shared secret for automatic 2FA answers",
+		RequiresLogin: false,
+		TimeoutSeconds: 10);
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		if (_credentialStore is null)
+		{
+			return new ActionResult(false, "credential store is not available to this plugin", null);
+		}
+
+		var sharedSecret = PayloadReader.GetString(payload, "shared_secret") ?? PayloadReader.GetString(payload, "sharedSecret");
+		if (string.IsNullOrWhiteSpace(sharedSecret))
+		{
+			return new ActionResult(false, "shared_secret is required", null);
+		}
+
+		try
+		{
+			await _credentialStore.SaveSharedSecretAsync(session.AccountName, sharedSecret, cancellationToken).ConfigureAwait(false);
+		}
+		catch (ArgumentException ex)
+		{
+			return new ActionResult(false, ex.Message, null);
+		}
+
+		_logger.LogInformation("Stored shared secret for {AccountName}", session.AccountName);
+		return new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["account"] = session.AccountName,
+			["stored"] = true
+		});
 	}
 }

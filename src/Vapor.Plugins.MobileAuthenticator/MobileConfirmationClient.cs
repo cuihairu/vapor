@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Vapor.Steam.Core.Steam;
 using Vapor.Steam.Core.Web;
 
 namespace Vapor.Plugins.MobileAuthenticator;

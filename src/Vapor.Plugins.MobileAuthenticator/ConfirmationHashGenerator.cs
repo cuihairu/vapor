@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Vapor.Steam.Core.Steam;
 using System.Text;
 
 namespace Vapor.Plugins.MobileAuthenticator;

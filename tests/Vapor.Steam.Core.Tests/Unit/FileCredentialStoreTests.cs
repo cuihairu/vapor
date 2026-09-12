@@ -226,6 +226,57 @@ public sealed class FileCredentialStoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SharedSecret_RoundTripsAcrossStoreInstances()
+	{
+		string account = "account-a";
+		const string secret = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=";
+
+		using (var store = CreateStore())
+		{
+			await store.SaveSharedSecretAsync(account, secret);
+		}
+
+		using var reloaded = CreateStore();
+
+		Assert.Equal(secret, await reloaded.GetSharedSecretAsync(account));
+	}
+
+	[Fact]
+	public async Task SharedSecret_IsEncryptedAtRest()
+	{
+		const string secret = "MTIzNDU2Nzg5MDEyMzQ1Njc4OTA=";
+
+		using var store = CreateStore();
+		await store.SaveSharedSecretAsync("account-a", secret);
+
+		string file = await File.ReadAllTextAsync(StorePath);
+
+		// The secret must never appear in plain text on disk.
+		Assert.DoesNotContain(secret, file, StringComparison.Ordinal);
+		Assert.Contains("sharedSecret", file, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task SharedSecret_MissingAccount_ReturnsNull()
+	{
+		using var store = CreateStore();
+
+		Assert.Null(await store.GetSharedSecretAsync("ghost"));
+	}
+
+	[Fact]
+	public async Task SharedSecret_OverwriteReplacesPreviousValue()
+	{
+		string account = "account-a";
+
+		using var store = CreateStore();
+		await store.SaveSharedSecretAsync(account, "first");
+		await store.SaveSharedSecretAsync(account, "second");
+
+		Assert.Equal("second", await store.GetSharedSecretAsync(account));
+	}
+
+	[Fact]
 	public async Task Save_RestrictsFilePermissionsToOwnerOnUnix()
 	{
 		if (OperatingSystem.IsWindows())

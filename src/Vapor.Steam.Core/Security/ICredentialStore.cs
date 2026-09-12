@@ -58,4 +58,21 @@ public interface ICredentialStore
 	/// <param name="accountName">The account name.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	Task<bool> HasCredentialsAsync(string accountName, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Saves the Steam mobile authenticator shared secret (base64) for an account, used
+	/// for local TOTP generation. Stored encrypted alongside the other credentials.
+	/// </summary>
+	/// <param name="accountName">The account name.</param>
+	/// <param name="sharedSecret">The base64-encoded shared secret.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	Task SaveSharedSecretAsync(string accountName, string sharedSecret, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Gets the Steam mobile authenticator shared secret (base64) for an account, or
+	/// null when none is stored.
+	/// </summary>
+	/// <param name="accountName">The account name.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	Task<string?> GetSharedSecretAsync(string accountName, CancellationToken cancellationToken = default);
 }

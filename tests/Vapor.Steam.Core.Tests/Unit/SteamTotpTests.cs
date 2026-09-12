@@ -1,7 +1,7 @@
 using Xunit;
-using Vapor.Plugins.MobileAuthenticator;
+using Vapor.Steam.Core.Steam;
 
-namespace Vapor.Plugins.MobileAuthenticator.Tests;
+namespace Vapor.Steam.Core.Tests.Unit;
 
 public class SteamTotpTests
 {

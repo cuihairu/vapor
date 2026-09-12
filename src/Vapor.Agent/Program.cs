@@ -155,6 +155,28 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 // Start one background task to listen for auth challenge events via SSE.
 _ = Task.Run(() => PollAuthChallengesAsync(agentId, region, wsUrlBase, agentApiKey, sessionManager, logger, cts.Token), cts.Token);
 
+// Automatic 2FA answering: opt-in via AGENT_2FA_AUTO_SUBMIT=true. Answers challenges
+// from the locally stored shared secret (it never leaves this agent); accounts without
+// one fall through to the manual SSE channel above.
+if (string.Equals(Environment.GetEnvironmentVariable("AGENT_2FA_AUTO_SUBMIT"), "true", StringComparison.OrdinalIgnoreCase))
+{
+	logger.LogInformation("Automatic 2FA answering is enabled (AGENT_2FA_AUTO_SUBMIT=true)");
+	var steamTime = new SteamTimeSynchronizer(
+		SteamTimeSynchronizer.QuerySteamServerTimeAsync,
+		logger: logger);
+	var responder = new TwoFactorAutoResponder(
+		sessionManager,
+		serviceProvider.GetRequiredService<ICredentialStore>(),
+		steamTime,
+		logger: serviceProvider.GetRequiredService<ILogger<TwoFactorAutoResponder>>());
+	_ = Task.Run(() => RunSteamTimeSyncAsync(steamTime, logger, cts.Token), cts.Token);
+	_ = Task.Run(() => responder.RunAsync(cts.Token), cts.Token);
+}
+else
+{
+	logger.LogInformation("Automatic 2FA answering is disabled (set AGENT_2FA_AUTO_SUBMIT=true to enable)");
+}
+
 var consecutiveFailures = 0;
 while (!cts.IsCancellationRequested)
 {
@@ -496,6 +518,38 @@ static async Task HeartbeatLoop(ClientWebSocket ws, SemaphoreSlim sendGate, JobT
 	catch
 	{
 		// Best-effort: if the websocket is disconnected or errors, don't fail the task itself.
+	}
+}
+
+/// <summary>
+/// Keeps the Steam time offset fresh for TOTP generation: syncs once at startup and
+/// then hourly (clock drift is slow, and a stale offset of a few seconds is harmless
+/// within the 30s TOTP window).
+/// </summary>
+static async Task RunSteamTimeSyncAsync(SteamTimeSynchronizer timeSynchronizer, ILogger logger, CancellationToken cancellationToken)
+{
+	while (!cancellationToken.IsCancellationRequested)
+	{
+		try
+		{
+			await timeSynchronizer.SyncAsync(cancellationToken);
+			logger.LogDebug("Steam time sync: offset {OffsetSeconds}s", timeSynchronizer.OffsetSeconds);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+		}
+		catch (Exception ex)
+		{
+			logger.LogWarning(ex, "Steam time sync failed; keeping the previous offset");
+		}
+
+		try
+		{
+			await Task.Delay(TimeSpan.FromHours(1), cancellationToken);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+		}
 	}
 }
 
