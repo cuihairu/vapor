@@ -28,9 +28,10 @@
     <ProjectReference Include="..\..\src\Vapor.Agent\Vapor.Agent.csproj" />
   </ItemGroup>
 
-  <!-- Recorded Steam Web API responses replayed by the contract tests. -->
+  <!-- Recorded Steam responses (Web API JSON, community HTML) replayed by the contract tests. -->
   <ItemGroup>
     <Content Include="TestData/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="TestData/**/*.html" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

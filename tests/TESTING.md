@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (573 tests)
+├── Vapor.Steam.Core.Tests/               (597 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -28,7 +28,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 573 | 动作、会话状态机、交易校验、凭据/加密、数据缓存、Steam Web 客户端 + 契约回放 |
+| Vapor.Steam.Core.Tests | 597 | 动作、会话状态机、交易校验、凭据/加密、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析 |
 | Vapor.ControlPlane.Tests | 147 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放 |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 44 | TOTP、确认哈希、移动交易确认、shared secret 持久化、插件宿主实战加载 |
@@ -37,7 +37,7 @@ tests/
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 20 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **961** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **985** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
@@ -57,6 +57,7 @@ tests/
 | ActionRegistryTests | 16 | 注册表(执行观察者 4 个另计) |
 | SendTradeOffer / AcceptTradeOffer / DeclineTradeOffer / CancelTradeOffer ActionTests | 12 | 交易动作 |
 | GetInventoryActionTests | 4 | 库存读取 |
+| GetCardDropsActionTests | 8 | 卡牌剩余掉落查询(排序/错误/缓存 SWR/force_refresh) |
 
 #### 会话与核心组件
 | 测试类 | 数量 | 说明 |
@@ -98,6 +99,8 @@ tests/
 | RedisVaporCacheIntegrationTests(集成,门控) | 11 | Redis 端到端(需 `VAPOR_TEST_REDIS`) |
 | SteamStoreApiClientTests | 9 | 商店 API 客户端(解析) |
 | SteamStoreApiContractTests | 4 | 录制响应契约回放(appdetails/storesearch/market render 新旧双契约,fixture 见 `TestData/`) |
+| SteamBadgesClientTests | 13 | 徽章页解析变体(appid 双载体/掉落文案/分页/失败语义) |
+| SteamBadgesPageContractTests | 3 | 徽章页 HTML 契约回放(fixture 为三方解析器互证构造,登录门控不可匿名录制) |
 | SteamWebHandlerResilienceTests | 8 | 429/5xx 退避重试与熔断 |
 | HttpCircuitBreakerTests | 8 | 熔断器状态机 |
 | GameModelsTests | 4 | 游戏数据模型 |

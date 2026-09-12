@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<!--
+  Badges overview page fixture (page 1 of 2) replayed by SteamBadgesPageContractTests.
+
+  The live page is login-gated (anonymous requests redirect to the profile), so this
+  fixture is a *constructed* skeleton — not a verbatim recording. Its structure is
+  cross-confirmed (2026-09-12) against three independent parsers of the live page:
+    - JustArchiNET/ArchiSteamFarm, CardsFarmer.cs (app id from card_drop_info_dialog id)
+    - zevnda/steam-game-idler, card_farming/scraper.rs (badge_row / progress_info_bold /
+      badge_title selectors, steam://run/{appid} link, .pageLinks pagination, l=english)
+    - Greasy Fork "Steam :: Badge - Remaining Card Drops" userscript (DOM hierarchy)
+  Replace with a recorded real page (authenticated capture) if the contract ever drifts.
+-->
+<html>
+<head>
+	<title>Steam Community :: Badges</title>
+</head>
+<body>
+<div id="mainContents">
+	<div class="profile_badges_header">
+		<div class="profile_badges_sortlink"><a href="?sort=p">Sort by drops remaining</a></div>
+	</div>
+	<div class="profile_badges_body">
+		<div class="badges_sheet">
+			<div class="badge_row">
+				<div class="badge_row_inner">
+					<div class="badge_title_row">
+						<div class="badge_title">Half-Life 2</div>
+						<div class="badge_title_stats">
+							<div class="badge_title_stats_content">
+								<div class="card_drop_info_dialog" id="card_drop_info_dialog_220_76561198000000000"></div>
+								<div class="badge_title_stats_playtime">12.4 hrs on record</div>
+								<div class="badge_progress_info"><div class="badge_progress_bar"></div></div>
+								<span class="progress_info_bold">6 card drops remaining</span>
+							</div>
+							<div class="badge_title_playgame">
+								<a class="btn_green_white_innerfade btn_medium" href="steam://run/220"><span>Play</span></a>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="badge_row">
+				<div class="badge_row_inner">
+					<div class="badge_title_row">
+						<div class="badge_title">Portal 2</div>
+						<div class="badge_title_stats">
+							<div class="badge_title_stats_content">
+								<div class="badge_title_stats_playtime">3.2 hrs on record</div>
+								<span class="progress_info_bold">1 card drop remaining</span>
+							</div>
+							<div class="badge_title_playgame">
+								<a class="btn_green_white_innerfade btn_medium" href="steam://run/620"><span>Play</span></a>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="badge_row">
+				<div class="badge_row_inner">
+					<div class="badge_title_row">
+						<div class="badge_title">Summer Sale 2026</div>
+						<div class="badge_title_stats">
+							<div class="badge_title_stats_content">
+								<span class="progress_info_bold">3 of 9 items unlocked</span>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="badge_row">
+				<div class="badge_row_inner">
+					<div class="badge_title_row">
+						<div class="badge_title"><a href="https://steamcommunity.com/my/gamecards/440/">Team Fortress 2</a></div>
+						<div class="badge_title_stats">
+							<div class="badge_title_stats_content">
+								<div class="card_drop_info_dialog" id="card_drop_info_dialog_440_76561198000000000"></div>
+								<div class="badge_title_stats_playtime">134.7 hrs on record</div>
+								<div class="badge_progress_info"><div class="badge_progress_bar"></div></div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="pageLinks">
+			<a href="?p=1" class="pagelink active">1</a>
+			<a href="?p=2" class="pagelink">2</a>
+		</div>
+	</div>
+</div>
+</body>
+</html>

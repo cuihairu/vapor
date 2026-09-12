@@ -294,7 +294,7 @@
 
 ### 11.1 P6-1 卡牌 farming 闭环（GA 出口条件，平台杠杆最大）
 
-- [ ] 徽章页解析：拉取玩家徽章/卡牌掉落页，得出各 app 剩余掉落张数（数据面复用 Steam Web 客户端 + 缓存；真实响应录制 fixture 契约测试先行——market search 漂移已证明必要）。
+- [x] 徽章页解析：拉取玩家徽章/卡牌掉落页，得出各 app 剩余掉落张数（✅ 2026-09-12 `SteamBadgesClient` + `get_card_drops` 动作。徽章页 HTML 是剩余掉落唯一来源且登录门控、不可匿名录制——fixture 按三方解析器互证构造（ASF CardsFarmer.cs / steam-game-idler scraper.rs / Greasy Fork userscript：`badge_row` 行切分、appid 双载体 `card_drop_info_dialog_{id}` 与 `steam://run/{id}`、`progress_info_bold` 掉落文案、`pagelink` 分页、`l=english` 强制语言），来源已在 fixture 头注明，结构漂移时按契约测试失败重录真实页。动作默认 SWR 缓存 10min，`force_refresh`/`cache_ttl_seconds` 可控；解析变体单测 + 契约回放 + 分页/失败语义 + 缓存共 24 测）。
 - [ ] smart farming 调度：剩余掉落 > 0 的 app 进 idle 队列，掉完自动切换下一个；与 DesiredStateReconciler 整合——`Idle` 期望状态从"指定 appIds"升级为 farm 策略模式（调度在 CP 编排层，动作面只加"查剩余掉落"action）。
 - [ ] 挂机排除名单：IdleApps 补充排除（黑名单）语义，对齐 ASF `Blacklist`。
 
@@ -339,3 +339,4 @@
 > 2026-09-12：ISteamTransport 协议适配层落地：`ISteamTransport` 协议无关操作面 + `TransportLogOnDetails`/`SteamResult`/`RedeemKeyResult` 协议无关模型，`SteamClientManager` 收敛为 SteamKit2 适配器（公共面零 SteamKit2 类型，`GetClient()` 删除，`SteamResult` 数值镜像线上编码保持任务 output 兼容）。协议升级从此只动适配层。Steam.Core 562→573。
 > 2026-09-12：**P5 全部完成（方向 A/C/B 三方向收官）**。方向 B 五子项收口：统计修正 / contract tests（抓到真实上游漂移并双路径修复）/ WS 协议 replay tests / ISteamTransport 协议适配层 / 覆盖率管道修复 + 真实基线（整体行覆盖 74.3%，Protocol 89.1%，测试总数 961，全部过；codecov 门禁 70% 上线）。
 > 2026-09-12：P6 立项：对标五个同类产品（ASF / Watt Toolkit / Steam Game Idler / steamguard-cli / Idle Master Extended）完成功能矩阵（`docs/feature-matrix.md`，7 能力域 30+ 项）。结论：平台层（多节点舰队编排/任务系统/插件/可观测性）全场独有；差距集中在 Steam 功能纵深，恰为 GA 出口条件 #2 未闭环项。P6 四组候选立项（§11）：卡牌 farming 闭环 → 交易与确认闭环 → 互操作与认领 → 后置待决（Dashboard/市场挂单/QR 登录/成就）；明确不采用网络加速/账号切换/通用 TOTP/游戏内脚本。
+> 2026-09-12：P6-1 ①徽章页解析落地：`SteamBadgesClient`（解析徽章页 HTML 得各 app 剩余卡牌掉落——该页是掉落数唯一来源，Web API 无对应字段）+ `get_card_drops` 动作（SWR 缓存 10min + force_refresh/cache_ttl_seconds，输出按剩余张数降序）。徽章页登录门控不可匿名录制，fixture 按三方解析器互证构造（ASF CardsFarmer.cs 的 `card_drop_info_dialog_{id}` appid 载体 / steam-game-idler scraper.rs 的 `steam://run/{id}` 载体与 `progress_info_bold`/`pagelink` 文案 / Greasy Fork userscript 的 DOM 层级），`l=english` 强制语言防本地化漂移；分页逐页抓取（后续页失败跳过、首页失败抛错）。24 个新测试（解析变体 13 + 契约回放 3 + 动作 8），Steam.Core 573→597，总 961→985。P6-1 剩余：②smart farming 调度、③IdleApps 排除名单。
