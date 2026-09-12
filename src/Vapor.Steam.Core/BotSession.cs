@@ -459,14 +459,22 @@ public sealed class BotSession : IDisposable
 		var evt = new SessionEvent(SessionEventType.StateChanged, _accountName, newState, message);
 		_eventChannel.Writer.TryWrite(evt);
 
-		// Notify callback for auth challenges
-		if (newState == SessionState.ConnectingWaitAuthCode || newState == SessionState.ConnectingWait2FA)
+		// Notify the agent host for every state change; auth-challenge states keep their
+		// dedicated event types so the control plane raises challenges, all other states
+		// report as state_changed so the control plane tracker mirrors the session.
+		if (_eventCallback != null)
 		{
+			string eventType = newState switch
+			{
+				SessionState.ConnectingWaitAuthCode => "auth_code_required",
+				SessionState.ConnectingWait2FA => "2fa_required",
+				_ => "state_changed"
+			};
 			_ = Task.Run(async () =>
 			{
 				if (_eventCallback != null)
 				{
-					await _eventCallback.Invoke(_accountName, newState == SessionState.ConnectingWaitAuthCode ? "auth_code_required" : "2fa_required", newState.ToString(), message);
+					await _eventCallback.Invoke(_accountName, eventType, newState.ToString(), message);
 				}
 			});
 		}

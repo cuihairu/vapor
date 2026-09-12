@@ -33,6 +33,16 @@ public sealed class SessionTracker
 			.OrderBy(s => s.AccountName, StringComparer.OrdinalIgnoreCase)
 			.ToList();
 	}
+
+	public SessionSnapshot? Get(string accountName)
+	{
+		if (string.IsNullOrWhiteSpace(accountName))
+		{
+			return null;
+		}
+
+		return _sessions.TryGetValue(accountName.Trim(), out SessionSnapshot? snapshot) ? snapshot : null;
+	}
 }
 
 

@@ -1225,7 +1225,8 @@ static async Task WriteAuditLog(
 
 static bool IsLoginAuditEvent(string normalizedEventType, string state)
 {
-	return string.Equals(state, "LoggedOn", StringComparison.Ordinal) ||
+	return string.Equals(state, "Connected", StringComparison.Ordinal) ||
+		   string.Equals(state, "LoggedOn", StringComparison.Ordinal) ||
 		   string.Equals(state, "LoginFailed", StringComparison.Ordinal) ||
 		   string.Equals(state, "LoggedOff", StringComparison.Ordinal) ||
 		   string.Equals(state, "Disconnected", StringComparison.Ordinal) ||
