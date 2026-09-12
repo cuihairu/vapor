@@ -14,7 +14,12 @@ public sealed record Config(
 	int ReconcileMaxLoginAttempts = 3,
 	int ReconcileLoginCooldownSeconds = 60,
 	int ReconcileSessionStalenessSeconds = 120,
-	bool ReconcileDryRun = false
+	bool ReconcileDryRun = false,
+	string? WebhookNotificationsUrl = null,
+	string? WebhookNotificationsSecret = null,
+	string? WebhookNotificationsEvents = null,
+	int WebhookNotificationsMaxRetries = 3,
+	int WebhookNotificationsRetryBaseDelayMs = 500
 )
 {
 	/// <summary>Max dispatch attempts per task before it fails permanently; 0 or less means unlimited retries.</summary>
@@ -36,6 +41,11 @@ public sealed record Config(
 		int reconcileLoginCooldownSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS"), out int loginCooldown) && loginCooldown >= 0 ? loginCooldown : 60;
 		int reconcileSessionStalenessSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_SESSION_STALENESS_SECONDS"), out int staleness) && staleness > 0 ? staleness : 120;
 		bool reconcileDryRun = string.Equals(Environment.GetEnvironmentVariable("Vapor_RECONCILE_DRY_RUN"), "true", StringComparison.OrdinalIgnoreCase);
+		string? webhookUrl = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_URL");
+		string? webhookSecret = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_SECRET");
+		string? webhookEvents = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_EVENTS");
+		int webhookMaxRetries = int.TryParse(Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_MAX_RETRIES"), out int whRetries) && whRetries >= 0 ? whRetries : 3;
+		int webhookRetryBaseDelayMs = int.TryParse(Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_RETRY_BASE_DELAY_MS"), out int whDelayMs) && whDelayMs >= 0 ? whDelayMs : 500;
 
 		HashSet<string> agentApiKeys = new(StringComparer.Ordinal);
 		foreach (string key in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -47,7 +57,7 @@ public sealed record Config(
 			agentApiKeys.Add(key);
 		}
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileDryRun);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs);
 	}
 }
 

@@ -15,7 +15,8 @@ var builder = WebApplication.CreateBuilder(args);
 VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
 VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
 
-builder.Services.AddSingleton<Config>(_ => Config.LoadFromEnvironment());
+Config startupConfig = Config.LoadFromEnvironment();
+builder.Services.AddSingleton(startupConfig);
 builder.Services.AddSingleton<IEventBroker, EventBroker>();
 builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddSingleton<AuthChallengeTracker>();
@@ -39,6 +40,33 @@ builder.Services.AddSingleton<TaskSchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TaskSchedulerService>());
 builder.Services.AddSingleton<DesiredStateReconciler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateReconciler>());
+
+// Notification sinks: wired only when at least one delivery target is configured.
+if (!string.IsNullOrWhiteSpace(startupConfig.WebhookNotificationsUrl))
+{
+	builder.Services.AddSingleton<INotificationSink>(sp => new WebhookNotificationSink(
+		new Uri(startupConfig.WebhookNotificationsUrl),
+		startupConfig.WebhookNotificationsSecret,
+		startupConfig.WebhookNotificationsMaxRetries,
+		TimeSpan.FromMilliseconds(startupConfig.WebhookNotificationsRetryBaseDelayMs),
+		sp.GetRequiredService<ILogger<WebhookNotificationSink>>())
+	{
+		Rule = BuildNotificationRule(startupConfig.WebhookNotificationsEvents),
+	});
+	builder.Services.AddHostedService<NotificationService>();
+}
+
+static NotificationRule BuildNotificationRule(string? eventsFilter)
+{
+	if (string.IsNullOrWhiteSpace(eventsFilter))
+	{
+		return NotificationRule.MatchAll;
+	}
+
+	return new NotificationRule(Types: new HashSet<string>(
+		eventsFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+		StringComparer.OrdinalIgnoreCase));
+}
 
 // Distributed tracing: enabled when the standard OTLP endpoint variable is set.
 // Without it no OpenTelemetry SDK is registered and the ActivitySources stay inert.
@@ -99,7 +127,7 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler) =>
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, IEnumerable<INotificationSink> notificationSinks) =>
 {
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
@@ -140,6 +168,18 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"throttled_skip\"} ").Append(reconciler.ThrottledSkips).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"no_agent_skip\"} ").Append(reconciler.NoAgentSkips).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"dry_run_deviation\"} ").Append(reconciler.DryRunDeviations).Append('\n');
+
+	foreach (INotificationSink sink in notificationSinks)
+	{
+		sb.Append("# HELP vapor_controlplane_notifications_total Notification deliveries since startup.\n");
+		sb.Append("# TYPE vapor_controlplane_notifications_total counter\n");
+		sb.Append("vapor_controlplane_notifications_total{sink=\"").Append(sink.Name).Append("\",outcome=\"sent\"} ").Append(sink.Sent).Append('\n');
+		sb.Append("vapor_controlplane_notifications_total{sink=\"").Append(sink.Name).Append("\",outcome=\"failed\"} ").Append(sink.Failed).Append('\n');
+
+		sb.Append("# HELP vapor_controlplane_notification_retries_total Notification retry attempts since startup.\n");
+		sb.Append("# TYPE vapor_controlplane_notification_retries_total counter\n");
+		sb.Append("vapor_controlplane_notification_retries_total{sink=\"").Append(sink.Name).Append("\"} ").Append(sink.Retried).Append('\n');
+	}
 
 	ctx.Response.Headers.ContentType = "text/plain; version=0.0.4; charset=utf-8";
 	return Results.Text(sb.ToString());
