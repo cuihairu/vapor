@@ -303,7 +303,7 @@ public class RedeemKeyActionTests
 		steamClientManagerMock
 			.Setup(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new RedeemKeyResult(
-				EResult.OK,
+				SteamResult.OK,
 				RequestId: "req-1",
 				DurationMs: 321,
 				GrantedAppIDs: new uint[] { 570, 730 },
@@ -330,7 +330,7 @@ public class RedeemKeyActionTests
 		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
 		steamClientManagerMock
 			.Setup(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RedeemKeyResult(EResult.InvalidParam));
+			.ReturnsAsync(new RedeemKeyResult(SteamResult.InvalidParam));
 
 		var session = CreateTestSession("test_account", steamClientManagerMock.Object);
 
@@ -341,7 +341,7 @@ public class RedeemKeyActionTests
 
 		Assert.False(result.Success);
 		Assert.NotNull(result.Output);
-		Assert.Equal((int)EResult.InvalidParam, result.Output!["resultCode"]);
+		Assert.Equal((int)SteamResult.InvalidParam, result.Output!["resultCode"]);
 		Assert.Equal(1, result.Output["attempts"]);
 	}
 
@@ -351,9 +351,9 @@ public class RedeemKeyActionTests
 		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
 		steamClientManagerMock
 			.SetupSequence(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout))
+			.ReturnsAsync(new RedeemKeyResult(SteamResult.Timeout))
 			.ReturnsAsync(new RedeemKeyResult(
-				EResult.OK,
+				SteamResult.OK,
 				RequestId: "req-2",
 				DurationMs: 111));
 
@@ -367,7 +367,7 @@ public class RedeemKeyActionTests
 		Assert.True(result.Success);
 		Assert.NotNull(result.Output);
 		Assert.Equal(2, result.Output!["attempts"]);
-		Assert.Equal((int)EResult.OK, result.Output["resultCode"]);
+		Assert.Equal((int)SteamResult.OK, result.Output["resultCode"]);
 		steamClientManagerMock.Verify(
 			m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()),
 			Times.Exactly(2));
@@ -379,9 +379,9 @@ public class RedeemKeyActionTests
 		var steamClientManagerMock = new Mock<ISteamClientManager>(MockBehavior.Strict);
 		steamClientManagerMock
 			.SetupSequence(m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()))
-			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout))
-			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout))
-			.ReturnsAsync(new RedeemKeyResult(EResult.Timeout));
+			.ReturnsAsync(new RedeemKeyResult(SteamResult.Timeout))
+			.ReturnsAsync(new RedeemKeyResult(SteamResult.Timeout))
+			.ReturnsAsync(new RedeemKeyResult(SteamResult.Timeout));
 
 		var session = CreateTestSession("test_account", steamClientManagerMock.Object);
 
@@ -393,7 +393,7 @@ public class RedeemKeyActionTests
 		Assert.False(result.Success);
 		Assert.NotNull(result.Output);
 		Assert.Equal(3, result.Output!["attempts"]);
-		Assert.Equal((int)EResult.Timeout, result.Output["resultCode"]);
+		Assert.Equal((int)SteamResult.Timeout, result.Output["resultCode"]);
 		steamClientManagerMock.Verify(
 			m => m.RedeemKeyAsync("AAAAA-BBBBB-CCCCC", It.IsAny<CancellationToken>()),
 			Times.Exactly(3));

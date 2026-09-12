@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (562 tests)
+├── Vapor.Steam.Core.Tests/               (573 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -27,7 +27,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 562 | 动作、会话状态机、交易校验、凭据/加密、数据缓存、Steam Web 客户端 + 契约回放 |
+| Vapor.Steam.Core.Tests | 573 | 动作、会话状态机、交易校验、凭据/加密、数据缓存、Steam Web 客户端 + 契约回放 |
 | Vapor.ControlPlane.Tests | 147 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放 |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 44 | TOTP、确认哈希、移动交易确认、shared secret 持久化、插件宿主实战加载 |
@@ -35,13 +35,13 @@ tests/
 | Vapor.Plugins.MarketWatch.Tests | 24 | watch 存储/阈值评估/轮询告警与 webhook/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **930** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **941** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
 ## 测试分类
 
-### Steam.Core(562 个测试)
+### Steam.Core(573 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -61,7 +61,8 @@ tests/
 |--------|------|------|
 | BotSessionTests | 26 | 会话状态机 |
 | SessionManagerTests | 24 | 会话管理器 |
-| SteamClientManagerTests | 23 | Steam 客户端管理器 |
+| SteamClientManagerTests | 21 | Steam 客户端管理器 |
+| SteamTransportContractTests | 13 | 传输层契约(SteamResult 线上编码镜像 + 接口可替换性) |
 | ModelsTests | 41 | 数据模型和枚举 |
 | EdgeCaseTests | 23 | 边界和异常场景 |
 | SessionWorkflowTests(集成) | 19 | 完整工作流 |

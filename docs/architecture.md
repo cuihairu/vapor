@@ -279,6 +279,18 @@ leave the control plane. Delivery counters are exported as
 `vapor_controlplane_notifications_total{sink,outcome}` and
 `vapor_controlplane_notification_retries_total{sink}`.
 
+## Steam Transport Adapter
+
+All Steam network protocol access is isolated behind `ISteamTransport`
+(protocol-agnostic connection lifecycle, logon flow, auth-code staging,
+redeem/play actions, callback pump, token refresh). `SteamClientManager` is
+the SteamKit2-backed adapter; session, action and agent code depend only on
+the protocol-agnostic shapes (`TransportLogOnDetails`, `SteamResult`,
+`RedeemKeyResult`), so a SteamKit2 major-version upgrade or a replacement
+stack is confined to the adapter implementation. `SteamResult` mirrors the
+Steam wire encoding numerically so persisted task outputs keep their
+meaning across a transport swap.
+
 ## Trade Safety Layer
 
 All trade actions run through three enforcement layers before touching Steam:

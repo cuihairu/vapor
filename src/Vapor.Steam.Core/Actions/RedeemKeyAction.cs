@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using SteamKit2;
+
 using Vapor.Steam.Core.Steam;
 
 namespace Vapor.Steam.Core.Actions;
@@ -89,15 +89,15 @@ public sealed class RedeemKeyAction : IAction
 					["action"] = "redeem_key",
 					["key"] = MaskKey(key),
 					["result"] = "timeout",
-					["resultCode"] = (int)EResult.Timeout,
+					["resultCode"] = (int)SteamResult.Timeout,
 					["attempts"] = attempts
 				}
 			);
 		}
 
-		bool success = result.Result == EResult.OK ||
-					   result.Result == EResult.AlreadyOwned ||
-					   result.Result == EResult.DuplicateRequest;
+		bool success = result.Result == SteamResult.OK ||
+					   result.Result == SteamResult.AlreadyOwned ||
+					   result.Result == SteamResult.DuplicateRequest;
 
 		var output = new Dictionary<string, object?>
 		{
@@ -141,22 +141,22 @@ public sealed class RedeemKeyAction : IAction
 		return new ActionResult(success, errorMessage, output);
 	}
 
-	private static string GetErrorMessage(EResult result) =>
+	private static string GetErrorMessage(SteamResult result) =>
 		result switch
 		{
-			EResult.AlreadyOwned => "This key is already owned on this account",
-			EResult.DuplicateRequest => "This key is already being processed",
-			EResult.InvalidParam => "Invalid key format",
-			EResult.RateLimitExceeded => "Too many key redemption attempts. Please try again later.",
-			EResult.Timeout => "Request timed out",
+			SteamResult.AlreadyOwned => "This key is already owned on this account",
+			SteamResult.DuplicateRequest => "This key is already being processed",
+			SteamResult.InvalidParam => "Invalid key format",
+			SteamResult.RateLimitExceeded => "Too many key redemption attempts. Please try again later.",
+			SteamResult.Timeout => "Request timed out",
 			_ => $"Failed to redeem key: {result}"
 		};
 
-	private static bool ShouldRetry(EResult result) =>
-		result is EResult.Timeout
-			or EResult.ServiceUnavailable
-			or EResult.Busy
-			or EResult.TryAnotherCM;
+	private static bool ShouldRetry(SteamResult result) =>
+		result is SteamResult.Timeout
+			or SteamResult.ServiceUnavailable
+			or SteamResult.Busy
+			or SteamResult.TryAnotherCM;
 
 	private static string MaskKey(string key)
 	{

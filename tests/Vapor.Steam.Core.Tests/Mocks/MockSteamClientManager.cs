@@ -1,4 +1,3 @@
-using SteamKit2;
 using Vapor.Steam.Core.Steam;
 
 namespace Vapor.Steam.Core.Tests.Mocks;
@@ -12,23 +11,20 @@ public sealed class MockSteamClientManager : ISteamClientManager
 	private TaskCompletionSource<bool>? _connectTcs;
 	private bool _isConnected;
 
-	public Task<SteamUser.LogOnDetails?> GetLogOnDetailsAsync(string accountName)
+	public Task<TransportLogOnDetails?> GetLogOnDetailsAsync(string accountName)
 	{
-		return Task.FromResult<SteamUser.LogOnDetails?>(new SteamUser.LogOnDetails
-		{
-			Username = accountName,
-			Password = "mock_password"
-		});
+		return Task.FromResult<TransportLogOnDetails?>(new TransportLogOnDetails(
+			accountName,
+			"mock_password",
+			AuthCode: null,
+			TwoFactorCode: null,
+			AccessToken: null,
+			ShouldRememberPassword: false));
 	}
 
 	public Task UpdateLogOnDetailsAsync(string accountName, string? accessToken, string? refreshToken)
 	{
 		return Task.CompletedTask;
-	}
-
-	public SteamClient GetClient()
-	{
-		throw new NotImplementedException("Mock does not provide real SteamClient");
 	}
 
 	public Task ConnectAsync(CancellationToken cancellationToken = default)

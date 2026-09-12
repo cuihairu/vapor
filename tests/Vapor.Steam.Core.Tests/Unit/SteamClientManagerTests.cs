@@ -29,27 +29,6 @@ public class SteamClientManagerTests : IDisposable
 	}
 
 	[Fact]
-	public void GetClient_ReturnsNonNullSteamClient()
-	{
-		// Act
-		var client = _manager.GetClient();
-
-		// Assert
-		Assert.NotNull(client);
-	}
-
-	[Fact]
-	public void GetClient_ReturnsSameInstance()
-	{
-		// Act
-		var client1 = _manager.GetClient();
-		var client2 = _manager.GetClient();
-
-		// Assert
-		Assert.Same(client1, client2);
-	}
-
-	[Fact]
 	public async Task GetLogOnDetailsAsync_WithNonExistentAccount_ReturnsNull()
 	{
 		// Act

@@ -10,33 +10,6 @@ using Vapor.Steam.Core.Utilities;
 
 namespace Vapor.Steam.Core.Steam;
 
-public interface ISteamClientManager
-{
-	Task<SteamUser.LogOnDetails?> GetLogOnDetailsAsync(string accountName);
-	Task UpdateLogOnDetailsAsync(string accountName, string? accessToken, string? refreshToken);
-	SteamClient GetClient();
-	Task ConnectAsync(CancellationToken cancellationToken = default);
-	Task DisconnectAsync();
-	Task<bool> IsConnectedAsync();
-	Task LoginAsync(string accountName, string password, CancellationToken cancellationToken = default);
-	void SetAuthCode(string accountName, string code);
-	void SetTwoFactorCode(string accountName, string code);
-	void RunCallbacks();
-	Task<RedeemKeyResult?> RedeemKeyAsync(string key, CancellationToken cancellationToken = default);
-	/// <summary>
-	/// Plays the specified games on Steam. Pass empty set to stop playing all games.
-	/// </summary>
-	void PlayGames(HashSet<uint> appIds);
-	/// <summary>
-	/// Gets the currently playing game AppIDs.
-	/// </summary>
-	IReadOnlySet<uint> GetPlayingGames();
-	/// <summary>
-	/// Refreshes the access token for the given account using stored credentials.
-	/// </summary>
-	Task<bool> RefreshAccessTokenAsync(string accountName, CancellationToken cancellationToken = default);
-}
-
 internal interface ISteamAuthTokenProvider
 {
 	Task<SteamTokenRenewalResult> GenerateAccessTokenForAppAsync(
@@ -86,18 +59,6 @@ internal sealed class SteamAuthTokenProvider : ISteamAuthTokenProvider
 		return new SteamTokenRenewalResult(generated.AccessToken, generated.RefreshToken);
 	}
 }
-
-/// <summary>
-/// Result of a key redemption attempt.
-/// </summary>
-public sealed record RedeemKeyResult(
-	EResult Result,
-	string? RequestId = null,
-	long DurationMs = 0,
-	IReadOnlyList<uint>? GrantedAppIDs = null,
-	IReadOnlyList<uint>? GrantedPackageIDs = null,
-	string? ReceiptDetails = null
-);
 
 internal sealed record RedeemReceiptParseResult(
 	IReadOnlyList<uint> GrantedAppIds,
@@ -163,26 +124,22 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		SubscribeCallbacks();
 	}
 
-	public SteamClient GetClient() => _steamClient;
-
-	public Task<SteamUser.LogOnDetails?> GetLogOnDetailsAsync(string accountName)
+	public Task<TransportLogOnDetails?> GetLogOnDetailsAsync(string accountName)
 	{
 		if (!_loginStates.TryGetValue(accountName, out var state))
 		{
-			return Task.FromResult<SteamUser.LogOnDetails?>(null);
+			return Task.FromResult<TransportLogOnDetails?>(null);
 		}
 
 		var token = state.AccessToken ?? state.RefreshToken;
 
-		return Task.FromResult<SteamUser.LogOnDetails?>(new SteamUser.LogOnDetails
-		{
-			Username = state.AccountName,
-			Password = state.Password,
-			AuthCode = state.AuthCode,
-			TwoFactorCode = state.TwoFactorCode,
-			AccessToken = token,
-			ShouldRememberPassword = !string.IsNullOrWhiteSpace(token)
-		});
+		return Task.FromResult<TransportLogOnDetails?>(new TransportLogOnDetails(
+			state.AccountName,
+			state.Password,
+			state.AuthCode,
+			state.TwoFactorCode,
+			token,
+			!string.IsNullOrWhiteSpace(token)));
 	}
 
 	public Task UpdateLogOnDetailsAsync(string accountName, string? accessToken, string? refreshToken)
@@ -372,7 +329,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			if (response == null)
 			{
 				_logger.LogWarning("Key redemption timed out (RequestId: {RequestId})", requestId);
-				return new RedeemKeyResult(EResult.Timeout, requestId, stopwatch.ElapsedMilliseconds);
+				return new RedeemKeyResult(MapResult(EResult.Timeout), requestId, stopwatch.ElapsedMilliseconds);
 			}
 
 			_logger.LogInformation(
@@ -385,7 +342,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			var parsedReceipt = ParseRedeemReceipt(response.Body);
 
 			return new RedeemKeyResult(
-				response.Result,
+				MapResult(response.Result),
 				requestId,
 				stopwatch.ElapsedMilliseconds,
 				parsedReceipt?.GrantedAppIds,
@@ -396,8 +353,29 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		catch (Exception ex)
 		{
 			_logger.LogError(ex, "Failed to redeem key (RequestId: {RequestId})", requestId);
-			return new RedeemKeyResult(EResult.Fail, requestId, stopwatch.ElapsedMilliseconds);
+			return new RedeemKeyResult(MapResult(EResult.Fail), requestId, stopwatch.ElapsedMilliseconds);
 		}
+	}
+
+	/// <summary>Maps a SteamKit2 result code onto the protocol-agnostic <see cref="SteamResult"/>.</summary>
+	private static SteamResult MapResult(EResult result)
+	{
+		return result switch
+		{
+			EResult.OK => SteamResult.OK,
+			EResult.Fail => SteamResult.Fail,
+			EResult.InvalidParam => SteamResult.InvalidParam,
+			EResult.Busy => SteamResult.Busy,
+			EResult.Timeout => SteamResult.Timeout,
+			EResult.ServiceUnavailable => SteamResult.ServiceUnavailable,
+			EResult.DuplicateRequest => SteamResult.DuplicateRequest,
+			EResult.AlreadyOwned => SteamResult.AlreadyOwned,
+			EResult.TryAnotherCM => SteamResult.TryAnotherCM,
+			EResult.AccountLogonDenied => SteamResult.AccountLogonDenied,
+			EResult.AccountLoginDeniedNeedTwoFactor => SteamResult.AccountLoginDeniedNeedTwoFactor,
+			EResult.RateLimitExceeded => SteamResult.RateLimitExceeded,
+			_ => SteamResult.Other
+		};
 	}
 
 	public async Task<bool> RefreshAccessTokenAsync(string accountName, CancellationToken cancellationToken = default)

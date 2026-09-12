@@ -33,7 +33,7 @@ public sealed class RedeemKeyFlowTests
 
 		// Mock a successful redemption
 		mockManager.SetRedeemKeyResult(new RedeemKeyResult(
-			EResult.OK,
+			SteamResult.OK,
 			RequestId: "test-request-123",
 			DurationMs: 1500,
 			GrantedAppIDs: new List<uint> { 730, 440 },
