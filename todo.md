@@ -228,6 +228,7 @@
 | P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
 | GA 收口 | Week 10-12 | ✅ 100% | Docker/compose/可观测性/E2E/发布流水线/部署与排障手册/OpenAPI 完整化/追踪与 Redis 缓存均已就绪 |
 | P5 规模化运营 | Week 13-16 | ✅ 完成 | 账户农场编排 + 通知/自动化闭环 + 质量与协议韧性（见第 10 节） |
+| P6 功能纵深 | Week 17+ | 📋 已立项 | 卡牌 farming 闭环 + 交易与确认闭环 + 互操作与认领（见第 11 节，对标矩阵 `docs/feature-matrix.md`） |
 
 ---
 
@@ -252,6 +253,7 @@
 7. ~~横向: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）~~（已完成：`Vapor.Agent.Tests` 41 个 + `Vapor.E2E.Tests` 5 个）；**剩余: 自动发布流水线**。
 8. ~~横向: 生产部署指南、故障排查手册、OpenAPI 完整化、自动发布流水线与回滚~~（全部完成：`docs/production.md` + `docs/troubleshooting.md` + OpenAPI 22 端点注解 + release workflow 补齐 GHCR 镜像发布与打包文档）。
 9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: ~~**方向 A 账户农场编排**~~（✅ 已完成）→ ~~**方向 C 通知与自动化闭环**~~（✅ 已完成）→ ~~**方向 B 质量与协议韧性**~~（✅ 已完成：统计修正 + contract tests 抓到真实上游漂移 + WS 协议 replay tests + ISteamTransport 协议适配层 + 覆盖率管道修复与 74.3% 真实基线）。**P5 三个方向全部完成。**
+10. P6 推进（2026-09-12 立项）: **Steam 功能纵深**——实施顺序 P6-1 卡牌 farming 闭环 → P6-2 交易与确认闭环（前两组均为 GA 出口条件 #2 未闭环项）→ P6-3 互操作与认领；对标矩阵与取舍依据见 `docs/feature-matrix.md`，完整清单见第 11 节。
 
 ---
 
@@ -284,6 +286,42 @@
 - [x] replay tests（风险清单承诺）：ControlPlane↔Agent WS 任务派发协议录制回放（消息序列快照测试）。（✅ 2026-09-12：`WsProtocolReplayTests` 7 个测试——录制 5 类隧道帧的确切 JSON 快照（hello / task 派发含 traceHeaders / task_heartbeat / task_result 含 output / task_cancel），双向锁定：序列化方向快照文本精确相等（camelCase、枚举字符串、ISO 8601 时间戳、`WhenWritingNull` 省略全固化），反序列化方向逐字段还原断言；另覆盖完整派发会话序列（5 帧按线序逐帧按两端 handler 路由语义分派）与前向兼容（未知字段/未知 type 不破坏解析，显式 JSON null 不变值）。协议任何漂移（字段改名/大小写/枚举/时间格式）都会破坏快照而非静默失败。ControlPlane 140→147 全过，format OK。）
 - [x] 覆盖率 44.6% → 60%+：优先 Agent（25.1%：TaskExecutor/会话泵/WS 客户端分支）、Protocol（44.4%）；补齐后更新 CI 门禁与 TESTING.md 基线数字。（✅ 2026-09-12：新建 `Vapor.Protocol.Tests` 专项项目（20 测试：JsonDefaults 序列化契约 7 + 协议模型逐字段往返 13），Protocol 44.4%→**89.1%**；重算时发现旧 44.6% 基线被系统性压低——不同 testhost 报告里同一源文件的 `filename` 前缀写法不一致（`src/<项目>/…`、`<项目>/…`、裸文件名并存），合并未归一化导致同一行重复计入分母；新增 `scripts/coverage-summary.py` 归一化合并脚本，重算真实整体 **74.3%**，远超 60% 目标。新增 `codecov.yml` 门禁（project 70% ±2 / patch 60%）。Agent 22.6% 为结构性：除 `Program.cs`（顶层组装，E2E 子进程覆盖但插桩测不到）外全部 100%；Steam.Core 67.9% 的未覆盖大头是需真实网络/Redis 的集成壳（SteamTradeClient / RedisVaporCache，后者接口的内存实现已 100%）。TESTING.md 基线表与统计（941→961）同步刷新。）
 
+---
+
+## 11. P6 阶段：Steam 功能纵深（📋 已立项 2026-09-12，对标矩阵见 `docs/feature-matrix.md`）
+
+> 对标五个同类产品（ASF / Watt Toolkit / Steam Game Idler / steamguard-cli / Idle Master Extended）逐能力域对照立项。矩阵结论：平台层（多节点舰队编排 / 任务系统 / 插件 / 可观测性）为 Vapor 独有，差距集中在 Steam 功能纵深——恰为 GA 出口条件 #2 的"库存/交易、基础 farming"未闭环项。取舍三原则：契合平台定位（不做单机工具箱功能）、GA 出口条件优先、复用既有编排/通知/插件底座。
+
+### 11.1 P6-1 卡牌 farming 闭环（GA 出口条件，平台杠杆最大）
+
+- [ ] 徽章页解析：拉取玩家徽章/卡牌掉落页，得出各 app 剩余掉落张数（数据面复用 Steam Web 客户端 + 缓存；真实响应录制 fixture 契约测试先行——market search 漂移已证明必要）。
+- [ ] smart farming 调度：剩余掉落 > 0 的 app 进 idle 队列，掉完自动切换下一个；与 DesiredStateReconciler 整合——`Idle` 期望状态从"指定 appIds"升级为 farm 策略模式（调度在 CP 编排层，动作面只加"查剩余掉落"action）。
+- [ ] 挂机排除名单：IdleApps 补充排除（黑名单）语义，对齐 ASF `Blacklist`。
+
+### 11.2 P6-2 交易与确认闭环（GA 出口条件，安全底座已备）
+
+- [ ] 交易报价读取：incoming/outgoing 报价列表拉取并入 CP（REST 化），复用既有脱敏与审计。
+- [ ] 报价接受/拒绝：基于 MobileAuthenticator 既有确认哈希/响应能力；**自动接受必须按账户显式策略开启**（默认人工 SSE 通知，对齐验证码红线）。
+- [ ] 批量确认 action：交易/市场确认批量处理（对标 Watt 批量确认）。
+- [ ] 报价发送（loot）：向指定好友转移库存；优先级低于前三项。
+- [ ] （后置）1:1 换卡（STM/TradeMatcher 等价）：依赖报价读取 + 接受闭环。
+
+### 11.3 P6-3 互操作与认领（降低迁移/使用成本）
+
+- [ ] .maFile 导入：解析 SDA/steamguard-cli 的 maFile（shared_secret / identity_secret / 设备 ID），入库走既有加密存储——存量 2FA 用户零成本迁移。
+- [ ] 免费 license 认领：addlicense 等价 action（sub/add 页解析）；免费游戏提醒可由 MarketWatch 模式扩展 watch 类型。
+- [ ] 库存 REST 化：GetInventoryAction 深化为 `/v1/accounts/{name}/inventory`（按 app/类型过滤），为交易/市场功能供数。
+
+### 11.4 P6-4 竞品对齐但后置（记录待决，不承诺）
+
+- [ ] Web Dashboard（对标 ASF-ui）：CP 已有 REST+SSE，可先做只读面板；自研面大，P6-1~3 落地后评估。
+- [ ] 市场挂单创建/批量撤单（对标 SGI）：ToS 灰区 + 需库存/定价前置。
+- [ ] QR 扫码登录（对标 SGI/steamguard-cli）；成就解锁/管理（对标 SGI）：便利性/需求弱，后置。
+
+### 11.5 明确不采用（定位外）
+
+网络加速（Watt 品类不同）、本地账号切换（客户端概念）、通用 TOTP 保险箱（偏离核心）、游戏内脚本/成就数值编辑（高风险灰区）。
+
 > 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
 > 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。
 > 2026-09-11：Agent 单元测试（41 个）+ E2E 测试（5 个，真实双进程闭环）落地；全解决方案 706 个测试通过。
@@ -300,3 +338,4 @@
 > 2026-09-12：replay tests 落地：`WsProtocolReplayTests` 7 个测试录制回放 CP↔Agent WS 隧道 5 类帧（hello/task/heartbeat/result/cancel）——序列化方向快照精确相等、反序列化方向逐字段断言、完整会话序列按两端 handler 语义路由、未知字段/type 前向兼容。ControlPlane 140→147。
 > 2026-09-12：ISteamTransport 协议适配层落地：`ISteamTransport` 协议无关操作面 + `TransportLogOnDetails`/`SteamResult`/`RedeemKeyResult` 协议无关模型，`SteamClientManager` 收敛为 SteamKit2 适配器（公共面零 SteamKit2 类型，`GetClient()` 删除，`SteamResult` 数值镜像线上编码保持任务 output 兼容）。协议升级从此只动适配层。Steam.Core 562→573。
 > 2026-09-12：**P5 全部完成（方向 A/C/B 三方向收官）**。方向 B 五子项收口：统计修正 / contract tests（抓到真实上游漂移并双路径修复）/ WS 协议 replay tests / ISteamTransport 协议适配层 / 覆盖率管道修复 + 真实基线（整体行覆盖 74.3%，Protocol 89.1%，测试总数 961，全部过；codecov 门禁 70% 上线）。
+> 2026-09-12：P6 立项：对标五个同类产品（ASF / Watt Toolkit / Steam Game Idler / steamguard-cli / Idle Master Extended）完成功能矩阵（`docs/feature-matrix.md`，7 能力域 30+ 项）。结论：平台层（多节点舰队编排/任务系统/插件/可观测性）全场独有；差距集中在 Steam 功能纵深，恰为 GA 出口条件 #2 未闭环项。P6 四组候选立项（§11）：卡牌 farming 闭环 → 交易与确认闭环 → 互操作与认领 → 后置待决（Dashboard/市场挂单/QR 登录/成就）；明确不采用网络加速/账号切换/通用 TOTP/游戏内脚本。

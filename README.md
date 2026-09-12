@@ -23,6 +23,7 @@ API-controlled, headless Steam automation platform designed for large-scale batc
 ## Docs
 
 - Architecture: `docs/architecture.md`
+- Feature matrix (vs. ASF/Watt Toolkit/SGI): `docs/feature-matrix.md`
 - Local run: `docs/running.md`
 - Docker & Compose: `docs/docker.md`
 - Production deployment: `docs/production.md`
