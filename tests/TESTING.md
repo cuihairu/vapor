@@ -12,7 +12,7 @@ tests/
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (140 tests)
+├── Vapor.ControlPlane.Tests/             (147 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出基准
 ├── Vapor.Plugins.Core.Tests/             (85 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (44 tests)
@@ -28,14 +28,14 @@ tests/
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
 | Vapor.Steam.Core.Tests | 562 | 动作、会话状态机、交易校验、凭据/加密、数据缓存、Steam Web 客户端 + 契约回放 |
-| Vapor.ControlPlane.Tests | 140 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 |
+| Vapor.ControlPlane.Tests | 147 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放 |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 44 | TOTP、确认哈希、移动交易确认、shared secret 持久化、插件宿主实战加载 |
 | Vapor.Agent.Tests | 41 | 重连退避策略、任务执行器、WS URI 构造 |
 | Vapor.Plugins.MarketWatch.Tests | 24 | watch 存储/阈值评估/轮询告警与 webhook/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **923** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **930** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
@@ -105,11 +105,12 @@ tests/
 | SteamTotpTests | 13 | Steam TOTP(本地 2FA 码生成) |
 | SteamTimeSynchronizerTests | 5 | Steam 服务器时间同步 |
 
-### ControlPlane(140 个测试)
+### ControlPlane(147 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | ScheduleClockTests | 16 | 周期计划时钟(interval/cron/触发点计数) |
+| WsProtocolReplayTests | 7 | WS 隧道协议录制回放(5 类帧快照 roundtrip + 会话序列路由 + 前向兼容) |
 | DesiredStateReconcilerTests | 16 | 账户编排(登录派发/退避/节流/重平衡/dry-run) |
 | SqliteJobStoreTests | 14 | job 存储(并发/迁移/周期模板) |
 | NotificationTests | 14 | 通知规则/webhook 签名/派发隔离 |
