@@ -178,11 +178,38 @@ Modern web-based admin interface (`/admin.html`):
 - `DELETE /v1/accounts/{name}` - Remove the account spec
 
 #### Jobs
-- `POST /v1/jobs` - Create new job
+- `POST /v1/jobs` - Create new job (one-shot, or recurring when `schedule` is set)
 - `GET /v1/jobs` - List jobs (filters: `limit`, `account` — jobs whose tasks target the account)
 - `GET /v1/jobs/{id}` - Get job details
-- `POST /v1/jobs/{id}/cancel` - Cancel job
+- `POST /v1/jobs/{id}/cancel` - Cancel job (for scheduled templates this stops the recurrence)
 - `GET /v1/jobs/{id}/events` - Job event stream (SSE)
+
+### Recurring Jobs
+
+`POST /v1/jobs` accepts an optional `schedule` object to create a recurring
+job template: `intervalSeconds` (fixed cadence, >= 5) or `cron` (5-field
+UTC expression), plus `missed` and `overlap` policies (both default
+`skip`). The template itself runs nothing — it carries the action,
+targets, payload and its persisted next trigger point
+(`JobStatus.Scheduled`, no tasks). A `RecurringJobScheduler` background
+service checks due templates every second and, per trigger point,
+atomically creates a regular child job (with tasks, `meta.scheduledFrom`
+= template id) and advances the template:
+
+- **missed=skip**: trigger points lost while the control plane was down
+  are dropped; the template resumes at the next future point.
+  **missed=run_once**: the newest lost point fires one catch-up run
+  (marked `meta.scheduledMissedCount`), guarding against storm catch-up.
+- **overlap=skip**: a trigger point is deferred while the previous run is
+  still queued or running; **overlap=allow** runs in parallel.
+- Canceling the template (`POST /v1/jobs/{id}/cancel`) stops the
+  recurrence. Crons that can never match again retire the template
+  automatically.
+
+Schedule outcomes are exported as `vapor_controlplane_schedule_triggers_total`
+(`triggered` / `overlap_skipped` / `missed_skipped` / `missed_catchup`); each
+trigger also emits `job.scheduled_triggered` / `job.scheduled_skipped`
+events on the event stream.
 
 #### Sessions
 - `GET /v1/sessions` - List active sessions (filter: `account`)
