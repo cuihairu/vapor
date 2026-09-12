@@ -12,6 +12,10 @@ env:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-test:
     strategy:
@@ -21,6 +25,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
 
     steps:
     - name: Checkout code
@@ -54,8 +59,61 @@ jobs:
         files: "**/TestResults/*/coverage.cobertura.xml"
         fail_ci_if_error: false
 
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        show-progress: false
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
+      with:
+        dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+    - name: Verify formatting
+      run: dotnet format --verify-no-changes --verbosity warning
+
+  integration-redis:
+    # Runs the VAPOR_TEST_REDIS-gated integration tests against a live Redis server.
+    # On other jobs (and locally without the variable) those tests early-return.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+        - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      VAPOR_TEST_REDIS: localhost:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        show-progress: false
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
+      with:
+        dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+    - name: Test Redis cache integration
+      run: dotnet test tests/Vapor.Steam.Core.Tests -c Release --nologo --filter "FullyQualifiedName~RedisVaporCacheIntegrationTests" --verbosity normal
+
   docker-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
     - name: Checkout code
