@@ -42,11 +42,13 @@ public sealed class ControlPlaneAgentE2ETests
 		var (status, task) = await _stack.WaitForJobCompletionAsync(jobId, terminalStatuses: ["Finished"]);
 
 		Assert.Equal("finished", status, ignoreCase: true);
-
-		// The task row itself carries execution status; note the Control Plane does not persist
-		// task output payloads (they flow only over the agent WebSocket), so asserting on them
-		// via REST is not part of the current API contract.
 		Assert.Equal(1, task.GetProperty("attempt").GetInt32());
+
+		// Task output is persisted by the Control Plane and queryable via REST.
+		// EchoAction returns { echo: <the request payload>, account: <session account> }.
+		var output = task.GetProperty("output");
+		Assert.Equal("hello-vapor", output.GetProperty("echo").GetProperty("message").GetString());
+		Assert.Equal("e2e-account", output.GetProperty("account").GetString());
 
 		var (jobStatus, _, _, _) = await _stack.GetJobStateAsync(jobId);
 		Assert.Equal("finished", jobStatus, ignoreCase: true);

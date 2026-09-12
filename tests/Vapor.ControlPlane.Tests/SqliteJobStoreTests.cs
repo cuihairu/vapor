@@ -232,6 +232,78 @@ public sealed class SqliteJobStoreTests {
 	}
 
 	[Fact]
+	public async Task SetTaskResult_PersistsOutputAndErrorAcrossReopen() {
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try {
+			JobWithTasks created;
+			string taskId;
+			int attempt;
+			using (var store = new SqliteJobStore(dbPath)) {
+				using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+				created = await store.CreateJob(
+					new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+					cts.Token);
+
+				JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+				Assert.NotNull(claimed);
+				taskId = claimed!.Id;
+				attempt = claimed.Attempt;
+
+				await store.SetTaskResult(
+					new TaskResult(
+						taskId,
+						false,
+						"login refused",
+						new Dictionary<string, object?> { ["errorCode"] = 42, ["detail"] = "rate limited" },
+						DateTimeOffset.UtcNow,
+						attempt),
+					cts.Token);
+			}
+
+			// Reopen the database to prove output/error survive a restart.
+			using (var reopened = new SqliteJobStore(dbPath)) {
+				using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+				JobWithTasks refreshed = await reopened.GetJob(created.Job.Id, cts.Token);
+
+				JobTask task = Assert.Single(refreshed.Tasks);
+				Assert.Equal(JobTaskStatus.Failed, task.Status);
+				Assert.Equal("login refused", task.Error);
+				Assert.NotNull(task.Output);
+				Assert.Equal(42, ((System.Text.Json.JsonElement?)task.Output!["errorCode"])!.Value.GetInt32());
+				Assert.Equal("rate limited", task.Output!["detail"]?.ToString());
+			}
+		} finally {
+			if (File.Exists(dbPath)) {
+				File.Delete(dbPath);
+			}
+		}
+	}
+
+	[Fact]
+	public async Task SetTaskResult_SuccessfulTaskWithoutOutput_StaysNull() {
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+
+		JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(claimed);
+
+		await store.SetTaskResult(
+			new TaskResult(claimed!.Id, true, null, null, DateTimeOffset.UtcNow, claimed.Attempt),
+			cts.Token);
+
+		JobWithTasks refreshed = await store.GetJob(created.Job.Id, cts.Token);
+		JobTask task = Assert.Single(refreshed.Tasks);
+		Assert.Equal(JobTaskStatus.Finished, task.Status);
+		Assert.Null(task.Error);
+		Assert.Null(task.Output);
+	}
+
+	[Fact]
 	public async Task Migrate_AddsNewColumnsToLegacyDatabase() {
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
 		string jobId = "legacy-job";

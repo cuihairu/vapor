@@ -48,7 +48,8 @@ public sealed record JobTask(
 	int Attempt,
 	DateTimeOffset CreatedAt,
 	DateTimeOffset UpdatedAt,
-	string? Error = null
+	string? Error = null,
+	IReadOnlyDictionary<string, object?>? Output = null
 );
 
 public sealed record TaskResult(

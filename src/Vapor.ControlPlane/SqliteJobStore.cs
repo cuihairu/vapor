@@ -222,7 +222,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			using (var cmd = _connection.CreateCommand()) {
 				cmd.Transaction = tx;
 				cmd.CommandText = """
-					SELECT id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms, error
+					SELECT id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms, error, output_json
 					FROM tasks
 					WHERE status = $queued AND (region = '' OR region = $region) AND next_attempt_at_ms <= $now
 					ORDER BY created_at_ms ASC
@@ -426,14 +426,19 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			}
 
 			{
+				string outputJson = result.Output is null
+					? string.Empty
+					: JsonSerializer.Serialize(result.Output, JsonDefaults.Options);
 				using var cmd = _connection.CreateCommand();
 				cmd.CommandText = """
 					UPDATE tasks
-					SET status = $status, updated_at_ms = $updated
+					SET status = $status, updated_at_ms = $updated, error = $error, output_json = $outputJson
 					WHERE id = $id AND status = $running;
 					""";
 				cmd.Parameters.AddWithValue("$status", newStatus.ToString());
 				cmd.Parameters.AddWithValue("$updated", nowMs);
+				cmd.Parameters.AddWithValue("$error", (object?)result.Error ?? DBNull.Value);
+				cmd.Parameters.AddWithValue("$outputJson", outputJson);
 				cmd.Parameters.AddWithValue("$id", result.TaskId);
 				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 				long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -534,6 +539,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 				updated_at_ms INTEGER NOT NULL,
 				error TEXT,
 				next_attempt_at_ms INTEGER NOT NULL DEFAULT 0,
+				output_json TEXT,
 				FOREIGN KEY(job_id) REFERENCES jobs(id) ON DELETE CASCADE
 			);
 
@@ -546,6 +552,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		// Migrations for stores created before these columns existed.
 		EnsureColumn("tasks", "error", "TEXT");
 		EnsureColumn("tasks", "next_attempt_at_ms", "INTEGER NOT NULL DEFAULT 0");
+		EnsureColumn("tasks", "output_json", "TEXT");
 	}
 
 	private void EnsureColumn(string table, string column, string definition) {
@@ -668,7 +675,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 	private async Task<IReadOnlyList<JobTask>> ReadTasks(string jobId, CancellationToken cancellationToken) {
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
-			SELECT id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms, error
+			SELECT id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms, error, output_json
 			FROM tasks
 			WHERE job_id = $jobId
 			ORDER BY created_at_ms ASC;
@@ -696,8 +703,12 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 		long createdAtMs = reader.GetInt64(8);
 		long updatedAtMs = reader.GetInt64(9);
 		string? error = reader.IsDBNull(10) ? null : reader.GetString(10);
+		string? outputJson = reader.IsDBNull(11) ? null : reader.GetString(11);
 
 		Dictionary<string, object?>? payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(payloadJson, JsonDefaults.Options);
+		Dictionary<string, object?>? output = string.IsNullOrEmpty(outputJson)
+			? null
+			: JsonSerializer.Deserialize<Dictionary<string, object?>>(outputJson, JsonDefaults.Options);
 		Enum.TryParse<JobTaskStatus>(statusRaw, true, out var status);
 
 		return new JobTask(
@@ -711,7 +722,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable {
 			Attempt: attempt,
 			CreatedAt: DateTimeOffset.FromUnixTimeMilliseconds(createdAtMs),
 			UpdatedAt: DateTimeOffset.FromUnixTimeMilliseconds(updatedAtMs),
-			Error: error
+			Error: error,
+			Output: output
 		);
 	}
 }
