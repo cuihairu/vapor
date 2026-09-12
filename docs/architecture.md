@@ -145,6 +145,17 @@ Interactive authentication flow for Steam Guard:
 4. User submits auth code via UI or API
 5. Agent receives code via SSE stream and continues login
 
+**Automatic 2FA answering (agent-side, opt-in):** with
+`AGENT_2FA_AUTO_SUBMIT=true`, a `TwoFactorAutoResponder` also subscribes
+to session events on the agent. When a `TwoFactorCodeNeeded` challenge
+arrives and the account's mobile authenticator shared secret is stored
+in the agent's local credential store, it generates a Steam TOTP
+(`SteamTotp`, synced against Steam server time) and answers it directly
+— the challenge is still published for visibility, but no human reply is
+needed. Accounts without a stored secret (e.g. email Steam Guard) keep
+using the manual channel. Secrets stay on the agent and repeat answers
+are cooldown-limited (60s per account).
+
 ### Admin UI
 
 Modern web-based admin interface (`/admin.html`):
@@ -224,6 +235,22 @@ All orchestration decisions are audited (`account.reconciled`,
 metrics (`vapor_controlplane_reconcile_actions_total`,
 `vapor_controlplane_accounts_by_desired_state`). Credentials never enter
 the control plane — agents keep them in their local `FileCredentialStore`.
+
+### Notifications
+
+A `NotificationService` background service subscribes to the full
+EventBroker streams (jobs, sessions, auth challenges) and fans every event
+out to registered `INotificationSink` implementations. Each sink carries a
+`NotificationRule` (event-category / type / account allowlists; empty = all)
+and is isolated individually — a failing sink never affects the others or
+the pipelines. The built-in `WebhookNotificationSink` POSTs a JSON envelope
+per event, optionally signing it with HMAC-SHA256
+(`X-Vapor-Timestamp` + `X-Vapor-Signature` over `"{timestamp}.{body}"`),
+retrying with exponential backoff (`base × 2^attempt`). Auth-challenge
+notifications only carry a `codeSupplied` flag — codes themselves never
+leave the control plane. Delivery counters are exported as
+`vapor_controlplane_notifications_total{sink,outcome}` and
+`vapor_controlplane_notification_retries_total{sink}`.
 
 ## Trade Safety Layer
 

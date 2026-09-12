@@ -271,10 +271,10 @@
 
 ### 10.2 方向 C：通知与自动化闭环（第二个实施）
 
-- [ ] 核心通知系统：`INotificationSink` 抽象 + webhook 实现（HMAC 签名、指数退避重试、失败隔离），订阅 EventBroker 事件流（job/session/auth/风控）；规则化过滤（事件类型、账户、region）。
-- [ ] 2FA/验证码自动提交闭环：`AuthCodeNeeded`/`TwoFactorCodeNeeded` 事件 → 优先由 MobileAuthenticator 插件（本地 TOTP + 确认哈希）自动应答 → 无本地密钥时回落人工 SSE 通道；全自动模式需显式开启。
+- [x] 核心通知系统：`INotificationSink` 抽象 + webhook 实现（HMAC 签名、指数退避重试、失败隔离），订阅 EventBroker 事件流（job/session/auth/风控）；规则化过滤（事件类型、账户、region）。（✅ 2026-09-12：`NotificationSinks.cs` 规则模型 + `WebhookNotificationSink`（`X-Vapor-Signature: sha256=HMAC("{ts}.{body}")`、`base×2^attempt` 退避）；`NotificationService` 三泵订阅 EventBroker，逐 sink 规则过滤 + try/catch 失败隔离，auth challenge 只外发 `codeSupplied` bool 绝不外发验证码；`Vapor_WEBHOOK_NOTIFICATIONS_*` 5 参数配置 + `/metrics` 派发指标。15 个新测试。）
+- [x] 2FA/验证码自动提交闭环：`AuthCodeNeeded`/`TwoFactorCodeNeeded` 事件 → 优先由 MobileAuthenticator 插件（本地 TOTP + 确认哈希）自动应答 → 无本地密钥时回落人工 SSE 通道；全自动模式需显式开启。（✅ 2026-09-12：`SteamTotp`/`SteamTimeSynchronizer` 移入 Steam.Core（宿主零插件编译依赖，`DecodeSecret` 转 public）；`ICredentialStore`/`FileCredentialStore` 扩展加密 `SharedSecret`（复用 AES-GCM v2 路径）；`TwoFactorAutoResponder` 订阅会话事件 → 查本地 secret → 60s/账户冷却 → `Provide2FACode`，无 secret 不占冷却、自然回落人工通道；插件新增 `save_shared_secret` action（经 `Host.Services` 取 `ICredentialStore`）；agent 端 `AGENT_2FA_AUTO_SUBMIT=true` 显式开启（默认关）+ Steam 服务器时间同步循环（启动 + 每小时）。SteamTotp/TimeSynchronizer/新 responder 19 个测试迁移或新增。email 验证码无法本地生成，天然走人工通道。）
 - [ ] 计划任务：job 增加 schedule 字段（interval 或 cron 表达式）创建周期任务；处理 missed/overlap 策略（跳过或排队）；持久化下次触发时间（复用 tasks 表迁移模式）。
-- [ ] ControlPlane /metrics 补通知派发指标（sent/failed/retried）与编排指标（accounts_by_state、reconcile_actions_total）。
+- [x] ControlPlane /metrics 补通知派发指标（sent/failed/retried）与编排指标（accounts_by_state、reconcile_actions_total）。（✅ 编排指标随方向 A 落地：`vapor_controlplane_reconcile_actions_total` + `accounts_by_desired_state`；通知派发指标随 10.2 提交 1 落地：`vapor_controlplane_notifications_total{sink,outcome}` + `vapor_controlplane_notification_retries_total{sink}`。）
 
 ### 10.3 方向 B：质量与协议韧性（第三个实施）
 
@@ -292,3 +292,5 @@
 > 2026-09-12：修复 PluginUnloadTests 的 ALC 回收断言在覆盖率运行下必失败的问题——coverlet instrumentation 持有被插桩 collectible 程序集的强引用导致 ALC 永不可回收（非产品缺陷）；测试现于检测到 coverlet 注入时跳过回收断言，非 coverage 运行仍完整验证（30 秒时间预算轮询）。
 > 2026-09-12：任务 output 持久化落地：tasks 表新增 `output_json` 列（自动迁移旧库），`SetTaskResult` 同时持久化 output 与 error（此前两者均随会话丢弃）；`JobTask` 新增 `Output` 字段并出现在 REST `/v1/jobs/{id}` 响应中；E2E 恢复 output 断言，全链路（Agent 回报 → 存储 → REST）验证通过。
 > 2026-09-12：P5 方向 A 账户农场编排完成（5 个提交）：`/v1/accounts` CRUD + `DesiredStateReconciler` 期望状态编排（周期对账/login 派发/指数退避冷静期/连续失败节流/agent 丢失重平衡/dry-run）+ enable/disable/remove 生命周期 + 聚合视图与列表过滤 + jobs/sessions 按账户过滤 + 编排审计与 metrics + E2E 重平衡测试（E2E 套件 5→6 个）。前置修复：agent 全量会话状态上报（此前普通状态变化不进 CP SessionTracker，编排器无数据可用）。ControlPlane 99 单测 + E2E 6 全过。
+> 2026-09-12：10.2 通知系统落地：`INotificationSink` + `WebhookNotificationSink`（HMAC 签名 + 指数退避）+ `NotificationService` 三泵订阅 EventBroker（规则过滤 + 失败隔离，验证码永不外发）+ webhook 配置 5 参数 + 派发 metrics，15 个新测试。
+> 2026-09-12：10.2 2FA 自动提交闭环落地：SteamTotp/SteamTimeSynchronizer 移入 Steam.Core、`ICredentialStore` 扩展加密 SharedSecret、`TwoFactorAutoResponder`（本地 TOTP 自动应答，60s/账户冷却，无 secret 回落人工 SSE）、插件 `save_shared_secret` action、agent 端 `AGENT_2FA_AUTO_SUBMIT` 显式开启 + Steam 时间同步循环；19 个测试迁移或新增（Steam.Core 558 / MobileAuthenticator 44 / Agent 41 全过）。

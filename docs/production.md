@@ -45,6 +45,11 @@ are in [docker.md](docker.md).
 | `Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS` | no | `60` | Base of the exponential retry cooldown (`base × 2^(n-1)`, capped at 15 min); `0` disables |
 | `Vapor_RECONCILE_SESSION_STALENESS_SECONDS` | no | `120` | Session snapshots older than this are treated as stale by the orchestrator |
 | `Vapor_RECONCILE_DRY_RUN` | no | off | Report orchestration deviations (audit + metric) without dispatching jobs |
+| `Vapor_WEBHOOK_NOTIFICATIONS_URL` | no | off | Webhook endpoint that receives job/session/auth events as JSON; empty disables notifications |
+| `Vapor_WEBHOOK_NOTIFICATIONS_SECRET` | no | — | HMAC-SHA256 secret; when set, requests carry `X-Vapor-Timestamp` + `X-Vapor-Signature: sha256=<hex>` over `"{timestamp}.{body}"` |
+| `Vapor_WEBHOOK_NOTIFICATIONS_EVENTS` | no | all | Comma-separated event-type allowlist (e.g. `task.completed,auth.challenge`) |
+| `Vapor_WEBHOOK_NOTIFICATIONS_MAX_RETRIES` | no | `3` | Per-event delivery attempts before the failure is counted and dropped |
+| `Vapor_WEBHOOK_NOTIFICATIONS_RETRY_BASE_DELAY_MS` | no | `500` | Retry backoff base (`base × 2^attempt`) |
 | `Vapor_ENABLE_SWAGGER` | no | off | Keep off in production |
 | `VAPOR_ENCRYPTION_KEY` | recommended | — | ≥32 bytes; encrypts stored credentials (AES-GCM) |
 | `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` | no | off | Escape hatch; do not enable in production |
@@ -66,7 +71,23 @@ are in [docker.md](docker.md).
 | `AGENT_RECONNECT_MAX_DELAY_MS` | no | `10000` | Reconnect backoff ceiling |
 | `AGENT_RECONNECT_BACKOFF_FACTOR` | no | `2` | Exponential factor |
 | `AGENT_RECONNECT_MAX_RETRIES` | no | `0` | `0` = retry forever |
+| `AGENT_2FA_AUTO_SUBMIT` | no | off | `true` = answer 2FA challenges locally from stored shared secrets (Steam TOTP); off leaves them to the manual SSE channel |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | no | off | OTLP endpoint; enables distributed tracing export |
+
+#### Automatic 2FA answering (opt-in)
+
+With `AGENT_2FA_AUTO_SUBMIT=true` the agent listens for
+`TwoFactorCodeNeeded` session events. For accounts whose mobile
+authenticator shared secret is stored in the agent's credential store
+(persisted via the MobileAuthenticator plugin's `save_shared_secret`
+action, encrypted at rest), it generates a Steam TOTP locally and
+submits it — no human in the loop. The shared secret never leaves the
+agent. Accounts without a stored secret (email Steam Guard codes, for
+instance, which cannot be generated locally) fall through to the manual
+SSE challenge channel unchanged. Repeat answers for the same account
+are rate-limited by a 60-second per-account cooldown, and Steam server
+time is synchronized at startup and hourly so TOTP windows stay valid.
+
 
 #### Cache backend (Redis)
 
