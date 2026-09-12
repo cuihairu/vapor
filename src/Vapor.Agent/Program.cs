@@ -147,7 +147,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<GetPriceAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetMarketListingsAction>());
 
 // Load plugins (discovery + isolated load + contribution registration).
-var pluginManager = await LoadPluginsAsync(serviceProvider, actionRegistry, logger);
+var (pluginManager, pluginEvents) = await LoadPluginsAsync(serviceProvider, actionRegistry, logger);
 
 using CancellationTokenSource cts = new();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -195,7 +195,12 @@ if (pluginManager is not null)
 	await pluginManager.DisposeAsync();
 }
 
-static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger)
+if (pluginEvents is not null)
+{
+	await pluginEvents.DisposeAsync();
+}
+
+static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger)
 {
 	var pluginsDir = Environment.GetEnvironmentVariable("VAPOR_PLUGINS_DIR");
 	if (string.IsNullOrWhiteSpace(pluginsDir))
@@ -206,10 +211,13 @@ static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IA
 	if (!Directory.Exists(pluginsDir))
 	{
 		logger.LogDebug("No plugins directory found at {PluginsDirectory}; skipping plugin load", pluginsDir);
-		return null;
+		return (null, null);
 	}
 
 	var loggerFactory = services.GetRequiredService<ILoggerFactory>();
+	var eventDispatcher = new PluginEventDispatcher(loggerFactory);
+	eventDispatcher.Start(services.GetRequiredService<ISessionManager>());
+
 	var manager = new PluginManager(
 		new DefaultPluginHostServices(loggerFactory, services),
 		loggerFactory);
@@ -220,12 +228,22 @@ static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IA
 		{
 			actionRegistry.Register(action);
 		}
+
+		if (e.Plugin.Instance is IEventPlugin eventPlugin)
+		{
+			eventDispatcher.Add(eventPlugin);
+		}
 	};
 	manager.PluginUnloading += (_, e) =>
 	{
 		foreach (var action in e.Plugin.Actions)
 		{
 			actionRegistry.Unregister(action.Name);
+		}
+
+		if (e.Plugin.Instance is IEventPlugin eventPlugin)
+		{
+			eventDispatcher.Remove(eventPlugin);
 		}
 	};
 
@@ -235,8 +253,12 @@ static async Task<PluginManager?> LoadPluginsAsync(IServiceProvider services, IA
 		logger.LogWarning("Plugin load failure: {Failure}", SensitiveDataRedactor.Redact(failure));
 	}
 
-	logger.LogInformation("Plugins loaded: {LoadedCount}, failures: {FailureCount}", report.Loaded.Count, report.Failures.Count);
-	return manager;
+	logger.LogInformation(
+		"Plugins loaded: {LoadedCount}, failures: {FailureCount}, event subscribers: {EventSubscriberCount}",
+		report.Loaded.Count,
+		report.Failures.Count,
+		eventDispatcher.SubscriberCount);
+	return (manager, eventDispatcher);
 }
 
 async Task RunOnce(CancellationToken cancellationToken)

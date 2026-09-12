@@ -76,3 +76,15 @@ public interface IWebApiPlugin : IPlugin
 {
 	IEnumerable<PluginWebRoute> GetRoutes();
 }
+
+/// <summary>
+/// Capability interface: a plugin implementing this receives session events observed by
+/// the host. Handlers must return promptly (they are awaited inline on the event pump)
+/// and are isolated: an exception thrown by one plugin's handler never affects other
+/// subscribers or the event source. Hosts stop delivering while the plugin unloads.
+/// </summary>
+public interface IEventPlugin : IPlugin
+{
+	/// <summary>Called for every session event the host observes.</summary>
+	Task OnSessionEventAsync(SessionEvent sessionEvent, CancellationToken cancellationToken);
+}

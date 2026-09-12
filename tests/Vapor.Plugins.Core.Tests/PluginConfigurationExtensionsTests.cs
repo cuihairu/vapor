@@ -1,0 +1,118 @@
+using Vapor.Plugins.Core;
+using Xunit;
+
+namespace Vapor.Plugins.Core.Tests;
+
+public sealed class PluginConfigurationExtensionsTests : IDisposable
+{
+	private readonly Dictionary<string, string> _config = new(StringComparer.OrdinalIgnoreCase);
+
+	public void Dispose()
+	{
+		// Clear any environment variable a test may have set.
+		foreach (var key in new[] { "VAPOR_TEST_PLUGIN_STR", "VAPOR_TEST_PLUGIN_INT", "VAPOR_TEST_PLUGIN_BOOL" })
+		{
+			Environment.SetEnvironmentVariable(key, null);
+		}
+	}
+
+	// --- GetString ---
+
+	[Fact]
+	public void GetString_ReturnsConfiguredValue()
+	{
+		_config["metrics.host"] = "0.0.0.0";
+
+		Assert.Equal("0.0.0.0", _config.GetString("metrics.host", "127.0.0.1"));
+	}
+
+	[Fact]
+	public void GetString_FallsBackWhenMissingOrBlank()
+	{
+		_config["blank"] = "  ";
+
+		Assert.Equal("fallback", _config.GetString("missing", "fallback"));
+		Assert.Equal("fallback", _config.GetString("blank", "fallback"));
+	}
+
+	[Fact]
+	public void GetString_EnvironmentVariableOverridesConfig()
+	{
+		_config["key"] = "from-config";
+		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_STR", "from-env");
+
+		Assert.Equal("from-env", _config.GetString("key", "fallback", "VAPOR_TEST_PLUGIN_STR"));
+	}
+
+	[Fact]
+	public void GetString_BlankEnvironmentVariableFallsBackToConfig()
+	{
+		_config["key"] = "from-config";
+		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_STR", " ");
+
+		Assert.Equal("from-config", _config.GetString("key", "fallback", "VAPOR_TEST_PLUGIN_STR"));
+	}
+
+	// --- GetInt32 ---
+
+	[Fact]
+	public void GetInt32_ParsesConfiguredValue()
+	{
+		_config["port"] = "9700";
+
+		Assert.Equal(9700, _config.GetInt32("port", 80));
+	}
+
+	[Fact]
+	public void GetInt32_FallsBackWhenUnparsableOrOutOfRange()
+	{
+		_config["bad"] = "abc";
+		_config["huge"] = "99999";
+
+		Assert.Equal(80, _config.GetInt32("missing", 80, min: 0, max: 65535));
+		Assert.Equal(80, _config.GetInt32("bad", 80, min: 0, max: 65535));
+		Assert.Equal(80, _config.GetInt32("huge", 80, min: 0, max: 65535));
+	}
+
+	[Fact]
+	public void GetInt32_EnvironmentVariableOverridesConfig()
+	{
+		_config["port"] = "9700";
+		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_INT", "1234");
+
+		Assert.Equal(1234, _config.GetInt32("port", 80, "VAPOR_TEST_PLUGIN_INT"));
+	}
+
+	// --- GetBool ---
+
+	[Theory]
+	[InlineData("true", true)]
+	[InlineData("YES", true)]
+	[InlineData("1", true)]
+	[InlineData("false", false)]
+	[InlineData("No", false)]
+	[InlineData("0", false)]
+	public void GetBool_ParsesCommonTruthyAndFalsyForms(string configured, bool expected)
+	{
+		_config["enabled"] = configured;
+
+		Assert.Equal(expected, _config.GetBool("enabled", !expected));
+	}
+
+	[Fact]
+	public void GetBool_FallsBackWhenUnparsable()
+	{
+		_config["enabled"] = "sometimes";
+
+		Assert.True(_config.GetBool("enabled", fallback: true));
+	}
+
+	[Fact]
+	public void GetBool_EnvironmentVariableOverridesConfig()
+	{
+		_config["enabled"] = "true";
+		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_BOOL", "no");
+
+		Assert.False(_config.GetBool("enabled", true, "VAPOR_TEST_PLUGIN_BOOL"));
+	}
+}

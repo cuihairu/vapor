@@ -44,9 +44,9 @@ public sealed class MonitoringPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		_startTimestamp = Environment.TickCount64;
 
 		var config = context.Configuration;
-		var host = GetString(config, "metrics.host", "127.0.0.1", "VAPOR_METRICS_HOST");
-		var port = GetInt(config, "metrics.port", DefaultPort, "VAPOR_METRICS_PORT");
-		var path = GetString(config, "metrics.path", "/metrics", "VAPOR_METRICS_PATH");
+		var host = config.GetString("metrics.host", "127.0.0.1", "VAPOR_METRICS_HOST");
+		var port = config.GetInt32("metrics.port", DefaultPort, "VAPOR_METRICS_PORT", min: 0, max: 65535);
+		var path = config.GetString("metrics.path", "/metrics", "VAPOR_METRICS_PATH");
 
 		_actionRegistry = context.Host.Services.GetService(typeof(IActionRegistry)) as ActionRegistry;
 		_cache = context.Host.Services.GetService(typeof(IVaporCache)) as IVaporCache;
@@ -249,28 +249,6 @@ public sealed class MonitoringPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		{
 			_logger?.LogDebug(ex, "Failed to sample session metrics");
 		}
-	}
-
-	private static string GetString(IReadOnlyDictionary<string, string> config, string key, string fallback, string? envVar = null)
-	{
-		var fromEnv = envVar is null ? null : Environment.GetEnvironmentVariable(envVar);
-		if (!string.IsNullOrWhiteSpace(fromEnv))
-		{
-			return fromEnv;
-		}
-
-		return config.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : fallback;
-	}
-
-	private static int GetInt(IReadOnlyDictionary<string, string> config, string key, int fallback, string? envVar = null)
-	{
-		var fromEnv = envVar is null ? null : Environment.GetEnvironmentVariable(envVar);
-		if (!string.IsNullOrWhiteSpace(fromEnv) && int.TryParse(fromEnv, out var envParsed) && envParsed is >= 0 and <= 65535)
-		{
-			return envParsed;
-		}
-
-		return config.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) && parsed is >= 0 and <= 65535 ? parsed : fallback;
 	}
 
 	/// <summary>Turns registry execution notifications into action metrics.</summary>

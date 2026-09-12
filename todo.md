@@ -137,7 +137,7 @@
 
 ---
 
-## 5. P4 阶段：M3 插件系统（~40% 进行中）
+## 5. P4 阶段：M3 插件系统（✅ 100% 完成）
 
 ### 5.1 插件基础设施（✅ 完成）
 
@@ -152,6 +152,19 @@
 
 - [x] MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步、交易确认列表/响应，59 个测试）。
 - [x] MonitoringPlugin（Prometheus 文本端点 + get_metrics Action + 插件 Web 路由；动作/会话/缓存/运行时指标；Grafana 面板模板 + Prometheus 抓取配置，21 个测试）。
+
+### 5.3 P4 深化（进行中，四个方向）
+
+- [x] 方向 1：事件订阅 + 配置 API 正式化。
+	- [x] `IEventPlugin` 能力接口（`OnSessionEventAsync(SessionEvent, CancellationToken)`，复用 SessionManager 既有事件流）。
+	- [x] `PluginEventDispatcher`（订阅注册/移除引用幂等、Start 幂等、单插件 handler 异常隔离并日志、DisposeAsync 停泵）。
+	- [x] `PluginConfigurationExtensions`（GetString/GetInt32/GetBool 扩展方法；优先级 env > config > fallback；bool 接受 true/false/1/0/yes/no；int 支持 min/max 范围校验）。
+	- [x] MonitoringPlugin 配置读取重构为扩展方法（env 覆盖：VAPOR_METRICS_HOST/PORT/PATH）。
+	- [x] Agent 接线：PluginLoaded/PluginUnloading 事件挂接 dispatcher 注册/移除，退出时 DisposeAsync。
+	- [x] 测试：PluginEventDispatcherTests（6）+ PluginConfigurationExtensionsTests（12），Plugins.Core.Tests 共 67 个。
+- [ ] 方向 2：插件权限/信任模型（plugin.json trust/permissions 声明 + 宿主策略门禁）。
+- [ ] 方向 3：第三个官方插件 MarketWatch（价格阈值监控 + 事件推送，实战检验插件 API）。
+- [ ] 方向 4：插件开发指南文档（docs/plugins.md：清单、生命周期、能力接口、配置、隔离卸载、调试）。
 
 ---
 
@@ -200,7 +213,7 @@
 | P2 安全闭环 | Week 5-7 | ✅ 100% | 日志 Provider 级脱敏已完成 |
 | P3 数据能力 | Week 6-9 | ✅ 100% | 数据动作 + 分级缓存（内存/Redis）+ 失效闭环已完成 |
 | P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
-| GA 收口 | Week 10-12 | ⚠️ ~70% | Docker/compose/可观测性/Agent 单测/E2E 已就绪；剩余：发布流水线、部署/排障手册、OpenAPI 完整化 |
+| GA 收口 | Week 10-12 | ✅ 100% | Docker/compose/可观测性/E2E/发布流水线/部署与排障手册/OpenAPI 完整化/追踪与 Redis 缓存均已就绪 |
 
 ---
 
