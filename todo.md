@@ -227,7 +227,7 @@
 | P3 数据能力 | Week 6-9 | ✅ 100% | 数据动作 + 分级缓存（内存/Redis）+ 失效闭环已完成 |
 | P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
 | GA 收口 | Week 10-12 | ✅ 100% | Docker/compose/可观测性/E2E/发布流水线/部署与排障手册/OpenAPI 完整化/追踪与 Redis 缓存均已就绪 |
-| P5 规模化运营 | Week 13-16 | 🔄 计划中 | 账户农场编排 + 通知/自动化闭环 + 质量与协议韧性（见第 10 节） |
+| P5 规模化运营 | Week 13-16 | ✅ 完成 | 账户农场编排 + 通知/自动化闭环 + 质量与协议韧性（见第 10 节） |
 
 ---
 
@@ -251,11 +251,11 @@
 6. ~~横向: Docker 镜像与 compose 编排、可观测性（Prometheus 指标导出）~~（已完成）。
 7. ~~横向: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）~~（已完成：`Vapor.Agent.Tests` 41 个 + `Vapor.E2E.Tests` 5 个）；**剩余: 自动发布流水线**。
 8. ~~横向: 生产部署指南、故障排查手册、OpenAPI 完整化、自动发布流水线与回滚~~（全部完成：`docs/production.md` + `docs/troubleshooting.md` + OpenAPI 22 端点注解 + release workflow 补齐 GHCR 镜像发布与打包文档）。
-9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: ~~**方向 A 账户农场编排**~~（✅ 已完成：账户 CRUD + DesiredStateReconciler + 生命周期 + 聚合视图 + 账户过滤 + 审计/metrics + E2E 重平衡）→ ~~**方向 C 通知与自动化闭环**~~（✅ 已完成：webhook 通知 + 2FA 自动提交 + 周期任务 + 通知 metrics，建立在 A 的账户模型上）→ **方向 B 质量与协议韧性**（最后一个方向：replay tests 与覆盖率覆盖 A/C 落地后的代码面更划算；统计修正先行）。
+9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: ~~**方向 A 账户农场编排**~~（✅ 已完成）→ ~~**方向 C 通知与自动化闭环**~~（✅ 已完成）→ ~~**方向 B 质量与协议韧性**~~（✅ 已完成：统计修正 + contract tests 抓到真实上游漂移 + WS 协议 replay tests + ISteamTransport 协议适配层 + 覆盖率管道修复与 74.3% 真实基线）。**P5 三个方向全部完成。**
 
 ---
 
-## 10. P5 阶段：规模化运营（🔄 进行中：A ✅ / C ✅ / B 待实施，2026-09-12 定案）
+## 10. P5 阶段：规模化运营（✅ 100% 完成：A ✅ / C ✅ / B ✅，2026-09-12）
 
 ### 10.1 方向 A：账户农场编排（✅ 已完成，2026-09-12）
 
@@ -276,7 +276,7 @@
 - [x] 计划任务：job 增加 schedule 字段（interval 或 cron 表达式）创建周期任务；处理 missed/overlap 策略（跳过或排队）；持久化下次触发时间（复用 tasks 表迁移模式）。（✅ 2026-09-12：`POST /v1/jobs` 接受 `schedule{intervalSeconds|cron, missed, overlap}` 创建模板 job（`JobStatus.Scheduled`、无 tasks、持久化下次触发点）；`RecurringJobScheduler` 每秒扫描到期模板，原子创建派生 job（复制 action/targets/payload，`meta.scheduledFrom`，`parent_job_id` 列支持 overlap 查询）并推进模板；missed=skip 丢弃停机期间触发点 / run_once 补跑一次（标记 `scheduledMissedCount`）；overlap=skip 上一次未完成则顺延 / allow 并行；cancel 模板即停止周期；cron 永不匹配自动退役；cron 用 Cronos（5 字段 UTC），`ScheduleClock` 隔离；jobs 表自动迁移 + 到期/父 job 索引；metrics `vapor_controlplane_schedule_triggers_total{outcome}`。27 个新测试（ControlPlane 113→140），E2E 6 全过。）
 - [x] ControlPlane /metrics 补通知派发指标（sent/failed/retried）与编排指标（accounts_by_state、reconcile_actions_total）。（✅ 编排指标随方向 A 落地：`vapor_controlplane_reconcile_actions_total` + `accounts_by_desired_state`；通知派发指标随 10.2 提交 1 落地：`vapor_controlplane_notifications_total{sink,outcome}` + `vapor_controlplane_notification_retries_total{sink}`。）
 
-### 10.3 方向 B：质量与协议韧性（第三个实施）
+### 10.3 方向 B：质量与协议韧性（✅ 已完成，2026-09-12）
 
 - [x] 统计修正（可先行）：TESTING.md 测试统计刷新（当前停更于 268，实际 822）；P1/P2/横向过时标题修正（已完成）。（✅ 2026-09-12：刷新为全解决方案 919 基线（8 个测试项目逐类明细），覆盖率章节改为 coverlet.collector/cobertura 管道 + 真实 44.6% 基线表，修正 net8.0 过时提示。）
 - [x] SteamKit2 协议适配层（风险清单承诺）：提取 `ISteamTransport` 类隔离接口，SteamKit2 类型不外泄出 Core 内部，协议升级只动适配层。（✅ 2026-09-12：`ISteamTransport` 协议无关操作面（连接/登录/验证码/动作/回调泵/令牌刷新）+ `ISteamClientManager : ISteamTransport`（保留既有 DI/消费面名字）；新增协议无关模型 `TransportLogOnDetails`、`SteamResult`（数值精确镜像 Valve EResult 线上编码，任务 output 里已持久化的 resultCode 语义不变）、`RedeemKeyResult` 迁移至适配层文件；`SteamClientManager` 成为 SteamKit2 适配器实现——**对公共面零 SteamKit2 类型**：删除 `GetClient()`（src 零消费方），`GetLogOnDetailsAsync` 返回 `TransportLogOnDetails`，`RedeemKeyResult.Result` 改 `SteamResult`（`MapResult` 显式映射，未知码归 `Other=0`）；SteamKit2 `using` 仅存于实现文件与 internal 反射适配器 `SteamAuthTokenProvider`。`RedeemKeyAction` 全部走 `SteamResult`。13 个契约测试（SteamResult 12 线上编码镜像 Theory + 接口可替换性）。Steam.Core 562→573，E2E 6 全过，format OK。）
@@ -299,3 +299,4 @@
 > 2026-09-12：P5 方向 B 开工（统计修正 + contract tests）：TESTING.md 刷新为 919 真实基线；contract tests 录制 3 个真实 Steam 响应 fixture 离线回放，**当场抓到真实上游漂移**——market search render 已从 `listinginfo`/`total_rowcount` 切换为 `results[]`/`total_count`，旧 `GetMarketListingsAsync` 对线上响应静默返回 null；解析器改双路径（新契约优先、旧契约回落），`MarketListing` 扩展聚合字段（`Name`/`HashName`/`SellListings`）。Steam.Core 558→562。
 > 2026-09-12：replay tests 落地：`WsProtocolReplayTests` 7 个测试录制回放 CP↔Agent WS 隧道 5 类帧（hello/task/heartbeat/result/cancel）——序列化方向快照精确相等、反序列化方向逐字段断言、完整会话序列按两端 handler 语义路由、未知字段/type 前向兼容。ControlPlane 140→147。
 > 2026-09-12：ISteamTransport 协议适配层落地：`ISteamTransport` 协议无关操作面 + `TransportLogOnDetails`/`SteamResult`/`RedeemKeyResult` 协议无关模型，`SteamClientManager` 收敛为 SteamKit2 适配器（公共面零 SteamKit2 类型，`GetClient()` 删除，`SteamResult` 数值镜像线上编码保持任务 output 兼容）。协议升级从此只动适配层。Steam.Core 562→573。
+> 2026-09-12：**P5 全部完成（方向 A/C/B 三方向收官）**。方向 B 五子项收口：统计修正 / contract tests（抓到真实上游漂移并双路径修复）/ WS 协议 replay tests / ISteamTransport 协议适配层 / 覆盖率管道修复 + 真实基线（整体行覆盖 74.3%，Protocol 89.1%，测试总数 961，全部过；codecov 门禁 70% 上线）。
