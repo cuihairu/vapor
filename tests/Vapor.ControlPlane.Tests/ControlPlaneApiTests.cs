@@ -186,10 +186,58 @@ public sealed class ControlPlaneApiTests
 		return new TestFactory();
 	}
 
+	[Fact]
+	public async Task CreateScheduledJob_ReturnsTemplateWithNextRunAndRejectsInvalidSchedule()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		await using TestFactory factory = CreateFactory();
+		factory.JobStore = store;
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/jobs", new
+		{
+			action = "ping",
+			region = "us-east",
+			targets = new[] { "alice" },
+			payload = new { minutes = 30 },
+			schedule = new { intervalSeconds = 300 }
+		});
+
+		Assert.Equal(HttpStatusCode.Accepted, post.StatusCode);
+		string body = await post.Content.ReadAsStringAsync();
+		using (var doc = JsonDocument.Parse(body))
+		{
+			JsonElement job = doc.RootElement.GetProperty("job");
+			Assert.Equal("scheduled", job.GetProperty("status").GetString());
+			Assert.Equal(300, job.GetProperty("schedule").GetProperty("intervalSeconds").GetInt32());
+			Assert.True(job.TryGetProperty("nextRunAt", out JsonElement next) && next.ValueKind == JsonValueKind.String);
+		}
+
+		// Template has no tasks — nothing to dispatch until the schedule fires.
+		string jobId = (await store.ListJobs(10, null, CancellationToken.None))[0].Id;
+		JobWithTasks fetched = await store.GetJob(jobId, CancellationToken.None);
+		Assert.Empty(fetched.Tasks);
+
+		using HttpResponseMessage badPost = await client.PostAsJsonAsync("/v1/jobs", new
+		{
+			action = "ping",
+			targets = new[] { "alice" },
+			schedule = new { intervalSeconds = 0 }
+		});
+
+		Assert.Equal(HttpStatusCode.BadRequest, badPost.StatusCode);
+		string badBody = await badPost.Content.ReadAsStringAsync();
+		Assert.Contains("intervalSeconds", badBody);
+	}
+
 	// Internal so the performance benchmarks can spin up the same API host.
 	internal sealed class TestFactory : WebApplicationFactory<Program>
 	{
 		public RecordingEventBroker Events { get; } = new();
+
+		/// <summary>Optional store override; a stub is used when unset.</summary>
+		public IJobStore? JobStore { get; set; }
 
 		protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
 		{
@@ -201,7 +249,7 @@ public sealed class ControlPlaneApiTests
 				services.RemoveAll<SessionTracker>();
 				services.RemoveAll<AuthChallengeTracker>();
 				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, "Data Source=:memory:", 300, false, ":memory:"));
-				services.AddSingleton<IJobStore, FakeJobStore>();
+				services.AddSingleton<IJobStore>(JobStore ?? new FakeJobStore());
 				services.AddSingleton<IEventBroker>(Events);
 				services.AddSingleton<SessionTracker>();
 				services.AddSingleton<AuthChallengeTracker>();
@@ -222,6 +270,10 @@ public sealed class ControlPlaneApiTests
 		public Task<IReadOnlyDictionary<Vapor.Protocol.JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken) =>
 			Task.FromResult<IReadOnlyDictionary<Vapor.Protocol.JobTaskStatus, int>>(
 				new Dictionary<Vapor.Protocol.JobTaskStatus, int> { [Vapor.Protocol.JobTaskStatus.Queued] = QueuedTasks });
+		public Task<IReadOnlyList<Job>> ListDueScheduledJobs(DateTimeOffset now, int limit, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<Job>>([]);
+		public Task<bool> HasActiveChildJob(string templateJobId, CancellationToken cancellationToken) => Task.FromResult(false);
+		public Task<Job?> TriggerScheduledJob(string templateJobId, DateTimeOffset nextRunAt, IReadOnlyDictionary<string, string>? extraMeta, CancellationToken cancellationToken) => Task.FromResult<Job?>(null);
+		public Task<bool> AdvanceSchedule(string templateJobId, DateTimeOffset nextRunAt, CancellationToken cancellationToken) => Task.FromResult(false);
 		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) => Task.FromResult<JobTask?>(null);
 		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => Task.CompletedTask;
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => Task.FromResult(0);

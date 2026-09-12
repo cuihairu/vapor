@@ -40,6 +40,8 @@ builder.Services.AddSingleton<TaskSchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<TaskSchedulerService>());
 builder.Services.AddSingleton<DesiredStateReconciler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateReconciler>());
+builder.Services.AddSingleton<RecurringJobScheduler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RecurringJobScheduler>());
 
 // Notification sinks: wired only when at least one delivery target is configured.
 if (!string.IsNullOrWhiteSpace(startupConfig.WebhookNotificationsUrl))
@@ -127,7 +129,7 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, IEnumerable<INotificationSink> notificationSinks) =>
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, RecurringJobScheduler recurringJobs, IEnumerable<INotificationSink> notificationSinks) =>
 {
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
@@ -168,6 +170,13 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"throttled_skip\"} ").Append(reconciler.ThrottledSkips).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"no_agent_skip\"} ").Append(reconciler.NoAgentSkips).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"dry_run_deviation\"} ").Append(reconciler.DryRunDeviations).Append('\n');
+
+	sb.Append("# HELP vapor_controlplane_schedule_triggers_total Recurring job schedule outcomes since startup.\n");
+	sb.Append("# TYPE vapor_controlplane_schedule_triggers_total counter\n");
+	sb.Append("vapor_controlplane_schedule_triggers_total{outcome=\"triggered\"} ").Append(recurringJobs.TriggeredRuns).Append('\n');
+	sb.Append("vapor_controlplane_schedule_triggers_total{outcome=\"overlap_skipped\"} ").Append(recurringJobs.SkippedOverlaps).Append('\n');
+	sb.Append("vapor_controlplane_schedule_triggers_total{outcome=\"missed_skipped\"} ").Append(recurringJobs.MissedDropped).Append('\n');
+	sb.Append("vapor_controlplane_schedule_triggers_total{outcome=\"missed_catchup\"} ").Append(recurringJobs.MissedCatchUps).Append('\n');
 
 	foreach (INotificationSink sink in notificationSinks)
 	{
@@ -539,6 +548,18 @@ app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadReque
 	if (req.Targets is not { Count: > 0 })
 	{
 		return TypedResults.BadRequest(new ErrorResponse("targets is required"));
+	}
+
+	if (req.Schedule != null)
+	{
+		try
+		{
+			ScheduleClock.Validate(req.Schedule);
+		}
+		catch (ArgumentException ex)
+		{
+			return TypedResults.BadRequest(new ErrorResponse(ex.Message));
+		}
 	}
 
 	var created = await store.CreateJob(req, ctx.RequestAborted);

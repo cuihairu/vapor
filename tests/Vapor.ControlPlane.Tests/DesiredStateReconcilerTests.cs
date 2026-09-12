@@ -462,6 +462,18 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken)
 			=> Task.FromResult<JobTask?>(null);
 
+		public Task<IReadOnlyList<Job>> ListDueScheduledJobs(DateTimeOffset now, int limit, CancellationToken cancellationToken)
+			=> Task.FromResult<IReadOnlyList<Job>>([]);
+
+		public Task<bool> HasActiveChildJob(string templateJobId, CancellationToken cancellationToken)
+			=> Task.FromResult(false);
+
+		public Task<Job?> TriggerScheduledJob(string templateJobId, DateTimeOffset nextRunAt, IReadOnlyDictionary<string, string>? extraMeta, CancellationToken cancellationToken)
+			=> Task.FromResult<Job?>(null);
+
+		public Task<bool> AdvanceSchedule(string templateJobId, DateTimeOffset nextRunAt, CancellationToken cancellationToken)
+			=> Task.FromResult(false);
+
 		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => Task.CompletedTask;
 
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => Task.FromResult(0);
