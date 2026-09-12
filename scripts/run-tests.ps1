@@ -71,6 +71,19 @@ if ($Filter -ne "") {
     $testCmd += " --filter '$Filter'"
 }
 
+# 限制 testhost 并行度：E2E（真实子进程）与 CP 调度器等真实时钟测试在满核
+# 并行下会因资源竞争偶发超时（实测复现过 flake），限流后稳定。注意 `--` 之后
+# 的 token 全部作为 runsettings 内联参数解析，必须放在所有 dotnet test 选项之后。
+$testCmd += " -- RunConfiguration.MaxCpuCount=2"
+
+# 清理历史残留的覆盖率报告，避免旧文件混入本次合并结果。
+# 必须在运行测试之前执行——测试运行结束后这些路径上的文件就是本次的结果。
+if ($Coverage) {
+    Get-ChildItem -Path . -Recurse -Filter "coverage.cobertura.xml" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match "TestResults" } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 # 执行测试
 Write-Warning "运行测试..."
 $result = Invoke-Expression $testCmd
@@ -80,14 +93,6 @@ if ($exitCode -eq 0) {
     Write-Success "测试通过!"
 } else {
     Write-Error "测试失败"
-}
-
-# 处理覆盖率报告
-if ($Coverage) {
-    # 清理历史残留的报告，避免旧文件混入本次合并结果
-    Get-ChildItem -Path . -Recurse -Filter "coverage.cobertura.xml" -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match "TestResults" } |
-        Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 if ($Coverage -and $exitCode -eq 0) {

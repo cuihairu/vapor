@@ -1,0 +1,21 @@
+# Codecov 覆盖率门禁。
+# 基线数字由 scripts/coverage-summary.py 合并全部 cobertura 报告计算
+# （2026-09-12：整体行覆盖 74.3%）。project 目标 70% 留出小幅波动余量；
+# Agent 的结构性未覆盖（Program.cs 顶层组装，E2E 子进程覆盖但插桩测不到）
+# 已计入 70% 目标的设定考量，见 tests/TESTING.md 覆盖率基线一节。
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  status:
+    project:
+      default:
+        target: 70%
+        threshold: 2%
+    patch:
+      default:
+        target: 60%
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default

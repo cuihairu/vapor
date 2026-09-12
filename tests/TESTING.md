@@ -4,7 +4,7 @@
 
 ## 测试项目结构
 
-`tests/` 下 8 个测试项目(外加 1 个供插件基础设施测试使用的示例插件程序集):
+`tests/` 下 9 个测试项目(外加 1 个供插件基础设施测试使用的示例插件程序集):
 
 ```
 tests/
@@ -19,6 +19,7 @@ tests/
 ├── Vapor.Agent.Tests/                    (41 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (24 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (21 tests)
+├── Vapor.Protocol.Tests/                 (20 tests)
 ├── Vapor.E2E.Tests/                      (6 tests,真实双进程)
 └── Vapor.Plugins.TestPlugin/             插件基础设施测试用示例插件
 ```
@@ -34,10 +35,11 @@ tests/
 | Vapor.Agent.Tests | 41 | 重连退避策略、任务执行器、WS URI 构造 |
 | Vapor.Plugins.MarketWatch.Tests | 24 | watch 存储/阈值评估/轮询告警与 webhook/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
+| Vapor.Protocol.Tests | 20 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **941** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **961** | (2026-09-12 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
-> 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
+> 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
 ## 测试分类
 
@@ -211,21 +213,30 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 ## 代码覆盖率
 
-8 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告，覆盖整个解决方案。
+9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。
 
-### 当前基线（2026-09-12，行覆盖约 44.6%）
+### 当前基线（2026-09-12，行覆盖 74.3%）
 
-| 项目 | 行覆盖 |
-|------|--------|
-| Monitoring | 89.3% |
-| ControlPlane | 74.6% |
-| MobileAuthenticator | 75.6% |
-| Steam.Core | 68.6% |
-| Plugins.Core | 67.0% |
-| Protocol | 44.4% |
-| Agent | 25.1%（另有 E2E 真实子进程覆盖，插桩测不到） |
+合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中）：
 
-> Agent 单测测不到的主循环（WS 客户端/会话泵/任务派发闭环）由 E2E 套件以真实双进程覆盖；E2E 6 个测试是独立进程，不计入覆盖率插桩。
+| 程序集 | 行覆盖 |
+|--------|--------|
+| Plugins.TestPlugin | 97.4%（示例插件，fixture 程序集） |
+| Monitoring | 89.7% |
+| MarketWatch | 89.0% |
+| Protocol | 89.1% |
+| ControlPlane | 86.0% |
+| Plugins.Core | 88.1% |
+| MobileAuthenticator | 77.0% |
+| Steam.Core | 67.9% |
+| Agent | 22.6%（结构性，见下） |
+| **合计** | **74.3%** |
+
+> 初版基线（44.6%）系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致（`src/<项目>/…`、`<项目>/…`、裸文件名并存），合并时未归一化导致同一行被重复计入分母。`coverage-summary.py` 归一化去重后重算，整体 44.6% → 74.3%。
+>
+> 结构性未覆盖（非测试缺口，不计入门禁预期）：
+> - **Agent**：除 `Program.cs`（452 行顶层组装语句）外全部单测文件 100%；Agent 主循环（WS 客户端/会话泵/任务派发闭环）由 E2E 套件以真实双进程覆盖，插桩无法跨进程归集。E2E 6 个测试是独立进程，不计入覆盖率插桩。
+> - **Steam.Core** 未覆盖大头是集成壳：`SteamTradeClient`（587 行，需真实 SteamKit2 网络会话）、`RedisVaporCache`（148 行，需 Redis 实例；同接口内存实现已 100%）。
 
 ### 排除项
 
@@ -351,7 +362,7 @@ CI 抖动；实际数字以本地开发机（.NET 10, Linux x64）实测为准�
 ## 测试维护
 
 - 定期更新测试以匹配代码变更
-- 保持测试覆盖率 > 80%
+- 保持测试覆盖率稳步提升（当前 74.3%，CI/Codecov 门禁 70%，见上方基线表）
 - 新功能必须包含测试
 - 修复 bug 时添加回归测试
 - 定期审查和重构测试代码

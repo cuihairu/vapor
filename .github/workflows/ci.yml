@@ -44,13 +44,16 @@ jobs:
     - name: Build ${{ matrix.configuration }}
       run: dotnet build -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo
 
+    # 限制 testhost 并行度（与 scripts/run-tests.sh 一致）：E2E 真实子进程与
+    # CP 调度器等真实时钟测试在满核并行下偶发超时，限流后稳定。
+    # 注意 `--` 之后的 token 全部作为 runsettings 内联参数解析，必须放在最后。
     - name: Test ${{ matrix.configuration }}
       if: matrix.os != 'ubuntu-latest' || matrix.configuration != 'Release'
-      run: dotnet test -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo --verbosity normal
+      run: dotnet test -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo --verbosity normal -- RunConfiguration.MaxCpuCount=2
 
     - name: Test with coverage (Ubuntu Release)
       if: matrix.os == 'ubuntu-latest' && matrix.configuration == 'Release'
-      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage"
+      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage" -- RunConfiguration.MaxCpuCount=2
 
     - name: Upload coverage to Codecov (Ubuntu Release)
       if: matrix.os == 'ubuntu-latest' && matrix.configuration == 'Release'

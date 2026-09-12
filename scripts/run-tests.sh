@@ -84,6 +84,17 @@ if [ -n "$FILTER" ]; then
     TEST_CMD="$TEST_CMD --filter \"$FILTER\""
 fi
 
+# 限制 testhost 并行度：E2E（真实子进程）与 CP 调度器等真实时钟测试在满核
+# 并行下会因资源竞争偶发超时（实测复现过 flake），限流后稳定。注意 `--` 之后
+# 的 token 全部作为 runsettings 内联参数解析，必须放在所有 dotnet test 选项之后。
+TEST_CMD="$TEST_CMD -- RunConfiguration.MaxCpuCount=2"
+
+# 清理历史残留的覆盖率报告，避免旧文件混入本次合并结果。
+# 必须在运行测试之前执行——测试运行结束后这些路径上的文件就是本次的结果。
+if [ "$COVERAGE" = true ]; then
+    find . -path "*/TestResults/*/coverage.cobertura.xml" -delete 2> /dev/null || true
+fi
+
 # 执行测试
 echo -e "${YELLOW}运行测试...${NC}"
 set +e
@@ -95,12 +106,6 @@ if [ $TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}测试通过!${NC}"
 else
     echo -e "${RED}测试失败${NC}"
-fi
-
-# 处理覆盖率报告
-if [ "$COVERAGE" = true ]; then
-    # 清理历史残留的报告，避免旧文件混入本次合并结果
-    find . -path "*/TestResults/*/coverage.cobertura.xml" -delete 2> /dev/null || true
 fi
 
 if [ "$COVERAGE" = true ] && [ $TEST_EXIT_CODE -eq 0 ]; then
