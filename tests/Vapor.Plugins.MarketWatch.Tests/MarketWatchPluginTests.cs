@@ -216,6 +216,9 @@ internal sealed class FakeStoreClient(PriceOverview? nextPrice) : ISteamStoreApi
 
 	public Task<MarketListingsPage?> GetMarketListingsAsync(uint appId, int start = 0, int count = 20, CancellationToken cancellationToken = default) =>
 		throw new NotSupportedException();
+
+	public Task<StorePurchaseResult?> AddFreeLicenseAsync(uint subId, CancellationToken cancellationToken = default) =>
+		throw new NotSupportedException();
 }
 
 /// <summary>HTTP handler stub capturing webhook bodies; optionally always failing.</summary>

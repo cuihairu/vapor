@@ -19,6 +19,7 @@ internal static class AccountTaskRunner
 	internal const string ConfirmTradeOfferAction = "confirm_trade_offer";
 	internal const string ConfirmAllConfirmationsAction = "confirm_all_confirmations";
 	internal const string LootInventoryAction = "loot_inventory";
+	internal const string AddLicenseAction = "add_license";
 
 	/// <summary>Lists an account's trade offers via the get_trade_offers action.</summary>
 	public static Task<TaskRunResult> ReadTradeOffersAsync(

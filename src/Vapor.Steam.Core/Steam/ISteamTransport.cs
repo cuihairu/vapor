@@ -39,6 +39,9 @@ public interface ISteamTransport
 	/// <summary>Redeems a product key on the logged-on account.</summary>
 	Task<RedeemKeyResult?> RedeemKeyAsync(string key, CancellationToken cancellationToken = default);
 
+	/// <summary>Requests free licenses for the given apps on the logged-on account (client protocol). Returns null when not connected or Steam did not answer.</summary>
+	Task<FreeLicenseResult?> RequestFreeLicenseAsync(IReadOnlyCollection<uint> appIds, CancellationToken cancellationToken = default);
+
 	/// <summary>Plays the specified games on Steam. Pass an empty set to stop playing all games.</summary>
 	void PlayGames(HashSet<uint> appIds);
 
@@ -99,4 +102,13 @@ public sealed record RedeemKeyResult(
 	IReadOnlyList<uint>? GrantedAppIDs = null,
 	IReadOnlyList<uint>? GrantedPackageIDs = null,
 	string? ReceiptDetails = null
+);
+
+/// <summary>
+/// Result of a free-license request (the addlicense app path).
+/// </summary>
+public sealed record FreeLicenseResult(
+	SteamResult Result,
+	IReadOnlyList<uint> GrantedApps,
+	IReadOnlyList<uint> GrantedPackages
 );

@@ -20,6 +20,22 @@ public interface ISteamStoreApiClient
 
 	/// <summary>Fetches one page of Community Market listings for an app.</summary>
 	Task<MarketListingsPage?> GetMarketListingsAsync(uint appId, int start = 0, int count = 20, CancellationToken cancellationToken = default);
+
+	/// <summary>Claims a free store sub for the logged-on account (checkout addlicense). Returns null on transport failure.</summary>
+	Task<StorePurchaseResult?> AddFreeLicenseAsync(uint subId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Outcome of a store checkout purchase call. <see cref="Success"/> covers the
+/// codes that mean the sub is on the account afterwards (granted or already owned);
+/// <see cref="PurchaseResultDetail"/> carries the raw Steam EPurchaseResultDetail value.
+/// </summary>
+public sealed record StorePurchaseResult(bool Success, int PurchaseResultDetail)
+{
+	/// <summary>EPurchaseResultDetail: the purchase went through.</summary>
+	public const int Ok = 1;
+	/// <summary>EPurchaseResultDetail: the sub was already on the account.</summary>
+	public const int AlreadyPurchased = 15;
 }
 
 /// <summary>
@@ -193,6 +209,42 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 		catch (JsonException ex)
 		{
 			_logger.LogError(ex, "Failed to parse market search response for app {AppId}", appId);
+			return null;
+		}
+	}
+
+	public async Task<StorePurchaseResult?> AddFreeLicenseAsync(uint subId, CancellationToken cancellationToken = default)
+	{
+		// The addlicense endpoint is the same call the store's own "Add to account"
+		// button makes; it needs the session cookies (sessionid + steamLoginSecure)
+		// the web handler already carries, and answers with a flat JSON verdict.
+		var url = new Uri($"https://store.steampowered.com/checkout/addlicense/{subId}");
+		var headers = new Dictionary<string, string> { ["Referer"] = $"https://store.steampowered.com/sub/{subId}/" };
+
+		var response = await _webHandler.PostAsync(url, content: null, headers, cancellationToken).ConfigureAwait(false);
+		if (!response.IsSuccess || string.IsNullOrEmpty(response.Body))
+		{
+			_logger.LogWarning("addlicense request failed for sub {SubId}: {StatusCode}", subId, response.StatusCode);
+			return null;
+		}
+
+		try
+		{
+			using var doc = JsonDocument.Parse(response.Body);
+			if (!doc.RootElement.TryGetProperty("purchaseresultdetail", out var detailElem) ||
+				!detailElem.TryGetInt32(out int detail))
+			{
+				_logger.LogWarning("addlicense response for sub {SubId} carries no purchaseresultdetail", subId);
+				return null;
+			}
+
+			bool success = detail is StorePurchaseResult.Ok or StorePurchaseResult.AlreadyPurchased;
+			_logger.LogInformation("addlicense for sub {SubId}: detail {Detail} (success: {Success})", subId, detail, success);
+			return new StorePurchaseResult(success, detail);
+		}
+		catch (JsonException ex)
+		{
+			_logger.LogError(ex, "Failed to parse addlicense response for sub {SubId}", subId);
 			return null;
 		}
 	}

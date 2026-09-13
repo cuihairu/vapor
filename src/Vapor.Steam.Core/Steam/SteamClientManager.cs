@@ -357,6 +357,60 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 	}
 
+	public async Task<FreeLicenseResult?> RequestFreeLicenseAsync(IReadOnlyCollection<uint> appIds, CancellationToken cancellationToken = default)
+	{
+		ArgumentNullException.ThrowIfNull(appIds);
+
+		if (appIds.Count == 0)
+		{
+			return new FreeLicenseResult(SteamResult.OK, [], []);
+		}
+
+		if (_disposed)
+		{
+			throw new ObjectDisposedException(nameof(SteamClientManager));
+		}
+
+		if (!_steamClient.IsConnected)
+		{
+			_logger.LogWarning("Cannot request free license: Steam client not connected");
+			return null;
+		}
+
+		try
+		{
+			var steamApps = _steamClient.GetHandler<SteamApps>()
+				?? throw new InvalidOperationException("SteamApps handler not available");
+
+			var asyncJob = steamApps.RequestFreeLicense(appIds);
+			asyncJob.Timeout = TimeSpan.FromSeconds(60);
+			var response = await asyncJob.ToTask().ConfigureAwait(false);
+
+			if (response == null)
+			{
+				_logger.LogWarning("Free license request timed out for {Count} apps", appIds.Count);
+				return new FreeLicenseResult(SteamResult.Timeout, [], []);
+			}
+
+			_logger.LogInformation(
+				"Free license request result: {Result} (granted {GrantedApps} apps / {GrantedPackages} packages for {Count} requested apps)",
+				response.Result,
+				response.GrantedApps.Count,
+				response.GrantedPackages.Count,
+				appIds.Count);
+
+			return new FreeLicenseResult(
+				MapResult(response.Result),
+				response.GrantedApps.ToList(),
+				response.GrantedPackages.ToList());
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Failed to request free license for {Count} apps", appIds.Count);
+			return new FreeLicenseResult(SteamResult.Fail, [], []);
+		}
+	}
+
 	/// <summary>Maps a SteamKit2 result code onto the protocol-agnostic <see cref="SteamResult"/>.</summary>
 	private static SteamResult MapResult(EResult result)
 	{

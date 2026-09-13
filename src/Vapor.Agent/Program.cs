@@ -88,7 +88,9 @@ var serviceCollection = new ServiceCollection()
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
 	.AddSingleton<LootInventoryAction>(p => new LootInventoryAction(
 		p.GetRequiredService<ILogger<LootInventoryAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()));
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
+	.AddSingleton<AddLicenseAction>(p => new AddLicenseAction(
+		p.GetRequiredService<ILogger<AddLicenseAction>>()));
 
 // Cache backend: Redis when VAPOR_REDIS points at a server, in-memory otherwise.
 string redisConfiguration = Environment.GetEnvironmentVariable("VAPOR_REDIS") ?? string.Empty;
@@ -170,6 +172,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<AcceptTradeOfferActio
 actionRegistry.Register(serviceProvider.GetRequiredService<DeclineTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CancelTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<LootInventoryAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<AddLicenseAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SearchGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetPriceAction>());

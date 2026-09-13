@@ -8,6 +8,7 @@ namespace Vapor.Steam.Core.Tests.Mocks;
 public sealed class MockSteamClientManager : ISteamClientManager
 {
 	private RedeemKeyResult? _redeemKeyResult;
+	private FreeLicenseResult? _freeLicenseResult;
 	private TaskCompletionSource<bool>? _connectTcs;
 	private bool _isConnected;
 
@@ -62,6 +63,11 @@ public sealed class MockSteamClientManager : ISteamClientManager
 		return Task.FromResult<RedeemKeyResult?>(_redeemKeyResult);
 	}
 
+	public Task<FreeLicenseResult?> RequestFreeLicenseAsync(IReadOnlyCollection<uint> appIds, CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult<FreeLicenseResult?>(_freeLicenseResult ?? new FreeLicenseResult(SteamResult.OK, appIds.ToList(), []));
+	}
+
 	public void PlayGames(HashSet<uint> appIds) { }
 
 	public IReadOnlySet<uint> GetPlayingGames()
@@ -80,6 +86,14 @@ public sealed class MockSteamClientManager : ISteamClientManager
 	public void SetRedeemKeyResult(RedeemKeyResult result)
 	{
 		_redeemKeyResult = result;
+	}
+
+	/// <summary>
+	/// Sets the result to return from RequestFreeLicenseAsync.
+	/// </summary>
+	public void SetFreeLicenseResult(FreeLicenseResult result)
+	{
+		_freeLicenseResult = result;
 	}
 
 	/// <summary>

@@ -260,4 +260,50 @@ public sealed class SteamStoreApiClientTests
 		Assert.NotNull(price);
 		Assert.Equal(9.99m, price!.Final);
 	}
+
+	[Fact]
+	public async Task AddFreeLicenseAsync_PostsToCheckoutEndpointAndParsesDetail()
+	{
+		var (client, fake) = Create();
+		HttpRequestMessage? seen = null;
+		fake.Responder = request =>
+		{
+			seen = request;
+			return Json(HttpStatusCode.OK, """{ "purchaseresultdetail": 1 }""");
+		};
+
+		var result = await client.AddFreeLicenseAsync(42666);
+
+		Assert.NotNull(result);
+		Assert.True(result!.Success);
+		Assert.Equal(StorePurchaseResult.Ok, result.PurchaseResultDetail);
+		Assert.NotNull(seen);
+		Assert.EndsWith($"/checkout/addlicense/{42666}", seen!.RequestUri!.AbsolutePath, StringComparison.Ordinal);
+		Assert.Equal(HttpMethod.Post, seen.Method);
+		Assert.Equal($"https://store.steampowered.com/sub/{42666}/", seen.Headers.Referrer?.ToString());
+	}
+
+	[Fact]
+	public async Task AddFreeLicenseAsync_AlreadyPurchased_IsSuccess()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """{ "purchaseresultdetail": 15 }""");
+
+		var result = await client.AddFreeLicenseAsync(42666);
+
+		Assert.NotNull(result);
+		Assert.True(result!.Success);
+		Assert.Equal(StorePurchaseResult.AlreadyPurchased, result.PurchaseResultDetail);
+	}
+
+	[Fact]
+	public async Task AddFreeLicenseAsync_WhenHttpFails_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => new HttpResponseMessage(HttpStatusCode.Forbidden);
+
+		var result = await client.AddFreeLicenseAsync(42666);
+
+		Assert.Null(result);
+	}
 }
