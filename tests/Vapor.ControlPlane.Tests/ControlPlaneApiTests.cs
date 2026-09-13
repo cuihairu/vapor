@@ -137,6 +137,40 @@ public sealed class ControlPlaneApiTests
 	}
 
 	[Fact]
+	public async Task SessionEvents_QrRequired_TracksChallengeWithQrTypeAndUrl()
+	{
+		await using TestFactory factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage post = await client.PostAsJsonAsync("/v1/sessions/events", new
+		{
+			accountName = "alice",
+			eventType = "qr_required",
+			state = "ConnectingWaitQr",
+			message = "https://s.team/q/1/ABCDEF"
+		});
+
+		Assert.Equal(HttpStatusCode.OK, post.StatusCode);
+		Assert.Equal("qr_required", Assert.Single(factory.Events.AuthChallengeEvents).ChallengeType);
+		Assert.Equal("https://s.team/q/1/ABCDEF", factory.Events.AuthChallengeEvents[0].Message);
+		Assert.Null(factory.Events.AuthChallengeEvents[0].Code);
+
+		using HttpResponseMessage challenges = await client.GetAsync("/v1/auth/challenges");
+		Assert.Equal(HttpStatusCode.OK, challenges.StatusCode);
+		string body = await challenges.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Equal("qr_required", doc.RootElement.GetProperty("challenges")[0].GetProperty("challengeType").GetString());
+
+		// The QR challenge shows up in the session tracker too, with the challenge URL intact.
+		using HttpResponseMessage sessions = await client.GetAsync("/v1/sessions?account=alice");
+		string sessionsBody = await sessions.Content.ReadAsStringAsync();
+		using var sessionsDoc = JsonDocument.Parse(sessionsBody);
+		Assert.Equal("qr_required", sessionsDoc.RootElement.GetProperty("sessions")[0].GetProperty("eventType").GetString());
+		Assert.Equal("https://s.team/q/1/ABCDEF", sessionsDoc.RootElement.GetProperty("sessions")[0].GetProperty("message").GetString());
+	}
+
+	[Fact]
 	public async Task AuthChallengeEventsStream_AllowsAdminAndRedactsCodeProvidedPayload()
 	{
 		await using TestFactory factory = CreateFactory();

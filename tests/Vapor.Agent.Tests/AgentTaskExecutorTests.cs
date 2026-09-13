@@ -262,4 +262,35 @@ public class AgentTaskExecutorTests
 		Assert.False(success);
 		Assert.NotNull(error);
 	}
+
+	[Fact]
+	public async Task QrLoginPayload_CreatesQrCredentials_AndTakesPrecedenceOverPassword()
+	{
+		var session = CreateStubSession();
+		var (manager, captured) = CreateMockedManager(session);
+		var payload = new Dictionary<string, object?> { ["qr_login"] = true, ["password"] = "ignored" };
+
+		var (success, error, _) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(payload: payload), manager.Object, NullLogger.Instance, CancellationToken.None);
+
+		Assert.True(success);
+		Assert.Null(error);
+		var credentials = Assert.Single(captured);
+		Assert.True(credentials.QrLogin);
+		Assert.Equal(string.Empty, credentials.Password);
+	}
+
+	[Fact]
+	public async Task QrLoginCamelCaseAlias_IsRecognized()
+	{
+		var session = CreateStubSession();
+		var (manager, captured) = CreateMockedManager(session);
+		var payload = new Dictionary<string, object?> { ["qrLogin"] = true };
+
+		var (success, _, _) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(payload: payload), manager.Object, NullLogger.Instance, CancellationToken.None);
+
+		Assert.True(success);
+		Assert.True(Assert.Single(captured).QrLogin);
+	}
 }

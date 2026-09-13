@@ -22,6 +22,7 @@ public class ModelsTests
 			SessionState.Connecting,
 			SessionState.ConnectingWaitAuthCode,
 			SessionState.ConnectingWait2FA,
+			SessionState.ConnectingWaitQr,
 			SessionState.Connected,
 			SessionState.Reconnecting,
 			SessionState.DisconnectedByUser,
@@ -87,6 +88,7 @@ public class ModelsTests
 			SessionEventType.StateChanged,
 			SessionEventType.AuthCodeNeeded,
 			SessionEventType.TwoFactorCodeNeeded,
+			SessionEventType.QrCodeNeeded,
 			SessionEventType.Connected,
 			SessionEventType.Disconnected,
 			SessionEventType.Error

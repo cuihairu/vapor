@@ -316,7 +316,8 @@
 
 - [x] Web Dashboard 只读面板（对标 ASF-ui 只读部分）：`wwwroot/dashboard.html`——统计卡/账户/Agent/会话/作业（点击展开任务明细）/审计日志 + jobs/sessions 双 SSE 流 + 30s 轮询兜底，纯 GET + EventSource 零写操作；无写动词契约测试守护（DashboardStaticTests 4 个）；与 admin.html 互链，`/` 重定向不变。（管理功能继续走 admin.html；功能扩展待后续评估）
 - [ ] 市场挂单创建/批量撤单（对标 SGI）：ToS 灰区 + 需库存/定价前置。
-- [ ] QR 扫码登录（对标 SGI/steamguard-cli）；成就解锁/管理（对标 SGI）：便利性/需求弱，后置。
+- [x] QR 扫码登录（对标 SGI/steamguard-cli）：SteamKit2 BeginAuthSessionViaQR + 轮询，login 任务 payload `qr_login:true` 触发；挑战 URL 经 session 事件 `qr_required` 上浮（CP 归类为挑战类型 `qr_required`，轮转自动重发，批准/超时自动清挑战），request_key 不出 transport，refresh token 走既有加密落盘 + token 登录路径；3 分钟等待窗。
+- [ ] 成就解锁/管理（对标 SGI）：需求弱，后置。
 
 ### 11.5 明确不采用（定位外）
 

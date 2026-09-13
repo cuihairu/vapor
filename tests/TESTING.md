@@ -8,15 +8,15 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (693 tests)
+├── Vapor.Steam.Core.Tests/               (700 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (204 tests)
+├── Vapor.ControlPlane.Tests/             (205 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出基准
 ├── Vapor.Plugins.Core.Tests/             (85 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (65 tests)
-├── Vapor.Agent.Tests/                    (47 tests)
+├── Vapor.Agent.Tests/                    (49 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (32 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (21 tests)
 ├── Vapor.Protocol.Tests/                 (22 tests)
@@ -28,22 +28,22 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 693 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配 |
-| Vapor.ControlPlane.Tests | 204 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、静态只读面板契约 |
+| Vapor.Steam.Core.Tests | 700 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流 |
+| Vapor.ControlPlane.Tests | 205 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、静态只读面板契约、QR 挑战归类 |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 65 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 |
-| Vapor.Agent.Tests | 47 | 重连退避策略、任务执行器、WS URI 构造、maFile 离线导入 CLI |
+| Vapor.Agent.Tests | 49 | 重连退避策略、任务执行器(含 QR 登录 payload)、WS URI 构造、maFile 离线导入 CLI |
 | Vapor.Plugins.MarketWatch.Tests | 32 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 22 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **1175** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **1185** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
 ## 测试分类
 
-### Steam.Core(693 个测试)
+### Steam.Core(700 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -68,6 +68,7 @@ tests/
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | BotSessionTests | 26 | 会话状态机 |
+| BotSessionQrLoginTests | 7 | QR 扫码登录会话流(批准后 refresh token 走 token 登录、挑战 URL 上浮与轮转重发、拒绝/超时/连接失败映射、stub 模式) |
 | SessionManagerTests | 24 | 会话管理器 |
 | SteamClientManagerTests | 21 | Steam 客户端管理器 |
 | SteamTransportContractTests | 13 | 传输层契约(SteamResult 线上编码镜像 + 接口可替换性) |
@@ -130,7 +131,7 @@ tests/
 | AccountStoreTests | 13 | 账户存储(ConfigVersion 并发) |
 | AccountApiTests | 58 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取:fake agent 顺序回报) |
 | RecurringJobSchedulerTests | 10 | 周期任务触发/missed/overlap/退役 |
-| ControlPlaneApiTests | 9 | REST API(鉴权/任务/SSE/计划 job) |
+| ControlPlaneApiTests | 10 | REST API(鉴权/任务/SSE/计划 job、QR 挑战归类与 URL 透传) |
 | TaskSchedulerServiceTests | 7 | 任务派发/终态机制 |
 | SqliteAuditStoreTests | 7 | 审计存储 |
 | AuditApiTests | 6 | 审计查询 API |
@@ -147,10 +148,9 @@ tests/
 - **MarketWatch(32)**:watch 存储/阈值评估/三个 watch action(kind=price/free)/轮询告警与 webhook(free_game_alert 与 price_alert)/插件宿主实战加载
 - **Monitoring(21)**:指标注册表(9)/HTTP 服务(6)/插件生命周期(6)
 
-### Agent(47 个测试)
+### Agent(49 个测试)
 
-重连退避策略(25)、任务执行器(12)、maFile 导入 CLI(6,含加密 maFile 与 --password、目录扫描、部分失败)、WS URI 构造(4)。Agent 主循环(会话泵/WS 客户端/任务派发闭环)由 **E2E 套件以真实子进程覆盖**——单测统计与覆盖率均测不到。
-
+重连退避策略(25)、任务执行器(14,含 QR 登录 payload 解析与优先级)、
 ### E2E(6 个测试)
 
 真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。覆盖:健康检查、job 全链路(创建→派发→执行→回报→REST 读取 output)、任务取消、SSE 事件流、2FA 挑战人工提交、账户声明→自动分配→kill agent→重平衡。

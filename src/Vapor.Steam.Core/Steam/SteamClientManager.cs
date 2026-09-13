@@ -17,6 +17,9 @@ internal interface ISteamAuthTokenProvider
 		string refreshToken,
 		bool allowRenewal,
 		CancellationToken cancellationToken = default);
+
+	/// <summary>The underlying SteamKit2 authentication service for direct public-surface calls (QR sign-in).</summary>
+	SteamAuthentication Authentication { get; }
 }
 
 internal sealed record SteamTokenRenewalResult(
@@ -44,6 +47,13 @@ internal sealed class SteamAuthTokenProvider : ISteamAuthTokenProvider
 			bindingAttr: BindingFlags.Instance | BindingFlags.Public)
 			?? throw new InvalidOperationException("GenerateAccessTokenForAppAsync method was not found.");
 	}
+
+	/// <summary>
+	/// The underlying SteamKit2 authentication service (created via its internal
+	/// constructor). Public surface such as BeginAuthSessionViaQRAsync is usable
+	/// directly on this instance.
+	/// </summary>
+	public SteamAuthentication Authentication => (SteamAuthentication)_authentication;
 
 	public async Task<SteamTokenRenewalResult> GenerateAccessTokenForAppAsync(
 		SteamID steamId,
@@ -273,6 +283,66 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			_ => new LoginState(accountName, string.Empty) { TwoFactorCode = code },
 			(_, existing) => existing with { TwoFactorCode = code }
 		);
+	}
+
+	public async Task<QrLoginResult> BeginQrLoginAsync(string accountName, Action<string> onChallengeUrl, CancellationToken cancellationToken = default)
+	{
+		ThrowIfDisposed();
+
+		if (!_steamClient.IsConnected)
+		{
+			return new QrLoginResult(false, "Steam client is not connected");
+		}
+
+		try
+		{
+			var details = new AuthSessionDetails
+			{
+				DeviceFriendlyName = "Vapor",
+				PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient,
+				WebsiteID = "Client"
+			};
+
+			var session = await _steamAuthTokenProvider.Authentication
+				.BeginAuthSessionViaQRAsync(details)
+				.ConfigureAwait(false);
+
+			// Steam periodically rotates the challenge URL; forward every value so
+			// upstream consumers can keep the rendered QR current. The request key
+			// (session.RequestID) deliberately stays inside the transport.
+			session.ChallengeURLChanged += () =>
+			{
+				try
+				{
+					onChallengeUrl(session.ChallengeURL);
+				}
+				catch (Exception ex)
+				{
+					_logger.LogWarning(ex, "QR challenge URL callback failed for {AccountName}", accountName);
+				}
+			};
+
+			onChallengeUrl(session.ChallengeURL);
+
+			var poll = await session.PollingWaitForResultAsync(cancellationToken).ConfigureAwait(false);
+			_logger.LogInformation("QR sign-in approved for {AccountName} ({PollAccountName})", accountName, poll.AccountName);
+			return new QrLoginResult(true, null, poll.RefreshToken);
+		}
+		catch (AuthenticationException ex)
+		{
+			_logger.LogWarning("QR sign-in challenge ended for {AccountName}: {Result}", accountName, ex.Result);
+			return new QrLoginResult(false, $"QR sign-in challenge failed: {ex.Result}");
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			_logger.LogInformation("QR sign-in for {AccountName} was canceled or timed out", accountName);
+			return new QrLoginResult(false, "QR sign-in was not approved in time (challenge expired or timed out)");
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "QR sign-in failed for {AccountName}", accountName);
+			return new QrLoginResult(false, ex.Message);
+		}
 	}
 
 	public void RunCallbacks()

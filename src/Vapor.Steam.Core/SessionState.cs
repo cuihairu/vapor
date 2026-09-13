@@ -6,6 +6,7 @@ public enum SessionState
 	Connecting,
 	ConnectingWaitAuthCode,
 	ConnectingWait2FA,
+	ConnectingWaitQr,
 	Connected,
 	Reconnecting,
 	DisconnectedByUser,
@@ -18,6 +19,7 @@ public enum SessionEventType
 	StateChanged,
 	AuthCodeNeeded,
 	TwoFactorCodeNeeded,
+	QrCodeNeeded,
 	Connected,
 	Disconnected,
 	Error

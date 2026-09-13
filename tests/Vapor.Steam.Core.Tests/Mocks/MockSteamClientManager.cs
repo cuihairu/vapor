@@ -56,6 +56,11 @@ public sealed class MockSteamClientManager : ISteamClientManager
 
 	public void SetTwoFactorCode(string accountName, string code) { }
 
+	public Task<QrLoginResult> BeginQrLoginAsync(string accountName, Action<string> onChallengeUrl, CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult(new QrLoginResult(false, "QR sign-in is not configured on this mock"));
+	}
+
 	public void RunCallbacks() { }
 
 	public Task<RedeemKeyResult?> RedeemKeyAsync(string key, CancellationToken cancellationToken = default)

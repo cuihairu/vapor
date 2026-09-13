@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Moq;
 using SteamKit2;
+using SteamKit2.Authentication;
 using SteamKit2.Internal;
 using Vapor.Steam.Core.Steam;
 using Vapor.Steam.Core.Security;
@@ -395,6 +396,8 @@ public class SteamClientManagerTests : IDisposable
 		public SteamID? ExpectedSteamId { get; set; }
 		public string? ExpectedRefreshToken { get; set; }
 		public SteamTokenRenewalResult? Result { get; set; }
+
+		public SteamAuthentication Authentication => throw new InvalidOperationException("Authentication surface is not available on the fake provider.");
 
 		public Task<SteamTokenRenewalResult> GenerateAccessTokenForAppAsync(
 			SteamID steamId,

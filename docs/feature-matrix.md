@@ -31,7 +31,7 @@
 | 2FA 代码生成(TOTP) | ✅ | ✅ | ✅ | ✅ | ✅(SteamTotp + 时间同步) |
 | 2FA 登录 challenge 自动应答 | ✅ | ✅ | ✅ | ✅ | ✅(TwoFactorAutoResponder,显式开启) |
 | 交易/市场**确认**接受 | ✅ | ✅(批量) | ✅ | ✅ | ⚠️ 仅有确认哈希/列表(MobileAuthenticator),无自动接受闭环 |
-| QR 扫码登录 | ❌ | ✅ | ✅ | ✅ | ❌ |
+| QR 扫码登录 | ❌ | ✅ | ✅ | ✅ | ✅(login 任务 qr_login 触发,挑战 URL 上浮) |
 | .maFile 导入互操作(SDA/steamguard-cli) | ✅(ASF 2FA) | ✅ | ➖ | ✅ | ❌ |
 | 本地 Steam 客户端账号切换 | ➖ | ✅ | ✅ | ➖ | ➖(服务端架构不适用) |
 
@@ -121,7 +121,7 @@
 
 - [x] Web Dashboard 只读面板(对标 ASF-ui 只读部分):`wwwroot/dashboard.html` 落地——统计卡/账户/Agent/会话/作业/审计 + 双 SSE 流 + 轮询兜底,零写操作(契约测试守护);管理功能走既有 admin.html。功能扩展(向导式配置等)后置。
 - [ ] 挂单创建/批量撤单(对标 SGI):ToS 灰区 + 需要库存/定价前置,后置。
-- [ ] QR 扫码登录(对标 SGI/steamguard-cli):便利性功能,后置。
+- [x] QR 扫码登录(对标 SGI/steamguard-cli):SteamKit2 QR 挑战 + 轮询落地;挑战 URL 经 session 事件上浮供人扫码,request_key 与 token 均不出 agent;管理面暂用 POST /v1/jobs 触发(UI 按钮后置)。
 - [ ] 成就解锁/管理(对标 SGI):需求弱,后置。
 
 ### 明确不采用(定位外)

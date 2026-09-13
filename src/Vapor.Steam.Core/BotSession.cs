@@ -11,7 +11,8 @@ public sealed record AccountCredentials(
 	string? AuthCode = null,
 	string? TwoFactorCode = null,
 	string? RefreshToken = null,
-	string? AccessToken = null
+	string? AccessToken = null,
+	bool QrLogin = false
 );
 
 public delegate Task SessionEventDelegate(string accountName, string eventType, string state, string? message);
@@ -384,6 +385,11 @@ public sealed class BotSession : IDisposable
 			return new SessionCommandResult(true, null, null);
 		}
 
+		if (_credentials.QrLogin)
+		{
+			return await LoginViaQrAsync(cancellationToken).ConfigureAwait(false);
+		}
+
 		SetState(SessionState.Connecting, "connecting to Steam");
 
 		try
@@ -432,6 +438,132 @@ public sealed class BotSession : IDisposable
 		}
 	}
 
+	// Steam rotates the QR challenge URL periodically; the sign-in window bounds how
+	// long the session will wait for the phone-side approval before giving up.
+	private static readonly TimeSpan QrLoginTimeout = TimeSpan.FromMinutes(3);
+
+	/// <summary>
+	/// QR sign-in: connect, surface the challenge URL (republished whenever Steam
+	/// rotates it), wait for the phone-side approval, then hand the minted refresh
+	/// token to the standard token log-on path. The request key never leaves the
+	/// transport; only the challenge URL — which is useless without an approved
+	/// phone session — is surfaced upstream.
+	/// </summary>
+	private async Task<SessionCommandResult> LoginViaQrAsync(CancellationToken cancellationToken)
+	{
+		SetState(SessionState.Connecting, "connecting to Steam for QR sign-in");
+
+		try
+		{
+			await _steamClientManager!.ConnectAsync(cancellationToken).ConfigureAwait(false);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Connect failed before QR sign-in for {AccountName}", _accountName);
+			SetState(SessionState.FatalError, ex.Message);
+			return new SessionCommandResult(false, ex.Message, null);
+		}
+
+		using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		timeoutCts.CancelAfter(QrLoginTimeout);
+
+		QrLoginResult result;
+		try
+		{
+			var challenge = new SessionEvent(SessionEventType.QrCodeNeeded, _accountName, SessionState.ConnectingWaitQr, null);
+			result = await _steamClientManager.BeginQrLoginAsync(
+				_accountName,
+				url => PublishQrChallenge(url, challenge),
+				timeoutCts.Token).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			SetState(SessionState.Disconnected, "QR sign-in canceled");
+			return new SessionCommandResult(false, "canceled", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "QR sign-in failed for {AccountName}", _accountName);
+			SetState(SessionState.FatalError, ex.Message);
+			return new SessionCommandResult(false, ex.Message, null);
+		}
+
+		if (!result.Success || string.IsNullOrWhiteSpace(result.RefreshToken))
+		{
+			var error = result.Error ?? "QR sign-in was not approved";
+			_logger.LogWarning("QR sign-in failed for {AccountName}: {Error}", _accountName, error);
+			SetState(SessionState.FatalError, error);
+			return new SessionCommandResult(false, error, null);
+		}
+
+		SetState(SessionState.Connecting, "QR sign-in approved; logging on with the new refresh token");
+
+		try
+		{
+			// Only the refresh token is staged: LogOnDetails.AccessToken must carry the
+			// long-lived refresh JWT, and the logon callback persists it via the store.
+			await _steamClientManager.UpdateLogOnDetailsAsync(_accountName, null, result.RefreshToken).ConfigureAwait(false);
+			await _steamClientManager.LoginAsync(_accountName, string.Empty, cancellationToken).ConfigureAwait(false);
+
+			SetState(SessionState.Connected, "connected to Steam via QR sign-in");
+			ConnectedAt = DateTimeOffset.UtcNow;
+			return new SessionCommandResult(true, null, null);
+		}
+		catch (SteamAuthCodeRequiredException ex)
+		{
+			SetState(SessionState.ConnectingWaitAuthCode, ex.Message);
+			_eventChannel.Writer.TryWrite(new SessionEvent(SessionEventType.AuthCodeNeeded, _accountName, SessionState.ConnectingWaitAuthCode, ex.Message));
+			return new SessionCommandResult(false, ex.Message, null);
+		}
+		catch (SteamTwoFactorCodeRequiredException ex)
+		{
+			SetState(SessionState.ConnectingWait2FA, ex.Message);
+			_eventChannel.Writer.TryWrite(new SessionEvent(SessionEventType.TwoFactorCodeNeeded, _accountName, SessionState.ConnectingWait2FA, ex.Message));
+			return new SessionCommandResult(false, ex.Message, null);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			SetState(SessionState.Disconnected, "QR sign-in canceled");
+			return new SessionCommandResult(false, "canceled", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Post-QR logon failed for {AccountName}", _accountName);
+			SetState(SessionState.FatalError, ex.Message);
+			return new SessionCommandResult(false, ex.Message, null);
+		}
+	}
+
+	private void PublishQrChallenge(string url, SessionEvent firstChallenge)
+	{
+		if (_state != SessionState.ConnectingWaitQr)
+		{
+			_eventChannel.Writer.TryWrite(firstChallenge with { Message = url });
+			SetState(SessionState.ConnectingWaitQr, url);
+			return;
+		}
+
+		// Same state: still republish so dashboards refresh the QR challenge in place.
+		_eventChannel.Writer.TryWrite(new SessionEvent(SessionEventType.QrCodeNeeded, _accountName, SessionState.ConnectingWaitQr, url));
+		RaiseEventCallback("qr_required", SessionState.ConnectingWaitQr, url);
+	}
+
+	private void RaiseEventCallback(string eventType, SessionState state, string? message)
+	{
+		if (_eventCallback == null)
+		{
+			return;
+		}
+
+		_ = Task.Run(async () =>
+		{
+			if (_eventCallback != null)
+			{
+				await _eventCallback.Invoke(_accountName, eventType, state.ToString(), message);
+			}
+		});
+	}
+
 	private async Task DisconnectInternalAsync(CancellationToken cancellationToken)
 	{
 		SetState(SessionState.Disconnecting, null);
@@ -468,15 +600,10 @@ public sealed class BotSession : IDisposable
 			{
 				SessionState.ConnectingWaitAuthCode => "auth_code_required",
 				SessionState.ConnectingWait2FA => "2fa_required",
+				SessionState.ConnectingWaitQr => "qr_required",
 				_ => "state_changed"
 			};
-			_ = Task.Run(async () =>
-			{
-				if (_eventCallback != null)
-				{
-					await _eventCallback.Invoke(_accountName, eventType, newState.ToString(), message);
-				}
-			});
+			RaiseEventCallback(eventType, newState, message);
 		}
 	}
 

@@ -1680,10 +1680,13 @@ app.MapPost("/v1/sessions/events", async (
 	if (IsAuthChallengeRequired(normalizedType, state))
 	{
 		var challengeType =
-			string.Equals(normalizedType, "2fa_required", StringComparison.Ordinal) ||
-			string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal)
-				? "2fa_required"
-				: "auth_code_required";
+			string.Equals(normalizedType, "qr_required", StringComparison.Ordinal) ||
+			string.Equals(state, "ConnectingWaitQr", StringComparison.Ordinal)
+				? "qr_required"
+				: string.Equals(normalizedType, "2fa_required", StringComparison.Ordinal) ||
+				  string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal)
+					? "2fa_required"
+					: "auth_code_required";
 		var evt = new Vapor.ControlPlane.AuthChallengeEvent(
 			Id: Guid.NewGuid().ToString("N"),
 			AccountName: req.AccountName,
@@ -1973,13 +1976,15 @@ static string NormalizeSessionEventType(string? eventType)
 static bool IsAuthChallengeRequired(string normalizedEventType, string state)
 {
 	if (string.Equals(normalizedEventType, "auth_code_required", StringComparison.Ordinal) ||
-		string.Equals(normalizedEventType, "2fa_required", StringComparison.Ordinal))
+		string.Equals(normalizedEventType, "2fa_required", StringComparison.Ordinal) ||
+		string.Equals(normalizedEventType, "qr_required", StringComparison.Ordinal))
 	{
 		return true;
 	}
 
 	return string.Equals(state, "ConnectingWaitAuthCode", StringComparison.Ordinal) ||
-		   string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal);
+		   string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal) ||
+		   string.Equals(state, "ConnectingWaitQr", StringComparison.Ordinal);
 }
 
 static async Task WriteAuditLog(

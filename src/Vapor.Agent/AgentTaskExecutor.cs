@@ -32,41 +32,28 @@ public static class AgentTaskExecutor
 
 			string? accessToken = PayloadReader.GetString(payload, "accessToken") ?? PayloadReader.GetString(payload, "access_token");
 			string? refreshToken = PayloadReader.GetString(payload, "refreshToken") ?? PayloadReader.GetString(payload, "refresh_token");
+			bool qrLogin = PayloadReader.GetBool(payload, "qrLogin") ?? PayloadReader.GetBool(payload, "qr_login") ?? false;
 
 			BotSession session;
 
-			// If only tokens are provided (no password), try to restore from stored credentials
-			if (string.IsNullOrEmpty(password) && !string.IsNullOrEmpty(refreshToken))
+			if (qrLogin)
 			{
-				logger.LogInformation("Attempting to restore session for {AccountName} using tokens", accountName);
-
-				var credentials = new AccountCredentials(
+				// Explicit QR sign-in: no credentials up front; the account owner
+				// approves on their phone and the session continues with minted tokens.
+				logger.LogInformation("Starting QR sign-in for {AccountName}", accountName);
+				var qrCredentials = new AccountCredentials(
 					AccountName: accountName,
 					Password: string.Empty,
-					AccessToken: accessToken,
-					RefreshToken: refreshToken
+					QrLogin: true
 				);
 
 				session = await sessionManager.GetOrCreateSessionAsync(
 					accountName,
-					credentials,
+					qrCredentials,
 					cancellationToken
 				);
 			}
-			else if (string.IsNullOrEmpty(password))
-			{
-				// No credentials provided, try to restore from stored credentials
-				logger.LogInformation("No credentials provided, attempting to restore session for {AccountName}", accountName);
-				var restoredSession = await sessionManager.TryRestoreSessionAsync(accountName, cancellationToken);
-
-				if (restoredSession == null)
-				{
-					return (false, "No credentials provided and no stored session found", null);
-				}
-
-				session = restoredSession;
-			}
-			else
+			else if (!string.IsNullOrEmpty(password) && !string.IsNullOrEmpty(refreshToken))
 			{
 				// Password provided, create new session
 				var credentials = new AccountCredentials(
@@ -83,6 +70,53 @@ public static class AgentTaskExecutor
 					credentials,
 					cancellationToken
 				);
+			}
+			else if (!string.IsNullOrEmpty(password))
+			{
+				// Password only, create new session
+				var credentials = new AccountCredentials(
+					AccountName: accountName,
+					Password: password,
+					AuthCode: PayloadReader.GetString(payload, "authCode") ?? PayloadReader.GetString(payload, "auth_code"),
+					TwoFactorCode: PayloadReader.GetString(payload, "twoFactorCode") ?? PayloadReader.GetString(payload, "two_factor_code")
+				);
+
+				session = await sessionManager.GetOrCreateSessionAsync(
+					accountName,
+					credentials,
+					cancellationToken
+				);
+			}
+			else if (!string.IsNullOrEmpty(refreshToken))
+			{
+				// Token-only payload: restore session from the provided refresh token
+				logger.LogInformation("Attempting to restore session for {AccountName} using tokens", accountName);
+
+				var credentials = new AccountCredentials(
+					AccountName: accountName,
+					Password: string.Empty,
+					AccessToken: accessToken,
+					RefreshToken: refreshToken
+				);
+
+				session = await sessionManager.GetOrCreateSessionAsync(
+					accountName,
+					credentials,
+					cancellationToken
+				);
+			}
+			else
+			{
+				// No credentials provided, try to restore from stored credentials
+				logger.LogInformation("No credentials provided, attempting to restore session for {AccountName}", accountName);
+				var restoredSession = await sessionManager.TryRestoreSessionAsync(accountName, cancellationToken);
+
+				if (restoredSession == null)
+				{
+					return (false, "No credentials provided and no stored session found", null);
+				}
+
+				session = restoredSession;
 			}
 
 			var result = await session.ExecuteActionAsync(

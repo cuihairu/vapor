@@ -33,6 +33,15 @@ public interface ISteamTransport
 	/// <summary>Stages a 2FA code for the next logon attempt.</summary>
 	void SetTwoFactorCode(string accountName, string code);
 
+	/// <summary>
+	/// Begins a QR sign-in challenge for the given account and polls until the
+	/// phone-side approval arrives, the challenge expires or the caller cancels.
+	/// The challenge URL is surfaced through <paramref name="onChallengeUrl"/> —
+	/// once up front, then again whenever Steam rotates it. The poll request key
+	/// never leaves the transport. Requires the transport to be connected.
+	/// </summary>
+	Task<QrLoginResult> BeginQrLoginAsync(string accountName, Action<string> onChallengeUrl, CancellationToken cancellationToken = default);
+
 	/// <summary>Pumps the transport's callback queue; required for async flows to progress.</summary>
 	void RunCallbacks();
 
@@ -111,4 +120,15 @@ public sealed record FreeLicenseResult(
 	SteamResult Result,
 	IReadOnlyList<uint> GrantedApps,
 	IReadOnlyList<uint> GrantedPackages
+);
+
+/// <summary>
+/// Outcome of a QR sign-in challenge. On success carries the freshly minted
+/// refresh token, which callers stage via <see cref="ISteamTransport.UpdateLogOnDetailsAsync"/>
+/// before the token log-on. The short-lived access token stays transport-internal.
+/// </summary>
+public sealed record QrLoginResult(
+	bool Success,
+	string? Error = null,
+	string? RefreshToken = null
 );
