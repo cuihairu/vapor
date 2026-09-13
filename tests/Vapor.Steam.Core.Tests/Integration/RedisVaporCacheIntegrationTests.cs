@@ -30,9 +30,13 @@ public sealed class RedisVaporCacheIntegrationTests
 		return true;
 	}
 
+	// One keyspace per test (xUnit creates a new instance per test method). Every cache
+	// instance created inside a test must share it — they stand in for separate processes.
+	private readonly string _keyPrefix = $"vapor:test:{Guid.NewGuid():N}:";
+
 	private RedisVaporCache CreateCache() => RedisVaporCache.CreateFromConnectionString(
 		Environment.GetEnvironmentVariable("VAPOR_TEST_REDIS")!,
-		new RedisVaporCacheOptions { KeyPrefix = $"vapor:test:{Guid.NewGuid():N}:" });
+		new RedisVaporCacheOptions { KeyPrefix = _keyPrefix });
 
 	[Fact]
 	public async Task SetAndGet_RoundTripsAcrossInstances()

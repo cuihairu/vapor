@@ -78,7 +78,7 @@ jobs:
         dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
 
     - name: Verify formatting
-      run: dotnet format --verify-no-changes --verbosity warning
+      run: dotnet format Vapor.sln --verify-no-changes
 
   integration-redis:
     # Runs the VAPOR_TEST_REDIS-gated integration tests against a live Redis server.

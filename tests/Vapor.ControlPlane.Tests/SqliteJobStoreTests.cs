@@ -316,9 +316,16 @@ public sealed class SqliteJobStoreTests
 		}
 		finally
 		{
-			if (File.Exists(dbPath))
+			try
 			{
-				File.Delete(dbPath);
+				if (File.Exists(dbPath))
+				{
+					File.Delete(dbPath);
+				}
+			}
+			catch (IOException)
+			{
+				// Microsoft.Data.Sqlite pooling may still hold the file on Windows; best-effort cleanup.
 			}
 		}
 	}
@@ -398,7 +405,14 @@ public sealed class SqliteJobStoreTests
 		}
 		finally
 		{
-			File.Delete(dbPath);
+			try
+			{
+				File.Delete(dbPath);
+			}
+			catch (IOException)
+			{
+				// Microsoft.Data.Sqlite pooling may still hold the file on Windows; best-effort cleanup.
+			}
 		}
 	}
 

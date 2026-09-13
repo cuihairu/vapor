@@ -132,9 +132,10 @@ public class PluginUnloadTests : IDisposable
 				Directory.Delete(_root, recursive: true);
 			}
 		}
-		catch (IOException)
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 		{
 			// Assemblies may still be locked by the load context; best-effort cleanup.
+			// Windows raises UnauthorizedAccessException for directories with open files.
 		}
 	}
 }

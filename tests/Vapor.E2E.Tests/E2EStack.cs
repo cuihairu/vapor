@@ -302,9 +302,10 @@ public sealed class E2EStack : IAsyncLifetime
 				Directory.Delete(_workDir, recursive: true);
 			}
 		}
-		catch (IOException)
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 		{
 			// Best-effort cleanup; temp dirs are cleaned by the OS eventually.
+			// Windows raises UnauthorizedAccessException for directories with open files.
 		}
 	}
 }

@@ -33,8 +33,10 @@ public sealed class PluginHostLoadTests : IDisposable
 		{
 			Directory.Delete(_root, recursive: true);
 		}
-		catch (DirectoryNotFoundException)
+		catch (Exception ex) when (ex is DirectoryNotFoundException or IOException or UnauthorizedAccessException)
 		{
+			// Best-effort cleanup; the load context may still hold the assembly
+			// (Windows raises UnauthorizedAccessException for directories with open files).
 		}
 	}
 
@@ -95,7 +97,14 @@ public sealed class PluginHostLoadTests : IDisposable
 			Assert.Contains("below the host minimum", failure);
 		}
 
-		Directory.Delete(restrictedRoot, recursive: true);
+		try
+		{
+			Directory.Delete(restrictedRoot, recursive: true);
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			// Best-effort cleanup; the load context may still hold the staged assembly.
+		}
 	}
 
 	private sealed class ServiceProviderStub : IServiceProvider

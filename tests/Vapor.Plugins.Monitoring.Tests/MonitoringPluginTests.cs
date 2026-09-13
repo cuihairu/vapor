@@ -186,9 +186,10 @@ public class MonitoringPluginTests
 			{
 				Directory.Delete(root, recursive: true);
 			}
-			catch (IOException)
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 			{
-				// Best-effort cleanup; the load context may still hold the assembly.
+				// Best-effort cleanup; the load context may still hold the assembly
+				// (Windows raises UnauthorizedAccessException for directories with open files).
 			}
 		}
 	}
