@@ -183,6 +183,134 @@ public sealed class MarketWatchPluginTests
 		await plugin.ShutdownAsync(timeout.Token);
 	}
 
+	[Fact]
+	public async Task AddAction_KindFree_IsStoredAndListed()
+	{
+		var plugin = await CreateInitializedAsync();
+
+		var add = await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?>
+		{
+			["app_id"] = "570",
+			["kind"] = "free"
+		});
+
+		Assert.True(add.Success);
+		Assert.Equal("free", add.Output!["kind"]);
+		WatchEntry entry = Assert.Single(plugin.Store.Snapshot());
+		Assert.Equal(WatchKind.Free, entry.Kind);
+
+		// A price watch rides alongside and keeps the default kind.
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "440" });
+		var list = await ExecuteAsync(plugin, "market_watch_list", new Dictionary<string, object?>());
+		var kinds = ((System.Collections.IEnumerable)list.Output!["watches"]!).Cast<Dictionary<string, object?>>()
+			.ToDictionary(w => (uint)w["app_id"]!, w => (string)w["kind"]!);
+		Assert.Equal("free", kinds[570]);
+		Assert.Equal("price", kinds[440]);
+
+		await plugin.ShutdownAsync(CancellationToken.None);
+	}
+
+	[Fact]
+	public async Task AddAction_InvalidKind_Fails()
+	{
+		var plugin = await CreateInitializedAsync();
+
+		var result = await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?>
+		{
+			["app_id"] = "570",
+			["kind"] = "bogus"
+		});
+
+		Assert.False(result.Success);
+		Assert.Contains("kind", result.Error, StringComparison.Ordinal);
+		Assert.Equal(0, plugin.Store.Count);
+
+		await plugin.ShutdownAsync(CancellationToken.None);
+	}
+
+	[Fact]
+	public async Task PollOnce_FreeWatch_FiresWebhookOnFreeEdge()
+	{
+		var handler = new StubHttpHandler();
+		var client = new FakeStoreClient(null);
+		var config = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+		{
+			["market.webhook_url"] = "http://webhook.test/alerts",
+			["market.check_interval_seconds"] = "10"
+		};
+		await using var plugin = new MarketWatchPlugin(client, new HttpClient(handler));
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570", ["kind"] = "free" });
+
+		// First cycle: baseline (paid), no webhook.
+		client.NextGameInfo = new GameInfo { AppId = 570, Name = "Paid Game", IsFree = false };
+		await plugin.PollOnceAsync(CancellationToken.None);
+		Assert.Empty(handler.Bodies);
+
+		// The game turns free: alert + webhook with the free_game_alert payload.
+		client.NextGameInfo = new GameInfo { AppId = 570, Name = "Paid Game", IsFree = true };
+		await plugin.PollOnceAsync(CancellationToken.None);
+
+		var body = Assert.Single(handler.Bodies);
+		using var document = JsonDocument.Parse(body);
+		var root = document.RootElement;
+		Assert.Equal("free_game_alert", root.GetProperty("type").GetString());
+		Assert.Equal(570u, root.GetProperty("appId").GetUInt32());
+		Assert.Equal("us", root.GetProperty("country").GetString());
+
+		// Staying free: no further alerts.
+		await plugin.PollOnceAsync(CancellationToken.None);
+		Assert.Single(handler.Bodies);
+
+		await plugin.ShutdownAsync(CancellationToken.None);
+	}
+
+	[Fact]
+	public async Task PollOnce_MixedKinds_EachWatchUsesItsOwnSource()
+	{
+		var client = new FakeStoreClient(null);
+		await using var plugin = await CreateInitializedWithClientAsync(client);
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "440" });
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570", ["kind"] = "free" });
+
+		// First cycle feeds both baselines from their own sources.
+		client.NextPrice = new PriceOverview { Currency = "USD", Final = 20m, Initial = 20m };
+		client.NextGameInfo = new GameInfo { AppId = 570, Name = "Paid Game", IsFree = false };
+		await plugin.PollOnceAsync(CancellationToken.None);
+
+		var watches = plugin.Store.Snapshot().ToDictionary(w => w.AppId, w => w);
+		Assert.Equal(20m, watches[440].LastPrice);
+		Assert.Null(watches[440].LastKnownFree);
+		Assert.Equal(false, watches[570].LastKnownFree);
+		Assert.Null(watches[570].LastPrice);
+
+		// Second cycle: the free watch fires through its own source.
+		client.NextGameInfo = new GameInfo { AppId = 570, Name = "Free Game", IsFree = true };
+		await plugin.PollOnceAsync(CancellationToken.None);
+
+		Assert.Equal(1, watches[570].AlertCount);
+		Assert.Equal(0, watches[440].AlertCount);
+
+		await plugin.ShutdownAsync(CancellationToken.None);
+	}
+
+	private static async Task<MarketWatchPlugin> CreateInitializedWithClientAsync(FakeStoreClient client)
+	{
+		var plugin = new MarketWatchPlugin(client, new HttpClient(new StubHttpHandler()));
+		await plugin.InitializeAsync(
+			new StubPluginContext(
+				plugin.Info,
+				new StubServiceProvider(),
+				new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				{
+					["market.check_interval_seconds"] = "10"
+				}),
+			CancellationToken.None);
+		return plugin;
+	}
+
 	private static async Task<MarketWatchPlugin> CreateInitializedAsync(
 		IReadOnlyDictionary<string, string>? configuration = null)
 	{
@@ -205,11 +333,13 @@ internal sealed class FakeStoreClient(PriceOverview? nextPrice) : ISteamStoreApi
 {
 	public PriceOverview? NextPrice { get; set; } = nextPrice;
 
+	public GameInfo? NextGameInfo { get; set; }
+
 	public Task<PriceOverview?> GetPriceAsync(uint appId, string country = "us", CancellationToken cancellationToken = default) =>
 		Task.FromResult(NextPrice);
 
 	public Task<GameInfo?> GetGameInfoAsync(uint appId, string country = "us", CancellationToken cancellationToken = default) =>
-		throw new NotSupportedException();
+		Task.FromResult(NextGameInfo);
 
 	public Task<IReadOnlyList<GameSearchResult>> SearchGamesAsync(string term, int limit = 20, string country = "us", CancellationToken cancellationToken = default) =>
 		throw new NotSupportedException();

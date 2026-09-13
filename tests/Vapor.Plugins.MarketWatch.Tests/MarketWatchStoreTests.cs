@@ -147,4 +147,70 @@ public sealed class MarketWatchStoreTests
 	[InlineData(200, 300, 50)]
 	public void CalculateChangePercent_MatchesExpectation(decimal baseline, decimal observed, decimal expected) =>
 		Assert.Equal(expected, MarketWatchStore.CalculateChangePercent(baseline, observed));
+
+	[Fact]
+	public void RecordFreeObservation_FirstObservation_RecordsBaselineWithoutAlert()
+	{
+		var store = new MarketWatchStore();
+		store.Add(570, 10m, "us", "", WatchKind.Free);
+
+		var (outcome, alert) = store.RecordFreeObservation(570, isFree: false, Now);
+
+		Assert.Equal(FreeRecordOutcome.BaselineRecorded, outcome);
+		Assert.Null(alert);
+		Assert.Equal(0, store.Snapshot()[0].AlertCount);
+	}
+
+	[Fact]
+	public void RecordFreeObservation_TurnsFree_FiresAlertOnce()
+	{
+		var store = new MarketWatchStore();
+		store.Add(570, 10m, "us", "", WatchKind.Free);
+		store.RecordFreeObservation(570, isFree: false, Now);
+
+		var (outcome, alert) = store.RecordFreeObservation(570, isFree: true, Now);
+
+		Assert.Equal(FreeRecordOutcome.AlertFired, outcome);
+		Assert.NotNull(alert);
+		Assert.Equal(570u, alert!.AppId);
+		Assert.Equal("us", alert.Country);
+		Assert.Equal(1, store.Snapshot()[0].AlertCount);
+
+		// Staying free is not news.
+		var (repeat, repeatAlert) = store.RecordFreeObservation(570, isFree: true, Now);
+		Assert.Equal(FreeRecordOutcome.Recorded, repeat);
+		Assert.Null(repeatAlert);
+		Assert.Equal(1, store.Snapshot()[0].AlertCount);
+	}
+
+	[Fact]
+	public void RecordFreeObservation_FreeToPaidToFree_ReAlerts()
+	{
+		var store = new MarketWatchStore();
+		store.Add(570, 10m, "us", "", WatchKind.Free);
+		store.RecordFreeObservation(570, isFree: false, Now);
+		store.RecordFreeObservation(570, isFree: true, Now);
+
+		var (paidOutcome, _) = store.RecordFreeObservation(570, isFree: false, Now);
+		var (freeAgain, alertAgain) = store.RecordFreeObservation(570, isFree: true, Now);
+
+		Assert.Equal(FreeRecordOutcome.Recorded, paidOutcome);
+		Assert.Equal(FreeRecordOutcome.AlertFired, freeAgain);
+		Assert.NotNull(alertAgain);
+		Assert.Equal(2, store.Snapshot()[0].AlertCount);
+	}
+
+	[Fact]
+	public void RecordFreeObservation_UnknownWatchAndFetchFailed_AreReported()
+	{
+		var store = new MarketWatchStore();
+		store.Add(570, 10m, "us", "", WatchKind.Free);
+
+		var (unknown, _) = store.RecordFreeObservation(440, isFree: true, Now);
+		var (failed, _) = store.RecordFreeObservation(570, isFree: null, Now);
+
+		Assert.Equal(FreeRecordOutcome.UnknownWatch, unknown);
+		Assert.Equal(FreeRecordOutcome.FetchFailed, failed);
+		Assert.Null(store.Snapshot()[0].LastKnownFree);
+	}
 }

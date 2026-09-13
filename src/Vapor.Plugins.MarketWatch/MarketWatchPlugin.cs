@@ -45,9 +45,9 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 	public PluginInfo Info { get; } = new(
 		Id: "vapor.market-watch",
 		Name: "Vapor Market Watch",
-		Version: new Version(1, 0, 0),
+		Version: new Version(1, 1, 0),
 		ApiVersion: PluginApi.Current,
-		Description: "Price threshold watch: background polling with log/webhook alerts");
+		Description: "Price threshold and free-game watches: background polling with log/webhook alerts");
 
 	public MarketWatchPlugin()
 	{
@@ -182,6 +182,12 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 
+			if (entry.Kind == WatchKind.Free)
+			{
+				await PollFreeWatchAsync(client, entry, cancellationToken).ConfigureAwait(false);
+				continue;
+			}
+
 			PriceOverview? price = null;
 			try
 			{
@@ -205,16 +211,67 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 						entry.AppId, price!.Final, price.Currency);
 					break;
 				case PriceRecordOutcome.AlertFired:
+					PriceAlert fired = alert!;
 					_logger?.LogInformation(
 						"Price alert for {AppId}: {Baseline} -> {New} ({Change}% >= {Threshold}%)",
-						alert!.AppId, alert.BaselinePrice, alert.NewPrice, alert.ChangePercent, alert.ThresholdPercent);
-					await NotifyWebhookAsync(alert!, cancellationToken).ConfigureAwait(false);
+						fired.AppId, fired.BaselinePrice, fired.NewPrice, fired.ChangePercent, fired.ThresholdPercent);
+					await PostWebhookAsync(JsonSerializer.Serialize(new
+					{
+						type = "price_alert",
+						appId = fired.AppId,
+						country = fired.Country,
+						currency = fired.Currency,
+						baselinePrice = fired.BaselinePrice,
+						newPrice = fired.NewPrice,
+						changePercent = fired.ChangePercent,
+						thresholdPercent = fired.ThresholdPercent,
+						checkedAt = fired.CheckedAt.ToString("O")
+					}), fired.AppId, cancellationToken).ConfigureAwait(false);
 					break;
 			}
 		}
 	}
 
-	private async Task NotifyWebhookAsync(PriceAlert alert, CancellationToken cancellationToken)
+	/// <summary>Polls one free watch: is-free state comes from the store's appdetails endpoint.</summary>
+	private async Task PollFreeWatchAsync(ISteamStoreApiClient client, WatchEntry entry, CancellationToken cancellationToken)
+	{
+		GameInfo? game = null;
+		try
+		{
+			game = await client.GetGameInfoAsync(entry.AppId, entry.Country, cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			throw;
+		}
+		catch (Exception ex)
+		{
+			_logger?.LogDebug(ex, "Free-state fetch failed for app {AppId}", entry.AppId);
+		}
+
+		var (outcome, alert) = _store.RecordFreeObservation(entry.AppId, game?.IsFree, DateTime.UtcNow);
+		switch (outcome)
+		{
+			case FreeRecordOutcome.BaselineRecorded:
+				_logger?.LogInformation(
+					"Free watch baseline for {AppId}: is_free={IsFree}",
+					entry.AppId, game!.IsFree);
+				break;
+			case FreeRecordOutcome.AlertFired:
+				FreeGameAlert fired = alert!;
+				_logger?.LogInformation("Free game alert for {AppId}: the game is now free", fired.AppId);
+				await PostWebhookAsync(JsonSerializer.Serialize(new
+				{
+					type = "free_game_alert",
+					appId = fired.AppId,
+					country = fired.Country,
+					checkedAt = fired.CheckedAt.ToString("O")
+				}), fired.AppId, cancellationToken).ConfigureAwait(false);
+				break;
+		}
+	}
+
+	private async Task PostWebhookAsync(string jsonPayload, uint appId, CancellationToken cancellationToken)
 	{
 		if (_webhookUrl is null || _httpClient is null)
 		{
@@ -223,29 +280,16 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 
 		try
 		{
-			var payload = JsonSerializer.Serialize(new
-			{
-				type = "price_alert",
-				appId = alert.AppId,
-				country = alert.Country,
-				currency = alert.Currency,
-				baselinePrice = alert.BaselinePrice,
-				newPrice = alert.NewPrice,
-				changePercent = alert.ChangePercent,
-				thresholdPercent = alert.ThresholdPercent,
-				checkedAt = alert.CheckedAt.ToString("O")
-			});
-
 			using var request = new HttpRequestMessage(
 				HttpMethod.Post, _webhookUrl)
 			{
-				Content = new StringContent(payload, Encoding.UTF8, "application/json")
+				Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
 			};
 			using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 			if (!response.IsSuccessStatusCode)
 			{
 				_logger?.LogWarning(
-					"Price alert webhook for {AppId} returned {StatusCode}", alert.AppId, (int)response.StatusCode);
+					"Alert webhook for {AppId} returned {StatusCode}", appId, (int)response.StatusCode);
 			}
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -255,7 +299,7 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 		catch (Exception ex)
 		{
 			// Webhook delivery must never take down the poll loop.
-			_logger?.LogWarning(ex, "Price alert webhook delivery failed for {AppId}", alert.AppId);
+			_logger?.LogWarning(ex, "Alert webhook delivery failed for {AppId}", appId);
 		}
 	}
 
@@ -273,7 +317,7 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 
 		public ActionMetadata Metadata { get; } = new(
 			Name: "market_watch_add",
-			Description: "Start watching a game's price; alerts when it moves beyond the threshold percent",
+			Description: "Start watching a game: kind=price alerts on threshold moves (default), kind=free alerts when the game turns free",
 			RequiresLogin: false,
 			TimeoutSeconds: 10);
 
@@ -285,6 +329,16 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 			if (!TryReadAppId(payload, out uint appId, out string? error))
 			{
 				return Task.FromResult(new ActionResult(false, error, null));
+			}
+
+			var kind = WatchKind.Price;
+			var kindParam = PayloadReader.GetString(payload, "kind");
+			if (!string.IsNullOrWhiteSpace(kindParam))
+			{
+				if (!TryReadKind(kindParam, out kind))
+				{
+					return Task.FromResult(new ActionResult(false, "kind must be 'price' or 'free'", null));
+				}
 			}
 
 			var threshold = plugin._defaultThresholdPercent;
@@ -304,7 +358,7 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 				country = countryParam.Trim().ToLowerInvariant();
 			}
 
-			if (!plugin._store.Add(appId, threshold, country, currency: string.Empty))
+			if (!plugin._store.Add(appId, threshold, country, currency: string.Empty, kind))
 			{
 				return Task.FromResult(new ActionResult(false, $"App {appId} is already being watched", null));
 			}
@@ -312,6 +366,7 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 			return Task.FromResult(new ActionResult(true, null, new Dictionary<string, object?>
 			{
 				["app_id"] = appId,
+				["kind"] = KindName(kind),
 				["threshold_percent"] = threshold,
 				["cc"] = country,
 				["watched"] = plugin._store.Count
@@ -371,11 +426,13 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 				.Select(static w => new Dictionary<string, object?>
 				{
 					["app_id"] = w.AppId,
+					["kind"] = KindName(w.Kind),
 					["threshold_percent"] = w.ThresholdPercent,
 					["cc"] = w.Country,
 					["currency"] = w.Currency,
 					["baseline"] = w.BaselinePrice,
 					["last_price"] = w.LastPrice,
+					["last_known_free"] = w.LastKnownFree,
 					["last_checked_at"] = w.LastCheckedAt,
 					["alerts"] = w.AlertCount
 				})
@@ -403,6 +460,25 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 
 		return true;
 	}
+
+	private static bool TryReadKind(string raw, out WatchKind kind)
+	{
+		switch (raw.Trim().ToLowerInvariant())
+		{
+			case "price":
+				kind = WatchKind.Price;
+				return true;
+			case "free":
+				kind = WatchKind.Free;
+				return true;
+			default:
+				kind = WatchKind.Price;
+				return false;
+		}
+	}
+
+	private static string KindName(WatchKind kind) =>
+		kind == WatchKind.Free ? "free" : "price";
 
 	/// <summary>Reads a decimal payload value (mirrors PayloadReader's type handling).</summary>
 	private static bool TryReadDecimal(object? value, out decimal parsed)

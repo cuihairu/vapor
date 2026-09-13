@@ -2,19 +2,33 @@ using Vapor.Steam.Core.Models;
 
 namespace Vapor.Plugins.MarketWatch;
 
+/// <summary>What a watch tracks and how it alerts.</summary>
+public enum WatchKind
+{
+	/// <summary>Price watch: alerts when the price moves beyond the threshold percent.</summary>
+	Price,
+
+	/// <summary>Free watch: alerts when the game turns free (edge-triggered, so free-to-stay does not re-alert).</summary>
+	Free
+}
+
 /// <summary>A registered price watch with its alerting state.</summary>
 public sealed class WatchEntry
 {
-	public WatchEntry(uint appId, decimal thresholdPercent, string country, string currency)
+	public WatchEntry(uint appId, decimal thresholdPercent, string country, string currency, WatchKind kind = WatchKind.Price)
 	{
 		AppId = appId;
 		ThresholdPercent = thresholdPercent;
 		Country = country;
 		Currency = currency;
+		Kind = kind;
 	}
 
 	/// <summary>The watched Steam AppID.</summary>
 	public uint AppId { get; }
+
+	/// <summary>What this watch tracks.</summary>
+	public WatchKind Kind { get; }
 
 	/// <summary>Alert when the price moves at least this many percent from the baseline.</summary>
 	public decimal ThresholdPercent { get; set; }
@@ -36,6 +50,35 @@ public sealed class WatchEntry
 
 	/// <summary>Times an alert fired for this entry since registration.</summary>
 	public int AlertCount { get; set; }
+
+	/// <summary>Last observed is-free state (free watches); null until the first successful poll.</summary>
+	public bool? LastKnownFree { get; set; }
+}
+
+/// <summary>A fired free-game alert.</summary>
+public sealed record FreeGameAlert(
+	uint AppId,
+	string Country,
+	DateTime CheckedAt
+);
+
+/// <summary>Result of recording a free-state observation for a watch entry.</summary>
+public enum FreeRecordOutcome
+{
+	/// <summary>No watch registered for the app id.</summary>
+	UnknownWatch,
+
+	/// <summary>The fetch failed (null state); entry state unchanged.</summary>
+	FetchFailed,
+
+	/// <summary>First observation for this entry: recorded as the alerting baseline.</summary>
+	BaselineRecorded,
+
+	/// <summary>Observed state matches the baseline; nothing to alert about.</summary>
+	Recorded,
+
+	/// <summary>The game turned free since the last observation: an alert fired.</summary>
+	AlertFired
 }
 
 /// <summary>A fired price alert.</summary>
@@ -81,7 +124,7 @@ public sealed class MarketWatchStore
 	private readonly Dictionary<uint, WatchEntry> _watches = new();
 
 	/// <summary>Registers a watch; returns false when one already exists for the app id.</summary>
-	public bool Add(uint appId, decimal thresholdPercent, string country, string currency)
+	public bool Add(uint appId, decimal thresholdPercent, string country, string currency, WatchKind kind = WatchKind.Price)
 	{
 		lock (_gate)
 		{
@@ -90,7 +133,7 @@ public sealed class MarketWatchStore
 				return false;
 			}
 
-			_watches[appId] = new WatchEntry(appId, thresholdPercent, country, currency);
+			_watches[appId] = new WatchEntry(appId, thresholdPercent, country, currency, kind);
 			return true;
 		}
 	}
@@ -172,6 +215,51 @@ public sealed class MarketWatchStore
 				ChangePercent: changePercent,
 				ThresholdPercent: entry.ThresholdPercent,
 				Currency: price.Currency,
+				CheckedAt: checkedAt));
+		}
+	}
+
+	/// <summary>
+	/// Records an observed is-free state and evaluates the free watch. Edge-triggered:
+	/// the first observation only sets the baseline, an alert fires when the game turns
+	/// free from not-free (so a game that stays free does not re-alert, and a
+	/// free-to-paid-to-free cycle alerts again).
+	/// </summary>
+	public (FreeRecordOutcome Outcome, FreeGameAlert? Alert) RecordFreeObservation(
+		uint appId, bool? isFree, DateTime checkedAt)
+	{
+		lock (_gate)
+		{
+			if (!_watches.TryGetValue(appId, out var entry))
+			{
+				return (FreeRecordOutcome.UnknownWatch, null);
+			}
+
+			if (isFree is not bool observed)
+			{
+				return (FreeRecordOutcome.FetchFailed, null);
+			}
+
+			entry.LastCheckedAt = checkedAt;
+
+			if (entry.LastKnownFree is not bool previous)
+			{
+				entry.LastKnownFree = observed;
+				return (FreeRecordOutcome.BaselineRecorded, null);
+			}
+
+			entry.LastKnownFree = observed;
+
+			// Only the not-free -> free edge alerts; staying free is not news.
+			if (previous || !observed)
+			{
+				return (FreeRecordOutcome.Recorded, null);
+			}
+
+			entry.AlertCount++;
+			return (FreeRecordOutcome.AlertFired, new FreeGameAlert(
+				AppId: appId,
+				Country: entry.Country,
 				CheckedAt: checkedAt));
 		}
 	}

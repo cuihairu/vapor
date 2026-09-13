@@ -17,7 +17,7 @@ tests/
 ├── Vapor.Plugins.Core.Tests/             (85 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (65 tests)
 ├── Vapor.Agent.Tests/                    (47 tests)
-├── Vapor.Plugins.MarketWatch.Tests/      (24 tests)
+├── Vapor.Plugins.MarketWatch.Tests/      (32 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (21 tests)
 ├── Vapor.Protocol.Tests/                 (22 tests)
 ├── Vapor.E2E.Tests/                      (6 tests,真实双进程)
@@ -33,11 +33,11 @@ tests/
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 65 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 |
 | Vapor.Agent.Tests | 47 | 重连退避策略、任务执行器、WS URI 构造、maFile 离线导入 CLI |
-| Vapor.Plugins.MarketWatch.Tests | 24 | watch 存储/阈值评估/轮询告警与 webhook/插件宿主实战加载 |
+| Vapor.Plugins.MarketWatch.Tests | 32 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 22 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **1123** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **1131** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
@@ -140,7 +140,7 @@ tests/
 
 - **Plugins.Core(85)**:清单解析(8)、发现(5)、加载(10)、卸载与 ALC 回收(5)、信任与权限(18)、事件分发(6)、配置扩展(15)、插件 API 与 SemVer 兼容(11,含 TryParseVersion theory 展开)
 - **MobileAuthenticator(65)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(41)、确认客户端解析含 type 归一化(10)、确认哈希(8)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
-- **MarketWatch(24)**:watch 存储/阈值评估/三个 watch action/轮询告警与 webhook/插件宿主实战加载
+- **MarketWatch(32)**:watch 存储/阈值评估/三个 watch action(kind=price/free)/轮询告警与 webhook(free_game_alert 与 price_alert)/插件宿主实战加载
 - **Monitoring(21)**:指标注册表(9)/HTTP 服务(6)/插件生命周期(6)
 
 ### Agent(47 个测试)
