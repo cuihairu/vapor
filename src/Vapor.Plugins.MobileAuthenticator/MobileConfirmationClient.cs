@@ -11,7 +11,8 @@ public sealed record TradeConfirmation(
 	ulong Nonce,
 	ulong CreatorId,
 	string? Headline,
-	string? Summary
+	string? Summary,
+	string? Type = null
 );
 
 public enum ConfirmationOperation
@@ -185,7 +186,8 @@ public sealed class MobileConfirmationClient : IMobileConfirmationClient
 						Nonce: nonce.Value,
 						CreatorId: creatorId ?? 0,
 						Headline: entry.TryGetProperty("headline", out var headlineElem) ? headlineElem.GetString() : null,
-						Summary: entry.TryGetProperty("summary", out var summaryElem) ? summaryElem.GetString() : null));
+						Summary: entry.TryGetProperty("summary", out var summaryElem) ? summaryElem.GetString() : null,
+						Type: entry.TryGetProperty("type", out var typeElem) ? ParseConfirmationType(typeElem) : null));
 				}
 			}
 
@@ -216,6 +218,25 @@ public sealed class MobileConfirmationClient : IMobileConfirmationClient
 		{
 			return new MobileConfirmationResult(false, $"Failed to parse confirmation operation result: {ex.Message}");
 		}
+	}
+
+	// Steam encodes the confirmation type as an integer enum: 1 = generic,
+	// 2 = trade offer, 3 = market listing. Normalize to lowercase names so the
+	// batch action's "type" filter reads naturally; unknown codes pass through.
+	private static string? ParseConfirmationType(JsonElement element)
+	{
+		return element.ValueKind switch
+		{
+			JsonValueKind.Number when element.TryGetInt32(out var code) => code switch
+			{
+				1 => "generic",
+				2 => "trade",
+				3 => "market",
+				_ => code.ToString(System.Globalization.CultureInfo.InvariantCulture)
+			},
+			JsonValueKind.String => element.GetString()?.Trim().ToLowerInvariant(),
+			_ => null
+		};
 	}
 
 	private static ulong? GetUInt64(JsonElement element, string propertyName)

@@ -45,9 +45,41 @@ public class MobileConfirmationClientParseTests
 		Assert.Equal(3333333333UL, first.Nonce);
 		Assert.Equal(2222222222UL, first.CreatorId);
 		Assert.Equal("Trade with testuser", first.Headline);
+		Assert.Equal("trade", first.Type);
 
 		// Numeric ids are accepted as well.
 		Assert.Equal(4444444444UL, result.Confirmations[1].Id);
+		Assert.Equal("market", result.Confirmations[1].Type);
+	}
+
+	[Fact]
+	public void ParseConfirmationsList_NormalizesTypeCodes()
+	{
+		var body = """
+			{ "success": true, "conf": [
+				{ "id": "1", "nonce": "1", "type": 1 },
+				{ "id": "2", "nonce": "2", "type": 42 },
+				{ "id": "3", "nonce": "3", "type": "Market" }
+			] }
+			""";
+
+		var result = MobileConfirmationClient.ParseConfirmationsList(body);
+
+		Assert.True(result.Success);
+		Assert.Equal(3, result.Confirmations!.Count);
+		Assert.Equal("generic", result.Confirmations[0].Type);
+		Assert.Equal("42", result.Confirmations[1].Type);
+		Assert.Equal("market", result.Confirmations[2].Type);
+	}
+
+	[Fact]
+	public void ParseConfirmationsList_MissingType_YieldsNull()
+	{
+		var result = MobileConfirmationClient.ParseConfirmationsList(
+			"{ \"success\": true, \"conf\": [ { \"id\": \"1\", \"nonce\": \"2\" } ] }");
+
+		Assert.True(result.Success);
+		Assert.Null(result.Confirmations!.Single().Type);
 	}
 
 	[Fact]

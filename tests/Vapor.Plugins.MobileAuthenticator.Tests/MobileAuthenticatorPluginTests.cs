@@ -9,7 +9,7 @@ namespace Vapor.Plugins.MobileAuthenticator.Tests;
 public class MobileAuthenticatorPluginTests
 {
 	[Fact]
-	public async Task Plugin_InitializeAndContributesEightActions()
+	public async Task Plugin_InitializeAndContributesNineActions()
 	{
 		var plugin = new MobileAuthenticatorPlugin();
 
@@ -20,15 +20,15 @@ public class MobileAuthenticatorPluginTests
 
 		var actions = plugin.GetActions().ToList();
 
-		Assert.Equal(8, actions.Count);
+		Assert.Equal(9, actions.Count);
 		Assert.Equal(
-			new[] { "generate_totp", "generate_confirmation_hash", "sync_steam_time", "get_trade_confirmations", "respond_trade_confirmation", "save_shared_secret", "save_identity_secret", "confirm_trade_offer" }
+			new[] { "generate_totp", "generate_confirmation_hash", "sync_steam_time", "get_trade_confirmations", "respond_trade_confirmation", "save_shared_secret", "save_identity_secret", "confirm_trade_offer", "confirm_all_confirmations" }
 				.Order(StringComparer.OrdinalIgnoreCase),
 			actions.Select(a => a.Name).Order(StringComparer.OrdinalIgnoreCase));
 
 		var loggedInOnly = actions.Where(a => a.Metadata.RequiresLogin).Select(a => a.Name).ToList();
 		Assert.Equal(
-			new[] { "get_trade_confirmations", "respond_trade_confirmation", "confirm_trade_offer" }.Order(StringComparer.OrdinalIgnoreCase),
+			new[] { "get_trade_confirmations", "respond_trade_confirmation", "confirm_trade_offer", "confirm_all_confirmations" }.Order(StringComparer.OrdinalIgnoreCase),
 			loggedInOnly.Order(StringComparer.OrdinalIgnoreCase));
 
 		await plugin.ShutdownAsync(CancellationToken.None);
@@ -70,7 +70,7 @@ public class MobileAuthenticatorPluginTests
 			Assert.Empty(report.Failures);
 			var loaded = Assert.Single(report.Loaded);
 			Assert.Equal("vapor.mobile-authenticator", loaded.Info.Id);
-			Assert.Equal(8, loaded.Actions.Count);
+			Assert.Equal(9, loaded.Actions.Count);
 
 			Assert.True(await manager.UnloadAsync(loaded.Info.Id));
 		}

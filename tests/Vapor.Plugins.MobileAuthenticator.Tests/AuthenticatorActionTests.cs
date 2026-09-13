@@ -551,6 +551,203 @@ public class AuthenticatorActionTests
 		Assert.Contains("web handler", result.Error);
 	}
 
+	[Fact]
+	public async Task ConfirmAll_Allow_ConfirmsEverything()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null, new[]
+			{
+				new TradeConfirmation(1UL, 11UL, 100UL, "Trade", "item", "trade"),
+				new TradeConfirmation(2UL, 22UL, 101UL, "Market", "sale", "market"),
+				new TradeConfirmation(3UL, 33UL, 102UL, "Trade2", "item", "trade")
+			})
+		};
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("allow", result.Output!["operation"]);
+		Assert.Equal(3, result.Output["total"]);
+		Assert.Equal(3, result.Output["succeeded"]);
+		Assert.Equal(0, result.Output["failed"]);
+		Assert.Equal(3, fakeClient.RespondCalls);
+		Assert.Equal([(1UL, 11UL, ConfirmationOperation.Allow), (2UL, 22UL, ConfirmationOperation.Allow), (3UL, 33UL, ConfirmationOperation.Allow)], fakeClient.Responds);
+		Assert.Equal(IdentitySecret, fakeClient.LastIdentitySecret);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_TypeFilter_OnlyRespondsToMatchingType()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null, new[]
+			{
+				new TradeConfirmation(1UL, 11UL, 100UL, "Trade", "item", "trade"),
+				new TradeConfirmation(2UL, 22UL, 101UL, "Market", "sale", "market"),
+				new TradeConfirmation(3UL, 33UL, 102UL, "Trade2", "item", "trade")
+			})
+		};
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["type"] = "market" },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(1, result.Output!["total"]);
+		Assert.Equal(1, result.Output["succeeded"]);
+		Assert.Single((List<Dictionary<string, object?>>)result.Output["results"]!, r => Equals(r["confirmation_id"], "2"));
+		Assert.Equal([(2UL, 22UL, ConfirmationOperation.Allow)], fakeClient.Responds);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_PartialFailure_ReportsEachItem()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null, new[]
+			{
+				new TradeConfirmation(1UL, 11UL, 100UL, "Trade", "item", "trade"),
+				new TradeConfirmation(2UL, 22UL, 101UL, "Market", "sale", "market")
+			}),
+			OperationResults =
+			{
+				[2UL] = new MobileConfirmationResult(false, "Steam rejected the operation")
+			}
+		};
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		// The batch itself succeeds — per-item failures are reported in the output.
+		Assert.True(result.Success);
+		Assert.Equal(2, result.Output!["total"]);
+		Assert.Equal(1, result.Output["succeeded"]);
+		Assert.Equal(1, result.Output["failed"]);
+
+		var results = (List<Dictionary<string, object?>>)result.Output["results"]!;
+		var failed = Assert.Single(results, r => Equals(r["succeeded"], false));
+		Assert.Equal("2", failed["confirmation_id"]);
+		Assert.Equal("Steam rejected the operation", failed["error"]);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_Cancel_UsesCancelOperation()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null, new[]
+			{
+				new TradeConfirmation(7UL, 77UL, 107UL, "Trade", "item", "trade")
+			})
+		};
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["operation"] = "cancel" },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("cancel", result.Output!["operation"]);
+		Assert.Equal([(7UL, 77UL, ConfirmationOperation.Cancel)], fakeClient.Responds);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_EmptyList_SucceedsWithZeroTotals()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient();
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(0, result.Output!["total"]);
+		Assert.Equal(0, result.Output["succeeded"]);
+		Assert.Equal(0, fakeClient.RespondCalls);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_ListingFailure_Fails()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(false, "Steam rejected the confirmation list request")
+		};
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("rejected the confirmation list", result.Error);
+		Assert.Equal(0, fakeClient.RespondCalls);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_NoStoredSecret_Fails()
+	{
+		var fakeClient = new FakeMobileConfirmationClient();
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, new FakeCredentialStore(), _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("save_identity_secret", result.Error);
+		Assert.Equal(0, fakeClient.ListCalls);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_InvalidOperation_Fails()
+	{
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, new FakeCredentialStore(), _ => new FakeMobileConfirmationClient());
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["operation"] = "bogus" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("operation must be 'allow' or 'cancel'", result.Error);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_InvalidType_Fails()
+	{
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, new FakeCredentialStore(), _ => new FakeMobileConfirmationClient());
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["type"] = "bogus" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("type must be 'all', 'trade' or 'market'", result.Error);
+	}
+
 	private sealed class FixedTimeProvider : TimeProvider
 	{
 		private readonly DateTimeOffset _now;
@@ -566,6 +763,9 @@ public class AuthenticatorActionTests
 		public Queue<MobileConfirmationListResult>? ListResultQueue { get; set; }
 		public int ListCalls { get; private set; }
 		public MobileConfirmationResult OperationResult { get; set; } = new(true);
+		public Dictionary<ulong, MobileConfirmationResult> OperationResults { get; } = new();
+		public int RespondCalls { get; private set; }
+		public List<(ulong Id, ulong Nonce, ConfirmationOperation Op)> Responds { get; } = new();
 		public string? LastIdentitySecret { get; private set; }
 		public (ulong Id, ulong Nonce, ConfirmationOperation Op) LastRespond { get; private set; }
 
@@ -584,8 +784,10 @@ public class AuthenticatorActionTests
 				CancellationToken cancellationToken)
 		{
 			LastIdentitySecret = identitySecret;
+			RespondCalls++;
+			Responds.Add((confirmationId, nonce, operation));
 			LastRespond = (confirmationId, nonce, operation);
-			return Task.FromResult(OperationResult);
+			return Task.FromResult(OperationResults.TryGetValue(confirmationId, out var result) ? result : OperationResult);
 		}
 	}
 

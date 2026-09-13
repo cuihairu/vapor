@@ -714,3 +714,165 @@ public sealed class ConfirmTradeOfferAction : IAction
 		}
 	}
 }
+
+/// <summary>
+/// "confirm_all_confirmations": responds to every pending mobile confirmation in one
+/// shot (the Watt/ASF "accept all" flow), optionally restricted to a type
+/// ("trade" or "market"; default all). Uses the identity secret stored in the agent's
+/// credential store — never a payload-supplied one. Each confirmation is answered
+/// individually so one failure does not abort the batch; the per-item results are
+/// reported back in the output.
+/// </summary>
+public sealed class ConfirmAllConfirmationsAction : IAction
+{
+	private readonly ILogger<ConfirmAllConfirmationsAction> _logger;
+	private readonly ICredentialStore? _credentialStore;
+	private readonly Func<BotSession, IMobileConfirmationClient> _clientFactory;
+
+	public ConfirmAllConfirmationsAction(ILogger<ConfirmAllConfirmationsAction> logger, ICredentialStore? credentialStore, SteamTimeSynchronizer timeSynchronizer)
+	{
+		_logger = logger;
+		_credentialStore = credentialStore;
+		_clientFactory = session => new MobileConfirmationClient(session.SteamWebHandler!, timeSynchronizer, logger);
+	}
+
+	// Constructor for testing with a custom client factory
+	internal ConfirmAllConfirmationsAction(
+		ILogger<ConfirmAllConfirmationsAction> logger,
+		ICredentialStore? credentialStore,
+		Func<BotSession, IMobileConfirmationClient> clientFactory)
+	{
+		_logger = logger;
+		_credentialStore = credentialStore;
+		_clientFactory = clientFactory;
+	}
+
+	public string Name => "confirm_all_confirmations";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Respond to all pending mobile confirmations (optionally filtered by type) using the stored identity secret",
+		RequiresLogin: true,
+		TimeoutSeconds: 120);
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		var operationText = PayloadReader.GetString(payload, "operation") ?? "allow";
+		var operation = operationText.Equals("cancel", StringComparison.OrdinalIgnoreCase)
+			? ConfirmationOperation.Cancel
+			: operationText.Equals("allow", StringComparison.OrdinalIgnoreCase)
+				? ConfirmationOperation.Allow
+				: (ConfirmationOperation?)null;
+
+		if (operation is null)
+		{
+			return new ActionResult(false, "operation must be 'allow' or 'cancel'", null);
+		}
+
+		var typeFilter = PayloadReader.GetString(payload, "type")?.Trim().ToLowerInvariant();
+		if (typeFilter is not (null or "" or "all" or "trade" or "market"))
+		{
+			return new ActionResult(false, "type must be 'all', 'trade' or 'market'", null);
+		}
+
+		if (_credentialStore is null)
+		{
+			return new ActionResult(false, "credential store is not available to this plugin", null);
+		}
+
+		if (session.SteamWebHandler is null)
+		{
+			return new ActionResult(false, "Steam web handler not available", null);
+		}
+
+		string? identitySecret = await _credentialStore.GetIdentitySecretAsync(session.AccountName, cancellationToken).ConfigureAwait(false);
+		if (string.IsNullOrWhiteSpace(identitySecret))
+		{
+			return new ActionResult(false, $"no identity secret is stored for '{session.AccountName}'; dispatch save_identity_secret first (the secret stays agent-side)", null);
+		}
+
+		var client = _clientFactory(session);
+		MobileConfirmationListResult listing;
+		try
+		{
+			listing = await client.GetConfirmationsAsync(identitySecret, cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			return new ActionResult(false, "canceled", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Failed to list trade confirmations for {AccountName}", session.AccountName);
+			return new ActionResult(false, ex.Message, null);
+		}
+
+		if (!listing.Success)
+		{
+			return new ActionResult(false, listing.Error ?? "failed to list trade confirmations", null);
+		}
+
+		IEnumerable<TradeConfirmation> targets = listing.Confirmations ?? [];
+		if (typeFilter is not (null or "" or "all"))
+		{
+			targets = targets.Where(c => string.Equals(c.Type, typeFilter, StringComparison.OrdinalIgnoreCase));
+		}
+
+		var results = new List<Dictionary<string, object?>>();
+		int succeeded = 0;
+
+		foreach (TradeConfirmation confirmation in targets.ToList())
+		{
+			cancellationToken.ThrowIfCancellationRequested();
+
+			MobileConfirmationResult response;
+			try
+			{
+				response = await client.RespondAsync(identitySecret, confirmation.Id, confirmation.Nonce, operation.Value, cancellationToken).ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+			{
+				return new ActionResult(false, "canceled", null);
+			}
+			catch (Exception ex)
+			{
+				response = new MobileConfirmationResult(false, ex.Message);
+			}
+
+			if (response.Success)
+			{
+				succeeded++;
+			}
+
+			var entry = new Dictionary<string, object?>
+			{
+				["confirmation_id"] = confirmation.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+				["type"] = confirmation.Type,
+				["succeeded"] = response.Success
+			};
+			if (!response.Success)
+			{
+				entry["error"] = response.Error;
+			}
+
+			results.Add(entry);
+		}
+
+		int total = results.Count;
+		_logger.LogInformation(
+			"Batch confirmation {Operation}: {Succeeded}/{Total} succeeded for {AccountName}",
+			operation.Value == ConfirmationOperation.Allow ? "allow" : "cancel", succeeded, total, session.AccountName);
+
+		return new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["operation"] = operation.Value == ConfirmationOperation.Allow ? "allow" : "cancel",
+			["total"] = total,
+			["succeeded"] = succeeded,
+			["failed"] = total - succeeded,
+			["results"] = results
+		});
+	}
+}
