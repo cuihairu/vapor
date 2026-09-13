@@ -314,7 +314,7 @@
 
 ### 11.4 P6-4 竞品对齐但后置（记录待决，不承诺）
 
-- [ ] Web Dashboard（对标 ASF-ui）：CP 已有 REST+SSE，可先做只读面板；自研面大，P6-1~3 落地后评估。
+- [x] Web Dashboard 只读面板（对标 ASF-ui 只读部分）：`wwwroot/dashboard.html`——统计卡/账户/Agent/会话/作业（点击展开任务明细）/审计日志 + jobs/sessions 双 SSE 流 + 30s 轮询兜底，纯 GET + EventSource 零写操作；无写动词契约测试守护（DashboardStaticTests 4 个）；与 admin.html 互链，`/` 重定向不变。（管理功能继续走 admin.html；功能扩展待后续评估）
 - [ ] 市场挂单创建/批量撤单（对标 SGI）：ToS 灰区 + 需库存/定价前置。
 - [ ] QR 扫码登录（对标 SGI/steamguard-cli）；成就解锁/管理（对标 SGI）：便利性/需求弱，后置。
 

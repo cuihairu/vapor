@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vapor Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <style>
+        :root {
+            --bg: #eef3ea;
+            --surface: rgba(255, 252, 245, 0.92);
+            --surface-strong: #fffdf8;
+            --surface-muted: #f4efe4;
+            --border: rgba(61, 73, 45, 0.14);
+            --border-strong: rgba(61, 73, 45, 0.24);
+            --text: #25301f;
+            --text-muted: #65715c;
+            --primary: #325c42;
+            --primary-strong: #234332;
+            --success: #2f7d4d;
+            --warning: #a86c12;
+            --danger: #b2473e;
+            --shadow: 0 18px 40px rgba(42, 56, 34, 0.12);
+            --radius-lg: 24px;
+            --radius-md: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(152, 180, 114, 0.25), transparent 28%),
+                radial-gradient(circle at top right, rgba(201, 167, 104, 0.20), transparent 32%),
+                linear-gradient(180deg, var(--bg) 0%, #f6f4ed 48%, #edf2e7 100%);
+            font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        }
+
+        .container {
+            width: min(1520px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+        }
+
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 22px;
+            padding: 26px 28px;
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            box-shadow: var(--shadow);
+            background: linear-gradient(135deg, rgba(250, 247, 239, 0.94), rgba(239, 245, 232, 0.96)), var(--surface);
+        }
+
+        .eyebrow {
+            margin-bottom: 10px;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .hero h1 {
+            margin: 0;
+            font-size: clamp(30px, 4vw, 44px);
+            line-height: 1;
+            letter-spacing: -0.04em;
+            color: var(--primary-strong);
+        }
+
+        .hero p {
+            margin: 12px 0 0;
+            max-width: 640px;
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .hero-side {
+            display: grid;
+            gap: 10px;
+            min-width: 300px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            align-self: flex-start;
+            gap: 10px;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.66);
+            font-size: 13px;
+            color: var(--text-muted);
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2.2s infinite;
+        }
+
+        .status-dot.offline {
+            background: var(--danger);
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(47, 125, 77, 0.42); }
+            70% { box-shadow: 0 0 0 10px rgba(47, 125, 77, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(47, 125, 77, 0); }
+        }
+
+        .token-box {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.62);
+            border: 1px solid var(--border);
+        }
+
+        .nav-link {
+            justify-self: start;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 14px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.78);
+            color: var(--primary);
+            font-size: 13px;
+            text-decoration: none;
+            transition: transform 0.16s ease, border-color 0.16s ease;
+        }
+
+        .nav-link:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+
+        .stat-card,
+        .panel {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--surface);
+            box-shadow: var(--shadow);
+        }
+
+        .stat-card {
+            padding: 16px 18px;
+        }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 12px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .stat-value {
+            margin-top: 12px;
+            font-size: 30px;
+            line-height: 1;
+            letter-spacing: -0.05em;
+            color: var(--primary-strong);
+        }
+
+        .stat-footnote {
+            margin-top: 8px;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 20px;
+        }
+
+        .column {
+            display: grid;
+            gap: 20px;
+            align-content: start;
+        }
+
+        .panel {
+            padding: 20px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .panel-title {
+            margin: 0;
+            font-size: 22px;
+            line-height: 1;
+            letter-spacing: -0.03em;
+            color: var(--primary-strong);
+        }
+
+        .panel-subtitle {
+            margin-top: 6px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .readonly-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 11px;
+            border-radius: 999px;
+            border: 1px solid rgba(47, 125, 77, 0.28);
+            background: rgba(47, 125, 77, 0.1);
+            color: var(--success);
+            font-size: 11px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+        }
+
+        input,
+        button {
+            font: inherit;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.88);
+            color: var(--text);
+        }
+
+        input:focus {
+            outline: none;
+            border-color: rgba(50, 92, 66, 0.45);
+            box-shadow: 0 0 0 4px rgba(80, 117, 84, 0.12);
+        }
+
+        .btn {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 42px;
+            padding: 0 14px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.78);
+            color: var(--text);
+            cursor: pointer;
+            transition: transform 0.16s ease, border-color 0.16s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+        }
+
+        .btn-small {
+            min-height: 34px;
+            padding: 0 12px;
+            font-size: 13px;
+        }
+
+        .list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .card-row {
+            display: grid;
+            gap: 10px;
+            padding: 14px 16px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: rgba(255, 255, 255, 0.76);
+        }
+
+        .card-row.clickable {
+            cursor: pointer;
+            transition: transform 0.16s ease, border-color 0.16s ease;
+        }
+
+        .card-row.clickable:hover {
+            transform: translateY(-1px);
+            border-color: var(--border-strong);
+        }
+
+        .row-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            gap: 12px;
+        }
+
+        .title-group {
+            display: grid;
+            gap: 4px;
+        }
+
+        .strong {
+            font-size: 17px;
+            color: var(--primary-strong);
+            font-weight: 700;
+        }
+
+        .mono,
+        .tiny {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .tiny {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .helper {
+            color: var(--text-muted);
+            font-size: 13px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        .summary-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: var(--surface-muted);
+            border: 1px solid var(--border);
+            font-size: 12px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .badge.ok { background: rgba(47, 125, 77, 0.14); color: var(--success); }
+        .badge.warn { background: rgba(168, 108, 18, 0.14); color: var(--warning); }
+        .badge.bad { background: rgba(178, 71, 62, 0.14); color: var(--danger); }
+        .badge.idle { background: rgba(41, 101, 157, 0.12); color: #275884; }
+        .badge.mute { background: rgba(110, 108, 102, 0.14); color: #595754; }
+
+        .empty-state {
+            padding: 16px;
+            border: 1px dashed var(--border);
+            border-radius: var(--radius-md);
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.45);
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .scroll {
+            max-height: 460px;
+            overflow: auto;
+            padding-right: 4px;
+        }
+
+        .event-entry {
+            padding: 11px 14px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.82);
+            border: 1px solid var(--border);
+        }
+
+        .event-entry + .event-entry {
+            margin-top: 8px;
+        }
+
+        .event-kind {
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .event-message {
+            margin-top: 5px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        pre.code {
+            margin: 0;
+            padding: 12px;
+            border-radius: 14px;
+            background: #203127;
+            color: #eef6ec;
+            overflow: auto;
+            font-size: 12px;
+            line-height: 1.5;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .detail-box {
+            display: none;
+            padding: 14px;
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-md);
+            background: rgba(242, 247, 238, 0.9);
+        }
+
+        .fade-in {
+            animation: fadeIn 240ms ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 1240px) {
+            .stats {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 960px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .container {
+                width: min(100% - 20px, 1520px);
+                padding-top: 18px;
+            }
+
+            .hero,
+            .panel {
+                padding: 18px;
+            }
+
+            .stats,
+            .token-box {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero fade-in">
+            <div>
+                <div class="eyebrow">Steam Automation Control Plane</div>
+                <h1>Vapor Dashboard</h1>
+                <p>舰队只读总览：账户、Agent、会话、作业与审计。本页面仅调用查询接口与实时事件流，不提供任何变更操作；需要执行任务请使用管理视图。</p>
+            </div>
+            <div class="hero-side">
+                <div class="status-pill">
+                    <span class="status-dot" id="connectionDot"></span>
+                    <span id="connectionStatus">实时流已连接</span>
+                </div>
+                <div class="token-box">
+                    <input id="apiKeyInput" type="password" placeholder="管理员 API Key">
+                    <button class="btn btn-small" id="saveTokenButton">保存</button>
+                </div>
+                <a class="nav-link" href="/admin.html">→ 管理视图（admin.html）</a>
+            </div>
+        </section>
+
+        <section class="stats fade-in">
+            <div class="stat-card">
+                <div class="stat-label">Accounts</div>
+                <div class="stat-value" id="statAccounts">0</div>
+                <div class="stat-footnote" id="statAccountsNote">未声明账户</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Agents</div>
+                <div class="stat-value" id="statAgents">0</div>
+                <div class="stat-footnote" id="statAgentsNote">未发现区域</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Sessions</div>
+                <div class="stat-value" id="statSessions">0</div>
+                <div class="stat-footnote">最近上报的会话</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">In Flight</div>
+                <div class="stat-value" id="statInFlight">0</div>
+                <div class="stat-footnote">等待中与执行中的作业</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Finished</div>
+                <div class="stat-value" id="statFinished">0</div>
+                <div class="stat-footnote">近期成功作业</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Failed</div>
+                <div class="stat-value" id="statFailed">0</div>
+                <div class="stat-footnote">近期失败作业</div>
+            </div>
+        </section>
+
+        <main class="layout">
+            <div class="column">
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">账户</h2>
+                            <div class="panel-subtitle">声明状态与调度位置（/v1/accounts）。</div>
+                        </div>
+                        <span class="readonly-tag">只读</span>
+                    </div>
+                    <div class="list scroll" id="accountList">
+                        <div class="empty-state">正在加载账户...</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">作业</h2>
+                            <div class="panel-subtitle">最近 50 个作业，点击查看任务明细（/v1/jobs）。</div>
+                        </div>
+                        <button class="btn btn-small" id="refreshJobsButton">刷新</button>
+                    </div>
+                    <div class="list scroll" id="jobList">
+                        <div class="empty-state">正在加载作业...</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">审计日志</h2>
+                            <div class="panel-subtitle">最近 30 条持久化审计记录（/v1/audit/logs）。</div>
+                        </div>
+                        <button class="btn btn-small" id="refreshAuditButton">刷新</button>
+                    </div>
+                    <div class="list scroll" id="auditList">
+                        <div class="empty-state">正在加载审计日志...</div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="column">
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">Agent</h2>
+                            <div class="panel-subtitle">已连接 Agent 与能力分布（/v1/agents/status）。</div>
+                        </div>
+                        <button class="btn btn-small" id="refreshAgentsButton">刷新</button>
+                    </div>
+                    <div class="list" id="agentList">
+                        <div class="empty-state">正在加载 Agent...</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">会话</h2>
+                            <div class="panel-subtitle">账户会话快照（/v1/sessions）。</div>
+                        </div>
+                        <button class="btn btn-small" id="refreshSessionsButton">刷新</button>
+                    </div>
+                    <div class="list scroll" id="sessionList">
+                        <div class="empty-state">正在加载会话...</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">实时事件</h2>
+                            <div class="panel-subtitle">任务 / 会话 / 认证事件流（SSE，保留 60 条）。</div>
+                        </div>
+                    </div>
+                    <div class="scroll" id="eventsLog">
+                        <div class="empty-state">等待实时事件...</div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Read-only by contract: this page only issues GET requests (fetch without a
+        // method, plus EventSource streams). No write verb appears anywhere below.
+        const state = {
+            apiKey: localStorage.getItem("apiKey") || "",
+            accounts: [],
+            agents: [],
+            sessions: [],
+            jobs: [],
+            selectedJobId: null,
+            streams: [],
+            pollTimer: null
+        };
+
+        const statusClass = {
+            queued: "warn",
+            pending: "warn",
+            running: "idle",
+            scheduled: "idle",
+            finished: "ok",
+            completed: "ok",
+            failed: "bad",
+            canceled: "mute"
+        };
+
+        const statusLabel = {
+            queued: "等待中",
+            pending: "等待中",
+            running: "进行中",
+            scheduled: "已排期",
+            finished: "已完成",
+            completed: "已完成",
+            failed: "失败",
+            canceled: "已取消"
+        };
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            const stored = state.apiKey;
+            const maybePrompt = stored || window.prompt("请输入管理员 API Key:");
+            if (!maybePrompt) {
+                setConnectionState(false, "缺少 API Key");
+                return;
+            }
+
+            state.apiKey = maybePrompt.trim();
+            localStorage.setItem("apiKey", state.apiKey);
+            document.getElementById("apiKeyInput").value = state.apiKey;
+
+            document.getElementById("saveTokenButton").addEventListener("click", async () => {
+                const nextKey = document.getElementById("apiKeyInput").value.trim();
+                if (!nextKey) {
+                    alert("API Key 不能为空");
+                    return;
+                }
+
+                state.apiKey = nextKey;
+                localStorage.setItem("apiKey", nextKey);
+                await bootstrap();
+            });
+
+            document.getElementById("refreshJobsButton").addEventListener("click", () => refreshJobs());
+            document.getElementById("refreshAgentsButton").addEventListener("click", () => refreshAgents());
+            document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
+            document.getElementById("refreshAuditButton").addEventListener("click", () => refreshAudit());
+
+            await bootstrap();
+        });
+
+        async function bootstrap() {
+            closeStreams();
+            if (state.pollTimer) {
+                clearInterval(state.pollTimer);
+            }
+
+            setConnectionState(true, "正在同步控制面数据...");
+            try {
+                await refreshAll();
+                restartStreams();
+                // Fallback polling keeps the read-only view fresh even if SSE is blocked.
+                state.pollTimer = setInterval(() => refreshAll().catch(() => {}), 30000);
+            } catch (error) {
+                setConnectionState(false, `初始化失败: ${error.message}`);
+            }
+        }
+
+        async function refreshAll() {
+            await Promise.all([
+                refreshAccounts(),
+                refreshAgents(),
+                refreshSessions(),
+                refreshJobs(),
+                refreshAudit()
+            ]);
+        }
+
+        function authHeaders() {
+            return {
+                "Authorization": `Bearer ${state.apiKey}`
+            };
+        }
+
+        async function apiFetch(path) {
+            const response = await fetch(path, { headers: authHeaders() });
+            if (!response.ok) {
+                let detail = response.statusText;
+                try {
+                    const body = await response.json();
+                    detail = body.error || JSON.stringify(body);
+                } catch {
+                }
+                throw new Error(detail || `HTTP ${response.status}`);
+            }
+
+            return response.json();
+        }
+
+        async function refreshAccounts() {
+            const data = await apiFetch("/v1/accounts");
+            state.accounts = data.accounts || [];
+            renderAccounts();
+            updateStats();
+        }
+
+        async function refreshAgents() {
+            const data = await apiFetch("/v1/agents/status");
+            state.agents = data.agents || [];
+            renderAgents();
+            updateStats();
+        }
+
+        async function refreshSessions() {
+            const data = await apiFetch("/v1/sessions");
+            state.sessions = data.sessions || [];
+            renderSessions();
+            updateStats();
+        }
+
+        async function refreshJobs() {
+            const data = await apiFetch("/v1/jobs?limit=50");
+            state.jobs = data.jobs || [];
+            renderJobs();
+            updateStats();
+
+            if (state.selectedJobId) {
+                await loadJobDetail(state.selectedJobId);
+            }
+        }
+
+        async function refreshAudit() {
+            const data = await apiFetch("/v1/audit/logs?limit=30");
+            renderAudit(data.logs || []);
+        }
+
+        async function loadJobDetail(jobId) {
+            try {
+                const detail = await apiFetch(`/v1/jobs/${encodeURIComponent(jobId)}`);
+                state.selectedJobId = jobId;
+                renderJobDetail(detail);
+            } catch (error) {
+                const box = document.getElementById("jobDetailBox");
+                if (box) {
+                    box.innerHTML = `<div class="empty-state">加载作业详情失败: ${escapeHtml(error.message)}</div>`;
+                }
+            }
+        }
+
+        function renderAccounts() {
+            const container = document.getElementById("accountList");
+            if (!state.accounts.length) {
+                container.innerHTML = '<div class="empty-state">尚未声明账户。</div>';
+                return;
+            }
+
+            container.innerHTML = [...state.accounts]
+                .sort((a, b) => String(a.accountName).localeCompare(String(b.accountName), "zh-CN"))
+                .map((account) => {
+                    const stateClass = !account.enabled ? "mute" : (account.desiredState === "online" ? "ok" : (account.desiredState === "idle" ? "idle" : "warn"));
+                    const stateText = !account.enabled ? "已禁用" : `期望 ${account.desiredState}`;
+                    return `
+                        <article class="card-row">
+                            <div class="row-head">
+                                <div class="title-group">
+                                    <div class="strong">${escapeHtml(account.accountName)}</div>
+                                    <div class="tiny">${account.region ? `区域 ${escapeHtml(account.region)}` : "未指定区域"}${account.agentId ? ` · Agent ${escapeHtml(account.agentId)}` : " · 未绑定 Agent"}</div>
+                                </div>
+                                <span class="badge ${stateClass}">${escapeHtml(stateText)}</span>
+                            </div>
+                            <div class="summary-row">
+                                ${account.idleApps?.length ? `<span class="chip">idle apps: ${account.idleApps.length}</span>` : ""}
+                                ${account.note ? `<span class="chip">${escapeHtml(account.note)}</span>` : ""}
+                            </div>
+                        </article>
+                    `;
+                }).join("");
+        }
+
+        function renderAgents() {
+            const container = document.getElementById("agentList");
+            if (!state.agents.length) {
+                container.innerHTML = '<div class="empty-state">暂无已连接 Agent。</div>';
+                return;
+            }
+
+            container.innerHTML = state.agents.map((agent) => {
+                const capabilities = Object.entries(agent.capabilities || {})
+                    .filter((entry) => entry[1])
+                    .map((entry) => `<span class="chip">${escapeHtml(entry[0])}</span>`)
+                    .join("");
+                return `
+                    <article class="card-row">
+                        <div class="row-head">
+                            <div class="title-group">
+                                <div class="strong">${escapeHtml(agent.id)}</div>
+                                <div class="tiny mono">${escapeHtml(agent.region || "-")}</div>
+                            </div>
+                            <span class="badge ok">在线</span>
+                        </div>
+                        <div class="tiny">连接时间: ${formatDate(agent.connectedAt)}</div>
+                        <div class="summary-row">${capabilities || '<span class="chip">capabilities: all</span>'}</div>
+                    </article>
+                `;
+            }).join("");
+        }
+
+        function renderSessions() {
+            const container = document.getElementById("sessionList");
+            const items = [...state.sessions]
+                .sort((a, b) => String(a.accountName).localeCompare(String(b.accountName), "zh-CN"));
+
+            if (!items.length) {
+                container.innerHTML = '<div class="empty-state">暂无活动会话。</div>';
+                return;
+            }
+
+            container.innerHTML = items.map((session) => `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">${escapeHtml(session.accountName)}</div>
+                            <div class="tiny mono">${escapeHtml(session.eventType || "-")}</div>
+                        </div>
+                        <span class="badge ${sessionBadgeClass(session.state)}">${escapeHtml(session.state || "-")}</span>
+                    </div>
+                    <div class="helper">${escapeHtml(session.message || "无额外消息")}</div>
+                    <div class="tiny">更新时间: ${formatDate(session.updatedAt)}</div>
+                </article>
+            `).join("");
+        }
+
+        function renderJobs() {
+            const container = document.getElementById("jobList");
+            if (!state.jobs.length) {
+                container.innerHTML = '<div class="empty-state">暂无作业。</div>';
+                return;
+            }
+
+            container.innerHTML = state.jobs.map((job) => `
+                <article class="card-row clickable${job.id === state.selectedJobId ? " selected-row" : ""}" data-job-id="${escapeHtml(job.id)}">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">${escapeHtml(job.action)}</div>
+                            <div class="tiny mono">${escapeHtml(job.id)}</div>
+                        </div>
+                        <span class="badge ${statusClass[String(job.status).toLowerCase()] || "mute"}">${escapeHtml(statusLabel[String(job.status).toLowerCase()] || job.status)}</span>
+                    </div>
+                    <div class="summary-row">
+                        <span class="chip">targets: ${job.targets?.length || 0}</span>
+                        <span class="chip">${escapeHtml(job.region || "自动调度")}</span>
+                        <span class="chip">${formatDate(job.createdAt)}</span>
+                    </div>
+                </article>
+            `).join("");
+
+            container.querySelectorAll("[data-job-id]").forEach((element) => {
+                element.addEventListener("click", () => loadJobDetail(element.dataset.jobId));
+            });
+        }
+
+        function renderJobDetail(detail) {
+            let box = document.getElementById("jobDetailBox");
+            if (!box) {
+                box = document.createElement("div");
+                box.id = "jobDetailBox";
+                box.className = "detail-box";
+                document.getElementById("jobList").parentNode.appendChild(box);
+            }
+
+            box.style.display = "block";
+            const job = detail.job;
+            const tasks = detail.tasks || [];
+            box.innerHTML = `
+                <div class="row-head" style="margin-bottom: 10px;">
+                    <div class="title-group">
+                        <div class="strong">${escapeHtml(job.action)} · ${escapeHtml(shortId(job.id))}</div>
+                        <div class="tiny mono">${escapeHtml(job.id)}</div>
+                    </div>
+                    <button class="btn btn-small" id="closeJobDetail">收起</button>
+                </div>
+                ${tasks.map((task) => `
+                    <div class="card-row" style="margin-bottom: 8px;">
+                        <div class="row-head">
+                            <div class="title-group">
+                                <div class="strong">${escapeHtml(task.target)}</div>
+                                <div class="tiny mono">${escapeHtml(task.id)}</div>
+                            </div>
+                            <span class="badge ${statusClass[String(task.status).toLowerCase()] || "mute"}">${escapeHtml(statusLabel[String(task.status).toLowerCase()] || task.status)}</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="chip">attempt: ${task.attempt}</span>
+                            <span class="chip">${escapeHtml(task.region || "auto")}</span>
+                            ${task.error ? `<span class="chip">${escapeHtml(task.error)}</span>` : ""}
+                        </div>
+                        ${task.output && Object.keys(task.output).length ? `<pre class="code">${escapeHtml(JSON.stringify(task.output, null, 2))}</pre>` : ""}
+                    </div>
+                `).join("")}
+            `;
+
+            document.getElementById("closeJobDetail").addEventListener("click", () => {
+                box.style.display = "none";
+                state.selectedJobId = null;
+            });
+        }
+
+        function renderAudit(logs) {
+            const container = document.getElementById("auditList");
+            if (!logs.length) {
+                container.innerHTML = '<div class="empty-state">暂无审计记录。</div>';
+                return;
+            }
+
+            container.innerHTML = logs.map((entry) => `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong mono" style="font-size: 14px;">${escapeHtml(entry.action)}</div>
+                            <div class="tiny">${entry.accountName ? `账户 ${escapeHtml(entry.accountName)}` : "全局操作"}</div>
+                        </div>
+                        <span class="badge mute">${escapeHtml(entry.actor || "unknown")}</span>
+                    </div>
+                    <div class="tiny">${formatDate(entry.timestamp)}${entry.jobId ? ` · job ${escapeHtml(shortId(entry.jobId))}` : ""}</div>
+                </article>
+            `).join("");
+        }
+
+        function restartStreams() {
+            closeStreams();
+            if (!state.apiKey) {
+                return;
+            }
+
+            const auth = encodeURIComponent(state.apiKey);
+            const jobsStream = createStream(`/v1/jobs/events?authorization=${auth}`, {
+                ready: () => setConnectionState(true, "实时流已连接"),
+                "task.finished": (data) => {
+                    addEvent("task", `任务完成 ${shortId(data.taskId)}，结果 ${data.success ? "成功" : "失败"}`);
+                    refreshJobs().catch(() => {});
+                },
+                "task.dispatched": (data) => {
+                    addEvent("task", `任务已分发 ${shortId(data.taskId)} → ${data.agentId || "unknown"}`);
+                },
+                "job.created": (data) => {
+                    addEvent("task", `新作业：动作 ${data.action}，目标 ${data.targets}`);
+                    refreshJobs().catch(() => {});
+                },
+                "job.canceled": () => {
+                    addEvent("task", "作业已取消");
+                    refreshJobs().catch(() => {});
+                },
+                "agent.connected": (data) => {
+                    addEvent("agent", `Agent 已连接 ${data.agentId} @ ${data.region || "-"}`);
+                    refreshAgents().catch(() => {});
+                },
+                "agent.disconnected": (data) => {
+                    addEvent("agent", `Agent 已断开 ${data.agentId} @ ${data.region || "-"}`);
+                    refreshAgents().catch(() => {});
+                }
+            });
+
+            const sessionsStream = createStream(`/v1/sessions/events?authorization=${auth}`, {
+                "session.connected": (data) => handleSessionEvent(data, "已连接"),
+                "session.disconnected": (data) => handleSessionEvent(data, "已断开"),
+                "session.state_changed": (data) => handleSessionEvent(data, `状态 → ${data.state}`),
+                "session.auth_code_required": (data) => handleSessionEvent(data, "需要认证码"),
+                "session.2fa_required": (data) => handleSessionEvent(data, "需要 2FA")
+            });
+
+            state.streams = [jobsStream, sessionsStream];
+        }
+
+        function handleSessionEvent(data, action) {
+            addEvent("session", `${data.accountName} ${action}`);
+            refreshSessions().catch(() => {});
+        }
+
+        function createStream(path, handlers) {
+            const source = new EventSource(path);
+            if (handlers.ready) {
+                source.addEventListener("ready", handlers.ready);
+            }
+
+            Object.entries(handlers).forEach(([eventName, handler]) => {
+                if (eventName === "ready") {
+                    return;
+                }
+                source.addEventListener(eventName, (event) => {
+                    try {
+                        const payload = event.data ? JSON.parse(event.data) : {};
+                        handler(payload);
+                    } catch (error) {
+                        console.error(`stream handler failed for ${eventName}`, error);
+                    }
+                });
+            });
+
+            source.onerror = () => {
+                setConnectionState(false, "实时流中断，稍后自动恢复或重新保存 Key");
+            };
+
+            return source;
+        }
+
+        function closeStreams() {
+            state.streams.forEach((stream) => {
+                try {
+                    stream.close();
+                } catch {
+                }
+            });
+            state.streams = [];
+        }
+
+        function updateStats() {
+            const enabled = state.accounts.filter((a) => a.enabled).length;
+            const queued = state.jobs.filter((job) => ["queued", "pending"].includes(String(job.status).toLowerCase())).length;
+            const running = state.jobs.filter((job) => String(job.status).toLowerCase() === "running").length;
+            const finished = state.jobs.filter((job) => ["finished", "completed"].includes(String(job.status).toLowerCase())).length;
+            const failed = state.jobs.filter((job) => String(job.status).toLowerCase() === "failed").length;
+            const regions = Array.from(new Set(state.agents.map((agent) => agent.region).filter(Boolean)));
+
+            document.getElementById("statAccounts").textContent = String(state.accounts.length);
+            document.getElementById("statAccountsNote").textContent = state.accounts.length ? `${enabled} 个启用中` : "未声明账户";
+            document.getElementById("statAgents").textContent = String(state.agents.length);
+            document.getElementById("statAgentsNote").textContent = regions.length ? `区域: ${regions.join(", ")}` : "未发现区域";
+            document.getElementById("statSessions").textContent = String(state.sessions.length);
+            document.getElementById("statInFlight").textContent = String(queued + running);
+            document.getElementById("statFinished").textContent = String(finished);
+            document.getElementById("statFailed").textContent = String(failed);
+        }
+
+        function addEvent(kind, message) {
+            const log = document.getElementById("eventsLog");
+            if (log.querySelector(".empty-state")) {
+                log.innerHTML = "";
+            }
+
+            const entry = document.createElement("article");
+            entry.className = "event-entry fade-in";
+            entry.innerHTML = `
+                <div class="event-kind">${escapeHtml(kind)}</div>
+                <div class="tiny">${escapeHtml(formatDate(new Date().toISOString()))}</div>
+                <div class="event-message">${escapeHtml(message)}</div>
+            `;
+
+            log.prepend(entry);
+            while (log.children.length > 60) {
+                log.removeChild(log.lastChild);
+            }
+        }
+
+        function setConnectionState(online, text) {
+            document.getElementById("connectionStatus").textContent = text;
+            document.getElementById("connectionDot").classList.toggle("offline", !online);
+        }
+
+        function sessionBadgeClass(stateName) {
+            const normalized = String(stateName || "").toLowerCase();
+            if (normalized.includes("wait") || normalized.includes("auth")) {
+                return "warn";
+            }
+            if (normalized.includes("fail") || normalized.includes("error")) {
+                return "bad";
+            }
+            if (normalized.includes("disconnect")) {
+                return "mute";
+            }
+            return "ok";
+        }
+
+        function shortId(value) {
+            if (!value) {
+                return "-";
+            }
+            return value.length > 10 ? `${value.slice(0, 8)}...` : value;
+        }
+
+        function formatDate(value) {
+            if (!value) {
+                return "-";
+            }
+            return new Date(value).toLocaleString("zh-CN", { hour12: false });
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#39;");
+        }
+    </script>
+</body>
+</html>

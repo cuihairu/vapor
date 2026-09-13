@@ -86,7 +86,7 @@
 | 能力 | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
 | REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(22 端点 + OpenAPI) |
-| Web UI | ✅(ASF-ui) | ✅ | ✅ | ➖ | ❌ |
+| Web UI | ✅(ASF-ui) | ✅ | ✅ | ➖ | ✅(只读 dashboard + 管理面板,静态托管) |
 | 插件系统 | ✅ | ✅ | ➖ | ➖ | ✅(ALC 隔离 + SemVer + 信任/权限) |
 | 多节点舰队(CP 集中调度) | ❌(单进程) | ❌ | ❌ | ❌ | ✅(**独有**) |
 | 可观测性(metrics/tracing/审计) | ⚠️ | ➖ | ➖ | ➖ | ✅(Prometheus + OTel + 审计) |
@@ -119,7 +119,7 @@
 
 ### P6-4 竞品对齐但后置(记录待决,不承诺)
 
-- [ ] Web Dashboard(对标 ASF-ui):CP 已有 REST+SSE,可做只读面板;自研面大,待 P6-1~3 落地后评估。
+- [x] Web Dashboard 只读面板(对标 ASF-ui 只读部分):`wwwroot/dashboard.html` 落地——统计卡/账户/Agent/会话/作业/审计 + 双 SSE 流 + 轮询兜底,零写操作(契约测试守护);管理功能走既有 admin.html。功能扩展(向导式配置等)后置。
 - [ ] 挂单创建/批量撤单(对标 SGI):ToS 灰区 + 需要库存/定价前置,后置。
 - [ ] QR 扫码登录(对标 SGI/steamguard-cli):便利性功能,后置。
 - [ ] 成就解锁/管理(对标 SGI):需求弱,后置。

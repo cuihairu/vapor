@@ -12,7 +12,7 @@ tests/
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (200 tests)
+├── Vapor.ControlPlane.Tests/             (204 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出基准
 ├── Vapor.Plugins.Core.Tests/             (85 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (65 tests)
@@ -29,7 +29,7 @@ tests/
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
 | Vapor.Steam.Core.Tests | 693 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配 |
-| Vapor.ControlPlane.Tests | 200 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价 |
+| Vapor.ControlPlane.Tests | 204 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、静态只读面板契约 |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 65 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 |
 | Vapor.Agent.Tests | 47 | 重连退避策略、任务执行器、WS URI 构造、maFile 离线导入 CLI |
@@ -37,7 +37,7 @@ tests/
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 22 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **1171** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **1175** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
@@ -118,7 +118,7 @@ tests/
 | SteamTotpTests | 13 | Steam TOTP(本地 2FA 码生成) |
 | SteamTimeSynchronizerTests | 5 | Steam 服务器时间同步 |
 
-### ControlPlane(180 个测试)
+### ControlPlane(204 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
@@ -128,12 +128,13 @@ tests/
 | SqliteJobStoreTests | 14 | job 存储(并发/迁移/周期模板) |
 | NotificationTests | 14 | 通知规则/webhook 签名/派发隔离 |
 | AccountStoreTests | 13 | 账户存储(ConfigVersion 并发) |
-| AccountApiTests | 50 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝/自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取:fake agent 顺序回报) |
+| AccountApiTests | 58 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取:fake agent 顺序回报) |
 | RecurringJobSchedulerTests | 10 | 周期任务触发/missed/overlap/退役 |
 | ControlPlaneApiTests | 9 | REST API(鉴权/任务/SSE/计划 job) |
 | TaskSchedulerServiceTests | 7 | 任务派发/终态机制 |
 | SqliteAuditStoreTests | 7 | 审计存储 |
 | AuditApiTests | 6 | 审计查询 API |
+| DashboardStaticTests | 4 | 静态只读面板(/dashboard.html 服务、无写动词契约、与管理视图互链、`/` 302 重定向) |
 | TracingTests | 4 | OpenTelemetry 追踪注入 |
 | AgentRegistryTests | 4 | Agent 注册表 |
 | EventBrokerTests | 3 | 事件总线 |
