@@ -157,7 +157,7 @@ public sealed class NotificationTests
 		var sink = new RecordingSink();
 		using var service = new NotificationService(broker, new[] { sink }, NullLogger<NotificationService>.Instance);
 
-		await StartAsync(service);
+		await StartAsync(broker, service);
 		try
 		{
 			broker.Publish("job-1", "job.created", new Dictionary<string, object?> { ["accountName"] = "alice" });
@@ -181,7 +181,7 @@ public sealed class NotificationTests
 		var sink = new RecordingSink();
 		using var service = new NotificationService(broker, new[] { sink }, NullLogger<NotificationService>.Instance);
 
-		await StartAsync(service);
+		await StartAsync(broker, service);
 		try
 		{
 			broker.PublishSession("alice", "state_changed", "Connected", message: "logged on");
@@ -217,7 +217,7 @@ public sealed class NotificationTests
 		};
 		using var service = new NotificationService(broker, new[] { filtered }, NullLogger<NotificationService>.Instance);
 
-		await StartAsync(service);
+		await StartAsync(broker, service);
 		try
 		{
 			broker.Publish("job-1", "job.created", null);
@@ -241,7 +241,7 @@ public sealed class NotificationTests
 		var healthy = new RecordingSink();
 		using var service = new NotificationService(broker, new[] { failing, healthy }, NullLogger<NotificationService>.Instance);
 
-		await StartAsync(service);
+		await StartAsync(broker, service);
 		try
 		{
 			broker.Publish("job-2", "job.created", null);
@@ -270,11 +270,27 @@ public sealed class NotificationTests
 
 	// ── fixtures ──
 
-	/// <summary>Starts the background service and waits until its pumps have subscribed.</summary>
-	private static async Task StartAsync(NotificationService service)
+	/// <summary>
+	/// Starts the background service and waits until its three pumps have actually
+	/// registered their broker subscriptions. A fixed delay is racy under CI load:
+	/// an event published before registration lands is silently dropped.
+	/// </summary>
+	private static async Task StartAsync(EventBroker broker, NotificationService service)
 	{
 		await service.StartAsync(CancellationToken.None);
-		await Task.Delay(100);
+
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+		while (broker.SubscriberCount == 0 || broker.SessionSubscriberCount == 0 || broker.AuthSubscriberCount == 0)
+		{
+			if (DateTimeOffset.UtcNow > deadline)
+			{
+				throw new TimeoutException(
+					$"Notification pumps did not subscribe within 5s " +
+					$"(job={broker.SubscriberCount}, session={broker.SessionSubscriberCount}, auth={broker.AuthSubscriberCount}).");
+			}
+
+			await Task.Delay(10);
+		}
 	}
 
 	private static NotificationEvent NewEvent(

@@ -12,6 +12,15 @@ public sealed class EventBroker : IEventBroker
 	private readonly Channel<SessionEvent> _globalSessionChannel = Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = false });
 	private readonly Channel<AuthChallengeEvent> _globalAuthChannel = Channel.CreateUnbounded<AuthChallengeEvent>(new UnboundedChannelOptions { SingleReader = false });
 
+	/// <summary>Currently registered job-event subscriber channels across all keys (readiness/diagnostics signal).</summary>
+	public int SubscriberCount => _subscribers.Values.Sum(static subs => subs.Count);
+
+	/// <summary>Currently registered session-event subscriber channels across all keys.</summary>
+	public int SessionSubscriberCount => _sessionSubscribers.Values.Sum(static subs => subs.Count);
+
+	/// <summary>Currently registered auth-challenge subscriber channels across all keys.</summary>
+	public int AuthSubscriberCount => _authSubscribers.Values.Sum(static subs => subs.Count);
+
 	public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload)
 	{
 		_subscribers.TryGetValue("*", out var globalSubs);

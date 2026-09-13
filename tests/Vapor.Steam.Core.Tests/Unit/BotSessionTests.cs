@@ -477,8 +477,10 @@ public class BotSessionTests : IDisposable
 		// Trigger state change by disconnecting
 		_ = session.DisconnectAsync(CancellationToken.None);
 
-		await Task.Delay(100);
-		await collectTask.WaitAsync(TimeSpan.FromSeconds(1));
+		// No fixed sleep: under CI load the disconnect command (which itself waits
+		// 100ms internally before publishing the state change) can take longer than
+		// a small budget to reach the channel — wait on the collector directly.
+		await collectTask.WaitAsync(TimeSpan.FromSeconds(5));
 
 		// Assert
 		// At minimum, we should have received state change events
