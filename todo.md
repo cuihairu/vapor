@@ -228,7 +228,7 @@
 | P4 插件系统 | Week 8-12 | ✅ 100% | 基础设施 + MobileAuthenticator + Monitoring 官方插件已完成 |
 | GA 收口 | Week 10-12 | ✅ 100% | Docker/compose/可观测性/E2E/发布流水线/部署与排障手册/OpenAPI 完整化/追踪与 Redis 缓存均已就绪 |
 | P5 规模化运营 | Week 13-16 | ✅ 完成 | 账户农场编排 + 通知/自动化闭环 + 质量与协议韧性（见第 10 节） |
-| P6 功能纵深 | Week 17+ | 📋 已立项 | 卡牌 farming 闭环 + 交易与确认闭环 + 互操作与认领（见第 11 节，对标矩阵 `docs/feature-matrix.md`） |
+| P6 功能纵深 | Week 17+ | ✅ 完成 | P6-1 farming / P6-2 交易确认 / P6-3 互操作认领全部落地；P6-4 剩两项明确后置（挂单创建 ToS 灰区、成就管理需求弱）（见第 11 节，对标矩阵 `docs/feature-matrix.md`） |
 
 ---
 
@@ -253,7 +253,7 @@
 7. ~~横向: Agent 单测与集成测试、E2E 测试（控制面 + Agent + SQLite + 模拟 Steam 依赖）~~（已完成：`Vapor.Agent.Tests` 41 个 + `Vapor.E2E.Tests` 5 个）；**剩余: 自动发布流水线**。
 8. ~~横向: 生产部署指南、故障排查手册、OpenAPI 完整化、自动发布流水线与回滚~~（全部完成：`docs/production.md` + `docs/troubleshooting.md` + OpenAPI 22 端点注解 + release workflow 补齐 GHCR 镜像发布与打包文档）。
 9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: ~~**方向 A 账户农场编排**~~（✅ 已完成）→ ~~**方向 C 通知与自动化闭环**~~（✅ 已完成）→ ~~**方向 B 质量与协议韧性**~~（✅ 已完成：统计修正 + contract tests 抓到真实上游漂移 + WS 协议 replay tests + ISteamTransport 协议适配层 + 覆盖率管道修复与 74.3% 真实基线）。**P5 三个方向全部完成。**
-10. P6 推进（2026-09-12 立项）: **Steam 功能纵深**——实施顺序 P6-1 卡牌 farming 闭环 → P6-2 交易与确认闭环（前两组均为 GA 出口条件 #2 未闭环项）→ P6-3 互操作与认领；对标矩阵与取舍依据见 `docs/feature-matrix.md`，完整清单见第 11 节。
+10. ~~P6 推进（2026-09-12 立项）~~（✅ 2026-09-13 完成：P6-1 卡牌 farming 闭环 → P6-2 交易与确认闭环 → P6-3 互操作与认领全部落地，GA 出口条件 #2 闭环；P6-4 仅剩两项明确后置（挂单创建/批量撤单 ToS 灰区、成就管理需求弱），对标矩阵已同步勾选 `docs/feature-matrix.md`）。**todo.md 全部计划阶段（P0-P6 + GA 收口横向）至此完成。**
 
 ---
 
@@ -301,7 +301,7 @@
 ### 11.2 P6-2 交易与确认闭环（GA 出口条件，安全底座已备）
 
 - [x] 交易报价读取：incoming/outgoing 报价列表拉取并入 CP（REST 化），复用既有脱敏与审计（✅ 2026-09-12 见下方日志）。
-- [x] 报价接受/拒绝：基于 MobileAuthenticator 既有确认哈希/响应能力；**自动接受必须按账户显式策略开启**（默认人工 SSE 通知，对齐验证码红线）（✅ 2026-09-12/13 人工路径 REST 化 + mobile 确认闭环完成，见下方日志；编排器侧自动策略待 §11.2 ④ loot 之后评估）。
+- [x] 报价接受/拒绝：基于 MobileAuthenticator 既有确认哈希/响应能力；**自动接受必须按账户显式策略开启**（默认人工 SSE 通知，对齐验证码红线）（✅ 2026-09-12/13 人工路径 REST 化 + mobile 确认闭环完成，见下方日志）。**编排器侧自动接受策略评估结论（2026-09-13 收口）**：**不实现**——① 接受报价是资产转移动作，自动决策风险不对称（恶意/钓鱼报价甄别成本远低于误接受损失，且不可逆）；② 人工路径成本已足够低（GET trade-offers → POST accept，accept 后 mobile 确认自动续派，一次调用闭环）；③ 平台的自动化场景（loot、swap）均在发送方，无需接受侧自动化，ASF 的 AcceptGifts 同样标记为高风险 opt-in。若未来需求成立，形态必须为 AccountSpec 显式策略（per-account、partner 白名单、内容过滤、默认关闭、全量审计）——记录于此，暂不立项。
 - [x] 批量确认 action：交易/市场确认批量处理（对标 Watt 批量确认）（✅ 2026-09-13 `confirm_all_confirmations`：identity secret 仅存 agent 侧凭证库、payload 零 secret；`type` 过滤（Steam type 枚举归一化 trade/market/generic）+ `operation` allow/cancel，逐条响应单项失败不中断并如实汇总；CP `POST /v1/accounts/{name}/confirmations/accept-all` 同步端点，审计 `trade_confirmations.accept_all`；1050 测试全过）。
 - [x] 报价发送（loot）：向指定好友转移库存；优先级低于前三项。（✅ 2026-09-13 `loot_inventory` + CP `POST /v1/accounts/{name}/loot`，见下方日志）。
 - [x] 1:1 换卡（STM/TradeMatcher 等价）：依赖报价读取 + 接受闭环（两者已就绪）。（2026-09-13 `find_duplicates` + `swap_duplicates` 动作，`CardSwapMatcher` 纯逻辑：按 (app, class, instance) 分组、excess 只取当前可交易副本；匹配是严格双向互补——我方多余卡须对方一张没有、反之亦然，逐张 1:1 配对（默认上限 25 对）。`swap_duplicates` 默认 dry_run 只出配对方案，`send=true` 才发报价（走既有频控 + `send_trade_offer` 通道），CP `GET /v1/accounts/{name}/duplicates` + `POST /v1/accounts/{name}/swap-offers`（send 时自动补 mobile 确认，同 loot 流程），审计 `inventory.duplicates` / `trade.swap_offer`。1171 测试全过。）
@@ -347,3 +347,4 @@
 > 2026-09-13：P6-2 ② mobile 确认闭环落地（identity_secret 全程不出 agent）：`ICredentialStore` 扩展 `Save/GetIdentitySecretAsync`（FileCredentialStore 加密存储同 shared secret，磁盘密文）；插件新增 `save_identity_secret` 与 `confirm_trade_offer` 复合动作——后者从 agent 侧凭证库读 secret（payload 显式传 secret 一律不收，任务记录零接触），列确认→按 CreatorId 匹配 trade offer id（Steam 接受后确认有数秒延迟，内置轮询 6×250ms 可测）→ allow/cancel；CP accept 端点默认 `auto_confirm`——accept 任务回报 `requires_mobile_confirmation=true` 时自动续派 confirm 任务并审计 `trade_offer.confirm`，响应体 `mobile_confirmation{attempted,confirmed,job_id,error?}` 如实分段报告（确认失败不影响 accept 已成功的事实，200 而非 502）。测试：插件 +10（存储 3 + 确认动作 7，fake client 支持列表队列）、凭证库 +4（往返/密文/缺失/覆盖）、CP +3（自动确认成功/失败/无需确认），总 1016→1033 全过。②全部完成。
 > 2026-09-13：P6-2 ③批量确认落地（对标 Watt 批量确认）：`TradeConfirmation` 提取确认类型并归一化（Steam mobileconf `type` 为整数枚举 1=generic/2=trade/3=market → 小写名称字符串，未知码透传）；插件新增 `confirm_all_confirmations` 复合动作——identity secret 仍只从 agent 侧凭证库读取（payload 零 secret 红线延续），`type` 过滤（all/trade/market）+ `operation`（allow 默认/cancel），逐条响应、单项失败不中断，输出 `{operation,total,succeeded,failed,results[]}` 汇总如实报告；CP 新增同步端点 `POST /v1/accounts/{name}/confirmations/accept-all`（operation/type 校验 400、Finished→200、Failed/Canceled→502、窗口未回报→202+job_id），审计 `trade_confirmations.accept_all`，派发 payload 仅含 operation/type。测试：插件 +11（批量动作 9 + 解析 type 归一化 2）、CP +6（成功含 payload 零 secret 断言/type 过滤透传/502/400×2/202），总 1033→1050 全过。
 > 2026-09-13：P6-2 ④报价发送（loot）落地（对标 ASF/Watt loot）：`loot_inventory` 复合动作——扫描指定 app 库存（`app_ids` 默认 [753] 社区库存：卡牌/宝珠等挂机主要产出；753→context 6、其余→context 2）分页拉取（每 app 上限 50 页、最多 5 个 app），只保留当下可交易物品（Tradable 且无未来 TradabilityDate），一次拉取即完成所有权事实（不再重复 send 的二次校验），目标 `partner_steam_id` 或带 token 的 `trade_url`（可发非好友），经 TradeRateLimiter 限流后整单发出；输出 `{trade_offer_id,partner_steam_id,item_count,apps_scanned,requires_mobile_confirmation}`，无可交易物品如实失败。CP 端点 `POST /v1/accounts/{name}/loot`：partner 校验（两者缺一 400）、loot output 的 `requires_mobile_confirmation=true` 时自动续派 confirm_trade_offer（offer id 取自 loot output，identity secret 仍不出 agent），审计 `account.loot` + `trade_offer.confirm`；三态 200/202/502 与 accept/decline 对称。测试：动作 +15（过滤/默认 app/覆盖/分页/确认标志/空库存/失败/上限/无 web handler）、CP +5（自动确认含 payload 断言/无需确认/502/400/202），总 1050→1070 全过。P6-2 主体完成。
+> 2026-09-13：**P6 收口（P0–P6 全计划阶段完成）**。收口时点基线：`dotnet build` 0 警告 0 错误，**1185 个测试全部通过**（Steam.Core 700 / ControlPlane 205 / Plugins.Core 85 / MobileAuthenticator 65 / Agent 49 / MarketWatch 32 / Monitoring 21 / Protocol 22 / E2E 6）。① P6-1/P6-2/P6-3 全部落地（含 Dashboard 只读面板、QR 扫码登录两个 P6-4 项）；GA 出口条件 #2（库存/交易、基础 farming）闭环，五条 GA Exit Criteria 全部达成。② P6-4 剩余两项维持后置：挂单创建/批量撤单（ToS 灰区 + 定价前置）、成就解锁/管理（需求弱）。③ 编排器侧自动接受策略评估完毕，结论不实现（决策记录见 §11.2 ②）。④ 文档同步：`docs/feature-matrix.md` 矩阵表与 P6 勾选清单全部更新（REST 22→37 端点等）、CHANGELOG Unreleased 补齐 P4/P5/P6 条目、production.md 配置矩阵补 `Vapor_RECONCILE_FARM_REFRESH_SECONDS`、TESTING.md 修正 ControlPlane 计数笔误（204→205）。

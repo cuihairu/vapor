@@ -119,7 +119,7 @@ tests/
 | SteamTotpTests | 13 | Steam TOTP(本地 2FA 码生成) |
 | SteamTimeSynchronizerTests | 5 | Steam 服务器时间同步 |
 
-### ControlPlane(204 个测试)
+### ControlPlane(205 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|

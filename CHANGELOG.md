@@ -43,6 +43,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with cache key helpers and freshness markers.
 - Cache layer: `IVaporCache` + `MemoryVaporCache` (per-entry TTL, LRU eviction,
   hit/miss counters, single-flight factory deduplication, injectable clock).
+- Redis cache backend (`RedisVaporCache`, enabled via `VAPOR_REDIS`): JSON
+  envelope with absolute fresh/stale timestamps, cross-instance single-flight
+  lock (SET NX PX + token release), SCAN-based prefix invalidation.
+- Plugin system (P4, `Vapor.Plugins.Core`): `plugin.json` manifest discovery,
+  collectible `PluginLoadContext` isolation with unload verification, SemVer
+  compatibility policy, trust/permission model (minimum-trust gate,
+  least-privilege capability stripping, `LoadedPlugin.GrantedPermissions`),
+  event subscription (`IEventPlugin` + `PluginEventDispatcher`), typed
+  configuration extensions with env overrides; sample plugin and
+  `docs/plugins.md` guide.
+- Official plugins:
+  - MobileAuthenticator: TOTP generation, confirmation listing/responding,
+    `save_shared_secret` / `save_identity_secret`, `confirm_trade_offer`
+    (creator matching with bounded retry) and `confirm_all_confirmations`
+    (type filter + allow/cancel, per-item failure isolation).
+  - Monitoring: Prometheus text exposition endpoint + `get_metrics` action
+    covering action/session/cache/runtime metrics; Grafana dashboard template.
+  - MarketWatch: price-threshold and free-game (`kind=free` edge detection)
+    watches with webhook alerts (`market_watch_add/remove/list`).
+- Account orchestration (P5): `/v1/accounts` resource CRUD + lifecycle
+  (enable/disable/remove), `DesiredStateReconciler` driving
+  `offline`/`online`/`idle`/`farm` desired states with login-failure cooldowns,
+  agent-loss rebalancing and dry-run mode; aggregate account views, per-account
+  job/session filters, reconcile metrics + audit records.
+- Card farming (P6-1): `get_card_drops` action parsing the badge page
+  (three-way fixture cross-validation), `farm` desired state with a CP-side
+  farm queue (play next app by remaining drops, auto-rotate on completion),
+  and idle-exclusion-list semantics in farm mode.
+- Trading & confirmation loop (P6-2): `get_trade_offers` with synchronous REST
+  bridging, accept/decline endpoints with automatic follow-up mobile
+  confirmation, batch confirmation (`confirm_all_confirmations` + CP
+  `/confirmations/accept-all`), `loot_inventory` (scannable inventory →
+  tradable filter → rate-limited send) and 1:1 duplicate card swap
+  (`find_duplicates` / `swap_duplicates` with dry-run default). Account-scoped
+  endpoints: `/trade-offers`, `/confirmations/accept-all`, `/loot`,
+  `/duplicates`, `/swap-offers`, `/inventory`.
+- Interop & claiming (P6-3): `add_license` free-license claiming (app IDs via
+  client protocol, sub IDs via store checkout), MarketWatch free-game alerts
+  forming a watch→claim loop, inventory REST with multi-app scan +
+  tradable/marketable filters, and `Vapor.Agent import-mafile` CLI importing
+  SDA / steamguard-cli `.maFile` secrets into the encrypted credential store
+  (agent-local by design: maFile contents never transit control-plane tasks).
+- QR code sign-in (P6-4): `qr_login` login-task flag using SteamKit2 QR
+  challenge + polling; challenge URL surfaces via session events with
+  automatic rotation and challenge clearing.
+- Read-only web dashboard (`wwwroot/dashboard.html`): stat cards, accounts,
+  agents, sessions, jobs and audit log with dual SSE streams + polling
+  fallback; write-verb contract tests guard its GET-only surface.
+- Notifications & automation (P5): `INotificationSink` + HMAC-signed webhook
+  sink with exponential-backoff retries and rule-based filtering
+  (`Vapor_WEBHOOK_NOTIFICATIONS_*`); `TwoFactorAutoResponder` answering 2FA
+  challenges locally from stored shared secrets (opt-in,
+  `AGENT_2FA_AUTO_SUBMIT=true`, Steam server-time sync); recurring jobs via
+  `schedule` (interval or 5-field cron) with missed/overlap policies.
+- Protocol resilience (P5): `ISteamTransport` adapter layer isolating SteamKit2
+  behind a protocol-agnostic surface (SteamResult mirrors wire EResult codes);
+  recorded contract tests for Steam Web API responses (caught and fixed the
+  market search render contract drift); WS tunnel protocol replay tests
+  (serialization snapshots + forward compatibility).
+- Observability: OpenTelemetry tracing with W3C traceparent propagated across
+  the agent tunnel; dispatch-failure, notification, schedule-trigger and
+  reconcile metrics; Prometheus alert rules.
+- Terminal dispatch state: undispatchable tasks fail permanently after
+  `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` delayed retries instead of looping
+  forever; task `output` is persisted end-to-end (agent → store → REST).
+
+### Fixed
+
+- Flaky `SessionManagerTests.SubscribeAllEvents_ReceivesEventsFromSessions` timeout.
+- `TokenRefreshTests` async-without-await warnings breaking strict builds on .NET 8 SDK.
+- Market search render contract drift (new `results[]`/`total_count` shape
+  replaced `listinginfo`/`total_rowcount`), which made listing queries return
+  null silently; parsing now prefers the new shape and falls back to the legacy
+  one, and `MarketListing` gained aggregated `Name`/`HashName`/`SellListings`.
+- Coverage pipeline: misplaced `MaxCpuCount` runsettings token silently
+  disabling collection, stale-report cleanup ordering, and cross-report
+  filename-prefix normalization for merged coverage totals.
 
 ### Fixed
 
@@ -64,6 +141,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Key rotation CLI (`tools/Vapor.KeyRotation`): re-encrypts the credential store
   between keys with `base64:`/`file:`/`env:` specs, `--dry-run`, and abort-on-failure safety.
 - Explicit-key crypto APIs (`EncryptWithKey`/`DecryptWithKey`) for rotation tooling.
+- Shared secrets (2FA TOTP) and identity secrets (confirmation signing) stored
+  encrypted in the credential store; identity secrets never leave the agent —
+  control-plane payloads are zero-secret by contract (test-asserted).
+- QR sign-in keeps the request key agent-side; refresh tokens persist only
+  through the existing encrypted store.
+- Audit coverage extended to account lifecycle and orchestrator decisions,
+  trade accept/decline/confirm, batch confirmations, loot, duplicate swaps and
+  inventory reads, all redacted before persistence.
+- Webhook notifications never carry verification codes (bool flag only) and
+  are HMAC-signed with replay-resistant timestamps.
 
 - Ongoing development.
 
