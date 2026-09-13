@@ -44,6 +44,10 @@ public sealed class E2EStack : IAsyncLifetime
 				// terminal state within seconds instead of the production default (10 × 2s).
 				["Vapor_TASK_MAX_DISPATCH_ATTEMPTS"] = "3",
 				["Vapor_TASK_DISPATCH_RETRY_DELAY_MS"] = "200",
+				// Recover orphaned tasks quickly so an agent disconnect mid-task (WS drop
+				// under CI load) requeues and retries within the test deadline instead of
+				// the production default (300s lease > 90s deadline = unrecoverable).
+				["Vapor_TASK_LEASE_SECONDS"] = "15",
 				// Account orchestration: aggressive timing so orchestration tests observe
 				// reconciliation within seconds instead of the production default (15s interval).
 				["Vapor_RECONCILE_INTERVAL_SECONDS"] = "2",
