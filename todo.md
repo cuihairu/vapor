@@ -304,7 +304,7 @@
 - [x] 报价接受/拒绝：基于 MobileAuthenticator 既有确认哈希/响应能力；**自动接受必须按账户显式策略开启**（默认人工 SSE 通知，对齐验证码红线）（✅ 2026-09-12/13 人工路径 REST 化 + mobile 确认闭环完成，见下方日志；编排器侧自动策略待 §11.2 ④ loot 之后评估）。
 - [x] 批量确认 action：交易/市场确认批量处理（对标 Watt 批量确认）（✅ 2026-09-13 `confirm_all_confirmations`：identity secret 仅存 agent 侧凭证库、payload 零 secret；`type` 过滤（Steam type 枚举归一化 trade/market/generic）+ `operation` allow/cancel，逐条响应单项失败不中断并如实汇总；CP `POST /v1/accounts/{name}/confirmations/accept-all` 同步端点，审计 `trade_confirmations.accept_all`；1050 测试全过）。
 - [x] 报价发送（loot）：向指定好友转移库存；优先级低于前三项。（✅ 2026-09-13 `loot_inventory` + CP `POST /v1/accounts/{name}/loot`，见下方日志）。
-- [ ] （后置）1:1 换卡（STM/TradeMatcher 等价）：依赖报价读取 + 接受闭环（两者已就绪，可随时启动）。
+- [x] 1:1 换卡（STM/TradeMatcher 等价）：依赖报价读取 + 接受闭环（两者已就绪）。（2026-09-13 `find_duplicates` + `swap_duplicates` 动作，`CardSwapMatcher` 纯逻辑：按 (app, class, instance) 分组、excess 只取当前可交易副本；匹配是严格双向互补——我方多余卡须对方一张没有、反之亦然，逐张 1:1 配对（默认上限 25 对）。`swap_duplicates` 默认 dry_run 只出配对方案，`send=true` 才发报价（走既有频控 + `send_trade_offer` 通道），CP `GET /v1/accounts/{name}/duplicates` + `POST /v1/accounts/{name}/swap-offers`（send 时自动补 mobile 确认，同 loot 流程），审计 `inventory.duplicates` / `trade.swap_offer`。1171 测试全过。）
 
 ### 11.3 P6-3 互操作与认领（降低迁移/使用成本）
 

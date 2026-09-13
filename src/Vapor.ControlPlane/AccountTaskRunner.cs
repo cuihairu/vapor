@@ -21,6 +21,8 @@ internal static class AccountTaskRunner
 	internal const string LootInventoryAction = "loot_inventory";
 	internal const string AddLicenseAction = "add_license";
 	internal const string GetInventoryAction = "get_inventory";
+	internal const string FindDuplicatesAction = "find_duplicates";
+	internal const string SwapDuplicatesAction = "swap_duplicates";
 
 	/// <summary>Lists an account's trade offers via the get_trade_offers action.</summary>
 	public static Task<TaskRunResult> ReadTradeOffersAsync(

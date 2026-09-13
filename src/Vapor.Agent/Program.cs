@@ -89,6 +89,11 @@ var serviceCollection = new ServiceCollection()
 	.AddSingleton<LootInventoryAction>(p => new LootInventoryAction(
 		p.GetRequiredService<ILogger<LootInventoryAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
+	.AddSingleton<SwapDuplicatesAction>(p => new SwapDuplicatesAction(
+		p.GetRequiredService<ILogger<SwapDuplicatesAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
+	.AddSingleton<FindDuplicatesAction>(p => new FindDuplicatesAction(
+		p.GetRequiredService<ILogger<FindDuplicatesAction>>()))
 	.AddSingleton<AddLicenseAction>(p => new AddLicenseAction(
 		p.GetRequiredService<ILogger<AddLicenseAction>>()));
 
@@ -172,6 +177,8 @@ actionRegistry.Register(serviceProvider.GetRequiredService<AcceptTradeOfferActio
 actionRegistry.Register(serviceProvider.GetRequiredService<DeclineTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CancelTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<LootInventoryAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<FindDuplicatesAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<SwapDuplicatesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<AddLicenseAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SearchGamesAction>());

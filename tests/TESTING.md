@@ -8,11 +8,11 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (661 tests)
+├── Vapor.Steam.Core.Tests/               (693 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (192 tests)
+├── Vapor.ControlPlane.Tests/             (200 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出基准
 ├── Vapor.Plugins.Core.Tests/             (85 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (65 tests)
@@ -28,8 +28,8 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 661 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描 |
-| Vapor.ControlPlane.Tests | 192 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取 |
+| Vapor.Steam.Core.Tests | 693 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配 |
+| Vapor.ControlPlane.Tests | 200 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价 |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 65 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 |
 | Vapor.Agent.Tests | 47 | 重连退避策略、任务执行器、WS URI 构造、maFile 离线导入 CLI |
@@ -37,13 +37,13 @@ tests/
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 22 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **1131** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **1171** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
 ## 测试分类
 
-### Steam.Core(661 个测试)
+### Steam.Core(693 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -57,6 +57,8 @@ tests/
 | ActionRegistryTests | 16 | 注册表(执行观察者 4 个另计) |
 | SendTradeOffer / AcceptTradeOffer / DeclineTradeOffer / CancelTradeOffer ActionTests | 12 | 交易动作 |
 | LootInventoryActionTests | 15 | loot(可交易过滤/默认社区 app 753-6/app_ids 覆盖与 game context 2/分页/mobile 确认标志/空库存/失败语义/上限) |
+| FindDuplicatesActionTests | 8 | 重复卡分析(keep 语义与非法值/untradable 不计/excess asset ids/空结果成功/库存失败/无 SteamID/无 web handler/上限) |
+| SwapDuplicatesActionTests | 12 | 1:1 换卡报价(默认 dry_run 不发送/send=true 对称报价与 mobile 标志/自换拒绝/无互补失败/对方库存失败标明 partner 侧/双侧分页/参数范围/trade_url/失败语义) |
 | GetInventoryActionTests | 12 | 库存读取(steam_id 缺省 cookie 反解/app_ids 多 app 扫描 + loot context 规则/tradable 与 marketable 过滤/上限/JSON 往返/单 app 旧输出兼容) |
 | GetCardDropsActionTests | 10 | 卡牌剩余掉落查询(排序/错误/steam_id 缺省 cookie 反解/缓存 SWR/force_refresh) |
 | GetTradeOffersActionTests | 8 | 报价列表读取(active_only 透传/输出映射/失败语义) |
@@ -83,6 +85,7 @@ tests/
 | TradeActionValidationTests | 15 | 交易动作校验 |
 | TradeAssetValidatorTests | 13 | 资产校验 |
 | TradeRateLimiterTests | 10 | 频控 |
+| CardSwapMatcherTests | 9 | 重复分组与 1:1 互补匹配(keep/excess 只取可交易/排序确定性/双向互补条件/单向不配/maxSwaps 截断/context 规则) |
 | TradeUrlParamsTests / TradeUrlParamsExtendedTests | 7 | 报价 URL 参数 |
 
 #### 安全与凭据

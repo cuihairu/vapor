@@ -52,7 +52,7 @@
 | 交易报价读取 | ✅ | ✅ | ✅ | ✅ | ❌(仅 TradeSafetyLayer 校验 MVP) |
 | 报价接受 / 拒绝 | ✅ | ✅ | ✅ | ✅ | ❌ |
 | 报价发送(loot / 转移) | ✅ | ➖ | ➖ | ➖ | ❌ |
-| 1:1 自动换卡(STM / TradeMatcher) | ✅ | ➖ | ➖ | ➖ | ❌ |
+| 1:1 自动换卡(STM / TradeMatcher) | ✅ | ➖ | ➖ | ➖ | ✅(2026-09-13 `swap_duplicates`,严格双向互补配对 + dry_run 默认) |
 | 批量确认 | ✅ | ✅ | ✅ | ✅ | ❌ |
 
 ### 3.4 库存
@@ -109,7 +109,7 @@
 - [ ] **报价接受/拒绝**:基于 MobileAuthenticator 既有确认哈希/响应能力;**自动接受必须按账户显式策略开启**(默认人工,对齐验证码红线)。
 - [ ] **批量确认 action**:交易/市场确认批量处理(对标 Watt 批量确认)。
 - [ ] **报价发送(loot)**:向指定好友转移库存;优先级低于前两项。
-- [ ] (后置)**1:1 换卡(STM/TradeMatcher 等价)**:依赖报价读取+接受闭环。
+- [x] **1:1 换卡(STM/TradeMatcher 等价)**:已落地(2026-09-13,`find_duplicates` + `swap_duplicates` + CP duplicates/swap-offers 端点,详见 todo §11.2)。
 
 ### P6-3 互操作与认领(降低迁移/使用成本)
 

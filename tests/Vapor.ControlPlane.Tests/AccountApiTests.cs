@@ -1236,6 +1236,239 @@ public sealed class AccountApiTests
 		}
 	}
 
+	[Fact]
+	public async Task Duplicates_AppIdsAndKeep_DispatchAndReturnFinished()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "find_duplicates", success: true,
+			new Dictionary<string, object?>
+			{
+				["steam_id"] = "76561198000000042",
+				["keep"] = 1,
+				["excess_count"] = 1,
+				["duplicates"] = new List<object>
+				{
+					new Dictionary<string, object?>
+					{
+						["app_id"] = 753u, ["class_id"] = 100UL, ["excess_count"] = 1, ["excess_asset_ids"] = new List<object> { 2UL }
+					}
+				}
+			},
+			null, cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/duplicates?appIds=753,730&keep=2");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement duplicates = doc.RootElement.GetProperty("duplicates");
+		Assert.Equal(1, duplicates.GetProperty("excess_count").GetInt32());
+		Assert.Equal(1, duplicates.GetProperty("duplicates").GetArrayLength());
+
+		string jobId = doc.RootElement.GetProperty("job_id").GetString()!;
+		Assert.Equal("[753,730]", await PayloadValueFromTask(store, jobId, 0, "app_ids"));
+		Assert.Equal("2", await PayloadValueFromTask(store, jobId, 0, "keep"));
+	}
+
+	[Fact]
+	public async Task Duplicates_InvalidKeep_Returns400()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/duplicates?keep=0");
+
+		Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("keep", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Duplicates_AgentFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "find_duplicates", success: false, null,
+			"inventory is private", cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/duplicates");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("inventory is private", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task SwapOffers_DryRunDefault_DispatchesWithoutSending()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "swap_duplicates", success: true,
+			new Dictionary<string, object?>
+			{
+				["partner_steam_id"] = "76561198000000100",
+				["dry_run"] = true,
+				["matches"] = new List<object>(),
+				["give_count"] = 1,
+				["receive_count"] = 1
+			},
+			null, cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/swap-offers",
+			new { partnerSteamId = "76561198000000100", keep = 2, maxSwaps = 30, message = "swap?" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Equal(1, doc.RootElement.GetProperty("result").GetProperty("give_count").GetInt32());
+		Assert.False(doc.RootElement.TryGetProperty("mobile_confirmation", out var mobile) && mobile.ValueKind != JsonValueKind.Null);
+
+		// No send flag reaches the task: the dry run is the default and the options ride along.
+		string jobId = doc.RootElement.GetProperty("job_id").GetString()!;
+		Assert.Equal("76561198000000100", await PayloadValueFromTask(store, jobId, 0, "partner_steam_id"));
+		Assert.Equal("2", await PayloadValueFromTask(store, jobId, 0, "keep"));
+		Assert.Equal("30", await PayloadValueFromTask(store, jobId, 0, "max_swaps"));
+		Assert.Equal("swap?", await PayloadValueFromTask(store, jobId, 0, "message"));
+		Assert.Equal("", await PayloadValueFromTask(store, jobId, 0, "send"));
+	}
+
+	[Fact]
+	public async Task SwapOffers_SendTrue_AutoConfirms()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToStepsAsync(store,
+		[
+			new FakeAgentStep("swap_duplicates", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "887766554433",
+					["partner_steam_id"] = "76561198000000100",
+					["give_count"] = 2,
+					["receive_count"] = 2,
+					["dry_run"] = false,
+					["requires_mobile_confirmation"] = true
+				}, null),
+			new FakeAgentStep("confirm_trade_offer", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "887766554433",
+					["confirmed"] = true
+				}, null)
+		], cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/swap-offers",
+			new { partnerSteamId = "76561198000000100", send = true });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Equal("887766554433", doc.RootElement.GetProperty("result").GetProperty("trade_offer_id").GetString());
+		JsonElement confirm = doc.RootElement.GetProperty("mobile_confirmation");
+		Assert.True(confirm.GetProperty("attempted").GetBoolean());
+		Assert.True(confirm.GetProperty("confirmed").GetBoolean());
+
+		string jobId = doc.RootElement.GetProperty("job_id").GetString()!;
+		Assert.Equal("true", await PayloadValueFromTask(store, jobId, 0, "send"));
+	}
+
+	[Fact]
+	public async Task SwapOffers_MissingPartner_Returns400()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/swap-offers", new { });
+
+		Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("partner_steam_id", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task SwapOffers_AgentFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "swap_duplicates", success: false, null,
+			"no complementary duplicates found", cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/swap-offers",
+			new { partnerSteamId = "76561198000000100" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("no complementary duplicates", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task SwapOffers_StillPending_Returns202()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.PostAsJsonAsync(
+				"/v1/accounts/alice/swap-offers",
+				new { partnerSteamId = "76561198000000100" });
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
 	/// <summary>Reads one payload value from the n-th task of a job (normalized to string).</summary>
 	private static async Task<string> PayloadValueFromTask(IJobStore store, string jobId, int taskIndex, string key)
 	{
