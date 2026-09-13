@@ -467,3 +467,250 @@ public sealed class SaveSharedSecretAction : IAction
 		});
 	}
 }
+
+/// <summary>
+/// "save_identity_secret": stores the account's Steam mobile authenticator identity
+/// secret (base64) in the agent's encrypted credential store so trade/market
+/// confirmations can be answered locally. The secret never leaves the agent —
+/// confirmation tasks are dispatched without it and the store is read at execution time.
+/// Payload: identity_secret (string, base64).
+/// </summary>
+public sealed class SaveIdentitySecretAction : IAction
+{
+	private readonly ILogger<SaveIdentitySecretAction> _logger;
+	private readonly ICredentialStore? _credentialStore;
+
+	public SaveIdentitySecretAction(ILogger<SaveIdentitySecretAction> logger, ICredentialStore? credentialStore = null)
+	{
+		_logger = logger;
+		_credentialStore = credentialStore;
+	}
+
+	public string Name => "save_identity_secret";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Store the account's mobile authenticator identity secret for local trade confirmation signing",
+		RequiresLogin: false,
+		TimeoutSeconds: 10);
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		if (_credentialStore is null)
+		{
+			return new ActionResult(false, "credential store is not available to this plugin", null);
+		}
+
+		var identitySecret = PayloadReader.GetString(payload, "identity_secret") ?? PayloadReader.GetString(payload, "identitySecret");
+		if (string.IsNullOrWhiteSpace(identitySecret))
+		{
+			return new ActionResult(false, "identity_secret is required", null);
+		}
+
+		try
+		{
+			await _credentialStore.SaveIdentitySecretAsync(session.AccountName, identitySecret, cancellationToken).ConfigureAwait(false);
+		}
+		catch (ArgumentException ex)
+		{
+			return new ActionResult(false, ex.Message, null);
+		}
+
+		_logger.LogInformation("Stored identity secret for {AccountName}", session.AccountName);
+		return new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["account"] = session.AccountName,
+			["stored"] = true
+		});
+	}
+}
+
+/// <summary>
+/// "confirm_trade_offer": completes the mobile confirmation step of a trade offer using
+/// the identity secret stored in the agent's credential store. Lists pending confirmations,
+/// matches the one whose creator id equals the trade offer id (retrying briefly — Steam
+/// lags a few seconds between accepting an offer and publishing its confirmation), and
+/// responds with the requested operation. The identity secret is never accepted through
+/// the payload and never appears in task records; only the credential store is consulted.
+/// </summary>
+public sealed class ConfirmTradeOfferAction : IAction
+{
+	// Steam publishes a trade confirmation a few seconds after the offer is accepted;
+	// poll a few times before giving up. Internal-static so tests can shrink them.
+	internal static TimeSpan MatchPollInterval = TimeSpan.FromMilliseconds(250);
+	internal static int MatchPollAttempts = 6;
+
+	private readonly ILogger<ConfirmTradeOfferAction> _logger;
+	private readonly ICredentialStore? _credentialStore;
+	private readonly Func<BotSession, IMobileConfirmationClient> _clientFactory;
+
+	public ConfirmTradeOfferAction(ILogger<ConfirmTradeOfferAction> logger, ICredentialStore? credentialStore, SteamTimeSynchronizer timeSynchronizer)
+	{
+		_logger = logger;
+		_credentialStore = credentialStore;
+		_clientFactory = session => new MobileConfirmationClient(session.SteamWebHandler!, timeSynchronizer, logger);
+	}
+
+	// Constructor for testing with a custom client factory
+	internal ConfirmTradeOfferAction(
+		ILogger<ConfirmTradeOfferAction> logger,
+		ICredentialStore? credentialStore,
+		Func<BotSession, IMobileConfirmationClient> clientFactory)
+	{
+		_logger = logger;
+		_credentialStore = credentialStore;
+		_clientFactory = clientFactory;
+	}
+
+	public string Name => "confirm_trade_offer";
+
+	public ActionMetadata Metadata => new(
+		Name,
+		"Approve or cancel the pending mobile confirmation of a trade offer (uses the stored identity secret)",
+		RequiresLogin: true,
+		TimeoutSeconds: 60);
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		if (!TryGetUInt64(payload, "trade_offer_id", out var tradeOfferId) || tradeOfferId == 0)
+		{
+			return new ActionResult(false, "trade_offer_id is required and must be a positive integer", null);
+		}
+
+		var operationText = PayloadReader.GetString(payload, "operation") ?? "allow";
+		var operation = operationText.Equals("cancel", StringComparison.OrdinalIgnoreCase)
+			? ConfirmationOperation.Cancel
+			: operationText.Equals("allow", StringComparison.OrdinalIgnoreCase)
+				? ConfirmationOperation.Allow
+				: (ConfirmationOperation?)null;
+
+		if (operation is null)
+		{
+			return new ActionResult(false, "operation must be 'allow' or 'cancel'", null);
+		}
+
+		if (_credentialStore is null)
+		{
+			return new ActionResult(false, "credential store is not available to this plugin", null);
+		}
+
+		if (session.SteamWebHandler is null)
+		{
+			return new ActionResult(false, "Steam web handler not available", null);
+		}
+
+		string? identitySecret = await _credentialStore.GetIdentitySecretAsync(session.AccountName, cancellationToken).ConfigureAwait(false);
+		if (string.IsNullOrWhiteSpace(identitySecret))
+		{
+			return new ActionResult(false, $"no identity secret is stored for '{session.AccountName}'; dispatch save_identity_secret first (the secret stays agent-side)", null);
+		}
+
+		var client = _clientFactory(session);
+		TradeConfirmation? match = null;
+
+		for (int attempt = 0; attempt < MatchPollAttempts && match is null; attempt++)
+		{
+			if (attempt > 0)
+			{
+				await Task.Delay(MatchPollInterval, cancellationToken).ConfigureAwait(false);
+			}
+
+			MobileConfirmationListResult listing;
+			try
+			{
+				listing = await client.GetConfirmationsAsync(identitySecret, cancellationToken).ConfigureAwait(false);
+			}
+			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+			{
+				return new ActionResult(false, "canceled", null);
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Failed to list trade confirmations for {AccountName}", session.AccountName);
+				return new ActionResult(false, ex.Message, null);
+			}
+
+			if (!listing.Success)
+			{
+				return new ActionResult(false, listing.Error ?? "failed to list trade confirmations", null);
+			}
+
+			match = listing.Confirmations?.FirstOrDefault(c => c.CreatorId == tradeOfferId);
+		}
+
+		if (match is null)
+		{
+			return new ActionResult(false, $"no pending mobile confirmation for trade offer {tradeOfferId} (it may have expired, already been handled, or not surfaced yet)", null);
+		}
+
+		MobileConfirmationResult response;
+		try
+		{
+			response = await client.RespondAsync(identitySecret, match.Id, match.Nonce, operation.Value, cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			return new ActionResult(false, "canceled", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Failed to respond to confirmation {ConfirmationId} for {AccountName}", match.Id, session.AccountName);
+			return new ActionResult(false, ex.Message, null);
+		}
+
+		if (!response.Success)
+		{
+			return new ActionResult(false, response.Error ?? "failed to respond to the confirmation", null);
+		}
+
+		_logger.LogInformation(
+			"Confirmation {ConfirmationId} {Operation} for trade offer {TradeOfferId} ({AccountName})",
+			match.Id, operation.Value == ConfirmationOperation.Allow ? "allowed" : "canceled", tradeOfferId, session.AccountName);
+
+		return new ActionResult(true, null, new Dictionary<string, object?>
+		{
+			["trade_offer_id"] = tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			["confirmation_id"] = match.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+			["operation"] = operation.Value == ConfirmationOperation.Allow ? "allow" : "cancel",
+			["confirmed"] = operation.Value == ConfirmationOperation.Allow
+		});
+	}
+
+	private static bool TryGetUInt64(IReadOnlyDictionary<string, object?> payload, string key, out ulong value)
+	{
+		value = 0;
+
+		if (!PayloadReader.TryGetValue(payload, key, out var raw) || raw is null)
+		{
+			return false;
+		}
+
+		switch (raw)
+		{
+			case ulong u:
+				value = u;
+				return true;
+			case long l when l > 0:
+				value = (ulong)l;
+				return true;
+			case int i when i > 0:
+				value = (ulong)i;
+				return true;
+			case double d when d > 0 && d % 1 == 0:
+				value = (ulong)d;
+				return true;
+			case JsonElement { ValueKind: JsonValueKind.Number } e:
+				return e.TryGetUInt64(out value);
+			case string s:
+				return ulong.TryParse(s, out value);
+			default:
+				return false;
+		}
+	}
+}

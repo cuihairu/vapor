@@ -233,6 +233,52 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		}
 	}
 
+	public async Task SaveIdentitySecretAsync(string accountName, string identitySecret, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(accountName);
+		ArgumentException.ThrowIfNullOrEmpty(identitySecret);
+
+		await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+		await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			if (!_credentials.TryGetValue(accountName, out var creds))
+			{
+				creds = new AccountCredentials();
+				_credentials[accountName] = creds;
+			}
+
+			creds.IdentitySecret = identitySecret.Trim();
+
+			await SaveToFileAsync(cancellationToken).ConfigureAwait(false);
+			_logger.LogDebug("Saved identity secret for {AccountName}", accountName);
+		}
+		finally
+		{
+			_lock.Release();
+		}
+	}
+
+	public async Task<string?> GetIdentitySecretAsync(string accountName, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(accountName);
+
+		await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+		await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			return _credentials.TryGetValue(accountName, out var creds)
+				? creds.IdentitySecret
+				: null;
+		}
+		finally
+		{
+			_lock.Release();
+		}
+	}
+
 	public void Dispose()
 	{
 		if (_disposed)
@@ -358,7 +404,8 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 				RefreshTokenUpdatedAt = creds.RefreshTokenUpdatedAt,
 				AccessToken = await DecryptValueAsync(creds.AccessToken, accountName, nameof(creds.AccessToken), cancellationToken).ConfigureAwait(false),
 				AccessTokenExpiresAt = creds.AccessTokenExpiresAt,
-				SharedSecret = await DecryptValueAsync(creds.SharedSecret, accountName, nameof(creds.SharedSecret), cancellationToken).ConfigureAwait(false)
+				SharedSecret = await DecryptValueAsync(creds.SharedSecret, accountName, nameof(creds.SharedSecret), cancellationToken).ConfigureAwait(false),
+				IdentitySecret = await DecryptValueAsync(creds.IdentitySecret, accountName, nameof(creds.IdentitySecret), cancellationToken).ConfigureAwait(false)
 			};
 		}
 
@@ -398,6 +445,7 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 			string? encryptedRefreshToken = EncryptValue(creds.RefreshToken, accountName, nameof(creds.RefreshToken));
 			string? encryptedAccessToken = EncryptValue(creds.AccessToken, accountName, nameof(creds.AccessToken));
 			string? encryptedSharedSecret = EncryptValue(creds.SharedSecret, accountName, nameof(creds.SharedSecret));
+			string? encryptedIdentitySecret = EncryptValue(creds.IdentitySecret, accountName, nameof(creds.IdentitySecret));
 
 			accounts[accountName] = new AccountCredentials
 			{
@@ -405,7 +453,8 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 				RefreshTokenUpdatedAt = creds.RefreshTokenUpdatedAt,
 				AccessToken = encryptedAccessToken,
 				AccessTokenExpiresAt = creds.AccessTokenExpiresAt,
-				SharedSecret = encryptedSharedSecret
+				SharedSecret = encryptedSharedSecret,
+				IdentitySecret = encryptedIdentitySecret
 			};
 		}
 
@@ -526,5 +575,6 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		public string? AccessToken { get; set; }
 		public DateTimeOffset? AccessTokenExpiresAt { get; set; }
 		public string? SharedSecret { get; set; }
+		public string? IdentitySecret { get; set; }
 	}
 }

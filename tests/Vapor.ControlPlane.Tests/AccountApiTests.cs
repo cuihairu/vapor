@@ -526,6 +526,131 @@ public sealed class AccountApiTests
 		}
 	}
 
+	[Fact]
+	public async Task AcceptTradeOffer_RequiresConfirmation_AutoConfirms()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToStepsAsync(store,
+		[
+			new FakeAgentStep("accept_trade_offer", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "43591234567890",
+					["requires_mobile_confirmation"] = true
+				}, null),
+			new FakeAgentStep("confirm_trade_offer", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "43591234567890",
+					["confirmation_id"] = "111",
+					["confirmed"] = true
+				}, null)
+		], cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { partnerSteamId = "76561198000000001" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.True(doc.RootElement.GetProperty("result").GetProperty("requires_mobile_confirmation").GetBoolean());
+		JsonElement confirm = doc.RootElement.GetProperty("mobile_confirmation");
+		Assert.True(confirm.GetProperty("attempted").GetBoolean());
+		Assert.True(confirm.GetProperty("confirmed").GetBoolean());
+		Assert.NotEmpty(confirm.GetProperty("job_id").GetString()!);
+	}
+
+	[Fact]
+	public async Task AcceptTradeOffer_ConfirmFails_ReportsErrorButAcceptSucceeded()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToStepsAsync(store,
+		[
+			new FakeAgentStep("accept_trade_offer", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "43591234567890",
+					["requires_mobile_confirmation"] = true
+				}, null),
+			new FakeAgentStep("confirm_trade_offer", false, null, "no identity secret is stored for 'alice'")
+		], cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { partnerSteamId = "76561198000000001" });
+		cts.Cancel();
+
+		// The accept itself succeeded; the confirmation failure is reported honestly
+		// inside mobile_confirmation instead of failing the whole request.
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement confirm = doc.RootElement.GetProperty("mobile_confirmation");
+		Assert.True(confirm.GetProperty("attempted").GetBoolean());
+		Assert.False(confirm.GetProperty("confirmed").GetBoolean());
+		Assert.Contains("identity secret", confirm.GetProperty("error").GetString(), StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task AcceptTradeOffer_NoConfirmationNeeded_SkipsConfirm()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToStepsAsync(store,
+		[
+			new FakeAgentStep("accept_trade_offer", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "43591234567890",
+					["requires_mobile_confirmation"] = false
+				}, null)
+		], cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/43591234567890/accept", new { partnerSteamId = "76561198000000001" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		// mobile_confirmation stays absent (null, dropped by WhenWritingNull serialization).
+		Assert.False(doc.RootElement.TryGetProperty("mobileConfirmation", out _) ||
+					 doc.RootElement.TryGetProperty("mobile_confirmation", out _));
+	}
+
+	/// <summary>Plays the agent side: claims and completes a fixed sequence of tasks, in order.</summary>
+	private sealed record FakeAgentStep(string Action, bool Success, Dictionary<string, object?>? Output, string? Error);
+
+	private static async Task RespondToStepsAsync(IJobStore store, FakeAgentStep[] steps, CancellationToken ct)
+	{
+		int index = 0;
+		while (index < steps.Length && !ct.IsCancellationRequested)
+		{
+			JobTask? claimed = await store.ClaimNextQueuedTask("us-east", ct);
+			if (claimed is not null && claimed.Action == steps[index].Action)
+			{
+				FakeAgentStep step = steps[index];
+				await store.SetTaskResult(
+					new TaskResult(claimed.Id, step.Success, step.Success ? null : step.Error, step.Success ? step.Output : null, DateTimeOffset.UtcNow),
+					ct);
+				index++;
+				continue;
+			}
+
+			await Task.Delay(25, ct);
+		}
+	}
+
 	/// <summary>Plays the agent side: claims the queued get_trade_offers task and reports a result.</summary>
 	private static Task RespondToFirstTradeOffersTaskAsync(IJobStore store, bool success, CancellationToken ct)
 	{

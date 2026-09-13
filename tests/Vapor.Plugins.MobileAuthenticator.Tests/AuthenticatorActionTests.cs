@@ -345,6 +345,212 @@ public class AuthenticatorActionTests
 		Assert.Equal("bad confirmation", result.Error);
 	}
 
+	[Fact]
+	public async Task SaveIdentitySecret_StoresSecretForSessionAccount()
+	{
+		var store = new FakeCredentialStore();
+		var action = new SaveIdentitySecretAction(NullLogger<SaveIdentitySecretAction>.Instance, store);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(IdentitySecret, store.IdentitySecrets["test_account"]);
+	}
+
+	[Fact]
+	public async Task SaveIdentitySecret_MissingPayload_Fails()
+	{
+		var action = new SaveIdentitySecretAction(NullLogger<SaveIdentitySecretAction>.Instance, new FakeCredentialStore());
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("identity_secret", result.Error);
+	}
+
+	[Fact]
+	public async Task SaveIdentitySecret_UnavailableCredentialStore_Fails()
+	{
+		var action = new SaveIdentitySecretAction(NullLogger<SaveIdentitySecretAction>.Instance, credentialStore: null);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("credential store", result.Error);
+	}
+
+	[Fact]
+	public async Task ConfirmTradeOffer_Allow_Succeeds()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null, new[]
+			{
+				new TradeConfirmation(111UL, 222UL, 43591234567890UL, "Trade with someone", "You give: item")
+			}),
+			OperationResult = new MobileConfirmationResult(true)
+		};
+		var action = new ConfirmTradeOfferAction(NullLogger<ConfirmTradeOfferAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890" };
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("43591234567890", result.Output!["trade_offer_id"]);
+		Assert.Equal("111", result.Output["confirmation_id"]);
+		Assert.Equal(true, result.Output["confirmed"]);
+		Assert.Equal(IdentitySecret, fakeClient.LastIdentitySecret);
+		Assert.Equal((111UL, 222UL, ConfirmationOperation.Allow), fakeClient.LastRespond);
+	}
+
+	[Fact]
+	public async Task ConfirmTradeOffer_Cancel_Succeeds()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null, new[]
+			{
+				new TradeConfirmation(111UL, 222UL, 43591234567890UL, "Trade with someone", "You give: item")
+			})
+		};
+		var action = new ConfirmTradeOfferAction(NullLogger<ConfirmTradeOfferAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890", ["operation"] = "cancel" },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("cancel", result.Output!["operation"]);
+		Assert.Equal(false, result.Output["confirmed"]);
+		Assert.Equal((111UL, 222UL, ConfirmationOperation.Cancel), fakeClient.LastRespond);
+	}
+
+	[Fact]
+	public async Task ConfirmTradeOffer_MatchesAfterRetry()
+	{
+		ConfirmTradeOfferAction.MatchPollInterval = TimeSpan.FromMilliseconds(1);
+		try
+		{
+			var store = new FakeCredentialStore();
+			await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+			var fakeClient = new FakeMobileConfirmationClient
+			{
+				ListResultQueue = new Queue<MobileConfirmationListResult>(new[]
+				{
+					new MobileConfirmationListResult(true, null, Array.Empty<TradeConfirmation>()),
+					new MobileConfirmationListResult(true, null, new[] { new TradeConfirmation(55UL, 66UL, 43591234567890UL, null, null) })
+				}),
+				OperationResult = new MobileConfirmationResult(true)
+			};
+			var action = new ConfirmTradeOfferAction(NullLogger<ConfirmTradeOfferAction>.Instance, store, _ => fakeClient);
+			using var session = TestSession.Create();
+
+			var result = await action.ExecuteAsync(
+				session,
+				new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890" },
+				CancellationToken.None);
+
+			Assert.True(result.Success);
+			Assert.Equal("55", result.Output!["confirmation_id"]);
+			Assert.Equal(2, fakeClient.ListCalls);
+		}
+		finally
+		{
+			ConfirmTradeOfferAction.MatchPollInterval = TimeSpan.FromMilliseconds(250);
+		}
+	}
+
+	[Fact]
+	public async Task ConfirmTradeOffer_NoMatchAfterPolling_Fails()
+	{
+		ConfirmTradeOfferAction.MatchPollInterval = TimeSpan.FromMilliseconds(1);
+		ConfirmTradeOfferAction.MatchPollAttempts = 3;
+		try
+		{
+			var store = new FakeCredentialStore();
+			await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+			var fakeClient = new FakeMobileConfirmationClient();
+			var action = new ConfirmTradeOfferAction(NullLogger<ConfirmTradeOfferAction>.Instance, store, _ => fakeClient);
+			using var session = TestSession.Create();
+
+			var result = await action.ExecuteAsync(
+				session,
+				new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890" },
+				CancellationToken.None);
+
+			Assert.False(result.Success);
+			Assert.Contains("no pending mobile confirmation", result.Error);
+			Assert.Equal(3, fakeClient.ListCalls);
+		}
+		finally
+		{
+			ConfirmTradeOfferAction.MatchPollInterval = TimeSpan.FromMilliseconds(250);
+			ConfirmTradeOfferAction.MatchPollAttempts = 6;
+		}
+	}
+
+	[Fact]
+	public async Task ConfirmTradeOffer_NoStoredSecret_Fails()
+	{
+		var fakeClient = new FakeMobileConfirmationClient();
+		var action = new ConfirmTradeOfferAction(NullLogger<ConfirmTradeOfferAction>.Instance, new FakeCredentialStore(), _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("save_identity_secret", result.Error);
+		Assert.Equal(0, fakeClient.ListCalls);
+	}
+
+	[Fact]
+	public async Task ConfirmTradeOffer_InvalidTradeOfferId_Fails()
+	{
+		var action = new ConfirmTradeOfferAction(NullLogger<ConfirmTradeOfferAction>.Instance, new FakeCredentialStore(), _ => new FakeMobileConfirmationClient());
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("trade_offer_id", result.Error);
+	}
+
+	[Fact]
+	public async Task ConfirmTradeOffer_NoWebHandler_Fails()
+	{
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var action = new ConfirmTradeOfferAction(NullLogger<ConfirmTradeOfferAction>.Instance, store, _ => new FakeMobileConfirmationClient());
+		using var session = TestSession.Create(withWebHandler: false);
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["trade_offer_id"] = "43591234567890" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("web handler", result.Error);
+	}
+
 	private sealed class FixedTimeProvider : TimeProvider
 	{
 		private readonly DateTimeOffset _now;
@@ -357,6 +563,8 @@ public class AuthenticatorActionTests
 	private sealed class FakeMobileConfirmationClient : IMobileConfirmationClient
 	{
 		public MobileConfirmationListResult ListResult { get; set; } = new(true, null, []);
+		public Queue<MobileConfirmationListResult>? ListResultQueue { get; set; }
+		public int ListCalls { get; private set; }
 		public MobileConfirmationResult OperationResult { get; set; } = new(true);
 		public string? LastIdentitySecret { get; private set; }
 		public (ulong Id, ulong Nonce, ConfirmationOperation Op) LastRespond { get; private set; }
@@ -364,7 +572,8 @@ public class AuthenticatorActionTests
 		public Task<MobileConfirmationListResult> GetConfirmationsAsync(string identitySecret, CancellationToken cancellationToken)
 		{
 			LastIdentitySecret = identitySecret;
-			return Task.FromResult(ListResult);
+			ListCalls++;
+			return Task.FromResult(ListResultQueue is { Count: > 0 } ? ListResultQueue.Dequeue() : ListResult);
 		}
 
 		public Task<MobileConfirmationResult> RespondAsync(
@@ -383,6 +592,7 @@ public class AuthenticatorActionTests
 	private sealed class FakeCredentialStore : ICredentialStore
 	{
 		public Dictionary<string, string> Secrets { get; } = new(StringComparer.OrdinalIgnoreCase);
+		public Dictionary<string, string> IdentitySecrets { get; } = new(StringComparer.OrdinalIgnoreCase);
 
 		public Task SaveRefreshTokenAsync(string accountName, string refreshToken, CancellationToken cancellationToken = default)
 			=> Task.CompletedTask;
@@ -410,5 +620,14 @@ public class AuthenticatorActionTests
 
 		public Task<string?> GetSharedSecretAsync(string accountName, CancellationToken cancellationToken = default)
 			=> Task.FromResult(Secrets.TryGetValue(accountName, out string? secret) ? secret : null);
+
+		public Task SaveIdentitySecretAsync(string accountName, string identitySecret, CancellationToken cancellationToken = default)
+		{
+			IdentitySecrets[accountName] = identitySecret;
+			return Task.CompletedTask;
+		}
+
+		public Task<string?> GetIdentitySecretAsync(string accountName, CancellationToken cancellationToken = default)
+			=> Task.FromResult(IdentitySecrets.TryGetValue(accountName, out string? secret) ? secret : null);
 	}
 }

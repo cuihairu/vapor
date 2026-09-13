@@ -51,5 +51,7 @@ public sealed class MobileAuthenticatorPlugin : IActionPlugin
 		yield return new GetTradeConfirmationsAction(_loggerFactory.CreateLogger<GetTradeConfirmationsAction>(), _timeSynchronizer);
 		yield return new RespondTradeConfirmationAction(_loggerFactory.CreateLogger<RespondTradeConfirmationAction>(), _timeSynchronizer);
 		yield return new SaveSharedSecretAction(_loggerFactory.CreateLogger<SaveSharedSecretAction>(), _credentialStore);
+		yield return new SaveIdentitySecretAction(_loggerFactory.CreateLogger<SaveIdentitySecretAction>(), _credentialStore);
+		yield return new ConfirmTradeOfferAction(_loggerFactory.CreateLogger<ConfirmTradeOfferAction>(), _credentialStore, _timeSynchronizer);
 	}
 }

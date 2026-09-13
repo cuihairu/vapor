@@ -277,6 +277,57 @@ public sealed class FileCredentialStoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task IdentitySecret_RoundTripsAcrossStoreInstances()
+	{
+		string account = "account-a";
+		const string secret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+
+		using (var store = CreateStore())
+		{
+			await store.SaveIdentitySecretAsync(account, secret);
+		}
+
+		using var reloaded = CreateStore();
+
+		Assert.Equal(secret, await reloaded.GetIdentitySecretAsync(account));
+	}
+
+	[Fact]
+	public async Task IdentitySecret_IsEncryptedAtRest()
+	{
+		const string secret = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=";
+
+		using var store = CreateStore();
+		await store.SaveIdentitySecretAsync("account-a", secret);
+
+		string file = await File.ReadAllTextAsync(StorePath);
+
+		// The identity secret must never appear in plain text on disk.
+		Assert.DoesNotContain(secret, file, StringComparison.Ordinal);
+		Assert.Contains("identitySecret", file, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task IdentitySecret_MissingAccount_ReturnsNull()
+	{
+		using var store = CreateStore();
+
+		Assert.Null(await store.GetIdentitySecretAsync("ghost"));
+	}
+
+	[Fact]
+	public async Task IdentitySecret_OverwriteReplacesPreviousValue()
+	{
+		string account = "account-a";
+
+		using var store = CreateStore();
+		await store.SaveIdentitySecretAsync(account, "first");
+		await store.SaveIdentitySecretAsync(account, "second");
+
+		Assert.Equal("second", await store.GetIdentitySecretAsync(account));
+	}
+
+	[Fact]
 	public async Task Save_RestrictsFilePermissionsToOwnerOnUnix()
 	{
 		if (OperatingSystem.IsWindows())

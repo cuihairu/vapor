@@ -595,7 +595,8 @@ app.MapPost("/v1/accounts/{name}/trade-offers/{offerId}/accept", async (HttpCont
 			["verify_state"] = req.VerifyState ?? true
 		},
 		auditAction: "trade_offer.accept",
-		details: new Dictionary<string, object?> { ["offerId"] = offerId, ["partner"] = partnerSteamId.ToString(), ["verifyState"] = req.VerifyState ?? true });
+		details: new Dictionary<string, object?> { ["offerId"] = offerId, ["partner"] = partnerSteamId.ToString(), ["verifyState"] = req.VerifyState ?? true },
+		autoConfirm: req.AutoConfirm ?? true);
 })
 	.WithTags("Accounts")
 	.WithSummary("Accept one of an account's incoming trade offers (dispatches accept_trade_offer; 202 + job id when still pending, 502 when the task fails)")
@@ -1442,7 +1443,8 @@ static async Task<IResult> RunOfferDecisionAsync(
 	ulong offerId,
 	Dictionary<string, object?> payload,
 	string auditAction,
-	Dictionary<string, object?> details)
+	Dictionary<string, object?> details,
+	bool autoConfirm = false)
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
 	{
@@ -1468,7 +1470,47 @@ static async Task<IResult> RunOfferDecisionAsync(
 
 	if (run.Status == JobTaskStatus.Finished)
 	{
-		return Results.Ok(new { job_id = run.JobId, account = spec.AccountName, result = run.Output });
+		Dictionary<string, object?>? mobileConfirmation = null;
+
+		// Accept succeeded but Steam still wants a mobile confirmation — finish the
+		// loop with confirm_trade_offer. The identity secret never leaves the agent:
+		// the confirm action reads it from the agent-side credential store.
+		if (autoConfirm && OutputFlagIsTrue(run.Output, "requires_mobile_confirmation"))
+		{
+			TaskRunResult confirm = await AccountTaskRunner.DispatchAsync(
+				store,
+				AccountTaskRunner.ConfirmTradeOfferAction,
+				spec.AccountName,
+				new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = offerId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+				},
+				ctx.RequestAborted);
+
+			await WriteAuditLog(
+				auditLogger,
+				audit,
+				ctx,
+				"trade_offer.confirm",
+				accountName: spec.AccountName,
+				jobId: confirm.JobId,
+				details: new Dictionary<string, object?> { ["offerId"] = offerId.ToString(), ["outcome"] = confirm.Status.ToString() });
+
+			mobileConfirmation = new Dictionary<string, object?> { ["attempted"] = true, ["job_id"] = confirm.JobId };
+			if (confirm.Status == JobTaskStatus.Finished)
+			{
+				mobileConfirmation["confirmed"] = OutputFlagIsTrue(confirm.Output, "confirmed");
+			}
+			else if (confirm.Status != JobTaskStatus.Queued)
+			{
+				mobileConfirmation["confirmed"] = false;
+				mobileConfirmation["error"] = confirm.Error ?? $"task ended as {confirm.Status}";
+			}
+			// Still queued when the window closed: confirmed/error stay absent and the
+			// caller keeps polling via the confirm job id.
+		}
+
+		return Results.Ok(new { job_id = run.JobId, account = spec.AccountName, result = run.Output, mobile_confirmation = mobileConfirmation });
 	}
 
 	if (run.Status != JobTaskStatus.Queued)
@@ -1477,6 +1519,26 @@ static async Task<IResult> RunOfferDecisionAsync(
 	}
 
 	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+}
+
+/// <summary>
+/// Reads a boolean flag from a task output dictionary, tolerating both in-memory
+/// values and the JsonElement shapes a SQLite JSON round-trip produces.
+/// </summary>
+static bool OutputFlagIsTrue(IReadOnlyDictionary<string, object?>? output, string key)
+{
+	if (output is null || !output.TryGetValue(key, out object? raw) || raw is null)
+	{
+		return false;
+	}
+
+	return raw switch
+	{
+		bool b => b,
+		JsonElement { ValueKind: JsonValueKind.True } => true,
+		JsonElement { ValueKind: JsonValueKind.String } s => bool.TryParse(s.GetString(), out bool parsed) && parsed,
+		_ => false
+	};
 }
 
 static bool IsLoginAuditEvent(string normalizedEventType, string state)
@@ -1544,6 +1606,7 @@ public sealed record PutAccountRequest(
 // Request body for trade offer accept/decline endpoints
 public sealed record TradeOfferDecisionRequest(
 	string? PartnerSteamId = null,
-	bool? VerifyState = null
+	bool? VerifyState = null,
+	bool? AutoConfirm = null
 );
 
