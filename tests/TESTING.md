@@ -15,11 +15,11 @@ tests/
 ├── Vapor.ControlPlane.Tests/             (297 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出基准
 ├── Vapor.Plugins.Core.Tests/             (85 tests)
-├── Vapor.Plugins.MobileAuthenticator.Tests/ (65 tests)
+├── Vapor.Plugins.MobileAuthenticator.Tests/ (126 tests)
 ├── Vapor.Agent.Tests/                    (49 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (48 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (21 tests)
-├── Vapor.Protocol.Tests/                 (22 tests)
+├── Vapor.Protocol.Tests/                 (37 tests)
 ├── Vapor.E2E.Tests/                      (6 tests,真实双进程)
 └── Vapor.Plugins.TestPlugin/             插件基础设施测试用示例插件
 ```
@@ -31,13 +31,13 @@ tests/
 | Vapor.Steam.Core.Tests | 900 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、payload 值形状与分支加固 |
 | Vapor.ControlPlane.Tests | 297 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、静态只读面板契约、QR 挑战归类、Program 分支加固 |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
-| Vapor.Plugins.MobileAuthenticator.Tests | 65 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 |
+| Vapor.Plugins.MobileAuthenticator.Tests | 126 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
 | Vapor.Agent.Tests | 49 | 重连退避策略、任务执行器(含 QR 登录 payload)、WS URI 构造、maFile 离线导入 CLI |
 | Vapor.Plugins.MarketWatch.Tests | 48 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/阈值 payload 值形状/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
-| Vapor.Protocol.Tests | 22 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
+| Vapor.Protocol.Tests | 37 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值) |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **1493** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **1569** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
@@ -145,10 +145,10 @@ tests/
 | EventBrokerTests | 3 | 事件总线 |
 | ControlPlaneBenchmarks(性能) | 4 | 吞吐/派发/扇出基准 |
 
-### 插件体系(219 个测试)
+### 插件体系(280 个测试)
 
 - **Plugins.Core(85)**:清单解析(8)、发现(5)、加载(10)、卸载与 ALC 回收(5)、信任与权限(18)、事件分发(6)、配置扩展(15)、插件 API 与 SemVer 兼容(11,含 TryParseVersion theory 展开)
-- **MobileAuthenticator(65)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(41)、确认客户端解析含 type 归一化(10)、确认哈希(8)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
+- **MobileAuthenticator(126)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(41)+ 动作边界:payload 形状/失败语义/冷却与并发(44)、确认客户端解析含 type 归一化(10)+ 客户端会话分支(17)、解析分支(10)、确认哈希(8)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
 - **MarketWatch(48)**:watch 存储/阈值评估/三个 watch action(kind=price/free)/轮询告警与 webhook(free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机)/单 app 抓取失败隔离/阈值 payload 值形状/插件宿主实战加载
 - **Monitoring(21)**:指标注册表(9)/HTTP 服务(6)/插件生命周期(6)
 

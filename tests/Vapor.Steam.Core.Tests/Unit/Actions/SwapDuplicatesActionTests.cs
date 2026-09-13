@@ -612,7 +612,7 @@ public sealed class SwapDuplicatesActionTests : IDisposable
 			new Dictionary<string, object?>
 			{
 				["partner_steam_id"] = PartnerSteamId.ToString(),
-				["app_ids"] = new List<object?> { 753L, 570.0, "252490", null }
+				["app_ids"] = new List<object?> { 753L, 570.0, 570.5, "252490", null }
 			},
 			CancellationToken.None);
 		var viaSingleValue = await action.ExecuteAsync(
@@ -626,11 +626,11 @@ public sealed class SwapDuplicatesActionTests : IDisposable
 			Assert.Contains("no complementary duplicates", r.Error, StringComparison.Ordinal);
 		});
 		// Each call loads the own inventory's apps first, then the partner's.
-		// Note: this action's app-id parser has no double branch, so 570.0 is
-		// skipped (unlike loot/get_inventory).
+		// Whole-number doubles parse like loot/get_inventory (570.0 -> 570),
+		// while fractional ones (570.5) and null are skipped.
 		Assert.Equal(new[] { 753u, 730u, 440u, 753u, 730u, 440u }, scannedApps.Take(6).ToArray());
-		Assert.Equal(new[] { 753u, 252490u, 753u, 252490u }, scannedApps.Skip(6).Take(4).ToArray());
-		Assert.Equal(new[] { 730u, 730u }, scannedApps.Skip(10).ToArray());
+		Assert.Equal(new[] { 753u, 570u, 252490u, 753u, 570u, 252490u }, scannedApps.Skip(6).Take(6).ToArray());
+		Assert.Equal(new[] { 730u, 730u }, scannedApps.Skip(12).ToArray());
 	}
 
 	private (Mock<ISteamTradeClient> ClientMock, SwapDuplicatesAction Action) CreateActionWithLimiter(TradeRateLimiter limiter)

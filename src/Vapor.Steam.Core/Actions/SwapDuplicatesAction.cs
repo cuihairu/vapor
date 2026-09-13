@@ -313,6 +313,9 @@ public sealed class SwapDuplicatesAction : IAction
 			case long l when l > 0 && l <= uint.MaxValue:
 				parsed = (uint)l;
 				return true;
+			case double d when d > 0 && d % 1 == 0 && d <= uint.MaxValue:
+				parsed = (uint)d;
+				return true;
 			case JsonElement { ValueKind: JsonValueKind.Number } e:
 				return e.TryGetUInt32(out parsed);
 			case JsonElement { ValueKind: JsonValueKind.String } s:
