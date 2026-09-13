@@ -6,6 +6,7 @@ using SteamKit2;
 using SteamKit2.Authentication;
 using SteamKit2.Internal;
 using Vapor.Steam.Core.Security;
+using System.Diagnostics.CodeAnalysis;
 using Vapor.Steam.Core.Utilities;
 
 namespace Vapor.Steam.Core.Steam;
@@ -86,6 +87,13 @@ public sealed class SteamTwoFactorCodeRequiredException : Exception
 	public SteamTwoFactorCodeRequiredException(string message) : base(message) { }
 }
 
+/// <summary>
+/// SteamKit2 logon/callback state machine. The callback pump and logon
+/// transitions only run inside a live SteamKit2 network session, which unit
+/// tests cannot drive (consumers mock <see cref="ISteamClientManager"/>);
+/// excluded from coverage.
+/// </summary>
+[ExcludeFromCodeCoverage]
 public sealed class SteamClientManager : ISteamClientManager, IDisposable
 {
 	private sealed record LoginState(string AccountName, string Password)

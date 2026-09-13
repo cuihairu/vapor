@@ -77,7 +77,9 @@ else
 fi
 
 if [ "$COVERAGE" = true ]; then
-    TEST_CMD="$TEST_CMD --collect 'XPlat Code Coverage'"
+    # tests/coverlet.runsettings 排除源生成器产物（obj/**/*.g.cs）；
+    # 结构性集成壳在源码里挂 [ExcludeFromCodeCoverage]（见 tests/TESTING.md）。
+    TEST_CMD="$TEST_CMD --collect 'XPlat Code Coverage' --settings tests/coverlet.runsettings"
 fi
 
 if [ -n "$FILTER" ]; then

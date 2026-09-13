@@ -4,11 +4,19 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Models;
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Vapor.Steam.Core.Web;
 
 /// <summary>
 /// Handles Steam trade-related Web API operations.
 /// </summary>
+/// <summary>
+/// SteamKit2 trade-offer session shell. Every code path drives a live Steam
+/// network session, which cannot be exercised in unit tests (the E2E suite
+/// exercises the flows around this shell instead); excluded from coverage.
+/// </summary>
+[ExcludeFromCodeCoverage]
 public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 {
 	private readonly SteamWebHandler _webHandler;

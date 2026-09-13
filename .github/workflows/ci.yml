@@ -48,15 +48,49 @@ jobs:
     # CP 调度器等真实时钟测试在满核并行下偶发超时，限流后稳定。
     # 注意 `--` 之后的 token 全部作为 runsettings 内联参数解析，必须放在最后。
     - name: Test ${{ matrix.configuration }}
-      if: matrix.os != 'ubuntu-latest' || matrix.configuration != 'Release'
       run: dotnet test -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo --verbosity normal -- RunConfiguration.MaxCpuCount=2
 
-    - name: Test with coverage (Ubuntu Release)
-      if: matrix.os == 'ubuntu-latest' && matrix.configuration == 'Release'
-      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage" -- RunConfiguration.MaxCpuCount=2
+  coverage:
+    # Full-solution test run with coverlet, uploading to Codecov. Split from the
+    # build-test matrix so the Redis service (needed by the VAPOR_TEST_REDIS-gated
+    # integration tests, which count toward coverage) can stay Linux-only.
+    # tests/coverlet.runsettings excludes source-generator outputs; structural
+    # integration shells carry [ExcludeFromCodeCoverage] in source.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-    - name: Upload coverage to Codecov (Ubuntu Release)
-      if: matrix.os == 'ubuntu-latest' && matrix.configuration == 'Release'
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+        - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      VAPOR_TEST_REDIS: localhost:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        show-progress: false
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
+      with:
+        dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+    - name: Build Release
+      run: dotnet build -c Release -p:ContinuousIntegrationBuild=true --nologo
+
+    - name: Test with coverage
+      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage" --settings tests/coverlet.runsettings -- RunConfiguration.MaxCpuCount=2
+
+    - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
       with:
         files: "**/TestResults/*/coverage.cobertura.xml"

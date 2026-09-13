@@ -1823,13 +1823,8 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 				default:
 					if (string.Equals(msg.Type, "task_heartbeat", StringComparison.Ordinal) && msg.TaskHeartbeat != null)
 					{
-						try
-						{
-							_ = await store.HeartbeatTask(msg.TaskHeartbeat.TaskId, msg.TaskHeartbeat.Attempt, ctx.RequestAborted);
-						}
-						catch (NotFoundException)
-						{
-						}
+						// Unknown or stale heartbeats are reported as false, not as an error.
+						_ = await store.HeartbeatTask(msg.TaskHeartbeat.TaskId, msg.TaskHeartbeat.Attempt, ctx.RequestAborted);
 					}
 					if (string.Equals(msg.Type, "task_result", StringComparison.Ordinal) && msg.TaskResult != null)
 					{
@@ -1893,13 +1888,7 @@ static StringValues GetAuthorization(HttpContext ctx)
 
 	if (ctx.Request.Query.TryGetValue("authorization", out var token) && token.Count > 0 && !string.IsNullOrWhiteSpace(token[0]))
 	{
-		var rawValue = token[0];
-		if (string.IsNullOrWhiteSpace(rawValue))
-		{
-			return StringValues.Empty;
-		}
-
-		var raw = rawValue.Trim();
+		var raw = (token[0] ?? string.Empty).Trim();
 		if (raw.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
 		{
 			return new StringValues(raw);
@@ -1913,11 +1902,7 @@ static StringValues GetAuthorization(HttpContext ctx)
 
 static string ToSnakeCase(string value)
 {
-	if (string.IsNullOrWhiteSpace(value))
-	{
-		return string.Empty;
-	}
-
+	// Callers (NormalizeSessionEventType) guarantee a non-blank input.
 	var s = value.Trim();
 	var sb = new System.Text.StringBuilder(s.Length + 8);
 	for (int i = 0; i < s.Length; i++)
