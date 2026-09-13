@@ -185,6 +185,110 @@ public sealed class FindDuplicatesActionTests : IDisposable
 		Assert.Contains("web handler", result.Error ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_InventoryThrows_ReturnsError()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, 753, 6, null, It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("connection reset"));
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("connection reset", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_AppIdsAsSingleUint_IsAccepted()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, It.IsAny<uint>(), It.IsAny<ulong>(), null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new InventoryResponse { Success = true, Items = [] });
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["app_ids"] = 753u },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_AppIdsMixedValueShapes_ParseKnownAndSkipRest()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		var scannedApps = new List<uint>();
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, It.IsAny<uint>(), It.IsAny<ulong>(), null, It.IsAny<CancellationToken>()))
+			.Callback<ulong, uint, ulong, ulong?, CancellationToken>((_, app, _, _, _) => scannedApps.Add(app))
+			.ReturnsAsync(new InventoryResponse { Success = true, Items = [] });
+		var session = CreateSession(CreateWebHandler());
+
+		// object[] with every supported value shape plus junk that must be skipped:
+		// uint, long, JsonElement number, JsonElement numeric string, plain string,
+		// and two unusable entries (bool, zero) that are silently dropped.
+		Dictionary<string, object?> payload = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{"app_ids":[753, 730, 570, "252490", "440", true, 0]}""")!;
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(new List<uint> { 753u, 730u, 570u, 252490u, 440u }, scannedApps);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_KeepAsLongAndJsonElement_IsAccepted()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, It.IsAny<uint>(), It.IsAny<ulong>(), null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new InventoryResponse { Success = true, Items = [] });
+		var session = CreateSession(CreateWebHandler());
+
+		var asLong = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["keep"] = 2L }, CancellationToken.None);
+		var asElement = await action.ExecuteAsync(
+			session,
+			System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>("""{"keep":2}""")!,
+			CancellationToken.None);
+		var asElementString = await action.ExecuteAsync(
+			session,
+			System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>("""{"keep":"2"}""")!,
+			CancellationToken.None);
+
+		Assert.All(new[] { asLong, asElement, asElementString }, r => Assert.True(r.Success));
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_KeepAsUnsupportedShape_Fails()
+	{
+		var (action, _) = CreateActionWithMock();
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["keep"] = true },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("keep", result.Error, StringComparison.Ordinal);
+	}
+
 	private (FindDuplicatesAction Action, Mock<ISteamTradeClient> ClientMock) CreateActionWithMock()
 	{
 		var clientMock = new Mock<ISteamTradeClient>(MockBehavior.Loose);

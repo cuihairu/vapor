@@ -498,6 +498,321 @@ public class SessionManagerTests : IDisposable
 		Assert.IsAssignableFrom<IReadOnlyList<BotSession>>(sessions);
 	}
 
+	// --- SetEventCallback / event fan-out ---
+
+	[Fact]
+	public async Task TryRestoreSessionAsync_WithEventCallback_InvokesCallbackForSessionEvents()
+	{
+		var callbackInvocations = new List<(string Account, string Type)>();
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore();
+		SetupSuccessfulTokenLogin();
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object);
+		manager.SetEventCallback((account, type, _, _) =>
+		{
+			lock (callbackInvocations)
+			{
+				callbackInvocations.Add((account, type));
+			}
+
+			return Task.CompletedTask;
+		});
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		Assert.NotNull(session);
+
+		// State changes flow through the session channel to the callback.
+		for (int i = 0; i < 40 && callbackInvocations.Count == 0; i++)
+		{
+			await Task.Delay(50);
+		}
+
+		Assert.NotEmpty(callbackInvocations);
+		Assert.All(callbackInvocations, inv => Assert.Equal("test_account", inv.Account));
+	}
+
+	[Fact]
+	public async Task SubscribeAllEvents_YieldsEventsWrittenBySessions()
+	{
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore();
+		SetupSuccessfulTokenLogin();
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object);
+
+		var eventList = new List<SessionEvent>();
+		var collectTask = Task.Run(async () =>
+		{
+			await foreach (var evt in manager.SubscribeAllEvents(CancellationToken.None))
+			{
+				lock (eventList)
+				{
+					eventList.Add(evt);
+				}
+
+				if (eventList.Count >= 1)
+				{
+					break;
+				}
+			}
+		});
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		Assert.NotNull(session);
+
+		await collectTask.WaitAsync(TimeSpan.FromSeconds(10));
+		Assert.NotEmpty(eventList);
+	}
+
+	// --- TryRestoreSessionAsync edge paths ---
+
+	[Fact]
+	public async Task TryRestoreSessionAsync_WithoutCredentialStore_ReturnsNull()
+	{
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStore: null);
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+
+		Assert.Null(session);
+	}
+
+	[Fact]
+	public async Task TryRestoreSessionAsync_WithExistingSession_ReturnsIt()
+	{
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore();
+		SetupSuccessfulTokenLogin();
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object);
+
+		var created = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		var restored = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+
+		Assert.NotNull(created);
+		Assert.Same(created, restored);
+	}
+
+	[Fact]
+	public async Task TryRestoreSessionAsync_WhenLoginFails_RemovesSessionAndReturnsNull()
+	{
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore();
+		_steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.UpdateLogOnDetailsAsync("test_account", "access-token", "refresh-token"))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("steam rejected the token"));
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object);
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+
+		Assert.Null(session);
+		var after = await manager.GetSessionAsync("test_account", CancellationToken.None);
+		Assert.Null(after);
+	}
+
+	// --- background token refresh edge paths ---
+
+	[Fact]
+	public async Task BackgroundTokenRefresh_SkipsDisconnectedSessionsAndMissingCredentials()
+	{
+		var hasCredentials = new Queue<bool>(new[] { true, false }); // restore, then first refresh tick
+		var credentialStoreMock = new Mock<ICredentialStore>(MockBehavior.Strict);
+		credentialStoreMock
+			.Setup(s => s.HasCredentialsAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(() => hasCredentials.Count > 0 && hasCredentials.Dequeue());
+		credentialStoreMock
+			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync("refresh-token");
+		credentialStoreMock
+			.Setup(s => s.GetAccessTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new StoredAccessToken("access-token", DateTimeOffset.UtcNow.AddSeconds(-10))); // expired
+
+		SetupSuccessfulTokenLogin();
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object,
+			tokenRefreshCheckInterval: TimeSpan.FromMilliseconds(50),
+			tokenRefreshLeadTime: TimeSpan.FromMinutes(5));
+
+		// A session that never logs in stays Disconnected and must be skipped.
+		var idleCredentials = new AccountCredentials("idle_account", "password");
+		await manager.GetOrCreateSessionAsync("idle_account", idleCredentials, CancellationToken.None);
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		Assert.NotNull(session);
+
+		await Task.Delay(250);
+
+		_steamClientManagerMock.Verify(
+			m => m.RefreshAccessTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+			Times.Never);
+	}
+
+	[Fact]
+	public async Task BackgroundTokenRefresh_WhenRefreshReportsFailure_DoesNotThrow()
+	{
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore(expiringToken: true);
+		SetupSuccessfulTokenLogin();
+		_steamClientManagerMock
+			.Setup(m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(false);
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object,
+			tokenRefreshCheckInterval: TimeSpan.FromMilliseconds(50),
+			tokenRefreshLeadTime: TimeSpan.FromMinutes(5));
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		Assert.NotNull(session);
+
+		await Task.Delay(250);
+
+		_steamClientManagerMock.Verify(
+			m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()),
+			Times.AtLeastOnce);
+	}
+
+	[Fact]
+	public async Task BackgroundTokenRefresh_WhenRefreshThrows_SwallowsAndKeepsGoing()
+	{
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore(expiringToken: true);
+		SetupSuccessfulTokenLogin();
+		_steamClientManagerMock
+			.Setup(m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("CM unreachable"));
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object,
+			tokenRefreshCheckInterval: TimeSpan.FromMilliseconds(50),
+			tokenRefreshLeadTime: TimeSpan.FromMinutes(5));
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		Assert.NotNull(session);
+
+		await Task.Delay(250);
+
+		_steamClientManagerMock.Verify(
+			m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()),
+			Times.AtLeastOnce);
+	}
+
+	[Fact]
+	public async Task BackgroundTokenRefresh_WhenCredentialStoreThrows_LoopExitsGracefully()
+	{
+		// The first access-token read (the restore itself) succeeds; every later
+		// read — from the refresh loop — throws, which must kill the loop with a
+		// logged error instead of crashing the process.
+		var accessTokenReads = 0;
+		var credentialStoreMock = new Mock<ICredentialStore>(MockBehavior.Strict);
+		credentialStoreMock
+			.Setup(s => s.HasCredentialsAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+		credentialStoreMock
+			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync("refresh-token");
+		credentialStoreMock
+			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.Returns(() =>
+			{
+				if (Interlocked.Increment(ref accessTokenReads) == 1)
+				{
+					return Task.FromResult<StoredAccessToken?>(new StoredAccessToken(
+						"access-token",
+						DateTimeOffset.UtcNow.AddSeconds(-10)));
+				}
+
+				throw new InvalidOperationException("store corrupted");
+			});
+
+		SetupSuccessfulTokenLogin();
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object,
+			tokenRefreshCheckInterval: TimeSpan.FromMilliseconds(50));
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		Assert.NotNull(session);
+
+		await Task.Delay(250);
+
+		// The refresh loop logged the failure and exited gracefully (disposed via using).
+		_loggerMock.Verify(
+			l => l.Log(
+				LogLevel.Error,
+				It.IsAny<EventId>(),
+				It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("token refresh loop")),
+				It.IsAny<Exception>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.AtLeastOnce);
+	}
+
+	private Mock<ICredentialStore> CreateSuccessfulRestoreCredentialStore(bool expiringToken = false)
+	{
+		var credentialStoreMock = new Mock<ICredentialStore>(MockBehavior.Strict);
+		credentialStoreMock
+			.Setup(s => s.HasCredentialsAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+		credentialStoreMock
+			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync("refresh-token");
+		credentialStoreMock
+			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new StoredAccessToken(
+				"access-token",
+				expiringToken
+					? DateTimeOffset.UtcNow.AddSeconds(1)
+					: DateTimeOffset.UtcNow.AddMinutes(10)));
+		return credentialStoreMock;
+	}
+
+	private void SetupSuccessfulTokenLogin()
+	{
+		_steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.UpdateLogOnDetailsAsync("test_account", "access-token", "refresh-token"))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+	}
+
 	public void Dispose()
 	{
 		_manager.Dispose();

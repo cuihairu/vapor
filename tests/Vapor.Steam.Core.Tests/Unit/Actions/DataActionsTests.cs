@@ -444,6 +444,132 @@ public sealed class DataActionsTests : IDisposable
 	{
 	}
 
+	// --- exception paths (missing web session, store client failures) ---
+
+	[Fact]
+	public async Task GetGameInfo_WithoutWebHandler_ReturnsError()
+	{
+		var action = new GetGameInfoAction(NullLogger<GetGameInfoAction>.Instance, _ => throw new UnreachableFactory());
+
+		var result = await action.ExecuteAsync(
+			CreateSessionWithoutWebHandler(),
+			new Dictionary<string, object?> { ["app_id"] = "730" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Steam web handler not available", result.Error);
+	}
+
+	[Fact]
+	public async Task SearchGames_WithoutWebHandler_ReturnsError()
+	{
+		var action = new SearchGamesAction(NullLogger<SearchGamesAction>.Instance, _ => throw new UnreachableFactory());
+
+		var result = await action.ExecuteAsync(
+			CreateSessionWithoutWebHandler(),
+			new Dictionary<string, object?> { ["term"] = "cs2" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Steam web handler not available", result.Error);
+	}
+
+	[Fact]
+	public async Task GetPrice_WithoutWebHandler_ReturnsError()
+	{
+		var action = new GetPriceAction(NullLogger<GetPriceAction>.Instance, _ => throw new UnreachableFactory());
+
+		var result = await action.ExecuteAsync(
+			CreateSessionWithoutWebHandler(),
+			new Dictionary<string, object?> { ["app_id"] = "730" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Steam web handler not available", result.Error);
+	}
+
+	[Fact]
+	public async Task GetMarketListings_WithoutWebHandler_ReturnsError()
+	{
+		var action = new GetMarketListingsAction(NullLogger<GetMarketListingsAction>.Instance, _ => throw new UnreachableFactory());
+
+		var result = await action.ExecuteAsync(
+			CreateSessionWithoutWebHandler(),
+			new Dictionary<string, object?> { ["app_id"] = "730" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Steam web handler not available", result.Error);
+	}
+
+	[Fact]
+	public async Task GetMarketListings_WithInvalidAppId_ReturnsError()
+	{
+		var action = new GetMarketListingsAction(NullLogger<GetMarketListingsAction>.Instance);
+
+		var missing = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?>(),
+			CancellationToken.None);
+		var zero = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_id"] = "0" },
+			CancellationToken.None);
+
+		Assert.All(new[] { missing, zero }, r =>
+		{
+			Assert.False(r.Success);
+			Assert.Equal("Valid app_id is required", r.Error);
+		});
+	}
+
+	// The store client factory throwing exercises the generic catch (Exception)
+	// arm — the InvalidOperationException-filtered arm does not match because a
+	// web handler IS present.
+	[Theory]
+	[InlineData("game_info")]
+	[InlineData("search")]
+	[InlineData("price")]
+	[InlineData("market_listings")]
+	public async Task StoreClientFactoryThrowing_ReportsExceptionMessage(string actionKind)
+	{
+		ActionResult result = actionKind switch
+		{
+			"game_info" => await new GetGameInfoAction(
+				NullLogger<GetGameInfoAction>.Instance,
+				_ => throw new InvalidOperationException("store API down")).ExecuteAsync(
+				CreateSession(), new Dictionary<string, object?> { ["app_id"] = "730" }, CancellationToken.None),
+			"search" => await new SearchGamesAction(
+				NullLogger<SearchGamesAction>.Instance,
+				_ => throw new InvalidOperationException("store API down")).ExecuteAsync(
+				CreateSession(), new Dictionary<string, object?> { ["term"] = "cs2" }, CancellationToken.None),
+			"price" => await new GetPriceAction(
+				NullLogger<GetPriceAction>.Instance,
+				_ => throw new InvalidOperationException("store API down")).ExecuteAsync(
+				CreateSession(), new Dictionary<string, object?> { ["app_id"] = "730" }, CancellationToken.None),
+			_ => await new GetMarketListingsAction(
+				NullLogger<GetMarketListingsAction>.Instance,
+				_ => throw new InvalidOperationException("store API down")).ExecuteAsync(
+				CreateSession(), new Dictionary<string, object?> { ["app_id"] = "730" }, CancellationToken.None)
+		};
+
+		Assert.False(result.Success);
+		Assert.Equal("store API down", result.Error);
+	}
+
+	private sealed class UnreachableFactory : Exception
+	{
+	}
+
+	private BotSession CreateSessionWithoutWebHandler()
+	{
+		var credentials = new AccountCredentials("test_account", "password");
+		var registry = new Mock<IActionRegistry>(MockBehavior.Loose);
+		var session = new BotSession("test_account", credentials, registry.Object, _sessionLoggerMock.Object, null, null, null);
+		_sessions.Add(session);
+		return session;
+	}
+
 	// --- Metadata ---
 
 	[Theory]

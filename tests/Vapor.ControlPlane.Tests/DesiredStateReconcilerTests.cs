@@ -532,6 +532,362 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.Null(view.FarmQueue);
 	}
 
+	// ── execution-path hardening (loops, isolation, no-agent, shape quirks) ──
+
+	[Fact]
+	public async Task ExecuteAsync_NonPositiveInterval_DisablesReconciler()
+	{
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null)), NewRegistry(("agent-1", "us-east", null)), jobs, intervalSeconds: 0);
+		using var cts = new CancellationTokenSource();
+
+		await reconciler.StartAsync(cts.Token);
+		await Task.Delay(200);
+		await reconciler.StopAsync(cts.Token);
+
+		Assert.Empty(jobs.Created);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_UnhandledExceptionInPass_KillsNoPass()
+	{
+		// An exception outside the per-account try (Unassign → cancel) must be
+		// absorbed by the background loop so the service survives for later passes.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, intervalSeconds: 1);
+		using var cts = new CancellationTokenSource();
+		await reconciler.StartAsync(cts.Token);
+
+		// Wait for pass 1 to dispatch a login job.
+		var deadline = DateTime.UtcNow.AddSeconds(5);
+		while (jobs.Created.Count == 0 && DateTime.UtcNow < deadline)
+		{
+			await Task.Delay(50);
+		}
+		Assert.Single(jobs.Created);
+
+		// Disable the account and sabotage its cancel: the next pass throws from
+		// UnassignAsync (outside the per-account try) — the loop must swallow it.
+		accounts.Upsert("alice", false, AccountDesiredState.Online, null, null, null, null);
+		jobs.Drop("job-1");
+		jobs.ThrowOnCancel = true;
+		await Task.Delay(2500);
+
+		// StopAsync completing without observation proves the loop is still alive.
+		await reconciler.StopAsync(cts.Token);
+		Assert.Single(jobs.Created);
+	}
+
+	[Fact]
+	public async Task InFlightLoginJobWithinWindow_WaitsWithoutSettling()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		DesiredStateReconciler.LoginInFlightWindow = TimeSpan.FromHours(1); // keep the job in flight
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.NotNull(view.ActiveJobId);
+	}
+
+	[Fact]
+	public async Task ConnectedSession_ClearsInFlightLoginWithoutSettling()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		DesiredStateReconciler.LoginInFlightWindow = TimeSpan.FromHours(1); // keep it in flight
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		sessions.Update("alice", "state_changed", "Connected", null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Null(view.ActiveJobId);
+		Assert.Null(view.ActiveJobAction);
+	}
+
+	[Fact]
+	public async Task ConnectedSession_ClearsLoginBackoffAndRedispatches()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, cooldownSeconds: 3600);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Failed, "bad password");
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle → attempts=1, long cooldown
+		Assert.Equal(1, reconciler.GetOrchestrationView("alice")!.LoginAttempts);
+		Assert.NotNull(reconciler.GetOrchestrationView("alice")!.NextAttemptAt);
+
+		// The account recovers: a fresh Connected snapshot clears the backoff
+		// entirely (NextAttemptAt reset to the epoch).
+		sessions.Update("alice", "state_changed", "Connected", null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(0, reconciler.GetOrchestrationView("alice")!.LoginAttempts);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.NextAttemptAt);
+	}
+
+	[Fact]
+	public async Task Farm_NoCapableAgent_MarksDeviationWithoutDispatch()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", new Dictionary<string, bool> { ["login"] = true })); // no get_card_drops
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.NoAgentSkips);
+		Assert.Equal("no capable agent available", reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task Idle_NoCapableAgent_MarksDeviationWithoutDispatch()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Idle, new[] { "730" }, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", new Dictionary<string, bool> { ["login"] = true })); // no play_games
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.NoAgentSkips);
+		Assert.Equal("no capable agent available", reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task Farm_DryRun_GuardsDispatches()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		var audit = new FakeAuditStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, audit, dryRun: true);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.DryRunDeviations);
+		Assert.Contains("get_card_drops", reconciler.GetOrchestrationView("alice")!.LastDeviation, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Farm_ActiveCardDropsJob_WaitsForIt()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		DesiredStateReconciler.CardDropsInFlightWindow = TimeSpan.FromHours(1); // keep the query in flight
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created);
+	}
+
+	[Fact]
+	public async Task Farm_CardDropsTaskFailed_MarksDeviationOnly()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Failed, "badges page unreachable");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// The failed query is settled, then immediately retried (empty queue keeps
+		// refreshDue true); the login budget is never consumed either way.
+		Assert.Equal(2, jobs.Created.Count);
+		Assert.Equal("get_card_drops", jobs.Created[1].Action);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Equal(0, view.LoginAttempts);
+		Assert.Null(view.NextAttemptAt);
+	}
+
+	[Fact]
+	public async Task SettleActiveJob_MissingJob_ClearsInFlightState()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Drop("job-1"); // store lost the job (e.g. retention purge)
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Null(view.ActiveJobId);
+		Assert.Null(view.ActiveJobAction);
+	}
+
+	[Fact]
+	public async Task Unassign_CancelJobMissing_IsTolerated()
+	{
+		AccountStore accounts = new();
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Single(jobs.Created);
+
+		// The job vanished before the cancel reached the store — unassign still completes.
+		jobs.Drop("job-1");
+		accounts.Upsert("alice", true, AccountDesiredState.Offline, null, null, null, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(1, reconciler.Unassignments);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.ActiveJobId);
+	}
+
+	[Fact]
+	public async Task Unassign_Noop_WhenNothingAssigned()
+	{
+		AccountStore accounts = NewAccounts(("alice", false, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(0, reconciler.Unassignments);
+	}
+
+	[Fact]
+	public async Task PinnedOnlineAgent_ReceivesDispatch()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, "agent-2"));
+		var agents = NewRegistry(
+			("agent-1", "us-east", null),
+			("agent-2", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// The pinned agent wins even though agent-1 is equally idle.
+		Assert.Single(jobs.Created);
+		Assert.Equal("agent-2", reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+	}
+
+	[Fact]
+	public async Task DryRun_AuditFailure_IsSwallowed()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore { ThrowOnRecord = true };
+		using var reconciler = CreateReconciler(accounts, agents, jobs, auditStore: audit, dryRun: true);
+
+		// Must not throw even though the dry-run audit entry cannot be persisted.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.DryRunDeviations);
+	}
+
+	[Fact]
+	public async Task AuditFailure_DoesNotBlockDispatch()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore { ThrowOnRecord = true };
+		using var reconciler = CreateReconciler(accounts, agents, jobs, auditStore: audit);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// The login job is dispatched and accounted even though its audit entry was lost.
+		Assert.Single(jobs.Created);
+		Assert.Equal("job-1", reconciler.GetOrchestrationView("alice")!.ActiveJobId);
+	}
+
+	[Fact]
+	public void ExtractFarmQueue_IgnoresNonDictionaryEntries()
+	{
+		var spec = NewSpec();
+		var output = new Dictionary<string, object?>
+		{
+			["drops"] = new List<object?> { "garbage", 42, null }
+		};
+
+		Assert.Empty(DesiredStateReconciler.ExtractFarmQueue(output, spec));
+	}
+
+	[Fact]
+	public void ExtractFarmQueue_EntryMissingFields_IsSkipped()
+	{
+		var spec = NewSpec();
+		var output = new Dictionary<string, object?>
+		{
+			["drops"] = new List<object>
+			{
+				new Dictionary<string, object?> { ["app_id"] = 220L },               // drops_remaining missing
+				new Dictionary<string, object?> { ["drops_remaining"] = 3L },       // app_id missing
+				new Dictionary<string, object?> { ["app_id"] = null, ["drops_remaining"] = 3L }
+			}
+		};
+
+		Assert.Empty(DesiredStateReconciler.ExtractFarmQueue(output, spec));
+	}
+
+	[Fact]
+	public void ExtractFarmQueue_NumberValueShapes_AreAllAccepted()
+	{
+		var spec = NewSpec();
+		var output = new Dictionary<string, object?>
+		{
+			["drops"] = new List<object>
+			{
+				new Dictionary<string, object?> { ["app_id"] = 220, ["drops_remaining"] = 5 },                            // int
+				new Dictionary<string, object?> { ["app_id"] = 221.0, ["drops_remaining"] = 4.0 },                        // double
+				new Dictionary<string, object?> { ["app_id"] = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("222"), ["drops_remaining"] = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("3") }, // JsonElement
+				new Dictionary<string, object?> { ["app_id"] = "223", ["drops_remaining"] = "2" },                        // string
+				new Dictionary<string, object?> { ["app_id"] = 224L, ["drops_remaining"] = 1L },                          // long
+				new Dictionary<string, object?> { ["app_id"] = true, ["drops_remaining"] = 9 },                           // unsupported shape → skipped
+				new Dictionary<string, object?> { ["app_id"] = 0, ["drops_remaining"] = 9 },                              // app 0 → filtered
+				new Dictionary<string, object?> { ["app_id"] = 225, ["drops_remaining"] = 0 }                             // no drops → filtered
+			}
+		};
+
+		Assert.Equal([220U, 221U, 222U, 223U, 224U], DesiredStateReconciler.ExtractFarmQueue(output, spec));
+	}
+
+	private static AccountSpec NewSpec() =>
+		new AccountStore().Upsert("alice", true, AccountDesiredState.Farm, null, null, null, note: null);
+
 	// ── fixtures ──
 
 	private static AccountStore NewAccounts(params (string Name, bool Enabled, AccountDesiredState State, string[]? Apps, string? Region, string? Agent)[] specs)
@@ -566,7 +922,8 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		int cooldownSeconds = 60,
 		int maxLoginAttempts = 3,
 		bool dryRun = false,
-		int farmRefreshSeconds = 300)
+		int farmRefreshSeconds = 300,
+		int intervalSeconds = 15)
 	{
 		var cfg = new Config(
 			"admin",
@@ -577,7 +934,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			AuditDbPath: ":memory:",
 			TaskMaxDispatchAttempts: 10,
 			TaskDispatchRetryDelayMs: 2000,
-			ReconcileIntervalSeconds: 15,
+			ReconcileIntervalSeconds: intervalSeconds,
 			ReconcileMaxAccountsPerAgent: 25,
 			ReconcileMaxLoginAttempts: maxLoginAttempts,
 			ReconcileLoginCooldownSeconds: cooldownSeconds,
@@ -600,8 +957,16 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	{
 		public List<AuditEntry> Entries { get; } = [];
 
+		/// <summary>Makes RecordAsync throw (audit-isolation paths).</summary>
+		public bool ThrowOnRecord { get; set; }
+
 		public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
 		{
+			if (ThrowOnRecord)
+			{
+				throw new IOException("audit store unavailable");
+			}
+
 			Entries.Add(entry);
 			return Task.CompletedTask;
 		}
@@ -623,8 +988,22 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		public Dictionary<string, IReadOnlyDictionary<string, object?>?> Outputs { get; } = new();
 		public List<string> Cancelled { get; } = [];
 
+		/// <summary>Forgets a job so lookups and cancels hit the NotFoundException path.</summary>
+		public void Drop(string jobId) => _jobs.Remove(jobId);
+
+		/// <summary>Makes CreateJob throw (per-account isolation path).</summary>
+		public bool ThrowOnCreate { get; set; }
+
+		/// <summary>Makes CancelJob throw a non-NotFoundException (background-loop isolation path).</summary>
+		public bool ThrowOnCancel { get; set; }
+
 		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
 		{
+			if (ThrowOnCreate)
+			{
+				throw new IOException("store unavailable");
+			}
+
 			Created.Add(request);
 			int n = Interlocked.Increment(ref _counter);
 			var job = new Job($"job-{n}", request.Action, request.Region, request.Targets, request.Meta, JobStatus.Queued, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
@@ -657,6 +1036,11 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			if (!_jobs.ContainsKey(jobId))
 			{
 				throw new NotFoundException("job not found");
+			}
+
+			if (ThrowOnCancel)
+			{
+				throw new IOException("store unavailable");
 			}
 
 			Cancelled.Add(jobId);

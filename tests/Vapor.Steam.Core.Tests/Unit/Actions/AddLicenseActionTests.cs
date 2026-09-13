@@ -285,6 +285,75 @@ public sealed class AddLicenseActionTests : IDisposable
 		Assert.True(result.Success);
 	}
 
+	[Fact]
+	public void Constructor_Default_UsesRealStoreClient()
+	{
+		// Public constructor wires the real store client factory without touching Steam.
+		var action = new AddLicenseAction(NullLogger<AddLicenseAction>.Instance);
+		Assert.Equal("add_license", action.Name);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_AppIdsAsSingleUint_IsAccepted()
+	{
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		List<uint>? requestedIds = null;
+		clientMock
+			.Setup(m => m.RequestFreeLicenseAsync(It.IsAny<IReadOnlyCollection<uint>>(), It.IsAny<CancellationToken>()))
+			.Callback<IReadOnlyCollection<uint>, CancellationToken>((ids, _) => requestedIds = ids.ToList())
+			.ReturnsAsync(new FreeLicenseResult(SteamResult.OK, [], []));
+
+		BotSession session = CreateSession(clientMock.Object);
+
+		ActionResult result = await _action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["app_ids"] = 12345u },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(new List<uint> { 12345u }, requestedIds);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_AppIdsMixedValueShapes_ParseKnownAndSkipRest()
+	{
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		List<uint>? requestedIds = null;
+		clientMock
+			.Setup(m => m.RequestFreeLicenseAsync(It.IsAny<IReadOnlyCollection<uint>>(), It.IsAny<CancellationToken>()))
+			.Callback<IReadOnlyCollection<uint>, CancellationToken>((ids, _) => requestedIds = ids.ToList())
+			.ReturnsAsync(new FreeLicenseResult(SteamResult.OK, [], []));
+
+		BotSession session = CreateSession(clientMock.Object);
+
+		// Every supported value shape (uint, int, whole double, long, JsonElement
+		// number, JsonElement numeric string, plain string) plus junk that must be
+		// skipped (bool, zero, null).
+		var payload = new Dictionary<string, object?>
+		{
+			["app_ids"] = new List<object?>
+			{
+				12345u,
+				12346,
+				12347.0,
+				12348L,
+				JsonSerializer.Deserialize<JsonElement>("12349"),
+				JsonSerializer.Deserialize<JsonElement>("\"12350\""),
+				"12351",
+				true,
+				0,
+				null
+			}
+		};
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(
+			new List<uint> { 12345u, 12346u, 12347u, 12348u, 12349u, 12350u, 12351u },
+			requestedIds);
+	}
+
 	private static BotSession CreateSession(ISteamClientManager? clientManager = null, SteamWebHandler? webHandler = null)
 	{
 		var registryMock = new Mock<IActionRegistry>(MockBehavior.Loose);

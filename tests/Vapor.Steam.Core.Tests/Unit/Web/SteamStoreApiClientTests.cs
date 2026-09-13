@@ -306,4 +306,184 @@ public sealed class SteamStoreApiClientTests
 
 		Assert.Null(result);
 	}
+
+	// --- degraded / malformed response branches ---
+
+	[Fact]
+	public async Task GetGameInfoAsync_WhenDataMissing_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """{ "730": { "success": true } }""");
+
+		Assert.Null(await client.GetGameInfoAsync(730));
+	}
+
+	[Fact]
+	public async Task GetGameInfoAsync_WhenAppIdMissingFromResponse_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """{ "440": { "success": true, "data": {} } }""");
+
+		Assert.Null(await client.GetGameInfoAsync(730));
+	}
+
+	[Fact]
+	public async Task GetGameInfoAsync_WhenMalformedJson_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, "{ not json");
+
+		Assert.Null(await client.GetGameInfoAsync(730));
+	}
+
+	[Fact]
+	public async Task SearchGamesAsync_WhenItemsMissing_ReturnsEmpty()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """{ "total_count": 0 }""");
+
+		var results = await client.SearchGamesAsync("portal");
+
+		Assert.Empty(results);
+	}
+
+	[Fact]
+	public async Task SearchGamesAsync_StopsAtCappedLimit()
+	{
+		string json = """{ "items": [ { "id": 1, "name": "a" }, { "id": 2, "name": "b" }, { "id": 3, "name": "c" } ] }""";
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var results = await client.SearchGamesAsync("portal", limit: 2);
+
+		Assert.Equal(2, results.Count);
+	}
+
+	[Fact]
+	public async Task SearchGamesAsync_WhenMalformedJson_ReturnsEmpty()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, "{ not json");
+
+		Assert.Empty(await client.SearchGamesAsync("portal"));
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_ParsesModernSearchResults()
+	{
+		string json = """
+		{
+			"success": true,
+			"total_count": 500,
+			"results": [
+				{
+					"name": "AK Redline",
+					"hash_name": "AK-47 | Redline (Field-Tested)",
+					"sell_listings": 4211,
+					"sell_price": 1035,
+					"asset_description": { "appid": 730, "classid": "111", "instanceid": "222" }
+				},
+				{
+					"hash_name": "No price entry"
+				}
+			]
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var page = await client.GetMarketListingsAsync(730, start: 20, count: 2);
+
+		Assert.NotNull(page);
+		Assert.Equal(500, page!.TotalCount);
+		Assert.Equal(20, page.Start);
+		Assert.Equal(2, page.PageSize);
+		Assert.Equal(2, page.Listings.Count);
+		Assert.Equal("AK-47 | Redline (Field-Tested)", page.Listings[0].HashName);
+		Assert.Equal(10.35m, page.Listings[0].TotalPrice);
+		Assert.Equal(4211, page.Listings[0].SellListings);
+		Assert.Equal(111UL, page.Listings[0].ClassId);
+		Assert.Null(page.Listings[1].TotalPrice);
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_SearchResultsWithoutTotalCount_FallsBackToStartPlusListings()
+	{
+		string json = """{ "results": [ { "hash_name": "One" }, { "hash_name": "Two" } ] }""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var page = await client.GetMarketListingsAsync(730, start: 10, count: 5);
+
+		Assert.NotNull(page);
+		Assert.Equal(12, page!.TotalCount); // start + parsed listings
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_WithoutRecognizedShape_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """{ "success": true }""");
+
+		Assert.Null(await client.GetMarketListingsAsync(730));
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_WithoutTotalRowcount_FallsBackToStartPlusListings()
+	{
+		string json = """
+		{ "listinginfo": { "1001": { "listingid": "1001", "asset": { "appid": 730, "contextid": "2", "id": "9001", "classid": "1", "instanceid": "2", "amount": "1" }, "converted_price": 500, "converted_fee": 0, "converted_publisher_fee": 0, "converted_currencyid": 2001 } } }
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var page = await client.GetMarketListingsAsync(730, start: 5, count: 1);
+
+		Assert.NotNull(page);
+		Assert.Equal(6, page!.TotalCount);
+		Assert.Single(page.Listings);
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_WhenMalformedJson_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, "{ not json");
+
+		Assert.Null(await client.GetMarketListingsAsync(730));
+	}
+
+	[Fact]
+	public async Task AddFreeLicenseAsync_WithoutDetail_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """{ "unexpected": true }""");
+
+		Assert.Null(await client.AddFreeLicenseAsync(42666));
+	}
+
+	[Fact]
+	public async Task AddFreeLicenseAsync_OtherDetail_IsFailure()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """{ "purchaseresultdetail": 9 }""");
+
+		var result = await client.AddFreeLicenseAsync(42666);
+
+		Assert.NotNull(result);
+		Assert.False(result!.Success);
+		Assert.Equal(9, result.PurchaseResultDetail);
+	}
+
+	[Fact]
+	public async Task AddFreeLicenseAsync_WhenMalformedJson_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, "{ not json");
+
+		Assert.Null(await client.AddFreeLicenseAsync(42666));
+	}
 }

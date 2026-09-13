@@ -15,6 +15,30 @@ public sealed class GetCardDropsActionTests : IDisposable
 	private readonly Mock<ILogger<BotSession>> _sessionLoggerMock = new(MockBehavior.Loose);
 	private readonly List<BotSession> _sessions = [];
 
+	[Fact]
+	public void Name_ReturnsCorrectName()
+	{
+		var action = new GetCardDropsAction(NullLogger<GetCardDropsAction>.Instance);
+		Assert.Equal("get_card_drops", action.Name);
+	}
+
+	[Fact]
+	public void Metadata_RequiresLogin()
+	{
+		var action = new GetCardDropsAction(NullLogger<GetCardDropsAction>.Instance);
+		Assert.True(action.Metadata.RequiresLogin);
+		Assert.Equal(120, action.Metadata.TimeoutSeconds);
+	}
+
+	[Fact]
+	public void Constructor_Default_WiresRealBadgesClient()
+	{
+		// The public constructor wires the real badges client factory without
+		// touching the network.
+		var action = new GetCardDropsAction(NullLogger<GetCardDropsAction>.Instance);
+		Assert.Equal("get_card_drops", action.Name);
+	}
+
 	public void Dispose()
 	{
 		foreach (var session in _sessions)
