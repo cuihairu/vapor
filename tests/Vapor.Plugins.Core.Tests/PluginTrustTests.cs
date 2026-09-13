@@ -24,8 +24,10 @@ public sealed class PluginTrustTests : IDisposable
 		{
 			Directory.Delete(_root, recursive: true);
 		}
-		catch (DirectoryNotFoundException)
+		catch (Exception ex) when (ex is DirectoryNotFoundException or IOException or UnauthorizedAccessException)
 		{
+			// Best-effort cleanup; the load context may still hold the assembly
+			// (Windows raises UnauthorizedAccessException for directories with open files).
 		}
 	}
 
