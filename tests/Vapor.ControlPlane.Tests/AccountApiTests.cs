@@ -804,6 +804,157 @@ public sealed class AccountApiTests
 		}
 	}
 
+	[Fact]
+	public async Task Loot_AgentReportsFinished_AutoConfirms()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToStepsAsync(store,
+		[
+			new FakeAgentStep("loot_inventory", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "998877665544",
+					["partner_steam_id"] = "76561198000000100",
+					["item_count"] = 3,
+					["requires_mobile_confirmation"] = true
+				}, null),
+			new FakeAgentStep("confirm_trade_offer", true, new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = "998877665544",
+					["confirmation_id"] = "55",
+					["confirmed"] = true
+				}, null)
+		], cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/loot", new { partnerSteamId = "76561198000000100" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement result = doc.RootElement.GetProperty("result");
+		Assert.Equal("998877665544", result.GetProperty("trade_offer_id").GetString());
+		Assert.Equal(3, result.GetProperty("item_count").GetInt32());
+		JsonElement confirm = doc.RootElement.GetProperty("mobile_confirmation");
+		Assert.True(confirm.GetProperty("attempted").GetBoolean());
+		Assert.True(confirm.GetProperty("confirmed").GetBoolean());
+		Assert.NotEmpty(confirm.GetProperty("job_id").GetString()!);
+
+		// The confirm follow-up is its own job and carries only the offer id from the loot output.
+		string confirmJobId = confirm.GetProperty("job_id").GetString()!;
+		Assert.Equal("998877665544", await PayloadValueFromTask(store, confirmJobId, 0, "trade_offer_id"));
+	}
+
+	[Fact]
+	public async Task Loot_NoConfirmationNeeded_SkipsConfirm()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "loot_inventory", success: true,
+			new Dictionary<string, object?>
+			{
+				["trade_offer_id"] = "998877665544",
+				["item_count"] = 1,
+				["requires_mobile_confirmation"] = false
+			},
+			null, cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/loot", new { tradeUrl = "https://steamcommunity.com/tradeoffer/new/?partner=1&token=abc" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.False(doc.RootElement.TryGetProperty("mobileConfirmation", out _) ||
+					 doc.RootElement.TryGetProperty("mobile_confirmation", out _));
+
+		// The loot task received the trade URL, not a steam id.
+		string jobId = doc.RootElement.GetProperty("job_id").GetString()!;
+		Assert.Equal("https://steamcommunity.com/tradeoffer/new/?partner=1&token=abc", await PayloadValueFromTask(store, jobId, 0, "trade_url"));
+	}
+
+	[Fact]
+	public async Task Loot_AgentFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(
+			store, "loot_inventory", success: false, null,
+			"no tradable items to loot in the scanned apps", cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/loot", new { partnerSteamId = "76561198000000100" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("no tradable items", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task Loot_MissingPartner_Returns400()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/loot", new { });
+
+		Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("partner_steam_id", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Loot_StillPending_Returns202()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/loot", new { partnerSteamId = "76561198000000100" });
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
+	/// <summary>Reads one payload value from the n-th task of a job (normalized to string).</summary>
+	private static async Task<string> PayloadValueFromTask(IJobStore store, string jobId, int taskIndex, string key)
+	{
+		JobWithTasks job = await store.GetJob(jobId, CancellationToken.None);
+		JobTask task = job.Tasks[taskIndex];
+		return PayloadValue(task.Payload, key);
+	}
+
 	/// <summary>Plays the agent side: claims and completes a fixed sequence of tasks, in order.</summary>
 	private sealed record FakeAgentStep(string Action, bool Success, Dictionary<string, object?>? Output, string? Error);
 

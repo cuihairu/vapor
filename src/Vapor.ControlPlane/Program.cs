@@ -703,6 +703,127 @@ app.MapPost("/v1/accounts/{name}/confirmations/accept-all", async (HttpContext c
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
+app.MapPost("/v1/accounts/{name}/loot", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, LootRequest? req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name.Trim());
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	string? partnerSteamId = req?.PartnerSteamId?.Trim();
+	string? tradeUrl = req?.TradeUrl?.Trim();
+
+	if (string.IsNullOrWhiteSpace(partnerSteamId) && string.IsNullOrWhiteSpace(tradeUrl))
+	{
+		return Results.BadRequest(new ErrorResponse("either partner_steam_id or trade_url is required (a token-bearing trade URL reaches non-friends)"));
+	}
+
+	if (!string.IsNullOrWhiteSpace(partnerSteamId) && (!ulong.TryParse(partnerSteamId, out ulong partnerValue) || partnerValue == 0))
+	{
+		return Results.BadRequest(new ErrorResponse("partner_steam_id must be a positive 64-bit SteamID"));
+	}
+
+	var payload = new Dictionary<string, object?>();
+	if (!string.IsNullOrWhiteSpace(tradeUrl))
+	{
+		payload["trade_url"] = tradeUrl;
+	}
+	else
+	{
+		payload["partner_steam_id"] = partnerSteamId;
+	}
+
+	if (!string.IsNullOrWhiteSpace(req?.Message))
+	{
+		payload["message"] = req.Message.Trim();
+	}
+
+	if (req?.AppIds is { Length: > 0 })
+	{
+		payload["app_ids"] = req.AppIds;
+	}
+
+	TaskRunResult run = await AccountTaskRunner.DispatchAsync(store, AccountTaskRunner.LootInventoryAction, spec.AccountName, payload, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"account.loot",
+		accountName: spec.AccountName,
+		jobId: run.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["partner"] = string.IsNullOrWhiteSpace(partnerSteamId) ? "trade_url" : partnerSteamId,
+			["appIds"] = req?.AppIds,
+			["outcome"] = run.Status.ToString()
+		});
+
+	if (run.Status != JobTaskStatus.Finished)
+	{
+		if (run.Status == JobTaskStatus.Queued)
+		{
+			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+		}
+
+		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
+	}
+
+	Dictionary<string, object?>? mobileConfirmation = null;
+
+	// Loot succeeded but Steam still wants a mobile confirmation — finish the loop with
+	// confirm_trade_offer. The offer id comes from the loot output; the identity secret
+	// never leaves the agent (the confirm action reads the agent-side credential store).
+	if (OutputFlagIsTrue(run.Output, "requires_mobile_confirmation"))
+	{
+		string? offerId = OutputString(run.Output, "trade_offer_id");
+		if (!string.IsNullOrEmpty(offerId))
+		{
+			TaskRunResult confirm = await AccountTaskRunner.DispatchAsync(
+				store,
+				AccountTaskRunner.ConfirmTradeOfferAction,
+				spec.AccountName,
+				new Dictionary<string, object?> { ["trade_offer_id"] = offerId },
+				ctx.RequestAborted);
+
+			await WriteAuditLog(
+				auditLogger,
+				audit,
+				ctx,
+				"trade_offer.confirm",
+				accountName: spec.AccountName,
+				jobId: confirm.JobId,
+				details: new Dictionary<string, object?> { ["offerId"] = offerId, ["outcome"] = confirm.Status.ToString() });
+
+			mobileConfirmation = new Dictionary<string, object?> { ["attempted"] = true, ["job_id"] = confirm.JobId };
+			if (confirm.Status == JobTaskStatus.Finished)
+			{
+				mobileConfirmation["confirmed"] = OutputFlagIsTrue(confirm.Output, "confirmed");
+			}
+			else if (confirm.Status != JobTaskStatus.Queued)
+			{
+				mobileConfirmation["confirmed"] = false;
+				mobileConfirmation["error"] = confirm.Error ?? $"task ended as {confirm.Status}";
+			}
+		}
+	}
+
+	return Results.Ok(new { job_id = run.JobId, account = spec.AccountName, result = run.Output, mobile_confirmation = mobileConfirmation });
+})
+	.WithTags("Accounts")
+	.WithSummary("Send all of an account's tradable items to a partner (loot; dispatches loot_inventory and auto-confirms the mobile step; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
 app.MapPost("/v1/jobs", async Task<Results<Accepted<CreateJobResponse>, BadRequest<ErrorResponse>, UnauthorizedHttpResult, ProblemHttpResult>> (
 	HttpContext ctx,
 	Config cfg,
@@ -1613,6 +1734,25 @@ static bool OutputFlagIsTrue(IReadOnlyDictionary<string, object?>? output, strin
 	};
 }
 
+/// <summary>
+/// Reads a string field out of a task output dictionary, tolerating both live string
+/// values and the JsonElement shape a SQLite JSON round-trip produces.
+/// </summary>
+static string? OutputString(IReadOnlyDictionary<string, object?>? output, string key)
+{
+	if (output is null || !output.TryGetValue(key, out object? raw) || raw is null)
+	{
+		return null;
+	}
+
+	return raw switch
+	{
+		string s => s,
+		JsonElement { ValueKind: JsonValueKind.String } e => e.GetString(),
+		_ => raw.ToString()
+	};
+}
+
 static bool IsLoginAuditEvent(string normalizedEventType, string state)
 {
 	return string.Equals(state, "Connected", StringComparison.Ordinal) ||
@@ -1686,5 +1826,13 @@ public sealed record TradeOfferDecisionRequest(
 public sealed record ConfirmationsBatchRequest(
 	string? Operation = null,
 	string? Type = null
+);
+
+// Request body for the loot endpoint (send tradable inventory to a partner)
+public sealed record LootRequest(
+	string? PartnerSteamId = null,
+	string? TradeUrl = null,
+	string? Message = null,
+	int[]? AppIds = null
 );
 
