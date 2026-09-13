@@ -736,6 +736,9 @@ public sealed class ProgramBranchCoverageTests
 
 		await WebSocketJson.Send(ws, new WSMessage("hello", new AgentHello("agent-9", "us-east", null, null), null, null), CancellationToken.None);
 
+		// Give the server handler a moment to process the hello and register the agent.
+		await Task.Delay(200);
+
 		// The connection shows up in the registry…
 		using HttpResponseMessage status = await adminClient.GetAsync("/v1/agents/status");
 		string statusBody = await status.Content.ReadAsStringAsync();
