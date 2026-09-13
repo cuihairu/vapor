@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -503,7 +504,10 @@ public class SessionManagerTests : IDisposable
 	[Fact]
 	public async Task TryRestoreSessionAsync_WithEventCallback_InvokesCallbackForSessionEvents()
 	{
-		var callbackInvocations = new List<(string Account, string Type)>();
+		// ConcurrentQueue: the event pump keeps invoking the callback while the
+		// asserts below enumerate — a locked List still throws "collection was
+		// modified" because the enumeration side never takes the same lock.
+		var callbackInvocations = new ConcurrentQueue<(string Account, string Type)>();
 		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore();
 		SetupSuccessfulTokenLogin();
 
@@ -514,11 +518,7 @@ public class SessionManagerTests : IDisposable
 			credentialStoreMock.Object);
 		manager.SetEventCallback((account, type, _, _) =>
 		{
-			lock (callbackInvocations)
-			{
-				callbackInvocations.Add((account, type));
-			}
-
+			callbackInvocations.Enqueue((account, type));
 			return Task.CompletedTask;
 		});
 
