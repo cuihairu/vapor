@@ -22,12 +22,30 @@ static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) 
 	_ => throw new InvalidOperationException($"{key} is required")
 };
 
+// The encryption key must be resolved before anything touches the credential store —
+// including the offline maFile import below.
+VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
+VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
+
+// Offline helper: `import-mafile <file-or-dir...> [--password <pw>]` imports SDA /
+// steamguard-cli authenticator exports into this agent's encrypted credential store
+// and exits. The import runs agent-side on purpose — those secrets must never travel
+// through the control plane or land in task records.
+if (args.Length > 0 && args[0].Equals("import-mafile", StringComparison.OrdinalIgnoreCase))
+{
+	using var importLoggerFactory = LoggerFactory.Create(builder => builder.AddRedactingConsole().SetMinimumLevel(LogLevel.Information));
+	var importStore = new FileCredentialStore(importLoggerFactory.CreateLogger<FileCredentialStore>());
+	int exitCode = await MaFileImportCli.RunAsync(
+		args.Skip(1).ToArray(),
+		importStore,
+		importLoggerFactory.CreateLogger("Vapor.Agent.ImportMaFile"));
+	return exitCode;
+}
+
 string agentId = RequireEnv("AGENT_ID");
 string region = RequireEnv("AGENT_REGION");
 string wsUrlBase = RequireEnv("AGENT_CONTROLPLANE_WS_URL");
 string agentApiKey = RequireEnv("AGENT_API_KEY");
-VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
-VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
 var reconnectPolicy = AgentReconnectPolicy.FromEnvironment(Environment.GetEnvironmentVariable);
 
 var serviceCollection = new ServiceCollection()
@@ -232,6 +250,8 @@ if (pluginEvents is not null)
 {
 	await pluginEvents.DisposeAsync();
 }
+
+return 0;
 
 static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger)
 {

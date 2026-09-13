@@ -308,7 +308,7 @@
 
 ### 11.3 P6-3 互操作与认领（降低迁移/使用成本）
 
-- [ ] .maFile 导入：解析 SDA/steamguard-cli 的 maFile（shared_secret / identity_secret / 设备 ID），入库走既有加密存储——存量 2FA 用户零成本迁移。
+- [x] .maFile 导入：解析 SDA/steamguard-cli 的 maFile（shared_secret / identity_secret / 设备 ID），入库走既有加密存储——存量 2FA 用户零成本迁移。（2026-09-13 `MaFileParser` + `Vapor.Agent import-mafile <file-or-dir...> [--password <pw>]`；**agent 本地 CLI 导入**是有意设计——maFile 内容本身就是 secret,经 ControlPlane 任务转发会落入 SQLite 任务记录,违反"任务记录零接触"红线。兼容 SDA 嵌套布局（含 PBKDF2-SHA1 50k + AES-CBC 密码加密）与 steamguard-cli 平铺布局；仅导入 shared/identity secret,Session 令牌只检测不导入（账户走正常凭证流）；设备 ID 落盘但使用时按账户派生；退出码 0/1（有失败）/2（用法）。）
 - [ ] 免费 license 认领：addlicense 等价 action（sub/add 页解析）；免费游戏提醒可由 MarketWatch 模式扩展 watch 类型。
 - [ ] 库存 REST 化：GetInventoryAction 深化为 `/v1/accounts/{name}/inventory`（按 app/类型过滤），为交易/市场功能供数。
 

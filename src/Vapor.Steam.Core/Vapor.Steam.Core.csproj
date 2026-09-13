@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Vapor.Steam.Core.Tests" />
+    <InternalsVisibleTo Include="Vapor.Agent.Tests" />
   </ItemGroup>
 </Project>
 

@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (626 tests)
+├── Vapor.Steam.Core.Tests/               (635 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -16,7 +16,7 @@ tests/
 │   └── Performance/                      队列吞吐/派发/SSE 扇出基准
 ├── Vapor.Plugins.Core.Tests/             (85 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (65 tests)
-├── Vapor.Agent.Tests/                    (41 tests)
+├── Vapor.Agent.Tests/                    (47 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (24 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (21 tests)
 ├── Vapor.Protocol.Tests/                 (22 tests)
@@ -28,22 +28,22 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 626 | 动作、会话状态机、交易校验、凭据/加密、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot |
+| Vapor.Steam.Core.Tests | 635 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot |
 | Vapor.ControlPlane.Tests | 180 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot |
 | Vapor.Plugins.Core.Tests | 85 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 65 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 |
-| Vapor.Agent.Tests | 41 | 重连退避策略、任务执行器、WS URI 构造 |
+| Vapor.Agent.Tests | 47 | 重连退避策略、任务执行器、WS URI 构造、maFile 离线导入 CLI |
 | Vapor.Plugins.MarketWatch.Tests | 24 | watch 存储/阈值评估/轮询告警与 webhook/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 21 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 22 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 |
 | Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
-| **合计** | **1070** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **1085** | (2026-09-13 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
 
 ## 测试分类
 
-### Steam.Core(626 个测试)
+### Steam.Core(635 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -88,6 +88,7 @@ tests/
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | FileCredentialStoreTests | 15 | 凭据存储(加密落盘/备份恢复/权限收紧/shared secret) |
+| MaFileParserTests | 9 | maFile 解析(SDA 嵌套/steamguard-cli 平铺/密码加密 PBKDF2+AES-CBC/无密码与错密码/无 secret/账户键回退) |
 | VaporCryptoHelper(Encryption)Tests | 16 | AES-GCM 加密助手 |
 | CredentialStoreRotatorTests | 5 | 密钥轮换 |
 | RedactingLoggerProviderTests / SensitiveDataRedactorTests | 10 | 日志脱敏 |
@@ -141,9 +142,9 @@ tests/
 - **MarketWatch(24)**:watch 存储/阈值评估/三个 watch action/轮询告警与 webhook/插件宿主实战加载
 - **Monitoring(21)**:指标注册表(9)/HTTP 服务(6)/插件生命周期(6)
 
-### Agent(41 个测试)
+### Agent(47 个测试)
 
-重连退避策略(25)、任务执行器(12)、WS URI 构造(4)。Agent 主循环(会话泵/WS 客户端/任务派发闭环)由 **E2E 套件以真实子进程覆盖**——单测统计与覆盖率均测不到。
+重连退避策略(25)、任务执行器(12)、maFile 导入 CLI(6,含加密 maFile 与 --password、目录扫描、部分失败)、WS URI 构造(4)。Agent 主循环(会话泵/WS 客户端/任务派发闭环)由 **E2E 套件以真实子进程覆盖**——单测统计与覆盖率均测不到。
 
 ### E2E(6 个测试)
 
