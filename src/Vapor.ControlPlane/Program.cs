@@ -399,7 +399,7 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 	AccountSpec spec;
 	try
 	{
-		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy);
+		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy, req.MarketListingsEnabled);
 	}
 	catch (ArgumentException ex)
 	{
@@ -420,6 +420,7 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 			["idleApps"] = spec.IdleApps,
 			["region"] = spec.Region,
 			["agentId"] = spec.AgentId,
+			["marketListingsEnabled"] = spec.MarketListingsEnabled,
 			["version"] = spec.Version?.Version
 		});
 	return Results.Ok(new { spec });
@@ -807,6 +808,102 @@ app.MapPost("/v1/accounts/{name}/market/listings/cancel", async (HttpContext ctx
 })
 	.WithTags("Accounts")
 	.WithSummary("Cancel an account's own market listings matching a filter (app / hash name / price range / age; dry_run=true by default only previews the matched listings; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPost("/v1/accounts/{name}/market/listings", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, MarketCreateListingRequest? req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name.Trim());
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	// Real listing creation is the ToS-gray-zone core: besides the agent-side
+	// switch, the account spec must explicitly opt in (default off). A dry run
+	// (send absent or false) only reports the pricing plan and is unrestricted.
+	bool send = req?.Send ?? false;
+	if (send && !spec.MarketListingsEnabled)
+	{
+		return Results.BadRequest(new ErrorResponse("refusing to list: this account has not enabled market listings (set marketListingsEnabled=true on the account spec)"));
+	}
+
+	// send only enters the payload when true: an absent key is the agent's
+	// dry-run default, so a false must never masquerade as a choice.
+	var payload = new Dictionary<string, object?>();
+	if (req?.AppId is > 0)
+	{
+		payload["app_id"] = req.AppId;
+	}
+
+	if (!string.IsNullOrWhiteSpace(req?.ContextId))
+	{
+		payload["context_id"] = req.ContextId.Trim();
+	}
+
+	if (!string.IsNullOrWhiteSpace(req?.AssetId))
+	{
+		payload["asset_id"] = req.AssetId.Trim();
+	}
+
+	if (req?.Amount is > 0)
+	{
+		payload["amount"] = req.Amount;
+	}
+
+	if (req?.SellerProceedsCents is not null)
+	{
+		payload["seller_proceeds_cents"] = req.SellerProceedsCents;
+	}
+
+	if (req?.BuyerPriceCents is not null)
+	{
+		payload["buyer_price_cents"] = req.BuyerPriceCents;
+	}
+
+	if (send)
+	{
+		payload["send"] = true;
+	}
+
+	TaskRunResult run = await AccountTaskRunner.CreateMarketListingAsync(store, spec.AccountName, payload, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"market_listings.create",
+		accountName: spec.AccountName,
+		jobId: run.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["send"] = send,
+			["accountMarketListingsEnabled"] = spec.MarketListingsEnabled,
+			["outcome"] = run.Status.ToString()
+		});
+
+	if (run.Status == JobTaskStatus.Finished)
+	{
+		return Results.Ok(new { job_id = run.JobId, account = spec.AccountName, result = run.Output });
+	}
+
+	if (run.Status != JobTaskStatus.Queued)
+	{
+		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
+	}
+
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+})
+	.WithTags("Accounts")
+	.WithSummary("Create one market listing (dry run by default: send omitted reports the fee-aware pricing plan only; a real listing needs send=true, the account's marketListingsEnabled switch and the agent's AGENT_MARKET_LISTINGS_ENABLED; 202 + job id when still pending, 502 when the task fails)")
 	.Produces(200)
 	.Produces(202)
 	.Produces<ErrorResponse>(400)
@@ -2342,7 +2439,8 @@ public sealed record PutAccountRequest(
 	string? Region = null,
 	string? AgentId = null,
 	string? Note = null,
-	string? UpdatedBy = null
+	string? UpdatedBy = null,
+	bool? MarketListingsEnabled = null
 );
 
 // Request body for trade offer accept/decline endpoints
@@ -2367,6 +2465,18 @@ public sealed record MarketCancelRequest(
 	int? MaxPriceCents = null,
 	int? OlderThanSeconds = null,
 	bool? DryRun = null
+);
+
+// Request body for creating one market listing. Price on either side
+// (exactly one); send=false (default) is a dry run reporting the pricing plan.
+public sealed record MarketCreateListingRequest(
+	uint? AppId = null,
+	string? ContextId = null,
+	string? AssetId = null,
+	int? Amount = null,
+	int? SellerProceedsCents = null,
+	int? BuyerPriceCents = null,
+	bool? Send = null
 );
 
 // Request body for the loot endpoint (send tradable inventory to a partner)

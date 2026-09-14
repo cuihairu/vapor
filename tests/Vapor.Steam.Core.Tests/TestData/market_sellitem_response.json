@@ -1,0 +1,6 @@
+{
+	"success": true,
+	"requires_confirmation": true,
+	"needs_mobile_confirmation": true,
+	"needs_email_confirmation": false
+}

@@ -39,6 +39,22 @@ public sealed record MyMarketListingsPage(
 	int? ToBeConfirmedCount);
 
 /// <summary>
+/// Steam's reply to one sellitem POST. <see cref="Success"/> is the JSON
+/// success flag, not the HTTP status — Steam rejects listings (rate limiting
+/// included, no dedicated error code) with success=false and a human-readable
+/// <see cref="Message"/>. The confirmation flags mirror what the market page
+/// itself reads: a listing can require mobile or email confirmation before it
+/// goes live (mobile ones surface in the existing market-type confirmations).
+/// </summary>
+public sealed record CreateListingResult(
+	bool Success,
+	string? Message,
+	bool RequiresConfirmation,
+	bool NeedsMobileConfirmation,
+	bool NeedsEmailConfirmation,
+	string? EmailDomain);
+
+/// <summary>
 /// Fetches and parses the account's own community market listings
 /// (<c>steamcommunity.com/market/mylistings</c>). The page is login-gated
 /// (session cookies carried by the <see cref="SteamWebHandler"/>) and has no
@@ -133,6 +149,120 @@ public sealed class SteamMarketClient
 
 		_logger.LogInformation("Canceled market listing {ListingId}", listingId);
 		return true;
+	}
+
+	/// <summary>
+	/// Creates one market listing (puts one inventory item up for sale). Same
+	/// POST the market page's sell dialog issues (cross-confirmed 2026-09-14
+	/// against Steam's own economy_v2.js / market_multisell.js and
+	/// steam-game-idler's market.rs): the session id is echoed in the form
+	/// body with XHR-style headers, and the price field is the amount the
+	/// *seller* receives — the market page itself converts a buyer-side input
+	/// to the seller amount before submitting. Null when no request went out
+	/// (missing session id) or the reply is not the expected JSON; a parsed
+	/// reply is returned as-is even on HTTP errors so Steam's message (rate
+	/// limiting has no dedicated error code) reaches the caller.
+	/// </summary>
+	public async Task<CreateListingResult?> CreateListingAsync(
+		uint appId,
+		string contextId,
+		string assetId,
+		int amount,
+		int sellerProceedsCents,
+		CancellationToken cancellationToken = default)
+	{
+		if (string.IsNullOrEmpty(contextId))
+		{
+			throw new ArgumentException("Context id is required", nameof(contextId));
+		}
+
+		if (string.IsNullOrEmpty(assetId))
+		{
+			throw new ArgumentException("Asset id is required", nameof(assetId));
+		}
+
+		if (amount < 1)
+		{
+			throw new ArgumentOutOfRangeException(nameof(amount), amount, "amount must be at least 1");
+		}
+
+		if (sellerProceedsCents < 1)
+		{
+			throw new ArgumentOutOfRangeException(nameof(sellerProceedsCents), sellerProceedsCents, "seller proceeds must be at least 1 cent");
+		}
+
+		if (!_webHandler.TryGetSessionId(out string? sessionId) || string.IsNullOrEmpty(sessionId))
+		{
+			_logger.LogWarning("create listing for asset {AssetId}: no session id on the web handler (is the session logged on?)", assetId);
+			return null;
+		}
+
+		var url = new Uri("https://steamcommunity.com/market/sellitem/");
+		// Referer/Origin for community hosts are added by the web handler;
+		// only the XHR marker is sell-specific.
+		var headers = new Dictionary<string, string>
+		{
+			["X-Requested-With"] = "XMLHttpRequest"
+		};
+
+		var content = new FormUrlEncodedContent(
+		[
+			new KeyValuePair<string, string>("sessionid", sessionId),
+			new KeyValuePair<string, string>("appid", appId.ToString(CultureInfo.InvariantCulture)),
+			new KeyValuePair<string, string>("contextid", contextId),
+			new KeyValuePair<string, string>("assetid", assetId),
+			new KeyValuePair<string, string>("amount", amount.ToString(CultureInfo.InvariantCulture)),
+			new KeyValuePair<string, string>("price", sellerProceedsCents.ToString(CultureInfo.InvariantCulture))
+		]);
+
+		var response = await _webHandler.PostAsync(url, content, headers, cancellationToken).ConfigureAwait(false);
+		if (string.IsNullOrEmpty(response.Body))
+		{
+			_logger.LogWarning("create listing for asset {AssetId} failed: {StatusCode} with empty body", assetId, response.StatusCode);
+			return null;
+		}
+
+		try
+		{
+			using var doc = JsonDocument.Parse(response.Body);
+			CreateListingResult result = ParseSellItemResponse(doc.RootElement);
+			if (result.Success)
+			{
+				_logger.LogInformation("Created market listing for asset {AssetId} (seller proceeds {Cents})", assetId, sellerProceedsCents);
+			}
+			else
+			{
+				_logger.LogWarning("Market listing for asset {AssetId} rejected by Steam: {Message}", assetId, result.Message ?? "no message");
+			}
+
+			return result;
+		}
+		catch (JsonException ex)
+		{
+			_logger.LogError(ex, "Failed to parse sellitem response (status {StatusCode})", response.StatusCode);
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Parses one sellitem reply. The shape is pinned by the
+	/// market_sellitem_response.json fixture, whose skeleton is cross-confirmed
+	/// (2026-09-14) against Steam's own economy_v2.js / market_multisell.js and
+	/// steam-game-idler's market.rs; drift means re-recording with an
+	/// authenticated session.
+	/// </summary>
+	internal static CreateListingResult ParseSellItemResponse(JsonElement root)
+	{
+		bool success = root.TryGetProperty("success", out JsonElement successProperty)
+			&& successProperty.ValueKind == JsonValueKind.True;
+
+		return new CreateListingResult(
+			success,
+			root.GetStringProperty("message"),
+			GetBoolValue(root, "requires_confirmation"),
+			GetBoolValue(root, "needs_mobile_confirmation"),
+			GetBoolValue(root, "needs_email_confirmation"),
+			root.GetStringProperty("email_domain"));
 	}
 
 	/// <summary>

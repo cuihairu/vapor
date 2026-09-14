@@ -300,4 +300,107 @@ public sealed class SteamMarketClientTests
 
 		await Assert.ThrowsAsync<ArgumentException>(() => client.CancelListingAsync(string.Empty));
 	}
+
+	// --- CreateListing ---
+
+	[Fact]
+	public async Task CreateListing_SendsSellerPriceFormWithSessionAndXhrHeader()
+	{
+		var (client, fake) = CreateWithSession();
+		Uri? requestUri = null;
+		string? body = null;
+		string? xhrHeader = null;
+		fake.Responder = request =>
+		{
+			requestUri = request.RequestUri;
+			xhrHeader = request.Headers.TryGetValues("X-Requested-With", out var values) ? string.Join(',', values) : null;
+			body = request.Content is null ? null : request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+			return Json(FixtureSellItemJson);
+		};
+
+		var result = await client.CreateListingAsync(730, "6", "35471234567", 1, sellerProceedsCents: 91);
+
+		Assert.NotNull(result);
+		Assert.True(result.Success);
+		Assert.Equal("https://steamcommunity.com/market/sellitem/", requestUri!.GetLeftPart(UriPartial.Path));
+		Assert.Equal("XMLHttpRequest", xhrHeader);
+		// The price field is the seller amount; the session id is echoed.
+		Assert.Contains("sessionid=session-123", body, StringComparison.Ordinal);
+		Assert.Contains("appid=730", body, StringComparison.Ordinal);
+		Assert.Contains("contextid=6", body, StringComparison.Ordinal);
+		Assert.Contains("assetid=35471234567", body, StringComparison.Ordinal);
+		Assert.Contains("amount=1", body, StringComparison.Ordinal);
+		Assert.Contains("price=91", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task CreateListing_ReplaysFixtureConfirmationFlags()
+	{
+		var (client, fake) = CreateWithSession();
+		fake.Responder = _ => Json(FixtureSellItemJson);
+
+		var result = await client.CreateListingAsync(753, "6", "35471234568", 1, 30);
+
+		Assert.NotNull(result);
+		Assert.True(result.Success);
+		Assert.True(result.RequiresConfirmation);
+		Assert.True(result.NeedsMobileConfirmation);
+		Assert.False(result.NeedsEmailConfirmation);
+		Assert.Null(result.EmailDomain);
+	}
+
+	[Fact]
+	public async Task CreateListing_RejectedBySteam_StillParsesMessage()
+	{
+		// Steam rejects listings (rate limiting included) with success=false and
+		// a human-readable message on an otherwise ordinary reply — no dedicated
+		// error code, so the body must survive the HTTP status.
+		var (client, fake) = CreateWithSession();
+		fake.Responder = _ => Json("""{ "success": false, "message": "There was a problem listing your item. Rate limit exceeded. Retry later." }""");
+
+		var result = await client.CreateListingAsync(730, "6", "35471234567", 1, 91);
+
+		Assert.NotNull(result);
+		Assert.False(result.Success);
+		Assert.Contains("Rate limit", result.Message, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task CreateListing_NonJsonBody_ReturnsNull()
+	{
+		var (client, fake) = CreateWithSession();
+		fake.Responder = _ => new HttpResponseMessage(HttpStatusCode.OK)
+		{
+			Content = new StringContent("<html>Sign in</html>", System.Text.Encoding.UTF8, "text/html")
+		};
+
+		var result = await client.CreateListingAsync(730, "6", "35471234567", 1, 91);
+
+		Assert.Null(result);
+	}
+
+	[Fact]
+	public async Task CreateListing_WithoutSessionId_FailsWithoutSendingRequest()
+	{
+		var (client, fake) = Create();
+
+		var result = await client.CreateListingAsync(730, "6", "35471234567", 1, 91);
+
+		Assert.Null(result);
+		Assert.Empty(fake.Requests);
+	}
+
+	[Fact]
+	public async Task CreateListing_InvalidArguments_Throw()
+	{
+		var (client, _) = CreateWithSession();
+
+		await Assert.ThrowsAsync<ArgumentException>(() => client.CreateListingAsync(730, "", "3547", 1, 91));
+		await Assert.ThrowsAsync<ArgumentException>(() => client.CreateListingAsync(730, "6", "", 1, 91));
+		await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.CreateListingAsync(730, "6", "3547", 0, 91));
+		await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => client.CreateListingAsync(730, "6", "3547", 1, 0));
+	}
+
+	private static string FixtureSellItemJson =>
+		File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "TestData", "market_sellitem_response.json"));
 }

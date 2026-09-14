@@ -600,6 +600,130 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task PostMarketListingCreate_RequireAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings", new { appId = 730, assetId = "111" });
+
+		Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task PostMarketListingCreate_AccountMissing_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings", new { appId = 730, assetId = "111" });
+
+		Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task PostMarketListingCreate_SendWithoutAccountSwitch_Returns400()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		// Real listing creation is the per-account opt-in: default off, and the
+		// endpoint refuses before any job is created.
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings", new { appId = 730, contextId = "6", assetId = "111", send = true });
+
+		Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("marketListingsEnabled", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task PostMarketListingCreate_DryRunDefault_AgentReportsFinished()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Dictionary<string, object?>? dispatchedPayload = null;
+		Task responder = Task.Run(async () =>
+		{
+			dispatchedPayload = await RespondToFirstMarketCreateTaskAsync(store, success: true, cts.Token);
+		});
+
+		// No send in the body: the default dry-run pricing plan.
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/market/listings",
+			new { appId = 730, contextId = "6", assetId = "3547...", sellerProceedsCents = 91 });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement result = doc.RootElement.GetProperty("result");
+		Assert.True(result.GetProperty("dry_run").GetBoolean());
+		Assert.NotNull(dispatchedPayload);
+		// The payload round-trips the SQLite job store, so numbers come back as
+		// JsonElements — compare through the scalar helper.
+		Assert.Equal("730", Scalar(dispatchedPayload!["app_id"]));
+		Assert.Equal("6", Scalar(dispatchedPayload["context_id"]));
+		Assert.Equal("91", Scalar(dispatchedPayload["seller_proceeds_cents"]));
+		// The dry-run default must not leak a send flag into the payload.
+		Assert.False(dispatchedPayload.ContainsKey("send"));
+	}
+
+	[Fact]
+	public async Task PostMarketListingCreate_SendEnabled_AgentReportsFinished()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline", marketListingsEnabled = true });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Dictionary<string, object?>? dispatchedPayload = null;
+		Task responder = Task.Run(async () =>
+		{
+			dispatchedPayload = await RespondToFirstMarketCreateTaskAsync(store, success: true, cts.Token);
+		});
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/market/listings",
+			new { appId = 753, contextId = "6", assetId = "3548...", amount = 1, buyerPriceCents = 115, send = true });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		Assert.NotNull(dispatchedPayload);
+		Assert.Equal("true", Scalar(dispatchedPayload!["send"]));
+		Assert.Equal("115", Scalar(dispatchedPayload["buyer_price_cents"]));
+		// The response echoes the spec with the switch on.
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+	}
+
+	[Fact]
+	public async Task PutAccount_MarketListingsEnabled_SurvivesPutWithoutField()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline", marketListingsEnabled = true });
+		// A later PUT that omits the flag must keep it (opt-in is not silently reset).
+		using HttpResponseMessage resp = await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.True(doc.RootElement.GetProperty("spec").GetProperty("marketListingsEnabled").GetBoolean());
+	}
+
+	[Fact]
 	public async Task AcceptTradeOffer_InvalidRequest_Returns400()
 	{
 		await using var factory = CreateFactory();
@@ -1761,6 +1885,61 @@ public sealed class AccountApiTests
 		}
 
 		return RespondToFirstTaskAsync(store, "cancel_market_listings", success, output, "agent refused", ct);
+	}
+
+	/// <summary>Renders a dispatched payload value as a plain string — every value
+	/// arrives as a JsonElement after the SQLite job store round-trip.</summary>
+	private static string Scalar(object? value) => value switch
+	{
+		JsonElement e => e.ValueKind == JsonValueKind.String ? e.GetString() ?? "null" : e.GetRawText(),
+		null => "null",
+		_ => value.ToString() ?? "null"
+	};
+
+	/// <summary>
+	/// Plays the agent side for create_market_listing: claims the queued task,
+	/// reports the dry-run pricing-plan output and returns the dispatched
+	/// payload so tests can assert what the endpoint actually sent.
+	/// </summary>
+	private static async Task<Dictionary<string, object?>?> RespondToFirstMarketCreateTaskAsync(IJobStore store, bool success, CancellationToken ct)
+	{
+		while (!ct.IsCancellationRequested)
+		{
+			JobTask? claimed = await store.ClaimNextQueuedTask("us-east", ct);
+			if (claimed is not null && claimed.Action == "create_market_listing")
+			{
+				Dictionary<string, object?>? payload = claimed.Payload is null
+					? null
+					: new Dictionary<string, object?>(claimed.Payload);
+				await store.SetTaskResult(
+					new TaskResult(
+						claimed.Id,
+						success,
+						success ? null : "agent refused",
+						success
+							? new Dictionary<string, object?>
+							{
+								["dry_run"] = true,
+								["would_list"] = true,
+								["asset"] = new Dictionary<string, object?> { ["app_id"] = 730u, ["context_id"] = "6", ["asset_id"] = "3547...", ["amount"] = 1 },
+								["pricing"] = new Dictionary<string, object?>
+								{
+									["seller_proceeds_cents"] = 91,
+									["steam_fee_cents"] = 4,
+									["publisher_fee_cents"] = 9,
+									["buyer_price_cents"] = 104
+								}
+							}
+							: null,
+						DateTimeOffset.UtcNow),
+					ct);
+				return payload;
+			}
+
+			await Task.Delay(25, ct);
+		}
+
+		return null;
 	}
 
 	/// <summary>Plays the agent side: claims the first queued task for <paramref name="action"/> and reports a result.</summary>

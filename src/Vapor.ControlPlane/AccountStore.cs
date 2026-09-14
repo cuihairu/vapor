@@ -43,7 +43,8 @@ public sealed class AccountStore
 		string? region,
 		string? agentId,
 		string? note,
-		string? updatedBy = null)
+		string? updatedBy = null,
+		bool? marketListingsEnabled = null)
 	{
 		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, out var normalizedAccountName);
 
@@ -51,7 +52,17 @@ public sealed class AccountStore
 		{
 			if (_accounts.TryGetValue(normalizedAccountName, out var existing))
 			{
-				spec = spec with { Version = new ConfigVersion((existing.Version?.Version ?? 0) + 1, spec.Version!.UpdatedAt, spec.Version.UpdatedBy) };
+				// The market-listings opt-in is carried per update: null keeps the
+				// current value so a PUT that omits the flag never silently flips it.
+				spec = spec with
+				{
+					MarketListingsEnabled = marketListingsEnabled ?? existing.MarketListingsEnabled,
+					Version = new ConfigVersion((existing.Version?.Version ?? 0) + 1, spec.Version!.UpdatedAt, spec.Version.UpdatedBy)
+				};
+			}
+			else if (marketListingsEnabled is true)
+			{
+				spec = spec with { MarketListingsEnabled = true };
 			}
 
 			_accounts[normalizedAccountName] = spec;

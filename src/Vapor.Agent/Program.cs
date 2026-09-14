@@ -81,6 +81,12 @@ var serviceCollection = new ServiceCollection()
 		p.GetRequiredService<ILogger<GetMyMarketListingsAction>>()))
 	.AddSingleton<CancelMarketListingsAction>(p => new CancelMarketListingsAction(
 		p.GetRequiredService<ILogger<CancelMarketListingsAction>>()))
+	// Real market listing creation is opt-in per agent (default off, aligned
+	// with AGENT_2FA_AUTO_SUBMIT); the account-level switch is enforced by the
+	// control plane. Dry runs (send absent) are unrestricted either way.
+	.AddSingleton<CreateMarketListingAction>(p => new CreateMarketListingAction(
+		p.GetRequiredService<ILogger<CreateMarketListingAction>>(),
+		marketListingsEnabled: string.Equals(Environment.GetEnvironmentVariable("AGENT_MARKET_LISTINGS_ENABLED"), "true", StringComparison.OrdinalIgnoreCase)))
 	.AddSingleton<AcceptTradeOfferAction>(p => new AcceptTradeOfferAction(
 		p.GetRequiredService<ILogger<AcceptTradeOfferAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
@@ -179,6 +185,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<SendTradeOfferAction>
 actionRegistry.Register(serviceProvider.GetRequiredService<GetTradeOffersAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetMyMarketListingsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CancelMarketListingsAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<CreateMarketListingAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<AcceptTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<DeclineTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CancelTradeOfferAction>());

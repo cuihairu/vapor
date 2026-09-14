@@ -38,5 +38,6 @@ public sealed record AccountSpec(
 	string? Region = null,
 	string? AgentId = null,
 	string? Note = null,
-	ConfigVersion? Version = null
+	ConfigVersion? Version = null,
+	bool MarketListingsEnabled = false
 );
