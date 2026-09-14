@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GET /v1/accounts/{name}/market/listings`; `SteamMarketClient` parses the
   login-gated mylistings page (listing id, hash name, buyer price, seller
   proceeds, asset summary) with a contract test pinning the response shape.
+- Market batch cancel (P7-2): `cancel_market_listings` action plus
+  `POST /v1/accounts/{name}/market/listings/cancel`. Filter by app, market
+  hash name, inclusive buyer-price range or listing age; per-listing pacing
+  (default 1s) as market-specific rate control; one failure does not abort
+  the batch and per-listing results are reported back. `dry_run` defaults to
+  previewing the would-cancel list, and a real run with no filter is refused
+  both at the endpoint and inside the action itself.
 - Store data actions (P3): `get_game_info`, `search_games`, `get_price` and
   `get_market_listings`, all wired through the shared `IVaporCache` layer with
   per-call `cache_ttl_seconds` override (0 disables caching).
