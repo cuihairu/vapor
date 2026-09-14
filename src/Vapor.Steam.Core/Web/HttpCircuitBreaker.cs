@@ -59,23 +59,20 @@ public sealed class HttpCircuitBreaker
 	{
 		lock (_gate)
 		{
-			switch (GetEffectiveStateLocked())
+			var state = GetEffectiveStateLocked();
+			if (state == CircuitBreakerState.Closed)
 			{
-				case CircuitBreakerState.Closed:
-					return true;
-				case CircuitBreakerState.Open:
-					return false;
-				case CircuitBreakerState.HalfOpen:
-					if (_halfOpenProbeInFlight)
-					{
-						return false;
-					}
-
-					_halfOpenProbeInFlight = true;
-					return true;
-				default:
-					return false;
+				return true;
 			}
+
+			if (state == CircuitBreakerState.HalfOpen && !_halfOpenProbeInFlight)
+			{
+				_halfOpenProbeInFlight = true;
+				return true;
+			}
+
+			// Open, or a half-open probe already in flight.
+			return false;
 		}
 	}
 
@@ -93,15 +90,8 @@ public sealed class HttpCircuitBreaker
 	{
 		lock (_gate)
 		{
-			if (_state == CircuitBreakerState.HalfOpen)
-			{
-				// Probe failed: re-open immediately.
-				_state = CircuitBreakerState.Open;
-				_openedAt = _utcNow();
-				_halfOpenProbeInFlight = false;
-				return;
-			}
-
+			// A failed half-open probe lands here too: the count is already at the
+			// threshold, so the increment re-opens immediately with a fresh window.
 			_consecutiveFailures++;
 			if (_consecutiveFailures >= FailureThreshold)
 			{

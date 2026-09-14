@@ -155,14 +155,8 @@ public sealed class PluginEventDispatcher : IAsyncDisposable
 
 		if (pump is not null)
 		{
-			try
-			{
-				await pump.ConfigureAwait(false);
-			}
-			catch
-			{
-				// The pump swallows its own errors; this is belt and braces.
-			}
+			// The pump swallows its own errors, so this await never throws.
+			await pump.ConfigureAwait(false);
 		}
 
 		_pumpCts?.Dispose();

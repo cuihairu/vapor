@@ -390,4 +390,74 @@ public sealed class FileCredentialStoreTests : IDisposable
 		UnixFileMode mode = File.GetUnixFileMode(StorePath);
 		Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
 	}
+
+	[Fact]
+	public void Dispose_Twice_IsIdempotent()
+	{
+		var store = CreateStore();
+		store.Dispose();
+
+		store.Dispose(); // Second dispose must be a no-op, not an ObjectDisposedException.
+	}
+
+	[Fact]
+	public async Task SecondLoad_HitsDoubleCheckLockEarlyReturn()
+	{
+		// Park one reader inside the semaphore so a second reader queues behind the
+		// outer _loaded check; after the first reader populates the store, the second
+		// must exit through the in-lock early return.
+		var store = CreateStore();
+		var gate = (System.Threading.SemaphoreSlim)typeof(FileCredentialStore)
+			.GetField("_lock", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+			.GetValue(store)!;
+
+		await gate.WaitAsync();
+		var first = store.GetRefreshTokenAsync("account-a");
+		var second = store.GetRefreshTokenAsync("account-b");
+		// Give both tasks time to reach the semaphore before releasing it.
+		await Task.Delay(50);
+		gate.Release();
+
+		await Task.WhenAll(first, second);
+		store.Dispose();
+	}
+
+	[Fact]
+	public async Task Load_BothMainAndBackupCorrupted_StartsFresh()
+	{
+		await File.WriteAllTextAsync(StorePath, "{ this is not json");
+		await File.WriteAllTextAsync(BackupPath, "][ also not json");
+
+		using var store = CreateStore();
+
+		Assert.False(await store.HasCredentialsAsync("account-a"));
+		Assert.Null(await store.GetRefreshTokenAsync("account-a"));
+
+		// The fresh store remains usable and rewrites a valid file.
+		await store.SaveRefreshTokenAsync("account-a", "token");
+		Assert.Equal("token", await store.GetRefreshTokenAsync("account-a"));
+	}
+
+	[Fact]
+	public async Task Save_WhenDirectoryNotWritable_SwallowsWriteFailure()
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // Unix directory modes are not available on Windows.
+		}
+
+		using var store = CreateStore();
+		File.SetUnixFileMode(_dataDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+		try
+		{
+			// The write into the read-only directory fails; the store logs and swallows.
+			await store.SaveRefreshTokenAsync("account-a", "token");
+			Assert.False(File.Exists(StorePath));
+		}
+		finally
+		{
+			// Restore so the fixture's directory cleanup can delete the tree.
+			File.SetUnixFileMode(_dataDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+		}
+	}
 }

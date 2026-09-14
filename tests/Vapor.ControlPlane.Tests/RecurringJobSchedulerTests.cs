@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.ControlPlane;
 using Vapor.Protocol;
@@ -322,5 +323,62 @@ public sealed class RecurringJobSchedulerRetireTests
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
+	}
+
+	[Fact]
+	public async Task StartStop_RunsAtLeastOneSchedulerTick()
+	{
+		// The scheduler's PeriodicTimer fires every second; one tick exercises the
+		// ExecuteAsync loop body (an empty store makes the pass a no-op).
+		using var store = new SqliteJobStore(":memory:");
+		var scheduler = new RecurringJobScheduler(
+			store, new ControlPlaneApiTests.RecordingEventBroker(), NullLogger<RecurringJobScheduler>.Instance);
+		scheduler.Clock = static () => DateTimeOffset.UtcNow.AddMinutes(-5);
+
+		await scheduler.StartAsync(CancellationToken.None);
+		await Task.Delay(1200);
+		await scheduler.StopAsync(CancellationToken.None);
+
+		// Reaching a clean stop without exceptions is the assertion.
+	}
+
+	[Fact]
+	public async Task TickAsync_ExhaustedCronSchedule_RetiresTemplate()
+	{
+		// A due template whose cron never matches again (Feb 30) has no future trigger
+		// point and no missed chain: the pass must retire (cancel) the template instead
+		// of hot-looping on it. CreateJob validation refuses never-matching crons up
+		// front, so the row starts valid and its schedule is rewritten through the
+		// store's own connection — the state a bounded schedule eventually reaches.
+		using var store = new SqliteJobStore(":memory:");
+		var scheduler = new RecurringJobScheduler(
+			store, new ControlPlaneApiTests.RecordingEventBroker(), NullLogger<RecurringJobScheduler>.Instance);
+
+		JobWithTasks template = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null, new JobSchedule(Cron: "* * * * *")),
+			CancellationToken.None);
+		await store.AdvanceSchedule(
+			template.Job.Id, DateTimeOffset.UtcNow.AddSeconds(-30), CancellationToken.None);
+		RewriteScheduleCron(store, template.Job.Id, "0 0 30 2 *");
+
+		await scheduler.TickAsync(CancellationToken.None);
+
+		JobWithTasks retired = await store.GetJob(template.Job.Id, CancellationToken.None);
+		Assert.Equal(JobStatus.Canceled, retired.Job.Status);
+	}
+
+	private static void RewriteScheduleCron(SqliteJobStore store, string jobId, string cron)
+	{
+		FieldInfo field = typeof(SqliteJobStore).GetField("_connection", BindingFlags.Instance | BindingFlags.NonPublic)
+			?? throw new InvalidOperationException("Missing store connection field.");
+		var connection = (Microsoft.Data.Sqlite.SqliteConnection?)field.GetValue(store);
+		Assert.NotNull(connection);
+
+		using var cmd = connection!.CreateCommand();
+		cmd.CommandText = "UPDATE jobs SET schedule_json = $json WHERE id = $id;";
+		cmd.Parameters.AddWithValue(
+			"$json", System.Text.Json.JsonSerializer.Serialize(new JobSchedule(Cron: cron), JsonDefaults.Options));
+		cmd.Parameters.AddWithValue("$id", jobId);
+		Assert.Equal(1, cmd.ExecuteNonQuery());
 	}
 }

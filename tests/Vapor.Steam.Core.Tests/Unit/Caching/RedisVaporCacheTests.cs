@@ -532,5 +532,24 @@ public sealed class RedisVaporCacheTests
 		Assert.Equal(1, cache.Hits);
 	}
 
+	[Fact]
+	public async Task GetAsync_WhenNoServerReportsConnected_FallsBackToFirstEndpoint()
+	{
+		var redis = new FakeRedis();
+		// ResolveServer walks the endpoints for a connected server; with none
+		// connected it must fall back to the first endpoint rather than throw.
+		redis.Multiplexer.Setup(m => m.GetServer(It.IsAny<EndPoint>(), It.IsAny<object>())).Returns(redis.Server.Object);
+		redis.Server.Setup(s => s.IsConnected).Returns(false);
+		redis.Multiplexer
+			.Setup(m => m.GetEndPoints(It.IsAny<bool>()))
+			.Returns([new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 6379)]);
+		using var cache = redis.CreateCache();
+
+		var result = await cache.GetAsync<Payload>("k");
+
+		Assert.Null(result);
+		Assert.Equal(1, cache.Misses);
+	}
+
 	private sealed record Payload(string Value);
 }

@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Reflection;
+using System.Text;
 using Xunit;
 using Vapor.Plugins.Monitoring;
 
@@ -192,6 +194,62 @@ public class MetricsHttpServerTests : IDisposable
 
 		Assert.Equal(port, server.Port);
 		Assert.True(server.IsRunning);
+	}
+
+	[Fact]
+	public async Task RawSocketDispose_AcceptFailsOnceThenLoopExitsQuietly()
+	{
+		// Disposing the underlying socket without cancelling the server token is the
+		// "socket died under the accept loop" scenario: the in-flight accept fails with a
+		// SocketException (logged + continued), the next accept hits the disposed guard
+		// and breaks the loop instead of spinning or crashing the fire-and-forget task.
+		var server = StartServer(() => "x\n");
+
+		// A full roundtrip proves the loop is parked in AcceptTcpClientAsync before we
+		// pull the socket out from under it.
+		using (var httpClient = new HttpClient())
+		{
+			var warmup = await httpClient.GetAsync($"http://127.0.0.1:{server.Port}/metrics");
+			Assert.True(warmup.IsSuccessStatusCode);
+		}
+
+		TcpListener rawListener = (TcpListener)typeof(MetricsHttpServer)
+			.GetField("_listener", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(server)!;
+		rawListener.Server.Dispose();
+
+		Task acceptLoop = (Task)typeof(MetricsHttpServer)
+			.GetField("_acceptLoop", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(server)!;
+
+		await acceptLoop.WaitAsync(TimeSpan.FromSeconds(10));
+
+		Assert.True(acceptLoop.IsCompletedSuccessfully);
+		Assert.True(server.IsRunning); // Server.Stop() was never called.
+	}
+
+	[Fact]
+	public async Task ClientResetsConnection_ReadFailureIsSwallowed()
+	{
+		// A client that resets (RST) mid-request makes the handler's read throw; the
+		// handler must swallow it and the endpoint must keep serving later scrapes.
+		var server = StartServer(() => "x\n");
+
+		using (var client = new TcpClient())
+		{
+			await client.ConnectAsync(IPAddress.Loopback, server.Port);
+			client.LingerState = new LingerOption(true, 0); // close sends RST, discarding data
+			using var stream = client.GetStream();
+			var partial = Encoding.ASCII.GetBytes("GET"); // no CRLF: handler stays reading
+			await stream.WriteAsync(partial);
+			await stream.FlushAsync();
+		}
+
+		await Task.Delay(100); // let the handler observe the reset
+
+		using var secondClient = new HttpClient();
+		var response = await secondClient.GetAsync($"http://127.0.0.1:{server.Port}/metrics");
+		Assert.True(response.IsSuccessStatusCode);
 	}
 
 	public void Dispose()

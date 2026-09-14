@@ -90,7 +90,6 @@ public sealed class SteamWebHandler : IDisposable
 	private readonly SteamWebHandlerConfig _config;
 	private readonly ILogger<SteamWebHandler> _logger;
 	private readonly Dictionary<string, string> _sessionCookies = new();
-	private readonly Dictionary<string, string> _loginCookies = new();
 	private readonly HttpClient _httpClient;
 	private readonly SemaphoreSlim _rateLimitLock = new(1, 1);
 	private readonly HttpCircuitBreaker _circuitBreaker;
@@ -199,12 +198,11 @@ public sealed class SteamWebHandler : IDisposable
 	}
 
 	/// <summary>
-	/// Clears all session and login cookies.
+	/// Clears all session cookies.
 	/// </summary>
 	public void ClearCookies()
 	{
 		_sessionCookies.Clear();
-		_loginCookies.Clear();
 		_logger.LogDebug("Cookies cleared");
 	}
 
@@ -216,11 +214,6 @@ public sealed class SteamWebHandler : IDisposable
 		var allCookies = new Dictionary<string, string>();
 
 		foreach (var kvp in _sessionCookies)
-		{
-			allCookies[kvp.Key] = kvp.Value;
-		}
-
-		foreach (var kvp in _loginCookies)
 		{
 			allCookies[kvp.Key] = kvp.Value;
 		}
@@ -443,12 +436,6 @@ public sealed class SteamWebHandler : IDisposable
 
 		// Add session cookies
 		foreach (var kvp in _sessionCookies)
-		{
-			request.Headers.TryAddWithoutValidation("Cookie", $"{kvp.Key}={kvp.Value}");
-		}
-
-		// Add login cookies
-		foreach (var kvp in _loginCookies)
 		{
 			request.Headers.TryAddWithoutValidation("Cookie", $"{kvp.Key}={kvp.Value}");
 		}

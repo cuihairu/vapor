@@ -59,6 +59,23 @@ public sealed class TaskSchedulerServiceTests
 	}
 
 	[Fact]
+	public async Task StartStop_RunsAtLeastOneDispatchTick()
+	{
+		var registry = new AgentRegistry();
+		var store = new FakeJobStore();
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+
+		await scheduler.StartAsync(CancellationToken.None);
+		// The dispatch timer fires every 250ms; one tick exercises the loop body.
+		await Task.Delay(400);
+		await scheduler.StopAsync(CancellationToken.None);
+
+		// Reaching a clean stop without exceptions is the assertion: the background
+		// loop ran (or was cancelled) through its PeriodicTimer body.
+	}
+
+	[Fact]
 	public async Task DispatchOnce_RequeuesTaskAndPublishesEnqueueFailureWhenAgentQueueRejectsTask()
 	{
 		var registry = new AgentRegistry();

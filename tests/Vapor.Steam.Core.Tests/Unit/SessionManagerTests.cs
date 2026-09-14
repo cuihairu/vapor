@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using Vapor.Steam.Core.Security;
@@ -336,6 +337,7 @@ public class SessionManagerTests : IDisposable
 			_loggerMock.Object,
 			_steamClientManagerMock.Object,
 			credentialStoreMock.Object,
+			CreateSlowLoggerFactory().Object,
 			tokenRefreshCheckInterval: TimeSpan.FromMinutes(10));
 
 		using var barrier = new Barrier(16);
@@ -359,10 +361,18 @@ public class SessionManagerTests : IDisposable
 		// Arrange
 		var accountName = "test_account";
 		var credentials = new AccountCredentials(accountName, "password");
+		// The slow factory widens the create/TryAdd window so the losing caller
+		// deterministically takes the "someone else won" branch instead of the
+		// race usually resolving before the second caller even starts.
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			loggerFactory: CreateSlowLoggerFactory().Object);
 
 		// Act
 		var tasks = Enumerable.Range(0, 10)
-			.Select(_ => _manager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None))
+			.Select(_ => manager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None))
 			.ToArray();
 
 		var sessions = await Task.WhenAll(tasks);
@@ -371,6 +381,48 @@ public class SessionManagerTests : IDisposable
 		// All returned sessions should be the same instance
 		var firstSession = sessions[0];
 		Assert.All(sessions, session => Assert.Same(firstSession, session));
+	}
+
+	[Fact]
+	public async Task TokenRefreshLoop_WhenRefreshThrows_LogsWarningAndKeepsLoopAlive()
+	{
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore(expiringToken: true);
+		SetupSuccessfulTokenLogin();
+		_steamClientManagerMock
+			.Setup(m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.Returns(Task.FromException<bool>(new InvalidOperationException("refresh exploded")));
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object,
+			tokenRefreshCheckInterval: TimeSpan.FromMilliseconds(50));
+
+		var session = await manager.GetOrCreateSessionAsync(
+			"test_account", new AccountCredentials("test_account", string.Empty), CancellationToken.None);
+		await session.LoginAsync(CancellationToken.None);
+
+		// The loop swallows the refresh failure and keeps ticking.
+		var deadline = DateTime.UtcNow.AddSeconds(10);
+		while (DateTime.UtcNow < deadline)
+		{
+			try
+			{
+				_steamClientManagerMock.Verify(
+					m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()),
+					Times.AtLeastOnce);
+				break;
+			}
+			catch (MockException)
+			{
+				await Task.Delay(25);
+			}
+		}
+
+		_steamClientManagerMock.Verify(
+			m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()),
+			Times.AtLeastOnce);
+		Assert.Equal(SessionState.Connected, session.State);
 	}
 
 	[Fact]
@@ -856,6 +908,21 @@ public class SessionManagerTests : IDisposable
 				It.IsAny<Exception>(),
 				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
 			Times.AtLeastOnce);
+	}
+
+	/// <summary>
+	/// A logger factory whose CreateLogger blocks briefly, widening the window
+	/// between the session construction and the dictionary TryAdd so concurrent
+	/// create/restore tests deterministically exercise the losing-caller branch.
+	/// </summary>
+	private static Mock<ILoggerFactory> CreateSlowLoggerFactory()
+	{
+		var factoryMock = new Mock<ILoggerFactory>(MockBehavior.Loose);
+		factoryMock
+			.Setup(f => f.CreateLogger(It.IsAny<string>()))
+			.Returns(NullLogger.Instance)
+			.Callback(() => Thread.Sleep(30));
+		return factoryMock;
 	}
 
 	private Mock<ICredentialStore> CreateSuccessfulRestoreCredentialStore(bool expiringToken = false)

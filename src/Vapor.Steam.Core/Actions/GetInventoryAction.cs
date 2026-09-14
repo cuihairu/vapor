@@ -323,7 +323,7 @@ public sealed class GetInventoryAction : IAction
 			case JsonElement { ValueKind: JsonValueKind.Number } je when je.TryGetUInt32(out parsed):
 				return true;
 			case JsonElement { ValueKind: JsonValueKind.String } je:
-				return TryParseString(je.GetString(), out parsed);
+				return TryParseString(je.GetString()!, out parsed);
 			case string s:
 				return TryParseString(s, out parsed);
 			default:
@@ -332,14 +332,9 @@ public sealed class GetInventoryAction : IAction
 		}
 	}
 
-	private static bool TryParseString(string? value, out uint parsed)
+	private static bool TryParseString(string value, out uint parsed)
 	{
-		if (value is null)
-		{
-			parsed = 0;
-			return false;
-		}
-
+		// Both call sites pass non-null text (a JSON string element or a CLR string).
 		return uint.TryParse(value.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed) && parsed > 0;
 	}
 }

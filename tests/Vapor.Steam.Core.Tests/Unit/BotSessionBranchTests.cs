@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -86,26 +88,40 @@ public sealed class BotSessionBranchTests : IDisposable
 	public async Task ExecuteActionAsync_WhenCallerCancelsMidAction_ReportsCanceled()
 	{
 		var session = CreateSession();
+		var parkedInAction = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var releaseAction = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var mockAction = new Mock<IAction>();
 		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("hang", "Hangs until canceled", RequiresLogin: false, TimeoutSeconds: 60));
 		mockAction
 			.Setup(a => a.ExecuteAsync(It.IsAny<BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
 			.Returns(async (BotSession _, IReadOnlyDictionary<string, object?> _, CancellationToken ct) =>
 			{
-				await Task.Delay(TimeSpan.FromMinutes(1), ct);
+				parkedInAction.TrySetResult();
+				await releaseAction.Task.WaitAsync(ct);
 				return new ActionResult(true, null, null);
 			});
 		_actionRegistryMock.Setup(r => r.Get("hang")).Returns(mockAction.Object);
 
-		var cts = new CancellationTokenSource();
+		using var cts = new CancellationTokenSource();
 		var pending = session.ExecuteActionAsync("hang", new Dictionary<string, object?>(), cts.Token);
-		await Task.Delay(150); // let the action park inside its delay
-		cts.Cancel();
+		await parkedInAction.Task.WaitAsync(TimeSpan.FromSeconds(10)); // deterministically parked
 
-		// The same token cancels the caller's wait immediately; the loop's own
-		// "canceled" result (and its observer notification) happens in the background.
-		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
-		await Task.Delay(200); // let the command loop unwind the parked action
+		cts.Cancel();
+		releaseAction.TrySetResult();
+
+		// Two unwindings race legitimately: the caller's WaitAsync can observe the
+		// cancellation directly (OCE), or the loop can finish unwinding the parked
+		// action first and hand back its "canceled" result. Accept both outcomes.
+		try
+		{
+			SessionCommandResult result = await pending.WaitAsync(TimeSpan.FromSeconds(10));
+			Assert.False(result.Success);
+			Assert.Equal("canceled", result.Error);
+		}
+		catch (OperationCanceledException)
+		{
+			// The caller's own wait won the race — equally valid.
+		}
 	}
 
 	[Fact]
@@ -340,5 +356,76 @@ public sealed class BotSessionBranchTests : IDisposable
 				onUrl("https://s.team/q/1/BRANCH");
 				return Task.FromResult(new QrLoginResult(true, null, QrRefreshToken));
 			});
+	}
+
+	[Fact]
+	public async Task LoginAsync_WithoutExplicitStart_LazilyStartsCommandLoop()
+	{
+		SetupConnect();
+		_transportMock
+			.Setup(t => t.LoginAsync(Account, "password", It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		// Construct without Start(): LoginAsync must lazily start the command loop.
+		var session = new BotSession(
+			Account,
+			new AccountCredentials(Account, "password"),
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_transportMock.Object);
+		_sessions.Add(session);
+
+		var result = await session.LoginAsync();
+
+		Assert.True(result.Success);
+		Assert.Equal(SessionState.Connected, session.State);
+		// An explicit Start() after the lazy start is a programming error.
+		Assert.Throws<InvalidOperationException>(() => session.Start());
+	}
+
+	[Fact]
+	public async Task DisconnectAsync_AfterLogin_RunsDisconnectCaseToEndOfLoop()
+	{
+		SetupConnect();
+		_transportMock
+			.Setup(t => t.LoginAsync(Account, "password", It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_transportMock
+			.Setup(t => t.DisconnectAsync())
+			.Returns(Task.CompletedTask);
+		var session = CreateSession(withEventCallback: false);
+		await session.LoginAsync();
+
+		await session.DisconnectAsync();
+
+		Assert.Equal(SessionState.Disconnected, session.State);
+	}
+
+	[Fact]
+	public async Task CommandLoop_UnexpectedCrash_LogsCriticalAndEntersFatalError()
+	{
+		var session = CreateSession();
+		// A null command makes the loop's switch dereference cmd.Type; the inner
+		// handler catch re-throws on the same null, and the crash escapes to the
+		// loop's outer catch which flips the session into FatalError.
+		var channel = (Channel<SessionCommand>)typeof(BotSession)
+			.GetField("_commandChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(session)!;
+		channel.Writer.TryWrite(null!);
+
+		await WaitForEventsAsync(e => e.EventType == "state_changed" && e.State == "FatalError");
+		Assert.Equal(SessionState.FatalError, session.State);
+	}
+
+	[Fact]
+	public void Dispose_AfterCtsAlreadyDisposed_DoesNotThrow()
+	{
+		var session = CreateSession(withEventCallback: false);
+		var cts = (CancellationTokenSource)typeof(BotSession)
+			.GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(session)!;
+		cts.Dispose();
+
+		// The Dispose guard must swallow the ObjectDisposedException from Cancel().
+		session.Dispose();
 	}
 }

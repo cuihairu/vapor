@@ -124,8 +124,6 @@ public sealed class RedactingLoggerProvider : ILoggerProvider
 
 			public KeyValuePair<string, object?> this[int index] => _pairs[index];
 
-			public IEnumerable<KeyValuePair<string, object?>> AppendPairs(IEnumerable<KeyValuePair<string, object?>> _) => _pairs;
-
 			public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() => _pairs.GetEnumerator();
 
 			System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();

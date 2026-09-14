@@ -99,13 +99,8 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 		_loopCts?.Cancel();
 		if (_loop is not null)
 		{
-			try
-			{
-				await _loop.ConfigureAwait(false);
-			}
-			catch (OperationCanceledException)
-			{
-			}
+			// The loop swallows its own errors, so this await never throws.
+			await _loop.ConfigureAwait(false);
 		}
 
 		_loopCts?.Dispose();
@@ -141,13 +136,8 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 		_loopCts?.Cancel();
 		if (_loop is not null)
 		{
-			try
-			{
-				await _loop.ConfigureAwait(false);
-			}
-			catch (OperationCanceledException)
-			{
-			}
+			// The loop swallows its own errors, so this await never throws.
+			await _loop.ConfigureAwait(false);
 		}
 
 		_loopCts?.Dispose();

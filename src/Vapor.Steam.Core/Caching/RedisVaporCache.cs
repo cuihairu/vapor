@@ -108,7 +108,7 @@ public sealed class RedisVaporCache : IVaporCache, IDisposable
 		}
 
 		Interlocked.Increment(ref _hits);
-		return Deserialize<T>(payload);
+		return Deserialize<T>(payload!);
 	}
 
 	public Task SetAsync<T>(string key, T value, TimeSpan? ttl = null, CancellationToken cancellationToken = default) where T : class
@@ -165,7 +165,7 @@ public sealed class RedisVaporCache : IVaporCache, IDisposable
 			if (RedisCacheEntry.IsFresh(freshMs, now))
 			{
 				Interlocked.Increment(ref _hits);
-				return Deserialize<T>(payload);
+				return Deserialize<T>(payload!);
 			}
 
 			if (RedisCacheEntry.IsStaleServable(freshMs, staleMs, now))
@@ -173,7 +173,7 @@ public sealed class RedisVaporCache : IVaporCache, IDisposable
 				// Serve the stale value instantly and refresh in the background; the
 				// refresh takes a cross-instance lock so only one instance repopulates.
 				Interlocked.Increment(ref _staleHits);
-				T? stale = Deserialize<T>(payload);
+				T? stale = Deserialize<T>(payload!);
 				_ = RefreshInBackgroundAsync<T>(key, factory, ttl, staleTtl);
 				return stale;
 			}
@@ -391,13 +391,10 @@ public sealed class RedisVaporCache : IVaporCache, IDisposable
 		return true;
 	}
 
-	private static T? Deserialize<T>(string? payload) where T : class
+	// Callers always hand over a payload that TryReadEntry already validated, so the
+	// only failure mode is malformed JSON.
+	private static T? Deserialize<T>(string payload) where T : class
 	{
-		if (payload is null)
-		{
-			return null;
-		}
-
 		try
 		{
 			return JsonSerializer.Deserialize<T>(payload);

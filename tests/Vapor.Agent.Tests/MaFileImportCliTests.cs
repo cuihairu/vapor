@@ -149,6 +149,37 @@ public sealed class MaFileImportCliTests : IDisposable
 	}
 
 	[Fact]
+	public async Task RunAsync_EmptyDirectory_NothingToImport()
+	{
+		// A directory that exists but holds no .maFile yields an empty expansion:
+		// the CLI reports that nothing was found instead of silently succeeding.
+		string emptyDir = Path.Combine(_workDirectory, "empty");
+		Directory.CreateDirectory(emptyDir);
+
+		using var store = CreateStore();
+
+		int exitCode = await MaFileImportCli.RunAsync([emptyDir], store, NullLogger.Instance);
+
+		Assert.Equal(2, exitCode);
+	}
+
+	[Fact]
+	public async Task RunAsync_ExistingNonMaFilePath_ImportAttemptsTheFileDirectly()
+	{
+		// A path pointing at an existing file is kept as-is (directory scans filter to
+		// .maFile, explicit paths do not), so a non-maFile name fails its own parse.
+		string notes = Path.Combine(_workDirectory, "notes.txt");
+		await File.WriteAllTextAsync(notes, "not a maFile");
+
+		using var store = CreateStore();
+
+		int exitCode = await MaFileImportCli.RunAsync([notes], store, NullLogger.Instance);
+
+		Assert.Equal(1, exitCode);
+		Assert.False(await store.HasCredentialsAsync("notes"));
+	}
+
+	[Fact]
 	public async Task RunAsync_PasswordWithoutValue_ReturnsUsageExitCode()
 	{
 		using var store = CreateStore();

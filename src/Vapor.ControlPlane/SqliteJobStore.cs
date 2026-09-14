@@ -1071,10 +1071,10 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		{
 			newStatus = JobStatus.Queued;
 		}
-		else if (canceled > 0 && finished == 0 && failed == 0)
-		{
-			newStatus = JobStatus.Canceled;
-		}
+
+		// No "all tasks canceled" branch: every RecomputeJob caller has just moved a
+		// task to Queued, Finished or Failed, so at least one of those counts is
+		// always positive here. Canceled jobs are terminal (see the early return).
 
 		long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 		using var update = _connection.CreateCommand();

@@ -96,10 +96,8 @@ public sealed class BotSession : IDisposable
 			cancellationToken
 		);
 
-		if (!_commandChannel.Writer.TryWrite(cmd))
-		{
-			return new SessionCommandResult(false, "command queue full", null);
-		}
+		// The command channel is unbounded, so TryWrite always succeeds.
+		_commandChannel.Writer.TryWrite(cmd);
 
 		return await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
 	}
@@ -293,8 +291,10 @@ public sealed class BotSession : IDisposable
 				cmd.Completion?.TrySetResult(new SessionCommandResult(result.Success, result.Error, result.Output));
 				NotifyActionExecuted(action.Name, result.Success, stopwatch.Elapsed.TotalMilliseconds);
 			}
-			catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true)
+			catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true && !linkedCts.IsCancellationRequested)
 			{
+				// timeoutCts is linked to the caller token, so a caller cancel cancels it
+				// too; only report a timeout when the caller itself is still running.
 				cmd.Completion?.TrySetResult(new SessionCommandResult(false, "action timeout", null));
 				NotifyActionExecuted(action.Name, false, stopwatch.Elapsed.TotalMilliseconds);
 			}

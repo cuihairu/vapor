@@ -30,6 +30,16 @@ public class SteamClientManagerTests : IDisposable
 	}
 
 	[Fact]
+	public void SteamAuthTokenProvider_ExposesConstructedSteamAuthentication()
+	{
+		// The provider builds its SteamAuthentication via an internal SteamKit2
+		// constructor at startup; the accessor must hand it back ready for use.
+		var provider = new SteamAuthTokenProvider(new SteamClient());
+
+		Assert.NotNull(provider.Authentication);
+	}
+
+	[Fact]
 	public async Task GetLogOnDetailsAsync_WithNonExistentAccount_ReturnsNull()
 	{
 		// Act

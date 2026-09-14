@@ -92,18 +92,14 @@ public sealed class RecurringJobScheduler : BackgroundService
 
 		if (missed > 0)
 		{
-			if (future == null)
-			{
-				// The cron can never match again (e.g. Feb 30): retire the template so it
-				// doesn't sit due forever.
-				await RetireAsync(template, cancellationToken).ConfigureAwait(false);
-				return;
-			}
-
+			// future is never null here: a cron that produced the missed trigger points
+			// (5-field, no year field) always has a later match, and interval schedules
+			// by construction return a next point.
+			DateTimeOffset next = future!.Value;
 			if (schedule.Missed == ScheduleMissedPolicy.Skip)
 			{
 				Interlocked.Add(ref _missedDropped, missed);
-				await _store.AdvanceSchedule(template.Id, future.Value, cancellationToken).ConfigureAwait(false);
+				await _store.AdvanceSchedule(template.Id, next, cancellationToken).ConfigureAwait(false);
 				Publish(template.Id, "job.scheduled_skipped", new Dictionary<string, object?>
 				{
 					["reason"] = "missed",
@@ -113,7 +109,7 @@ public sealed class RecurringJobScheduler : BackgroundService
 			}
 
 			// Missed=RunOnce: fire the newest elapsed point as a catch-up, then stay on schedule.
-			Job? catchUp = await _store.TriggerScheduledJob(template.Id, future.Value, new Dictionary<string, string>
+			Job? catchUp = await _store.TriggerScheduledJob(template.Id, next, new Dictionary<string, string>
 			{
 				["scheduledMissedCount"] = missed.ToString(System.Globalization.CultureInfo.InvariantCulture)
 			}, cancellationToken).ConfigureAwait(false);

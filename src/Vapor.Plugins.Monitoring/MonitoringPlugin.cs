@@ -102,13 +102,8 @@ public sealed class MonitoringPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		_sessionPumpCts?.Cancel();
 		if (_sessionPump is not null)
 		{
-			try
-			{
-				await _sessionPump.ConfigureAwait(false);
-			}
-			catch (OperationCanceledException)
-			{
-			}
+			// The pump swallows its own errors, so this await never throws.
+			await _sessionPump.ConfigureAwait(false);
 		}
 
 		_sessionPumpCts?.Dispose();

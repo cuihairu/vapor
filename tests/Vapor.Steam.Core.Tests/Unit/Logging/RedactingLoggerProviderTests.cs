@@ -204,6 +204,35 @@ public sealed class RedactingLoggerProviderTests
 	}
 
 	[Fact]
+	public void BeginScope_StructuredState_EnumeratesViaNonGenericIEnumerable()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		using (logger.BeginScope(new List<KeyValuePair<string, object?>>
+			   {
+				   new("accountName", "alice"),
+				   new("authCode", "987654")
+			   }))
+		{
+			logger.LogInformation("inside scope");
+		}
+
+		// The non-generic enumerator is part of the redacted state's surface (used by
+		// structural walkers that only know IEnumerable); it must yield the same pairs.
+		var redactedScope = Assert.IsAssignableFrom<System.Collections.IEnumerable>(Assert.Single(capturing.CapturedScopes));
+		var pairs = new List<KeyValuePair<string, object?>>();
+		foreach (var pair in redactedScope)
+		{
+			pairs.Add((KeyValuePair<string, object?>)pair!);
+		}
+
+		Assert.Equal(2, pairs.Count);
+		Assert.Contains(pairs, p => p.Key == "accountName" && (string)p.Value! == "alice");
+		Assert.Equal("<redacted>", Assert.Single(pairs, p => p.Key == "authCode").Value);
+	}
+
+	[Fact]
 	public void Log_WithStructuredState_ExposesCountAndIndexerOverRedactedPairs()
 	{
 		var capturing = new CapturingProvider();

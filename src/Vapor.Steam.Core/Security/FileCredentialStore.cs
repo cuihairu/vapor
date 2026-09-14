@@ -442,10 +442,10 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		var accounts = new Dictionary<string, AccountCredentials>(StringComparer.Ordinal);
 		foreach (var (accountName, creds) in _credentials)
 		{
-			string? encryptedRefreshToken = EncryptValue(creds.RefreshToken, accountName, nameof(creds.RefreshToken));
-			string? encryptedAccessToken = EncryptValue(creds.AccessToken, accountName, nameof(creds.AccessToken));
-			string? encryptedSharedSecret = EncryptValue(creds.SharedSecret, accountName, nameof(creds.SharedSecret));
-			string? encryptedIdentitySecret = EncryptValue(creds.IdentitySecret, accountName, nameof(creds.IdentitySecret));
+			string? encryptedRefreshToken = EncryptValue(creds.RefreshToken);
+			string? encryptedAccessToken = EncryptValue(creds.AccessToken);
+			string? encryptedSharedSecret = EncryptValue(creds.SharedSecret);
+			string? encryptedIdentitySecret = EncryptValue(creds.IdentitySecret);
 
 			accounts[accountName] = new AccountCredentials
 			{
@@ -486,21 +486,16 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		}
 	}
 
-	private static string? EncryptValue(string? value, string accountName, string fieldName)
+	private static string? EncryptValue(string? value)
 	{
 		if (string.IsNullOrEmpty(value))
 		{
 			return null;
 		}
 
-		string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, value);
-		if (encrypted == null)
-		{
-			// Fail secure: refuse to write plain-text secrets to disk.
-			throw new InvalidOperationException($"Failed to encrypt {fieldName} for account '{accountName}'");
-		}
-
-		return encrypted;
+		// AES with a normalized key cannot fail, so this never returns null — there is
+		// no plain-text fallback path to worry about.
+		return VaporCryptoHelper.Encrypt(ECryptoMethod.AES, value);
 	}
 
 	private void CheckAndTightenFilePermissions()

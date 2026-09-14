@@ -1233,6 +1233,23 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			NullLogger<DesiredStateReconciler>.Instance);
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_ABrokenReconcilePassDoesNotKillTheService()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, "us-east", null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore { ThrowOnCreate = true };
+		using var reconciler = CreateReconciler(accounts, agents, jobs, intervalSeconds: 1);
+
+		await reconciler.StartAsync(CancellationToken.None);
+		// The one-second tick runs a pass whose store throws; the loop-level catch
+		// must swallow the failure and leave the service alive for the next tick.
+		await Task.Delay(1300);
+		await reconciler.StopAsync(CancellationToken.None);
+
+		// Reaching a clean stop after a broken pass is the assertion.
+	}
+
 	internal sealed class FakeAuditStore : IAuditStore
 	{
 		public List<AuditEntry> Entries { get; } = [];

@@ -605,4 +605,59 @@ public sealed class SqliteJobStoreTests
 		cmd.Parameters.AddWithValue("$id", taskId);
 		cmd.ExecuteNonQuery();
 	}
+
+	[Fact]
+	public async Task AdvanceSchedule_AfterTemplateLeftScheduledState_ReturnsFalse()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks template = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null, new JobSchedule(IntervalSeconds: 60)),
+			cts.Token);
+		await store.CancelJob(template.Job.Id, cts.Token);
+
+		// The guard clause only advances templates still in the Scheduled state; a
+		// concurrently canceled template must report the lost race instead of writing.
+		bool advanced = await store.AdvanceSchedule(
+			template.Job.Id, DateTimeOffset.UtcNow.AddMinutes(1), cts.Token);
+
+		Assert.False(advanced);
+	}
+
+	[Fact]
+	public async Task TriggerScheduledJob_AfterTemplateLeftScheduledState_ReturnsNull()
+	{
+		// The guarded advance inside TriggerScheduledJob only fires for templates still
+		// Scheduled; a canceled template must come back null so the scheduler stays
+		// silent instead of spawning a child for a dead template.
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks template = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null, new JobSchedule(IntervalSeconds: 60)),
+			cts.Token);
+		await store.CancelJob(template.Job.Id, cts.Token);
+
+		Job? triggered = await store.TriggerScheduledJob(
+			template.Job.Id, DateTimeOffset.UtcNow.AddSeconds(-1), null, cts.Token);
+
+		Assert.Null(triggered);
+	}
+
+	[Fact]
+	public async Task FailRunningTask_ForTaskNotRunning_ThrowsNotFound()
+	{
+		// A queued (never-claimed) task is not running: the fail transition must reject
+		// it instead of corrupting the state machine.
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+
+		await Assert.ThrowsAsync<NotFoundException>(() =>
+			store.FailRunningTask(created.Tasks[0].Id, "boom", cts.Token));
+	}
 }

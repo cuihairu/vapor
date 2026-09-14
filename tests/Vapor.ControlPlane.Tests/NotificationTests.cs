@@ -179,6 +179,9 @@ public sealed class NotificationTests
 		using var service = new NotificationService(broker, [], NullLogger<NotificationService>.Instance);
 
 		await service.StartAsync(CancellationToken.None);
+		// Let the background ExecuteAsync actually reach its no-sink early return
+		// before stopping, instead of cancelling it before it starts.
+		await Task.Delay(50);
 		await service.StopAsync(CancellationToken.None);
 
 		Assert.Equal(0, broker.SubscriberCount);

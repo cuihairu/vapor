@@ -141,11 +141,11 @@ public sealed class RedeemKeyAction : IAction
 		return new ActionResult(success, errorMessage, output);
 	}
 
+	// AlreadyOwned and DuplicateRequest count as success (see the success check above),
+	// so this only ever sees genuine failure codes.
 	private static string GetErrorMessage(SteamResult result) =>
 		result switch
 		{
-			SteamResult.AlreadyOwned => "This key is already owned on this account",
-			SteamResult.DuplicateRequest => "This key is already being processed",
 			SteamResult.InvalidParam => "Invalid key format",
 			SteamResult.RateLimitExceeded => "Too many key redemption attempts. Please try again later.",
 			SteamResult.Timeout => "Request timed out",

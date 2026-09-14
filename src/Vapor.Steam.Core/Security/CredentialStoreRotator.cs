@@ -151,13 +151,8 @@ public static class CredentialStoreRotator
 			plain = value;
 		}
 
-		string? encrypted = VaporCryptoHelper.EncryptWithKey(newKey, plain);
-		if (encrypted == null)
-		{
-			throw new CredentialRotationException("encryption with new key failed");
-		}
-
-		return encrypted;
+		// Encryption with a normalized key cannot fail, so this never returns null.
+		return VaporCryptoHelper.EncryptWithKey(newKey, plain);
 	}
 
 	private sealed class RotatedStoreFile

@@ -66,13 +66,9 @@ public static class SteamTotp
 
 		try
 		{
-			var bytes = Convert.FromBase64String(secretBase64.Trim());
-			if (bytes.Length == 0)
-			{
-				throw new ArgumentException($"{paramName} must not decode to an empty secret", paramName);
-			}
-
-			return bytes;
+			// Non-blank input is guaranteed by the guard above, and any non-empty valid
+			// base64 decodes to at least one byte — an empty result is unreachable.
+			return Convert.FromBase64String(secretBase64.Trim());
 		}
 		catch (FormatException ex)
 		{

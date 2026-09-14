@@ -249,11 +249,6 @@ public static partial class VaporCryptoHelper
 	/// <returns>The encrypted text, or null if encryption failed.</returns>
 	public static string? Encrypt(ECryptoMethod cryptoMethod, string text)
 	{
-		if (!Enum.IsDefined(cryptoMethod))
-		{
-			throw new InvalidEnumArgumentException(nameof(cryptoMethod), (int)cryptoMethod, typeof(ECryptoMethod));
-		}
-
 		ArgumentException.ThrowIfNullOrEmpty(text);
 
 		return cryptoMethod switch
@@ -262,7 +257,7 @@ public static partial class VaporCryptoHelper
 			ECryptoMethod.AES => EncryptAES(text),
 			ECryptoMethod.EnvironmentVariable => text, // Stored as-is reference
 			ECryptoMethod.File => text, // Stored as-is reference
-			_ => throw new InvalidOperationException($"Unsupported crypto method: {cryptoMethod}")
+			_ => throw new InvalidEnumArgumentException(nameof(cryptoMethod), (int)cryptoMethod, typeof(ECryptoMethod))
 		};
 	}
 
@@ -274,11 +269,6 @@ public static partial class VaporCryptoHelper
 	/// <returns>The decrypted text, or null if decryption failed.</returns>
 	public static async Task<string?> Decrypt(ECryptoMethod cryptoMethod, string text)
 	{
-		if (!Enum.IsDefined(cryptoMethod))
-		{
-			throw new InvalidEnumArgumentException(nameof(cryptoMethod), (int)cryptoMethod, typeof(ECryptoMethod));
-		}
-
 		ArgumentException.ThrowIfNullOrEmpty(text);
 
 		return cryptoMethod switch
@@ -287,7 +277,7 @@ public static partial class VaporCryptoHelper
 			ECryptoMethod.AES => DecryptAES(text),
 			ECryptoMethod.EnvironmentVariable => await DecryptFromEnvironmentVariable(text).ConfigureAwait(false),
 			ECryptoMethod.File => await DecryptFromFile(text).ConfigureAwait(false),
-			_ => throw new InvalidOperationException($"Unsupported crypto method: {cryptoMethod}")
+			_ => throw new InvalidEnumArgumentException(nameof(cryptoMethod), (int)cryptoMethod, typeof(ECryptoMethod))
 		};
 	}
 
@@ -301,30 +291,16 @@ public static partial class VaporCryptoHelper
 	{
 		ArgumentException.ThrowIfNullOrEmpty(text);
 
-		try
-		{
-			return EncryptAesGcm(GetKeyMaterial(), text);
-		}
-		catch
-		{
-			// Log error in production
-			return null;
-		}
+		// GetKeyMaterial yields a normalized 32-byte key and the payload is non-empty,
+		// so AES-GCM cannot fail here — no catch-and-null fallback.
+		return EncryptAesGcm(GetKeyMaterial(), text);
 	}
 
 	private static string? DecryptAES(string text)
 	{
 		ArgumentException.ThrowIfNullOrEmpty(text);
 
-		try
-		{
-			return DecryptAes(GetKeyMaterial(), text);
-		}
-		catch
-		{
-			// Log error in production
-			return null;
-		}
+		return DecryptAes(GetKeyMaterial(), text);
 	}
 
 	private static byte[] GetKeyMaterial()
@@ -367,35 +343,27 @@ public static partial class VaporCryptoHelper
 	{
 		ArgumentException.ThrowIfNullOrEmpty(text);
 
+		byte[] key = GetKey(keyMaterial);
+		byte[] textData = Encoding.UTF8.GetBytes(text);
+		byte[] nonce = RandomNumberGenerator.GetBytes(AesGcmNonceSize);
+		byte[] ciphertext = new byte[textData.Length];
+		byte[] tag = new byte[AesGcmTagSize];
+
+		using var aesGcm = new AesGcm(key, AesGcmTagSize);
+		aesGcm.Encrypt(nonce, textData, ciphertext, tag);
+
+		byte[] result = ArrayPool<byte>.Shared.Rent(nonce.Length + tag.Length + ciphertext.Length);
 		try
 		{
-			byte[] key = GetKey(keyMaterial);
-			byte[] textData = Encoding.UTF8.GetBytes(text);
-			byte[] nonce = RandomNumberGenerator.GetBytes(AesGcmNonceSize);
-			byte[] ciphertext = new byte[textData.Length];
-			byte[] tag = new byte[AesGcmTagSize];
+			Array.Copy(nonce, result, nonce.Length);
+			Array.Copy(tag, 0, result, nonce.Length, tag.Length);
+			Array.Copy(ciphertext, 0, result, nonce.Length + tag.Length, ciphertext.Length);
 
-			using var aesGcm = new AesGcm(key, AesGcmTagSize);
-			aesGcm.Encrypt(nonce, textData, ciphertext, tag);
-
-			byte[] result = ArrayPool<byte>.Shared.Rent(nonce.Length + tag.Length + ciphertext.Length);
-			try
-			{
-				Array.Copy(nonce, result, nonce.Length);
-				Array.Copy(tag, 0, result, nonce.Length, tag.Length);
-				Array.Copy(ciphertext, 0, result, nonce.Length + tag.Length, ciphertext.Length);
-
-				return AesGcmPrefix + Convert.ToBase64String(result, 0, nonce.Length + tag.Length + ciphertext.Length);
-			}
-			finally
-			{
-				ArrayPool<byte>.Shared.Return(result);
-			}
+			return AesGcmPrefix + Convert.ToBase64String(result, 0, nonce.Length + tag.Length + ciphertext.Length);
 		}
-		catch
+		finally
 		{
-			// Log error in production
-			return null;
+			ArrayPool<byte>.Shared.Return(result);
 		}
 	}
 

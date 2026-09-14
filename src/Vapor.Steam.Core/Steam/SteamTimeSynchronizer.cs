@@ -68,11 +68,17 @@ public sealed class SteamTimeSynchronizer
 	/// parses the server_time field from the response. Shared by every consumer that does
 	/// not supply its own query delegate.
 	/// </summary>
-	public static async Task<long> QuerySteamServerTimeAsync(CancellationToken cancellationToken)
+	public static Task<long> QuerySteamServerTimeAsync(CancellationToken cancellationToken)
+	{
+		return QuerySteamServerTimeAsync(QueryTimeEndpoint, cancellationToken);
+	}
+
+	/// <summary>Endpoint-injectable variant (internal so tests can point at a local stub).</summary>
+	internal static async Task<long> QuerySteamServerTimeAsync(Uri endpoint, CancellationToken cancellationToken)
 	{
 		using var httpClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 		using var content = new System.Net.Http.FormUrlEncodedContent(new Dictionary<string, string>());
-		using var response = await httpClient.PostAsync(QueryTimeEndpoint, content, cancellationToken).ConfigureAwait(false);
+		using var response = await httpClient.PostAsync(endpoint, content, cancellationToken).ConfigureAwait(false);
 
 		response.EnsureSuccessStatusCode();
 

@@ -285,11 +285,8 @@ public sealed class SessionManager : ISessionManager, IDisposable
 
 	private async Task RefreshExpiringSessionsAsync(CancellationToken cancellationToken)
 	{
-		if (_credentialStore == null || _steamClientManager == null)
-		{
-			return;
-		}
-
+		// Both dependencies are non-null by construction: the refresh loop only starts
+		// when the store and transport are both wired in.
 		var now = DateTimeOffset.UtcNow;
 		foreach (var session in _sessions.Values)
 		{
@@ -299,7 +296,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			}
 
 			var accountName = session.AccountName;
-			var accessToken = await _credentialStore.GetAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
+			var accessToken = await _credentialStore!.GetAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
 
 			var shouldRefresh = accessToken == null || accessToken.ExpiresAt <= now.Add(_tokenRefreshLeadTime);
 			if (!shouldRefresh)
@@ -307,7 +304,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 				continue;
 			}
 
-			if (!await _credentialStore.HasCredentialsAsync(accountName, cancellationToken).ConfigureAwait(false))
+			if (!await _credentialStore!.HasCredentialsAsync(accountName, cancellationToken).ConfigureAwait(false))
 			{
 				continue;
 			}
@@ -320,7 +317,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			try
 			{
 				_logger.LogInformation("Refreshing access token for {AccountName}", accountName);
-				var refreshed = await _steamClientManager.RefreshAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
+				var refreshed = await _steamClientManager!.RefreshAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false);
 				if (!refreshed)
 				{
 					_logger.LogWarning("Access token refresh failed for {AccountName}", accountName);

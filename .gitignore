@@ -54,3 +54,4 @@ TestResults/
 # Runtime data
 data/
 .claude/worktrees/
+coverage/
