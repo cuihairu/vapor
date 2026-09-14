@@ -133,6 +133,31 @@ public sealed class FileCredentialStoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Load_FileWithNewerFormatVersion_FailsFast()
+	{
+		// A store written by a future version must not be silently reinterpreted.
+		await File.WriteAllTextAsync(StorePath, """{ "version": 99, "accounts": {} }""");
+
+		using var store = CreateStore();
+
+		var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+			() => store.HasCredentialsAsync("any-account"));
+		Assert.Contains("newer than supported", ex.Message, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Load_V2FileWithoutAccountsObject_Throws()
+	{
+		await File.WriteAllTextAsync(StorePath, """{ "version": 2 }""");
+
+		using var store = CreateStore();
+
+		var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+			() => store.HasCredentialsAsync("any-account"));
+		Assert.Contains("missing the accounts object", ex.Message, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task Load_WithMismatchedEncryptionKey_FailsFast()
 	{
 		string account = "account-a";

@@ -135,6 +135,20 @@ public sealed class SteamBadgesClientTests
 	}
 
 	[Fact]
+	public void Parse_UnnamedRow_YieldsDropWithoutName()
+	{
+		// No badge_title link or text: name extraction yields null and the drop
+		// is kept with an empty name rather than being dropped.
+		var html = Row(string.Empty, "card_drop_info_dialog_440", "<span class=\"progress_info_bold\">3 card drops remaining</span>");
+
+		var result = SteamBadgesClient.ParseBadgePage(html);
+
+		var drop = Assert.Single(result.CardDrops);
+		Assert.Equal(440U, drop.AppId);
+		Assert.Null(drop.Name);
+	}
+
+	[Fact]
 	public void Parse_LinkedTitle_ExtractsName()
 	{
 		var html = Row("Team Fortress 2", "card_drop_info_dialog_440", "<span class=\"progress_info_bold\">2 card drops remaining</span>", titleAsLink: true);

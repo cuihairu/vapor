@@ -148,7 +148,43 @@ public sealed class NotificationTests
 		Assert.Equal(2, handler.Requests.Count);
 	}
 
+	[Fact]
+	public async Task Webhook_CancelledWhileSending_RethrowsWithoutCountingFailure()
+	{
+		// Cancellation during delivery must propagate (not be swallowed as a delivery
+		// failure) so the dispatcher can distinguish stop-the-world from a broken sink.
+		using var cts = new CancellationTokenSource();
+		var handler = new CancellingHandler(cts);
+		using var sink = new WebhookNotificationSink(
+			new Uri("http://localhost/hook"), secret: null, maxRetries: 3,
+			TimeSpan.Zero, NullLogger<WebhookNotificationSink>.Instance,
+			new HttpClient(handler));
+
+		await Assert.ThrowsAsync<OperationCanceledException>(
+			() => sink.HandleAsync(NewEvent("job", "job.created"), cts.Token));
+
+		Assert.Equal(0, sink.Sent);
+		Assert.Equal(0, sink.Failed);
+		Assert.Equal(0, sink.Retried);
+		Assert.Single(handler.Requests); // No retry loop after cancellation.
+	}
+
 	// ── NotificationService (EventBroker integration) ──
+
+	[Fact]
+	public async Task StartAsync_WithoutSinks_ReturnsWithoutSubscribing()
+	{
+		// No sinks configured: the service is a no-op and never touches the broker.
+		var broker = new EventBroker();
+		using var service = new NotificationService(broker, [], NullLogger<NotificationService>.Instance);
+
+		await service.StartAsync(CancellationToken.None);
+		await service.StopAsync(CancellationToken.None);
+
+		Assert.Equal(0, broker.SubscriberCount);
+		Assert.Equal(0, broker.SessionSubscriberCount);
+		Assert.Equal(0, broker.AuthSubscriberCount);
+	}
 
 	[Fact]
 	public async Task JobEvents_AreDeliveredToMatchingSinks()
@@ -268,6 +304,87 @@ public sealed class NotificationTests
 		Assert.Equal(0, service.SinkCount);
 	}
 
+	[Fact]
+	public async Task JobEvent_PayloadValueShapes_FallBackToStringOrNull()
+	{
+		// After a JSON round-trip payload values are JsonElements; the dispatcher must
+		// accept string-shaped ones and map anything else to null (not throw).
+		var broker = new EventBroker();
+		var sink = new RecordingSink();
+		using var service = new NotificationService(broker, new[] { sink }, NullLogger<NotificationService>.Instance);
+
+		await StartAsync(broker, service);
+		try
+		{
+			System.Text.Json.JsonElement jsonName = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("\"eve\"");
+			broker.Publish("job-4", "job.created", new Dictionary<string, object?>
+			{
+				["accountName"] = jsonName,
+				["state"] = 42 // number → no string representation → null
+			});
+
+			NotificationEvent n = await sink.WaitForEventAsync();
+			Assert.Equal("eve", n.AccountName);
+			Assert.Null(n.State);
+		}
+		finally
+		{
+			await service.StopAsync(CancellationToken.None);
+		}
+	}
+
+	[Fact]
+	public async Task SinkCancelledDuringDelivery_AfterStopRequested_SkipsRemainingSinks()
+	{
+		// A sink that throws OperationCanceledException while stopping must abort the
+		// delivery loop (return) instead of being treated as an ordinary sink failure.
+		var broker = new EventBroker();
+		using var cts = new CancellationTokenSource();
+		var cancelled = new RecordingSink
+		{
+			Handler = _ =>
+			{
+				cts.Cancel();
+				throw new OperationCanceledException();
+			}
+		};
+		using var service = new NotificationService(broker, new[] { cancelled }, NullLogger<NotificationService>.Instance);
+
+		await service.StartAsync(cts.Token);
+		try
+		{
+			await WaitForSubscriptionsAsync(broker, service);
+			broker.Publish("job-5", "job.created", null);
+
+			await cancelled.WaitForCallAsync();
+		}
+		finally
+		{
+			// Completes without hanging: the pumps exit through their cancellation catches.
+			await service.StopAsync(CancellationToken.None);
+		}
+
+		Assert.Equal(1, cancelled.Calls);
+	}
+
+	[Fact]
+	public async Task StopAsync_AfterDeliveries_ExitsAllPumpsWithoutThrowing()
+	{
+		// Covers the pumps' OperationCanceledException catches on shutdown: after the
+		// pumps have processed at least one event, stopping must complete cleanly.
+		var broker = new EventBroker();
+		var sink = new RecordingSink();
+		using var service = new NotificationService(broker, new[] { sink }, NullLogger<NotificationService>.Instance);
+
+		await StartAsync(broker, service);
+		broker.Publish("job-6", "job.created", null);
+		await sink.WaitForEventAsync();
+
+		await service.StopAsync(CancellationToken.None);
+
+		Assert.Equal(TaskStatus.RanToCompletion, service.ExecuteTask!.Status);
+	}
+
 	// ── fixtures ──
 
 	/// <summary>
@@ -278,7 +395,12 @@ public sealed class NotificationTests
 	private static async Task StartAsync(EventBroker broker, NotificationService service)
 	{
 		await service.StartAsync(CancellationToken.None);
+		await WaitForSubscriptionsAsync(broker, service);
+	}
 
+	/// <summary>Waits until the three pumps have registered their broker subscriptions.</summary>
+	private static async Task WaitForSubscriptionsAsync(EventBroker broker, NotificationService service)
+	{
 		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
 		while (broker.SubscriberCount == 0 || broker.SessionSubscriberCount == 0 || broker.AuthSubscriberCount == 0)
 		{
@@ -312,6 +434,28 @@ public sealed class NotificationTests
 	{
 		using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes(secret));
 		return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+	}
+
+	/// <summary>Cancels the token and throws OperationCanceledException while "sending".</summary>
+	private sealed class CancellingHandler : HttpMessageHandler
+	{
+		private readonly CancellationTokenSource _cts;
+
+		public CancellingHandler(CancellationTokenSource cts)
+		{
+			_cts = cts;
+		}
+
+		public List<HttpRequestMessage> Requests { get; } = [];
+
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+		{
+			Requests.Add(request);
+			// The token must already be cancelled when the exception escapes, mirroring
+			// an HttpClient request aborted by the caller's token.
+			_cts.Cancel();
+			return Task.FromException<HttpResponseMessage>(new OperationCanceledException(_cts.Token));
+		}
 	}
 
 	private sealed class StubHandler : HttpMessageHandler
@@ -352,8 +496,14 @@ public sealed class NotificationTests
 		public long Failed { get; }
 		public long Retried { get; }
 
+		/// <summary>Total HandleAsync invocations, including ones whose handler threw.</summary>
+		public int Calls { get; private set; }
+
 		public async Task HandleAsync(NotificationEvent notification, CancellationToken cancellationToken)
 		{
+			Calls++;
+			// Signaled before the handler runs: a throwing handler must still unblock WaitForCallAsync.
+			_callsChannel.Writer.TryWrite(notification);
 			if (Handler is not null)
 			{
 				await Handler(notification);
@@ -362,6 +512,14 @@ public sealed class NotificationTests
 			Received.Add(notification);
 			_events.Writer.TryWrite(notification);
 		}
+
+		private readonly System.Threading.Channels.Channel<NotificationEvent> _callsChannel =
+			System.Threading.Channels.Channel.CreateUnbounded<NotificationEvent>(
+				new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true });
+
+		/// <summary>Waits until HandleAsync has been invoked once more (even if the handler threw).</summary>
+		public Task WaitForCallAsync() =>
+			_callsChannel.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
 
 		/// <summary>Waits for the next delivered event (consumes it, so successive calls sequence through events).</summary>
 		public Task<NotificationEvent> WaitForEventAsync() =>

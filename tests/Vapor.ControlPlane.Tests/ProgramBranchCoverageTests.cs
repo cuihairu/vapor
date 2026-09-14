@@ -862,6 +862,83 @@ public sealed class ProgramBranchCoverageTests
 	}
 
 	[Fact]
+	public async Task AgentWs_ClientCloseFrame_TearsDownHandlerAndUnregisters()
+	{
+		// A close frame surfaces as an IOException from WebSocketJson.Receive: the
+		// handler must still fall through to its finally (unregister + disconnected
+		// event) even though the server never completes the close handshake.
+		await using BranchFactory factory = new();
+		using var adminClient = factory.CreateClient();
+		adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		var wsClient = factory.Server.CreateWebSocketClient();
+		Uri uri = new(factory.Server.BaseAddress, "v1/agent/ws?agentId=agent-7&region=us-east&authorization=agent-token");
+		using System.Net.WebSockets.WebSocket ws = await wsClient.ConnectAsync(uri, CancellationToken.None);
+
+		await WebSocketJson.Send(ws, new WSMessage("hello", new AgentHello("agent-7", "us-east", null, null), null, null), CancellationToken.None);
+		await Task.Delay(200);
+
+		// CloseOutputAsync sends the close frame without waiting for the server's
+		// half of the handshake (which the server intentionally never completes).
+		await ws.CloseOutputAsync(System.Net.WebSockets.WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+		while (DateTimeOffset.UtcNow < deadline)
+		{
+			using HttpResponseMessage status = await adminClient.GetAsync("/v1/agents/status");
+			if (!(await status.Content.ReadAsStringAsync()).Contains("agent-7"))
+			{
+				break;
+			}
+
+			await Task.Delay(25);
+		}
+
+		using HttpResponseMessage final = await adminClient.GetAsync("/v1/agents/status");
+		Assert.DoesNotContain("agent-7", await final.Content.ReadAsStringAsync());
+	}
+
+	[Fact]
+	public async Task AgentWs_ConnectionAbortedDuringMessage_UnregistersThroughLoopExit()
+	{
+		// A heartbeat that outlives the connection lets the read loop evaluate its own
+		// condition after the abort (RequestAborted cancelled) and exit normally into
+		// the finally — the graceful-disconnect teardown, not the exception path.
+		var store = new SqliteJobStore(":memory:");
+		await using BranchFactory factory = new() { JobStore = new SlowHeartbeatStore(store) };
+		using var adminClient = factory.CreateClient();
+		adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		var wsClient = factory.Server.CreateWebSocketClient();
+		Uri uri = new(factory.Server.BaseAddress, "v1/agent/ws?agentId=agent-6&region=us-east&authorization=agent-token");
+		using System.Net.WebSockets.WebSocket ws = await wsClient.ConnectAsync(uri, CancellationToken.None);
+
+		await WebSocketJson.Send(ws, new WSMessage("hello", new AgentHello("agent-6", "us-east", null, null), null, null), CancellationToken.None);
+		await Task.Delay(200);
+		await WebSocketJson.Send(ws, new WSMessage("task_heartbeat", null, null, null, new TaskHeartbeat("t-1", 0, DateTimeOffset.UtcNow)), CancellationToken.None);
+
+		// The server is now inside the (deliberately slow) heartbeat; aborting here
+		// cancels RequestAborted before the loop's condition is evaluated again.
+		await Task.Delay(150);
+		ws.Abort();
+
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+		while (DateTimeOffset.UtcNow < deadline)
+		{
+			using HttpResponseMessage status = await adminClient.GetAsync("/v1/agents/status");
+			if (!(await status.Content.ReadAsStringAsync()).Contains("agent-6"))
+			{
+				break;
+			}
+
+			await Task.Delay(25);
+		}
+
+		using HttpResponseMessage final = await adminClient.GetAsync("/v1/agents/status");
+		Assert.DoesNotContain("agent-6", await final.Content.ReadAsStringAsync());
+	}
+
+	[Fact]
 	public async Task CancelJob_WithQueuedTaskAndNoAgent_ReturnsOk()
 	{
 		var store = new SqliteJobStore(":memory:");
@@ -1358,6 +1435,45 @@ public sealed class ProgramBranchCoverageTests
 /// hosted services removed (background dispatchers would race the in-test agent
 /// fakes). Exposes the overrides for assertions.
 /// </summary>
+/// <summary>
+/// Wraps a store so heartbeat handling takes long enough for a test to abort the
+/// connection mid-message, forcing the agent tunnel's read loop to re-evaluate its
+/// condition after the disconnect instead of dying on a receive exception.
+/// </summary>
+internal sealed class SlowHeartbeatStore : IJobStore
+{
+	private readonly IJobStore _inner;
+
+	public SlowHeartbeatStore(IJobStore inner)
+	{
+		_inner = inner;
+	}
+
+	public async Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken)
+	{
+		// The delay must ignore the token: the whole point is to return after the
+		// abort instead of unwinding through an OperationCanceledException.
+		await Task.Delay(600).ConfigureAwait(false);
+		return await _inner.HeartbeatTask(taskId, attempt, cancellationToken).ConfigureAwait(false);
+	}
+
+	public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken) => _inner.CreateJob(request, cancellationToken);
+	public Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken) => _inner.GetJob(jobId, cancellationToken);
+	public Task<IReadOnlyList<Job>> ListJobs(int limit, string? account, CancellationToken cancellationToken) => _inner.ListJobs(limit, account, cancellationToken);
+	public Task<IReadOnlyList<JobTask>> ListRecentTasksForTarget(string target, int limit, CancellationToken cancellationToken) => _inner.ListRecentTasksForTarget(target, limit, cancellationToken);
+	public Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken) => _inner.GetTaskStatusCounts(cancellationToken);
+	public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) => _inner.ClaimNextQueuedTask(region, cancellationToken);
+	public Task<IReadOnlyList<Job>> ListDueScheduledJobs(DateTimeOffset now, int limit, CancellationToken cancellationToken) => _inner.ListDueScheduledJobs(now, limit, cancellationToken);
+	public Task<bool> HasActiveChildJob(string templateJobId, CancellationToken cancellationToken) => _inner.HasActiveChildJob(templateJobId, cancellationToken);
+	public Task<Job?> TriggerScheduledJob(string templateJobId, DateTimeOffset nextRunAt, IReadOnlyDictionary<string, string>? extraMeta, CancellationToken cancellationToken) => _inner.TriggerScheduledJob(templateJobId, nextRunAt, extraMeta, cancellationToken);
+	public Task<bool> AdvanceSchedule(string templateJobId, DateTimeOffset nextRunAt, CancellationToken cancellationToken) => _inner.AdvanceSchedule(templateJobId, nextRunAt, cancellationToken);
+	public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => _inner.RequeueTask(taskId, retryDelay, cancellationToken);
+	public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => _inner.RequeueStaleRunningTasks(taskLease, cancellationToken);
+	public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => _inner.SetTaskResult(result, cancellationToken);
+	public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => _inner.FailRunningTask(taskId, error, cancellationToken);
+	public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) => _inner.CancelJob(jobId, cancellationToken);
+}
+
 internal sealed class BranchFactory : WebApplicationFactory<Program>
 {
 	public ProgramBranchCoverageTests.BranchEventBroker Events { get; } = new();

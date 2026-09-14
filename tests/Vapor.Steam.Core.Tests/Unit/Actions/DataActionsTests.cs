@@ -523,6 +523,60 @@ public sealed class DataActionsTests : IDisposable
 		});
 	}
 
+	[Fact]
+	public async Task GetPrice_WithInvalidAppId_ReturnsError()
+	{
+		var action = new GetPriceAction(
+			NullLogger<GetPriceAction>.Instance,
+			_ => throw new InvalidOperationException("should not be called"));
+
+		var missing = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?>(),
+			CancellationToken.None);
+		var garbage = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_id"] = "abc" },
+			CancellationToken.None);
+
+		Assert.All(new[] { missing, garbage }, r =>
+		{
+			Assert.False(r.Success);
+			Assert.Equal("Valid app_id is required", r.Error);
+		});
+	}
+
+	[Fact]
+	public async Task GetMarketListings_WhenClientReturnsNullPage_ReturnsError()
+	{
+		var clientMock = new Mock<ISteamStoreApiClient>(MockBehavior.Strict);
+		clientMock
+			.Setup(c => c.GetMarketListingsAsync(730U, 0, 20, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((MarketListingsPage?)null);
+
+		var action = new GetMarketListingsAction(
+			NullLogger<GetMarketListingsAction>.Instance,
+			_ => clientMock.Object);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_id"] = "730" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Market listings request failed for app 730", result.Error);
+	}
+
+	[Fact]
+	public void InvalidateCache_Metadata_DescribesAction()
+	{
+		var action = new InvalidateCacheAction(NullLogger<InvalidateCacheAction>.Instance, new MemoryVaporCache());
+
+		Assert.Equal("cache_invalidate", action.Name);
+		Assert.False(action.Metadata.RequiresLogin);
+		Assert.Equal(10, action.Metadata.TimeoutSeconds);
+	}
+
 	// The store client factory throwing exercises the generic catch (Exception)
 	// arm — the InvalidOperationException-filtered arm does not match because a
 	// web handler IS present.

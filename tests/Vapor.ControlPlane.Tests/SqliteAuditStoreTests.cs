@@ -35,6 +35,12 @@ public sealed class SqliteAuditStoreTests : IDisposable
 	}
 
 	[Fact]
+	public void Constructor_BlankDbPath_Throws()
+	{
+		Assert.Throws<ArgumentException>(() => new SqliteAuditStore("   "));
+	}
+
+	[Fact]
 	public async Task RecordAndQuery_RoundTripsEntries()
 	{
 		await _store.RecordAsync(NewEntry("job.created", jobId: "job-1", details: new Dictionary<string, object?> { ["targetCount"] = 3 }), _cts.Token);

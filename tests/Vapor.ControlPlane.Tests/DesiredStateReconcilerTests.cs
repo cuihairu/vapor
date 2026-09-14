@@ -888,6 +888,286 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	private static AccountSpec NewSpec() =>
 		new AccountStore().Upsert("alice", true, AccountDesiredState.Farm, null, null, null, note: null);
 
+	// ── guard & cancellation propagation paths ──
+
+	[Fact]
+	public async Task ReconcileOnce_CancelledBeforeFirstAccount_ReturnsWithoutDispatching()
+	{
+		// The per-account cancellation check runs before any work: a cancelled pass
+		// must be a silent no-op even when capable agents are available.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+		using var cts = new CancellationTokenSource();
+		await cts.CancelAsync();
+
+		await reconciler.ReconcileOnce(cts.Token);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(0, reconciler.NoAgentSkips);
+		Assert.Null(reconciler.GetOrchestrationView("alice"));
+	}
+
+	[Fact]
+	public async Task ReconcileOnce_LoginAuditCancelled_PropagatesOutOfPass()
+	{
+		// RecordActionAsync rethrows OperationCanceledException so a stopping pass
+		// unwinds instead of reporting the audit loss as an ordinary failure.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore { ThrowOceOnRecord = true };
+		using var reconciler = CreateReconciler(accounts, agents, jobs, auditStore: audit);
+
+		await Assert.ThrowsAsync<OperationCanceledException>(() => reconciler.ReconcileOnce(CancellationToken.None));
+
+		Assert.Single(jobs.Created); // Dispatch happened; only the audit write was cancelled.
+	}
+
+	[Fact]
+	public async Task ReconcileOnce_DryRunAuditCancelled_PropagatesOutOfPass()
+	{
+		// Same propagation rule for the dry-run guard: cancellation must not be
+		// mistaken for an audit persistence failure (which would be swallowed).
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore { ThrowOceOnRecord = true };
+		using var reconciler = CreateReconciler(accounts, agents, jobs, auditStore: audit, dryRun: true);
+
+		await Assert.ThrowsAsync<OperationCanceledException>(() => reconciler.ReconcileOnce(CancellationToken.None));
+
+		Assert.Empty(jobs.Created);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_LoginAuditCancelledMidPass_StopsLoopViaCancellationCatch()
+	{
+		// The audit write cancels the stop token and then throws: ExecuteAsync's
+		// OperationCanceledException catch must end the service cleanly (no retry,
+		// no crash) — this is the documented shutdown path for a stopping pass.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var cts = new CancellationTokenSource();
+		var audit = new FakeAuditStore
+		{
+			ThrowOceOnRecord = true,
+			OnRecord = cts.Cancel
+		};
+		using var reconciler = CreateReconciler(accounts, agents, jobs, auditStore: audit, intervalSeconds: 1);
+
+		await reconciler.StartAsync(cts.Token);
+		var deadline = DateTime.UtcNow.AddSeconds(5);
+		while (jobs.Created.Count == 0 && DateTime.UtcNow < deadline)
+		{
+			await Task.Delay(50);
+		}
+		Assert.Single(jobs.Created);
+
+		await reconciler.StopAsync(CancellationToken.None);
+
+		Assert.Single(jobs.Created); // No further pass ran after the cancelled one.
+	}
+
+	[Fact]
+	public async Task ReconcileOnce_CreateJobFailsForOneAccount_OtherAccountsStillReconciled()
+	{
+		// One broken account must not block the rest of the pass: alice's dispatch
+		// throws, bob's is still dispatched on the same pass.
+		AccountStore accounts = NewAccounts(
+			("alice", true, AccountDesiredState.Online, null, null, null),
+			("bob", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore { ThrowOnCreateWhen = r => r.Targets.Contains("alice") };
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created);
+		Assert.Equal(new[] { "bob" }, jobs.Created[0].Targets);
+		// alice's runtime exists (the pass visited it) but no agent was ever assigned.
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+		Assert.Equal("agent-1", reconciler.GetOrchestrationView("bob")!.AssignedAgent);
+	}
+
+	[Fact]
+	public async Task SettleActiveJob_CardDropsOutcomeWithoutTasks_SettlesQuietlyAndRequeries()
+	{
+		// A card-drops outcome whose task rows vanished is not a failure: the settle
+		// stamps the refresh check without a deviation, and since the farm queue is
+		// still empty the very same pass re-dispatches the query (an empty queue
+		// always counts as refresh-due). No login budget is consumed either way.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.StripTasks("job-1");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Equal("job-2", view.ActiveJobId); // settled job-1, re-dispatched in the same pass
+		Assert.Equal("get_card_drops", view.ActiveJobAction);
+		Assert.Null(view.FarmQueue);
+		Assert.Equal(0, view.LoginAttempts); // Never consumes the login budget.
+		Assert.NotNull(view.FarmQueueCheckedAt); // The settle stamped the refresh check.
+		Assert.Null(view.LastDeviation); // The vanished outcome stays quiet.
+
+		Assert.Equal(2, jobs.Created.Count);
+		Assert.Equal("get_card_drops", jobs.Created[1].Action);
+	}
+
+	[Fact]
+	public async Task SettleActiveJob_LoginOutcomeWithoutTasks_ClearsInFlightQuietly()
+	{
+		// A login outcome with no task rows clears the in-flight state without
+		// counting a failure (there is nothing to attribute the failure to).
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.StripTasks("job-1");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Null(view.ActiveJobId);
+		Assert.Equal(0, view.LoginAttempts);
+	}
+
+	[Fact]
+	public async Task RebalanceWithoutActiveJob_SkipsCancelAndReassigns()
+	{
+		// When the login job already converged (the session reports Connected), the
+		// runtime keeps the assignment but no active job. Losing that agent must
+		// tolerate the absent job on rebalance (cancel no-op) without extra dispatches.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-a", "us-east", null), ("agent-b", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal("agent-a", reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+
+		// The login lands: the session goes Connected, clearing the active job while
+		// the assignment survives.
+		sessions.Update("alice", "state_changed", "Connected", null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		AccountOrchestrationView settled = reconciler.GetOrchestrationView("alice")!;
+		Assert.Null(settled.ActiveJobId);
+		Assert.Equal("agent-a", settled.AssignedAgent);
+
+		agents.Unregister("agent-a");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(1, reconciler.Rebalances);
+		Assert.Empty(jobs.Cancelled); // Nothing in flight to cancel.
+		Assert.Single(jobs.Created);  // A Connected account dispatches nothing further.
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+	}
+
+	[Fact]
+	public async Task DryRun_ConnectedIdleAccount_GuardsPlayDispatch()
+	{
+		// Dry-run reports the play deviation instead of dispatching; the account
+		// must not start idling.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Idle, new[] { "730" }, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		var audit = new FakeAuditStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, audit, dryRun: true);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.False(reconciler.GetOrchestrationView("alice")!.Idling);
+		Assert.Contains("play_games", reconciler.GetOrchestrationView("alice")!.LastDeviation, StringComparison.Ordinal);
+		Assert.Contains(audit.Entries, e => e.Action == "account.reconciled.dry_run");
+	}
+
+	[Fact]
+	public async Task DryRun_AgentDisappearedAfterAssignment_GuardsRebalance()
+	{
+		// Config is immutable per deployment, so a dry-run switch can only be exercised
+		// by swapping the private cfg: pass 1 assigns under normal mode, pass 2 runs
+		// dry-run with the assigned agent gone — only the deviation is recorded.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal("agent-1", reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+
+		SwapDryRun(reconciler, dryRun: true);
+		agents.Unregister("agent-1");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(0, reconciler.Rebalances);
+		Assert.Equal("agent-1", reconciler.GetOrchestrationView("alice")!.AssignedAgent); // Kept, not dropped.
+		Assert.Contains("disconnected", reconciler.GetOrchestrationView("alice")!.LastDeviation, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task DryRun_DisabledAccountAfterAssignment_GuardsUnassign()
+	{
+		// Same immutable-config caveat as the rebalance guard: disabling an account
+		// under dry-run must report the unassign without dropping the assignment.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal("agent-1", reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+
+		SwapDryRun(reconciler, dryRun: true);
+		accounts.SetEnabled("alice", enabled: false);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(0, reconciler.Unassignments);
+		Assert.Equal("agent-1", reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+		Assert.Empty(jobs.Cancelled);
+		Assert.Contains("unassign", reconciler.GetOrchestrationView("alice")!.LastDeviation, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void AccountOrchestrationView_OptionalFields_DefaultToNull()
+	{
+		// Covers the record's default-parameter arms: constructing without the
+		// optional tail must leave every optional field null.
+		AccountOrchestrationView view = new("agent-1", "job-1", "login", 0, null, Idling: false);
+
+		Assert.Null(view.FarmingAppId);
+		Assert.Null(view.FarmQueue);
+		Assert.Null(view.FarmQueueCheckedAt);
+		Assert.Null(view.LastAction);
+		Assert.Null(view.LastActionAt);
+		Assert.Null(view.LastDeviation);
+	}
+
+	/// <summary>
+	/// Swaps the reconciler's immutable Config record for a dry-run variant. The
+	/// product never does this at runtime (config is fixed at startup); reflection is
+	/// the only way to reach the mixed-mode guard branches from a single instance.
+	/// </summary>
+	private static void SwapDryRun(DesiredStateReconciler reconciler, bool dryRun)
+	{
+		System.Reflection.FieldInfo field = typeof(DesiredStateReconciler).GetField("_cfg", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+			?? throw new InvalidOperationException("Missing reconciler config field.");
+		var cfg = (Config?)field.GetValue(reconciler) ?? throw new InvalidOperationException("Reconciler config is unset.");
+		field.SetValue(reconciler, cfg with { ReconcileDryRun = dryRun });
+	}
+
 	// ── fixtures ──
 
 	private static AccountStore NewAccounts(params (string Name, bool Enabled, AccountDesiredState State, string[]? Apps, string? Region, string? Agent)[] specs)
@@ -960,8 +1240,20 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		/// <summary>Makes RecordAsync throw (audit-isolation paths).</summary>
 		public bool ThrowOnRecord { get; set; }
 
+		/// <summary>Makes RecordAsync throw OperationCanceledException (cancellation propagation paths).</summary>
+		public bool ThrowOceOnRecord { get; set; }
+
+		/// <summary>Invoked at the start of every RecordAsync (lets tests cancel the stop token mid-pass).</summary>
+		public Action? OnRecord { get; set; }
+
 		public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
 		{
+			OnRecord?.Invoke();
+			if (ThrowOceOnRecord)
+			{
+				throw new OperationCanceledException("audit store canceled");
+			}
+
 			if (ThrowOnRecord)
 			{
 				throw new IOException("audit store unavailable");
@@ -991,15 +1283,30 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		/// <summary>Forgets a job so lookups and cancels hit the NotFoundException path.</summary>
 		public void Drop(string jobId) => _jobs.Remove(jobId);
 
+		/// <summary>
+		/// Empties a job's task list so GetJob returns the job with no tasks at all
+		/// (the settle path for an outcome whose target row vanished).
+		/// </summary>
+		public void StripTasks(string jobId)
+		{
+			if (_jobs.TryGetValue(jobId, out JobWithTasks? job))
+			{
+				_jobs[jobId] = new JobWithTasks(job.Job, []);
+			}
+		}
+
 		/// <summary>Makes CreateJob throw (per-account isolation path).</summary>
 		public bool ThrowOnCreate { get; set; }
+
+		/// <summary>Only throws for requests matching this predicate (selective-failure isolation tests).</summary>
+		public Func<CreateJobRequest, bool>? ThrowOnCreateWhen { get; set; }
 
 		/// <summary>Makes CancelJob throw a non-NotFoundException (background-loop isolation path).</summary>
 		public bool ThrowOnCancel { get; set; }
 
 		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
 		{
-			if (ThrowOnCreate)
+			if (ThrowOnCreate || ThrowOnCreateWhen?.Invoke(request) == true)
 			{
 				throw new IOException("store unavailable");
 			}

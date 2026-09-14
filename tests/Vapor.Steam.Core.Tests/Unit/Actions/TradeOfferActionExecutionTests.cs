@@ -333,6 +333,26 @@ public sealed class TradeOfferActionExecutionTests : IDisposable
 	// --- AcceptTradeOfferAction ---
 
 	[Fact]
+	public async Task Accept_ClientThrowsOperationCanceled_Rethrows()
+	{
+		var client = new FakeTradeClient
+		{
+			AcceptHandler = (_, _) => throw new OperationCanceledException()
+		};
+		var action = CreateAcceptAction(client);
+
+		await Assert.ThrowsAsync<OperationCanceledException>(() => action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?>
+			{
+				["trade_offer_id"] = "100",
+				["partner_steam_id"] = PartnerParam,
+				["verify_state"] = false
+			},
+			CancellationToken.None));
+	}
+
+	[Fact]
 	public async Task Accept_ActiveReceivedOffer_Succeeds()
 	{
 		var client = new FakeTradeClient
@@ -502,6 +522,21 @@ public sealed class TradeOfferActionExecutionTests : IDisposable
 	}
 
 	// --- DeclineTradeOfferAction ---
+
+	[Fact]
+	public async Task Decline_ClientThrowsOperationCanceled_Rethrows()
+	{
+		var client = new FakeTradeClient
+		{
+			DeclineHandler = _ => throw new OperationCanceledException()
+		};
+		var action = CreateDeclineAction(client);
+
+		await Assert.ThrowsAsync<OperationCanceledException>(() => action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?> { ["trade_offer_id"] = "200", ["verify_state"] = false },
+			CancellationToken.None));
+	}
 
 	[Fact]
 	public async Task Decline_ActiveReceivedOffer_Succeeds()

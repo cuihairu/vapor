@@ -229,3 +229,98 @@ public sealed class RecurringJobSchedulerTests : IDisposable
 		Assert.Equal(new[] { "carol" }, (await _store.GetJob(child.Id, CancellationToken.None)).Tasks.Select(t => t.Target).ToArray());
 	}
 }
+
+/// <summary>
+/// Retire/edge passes that need store states the real <see cref="SqliteJobStore"/> cannot
+/// express: a trigger rejected mid-flight (concurrent cancel) and a due template whose
+/// cron never matches again. The template rows are injected through a minimal fake store.
+/// </summary>
+public sealed class RecurringJobSchedulerRetireTests
+{
+	private readonly RetiringJobStore _store = new();
+	private readonly ControlPlaneApiTests.RecordingEventBroker _events = new();
+
+	[Fact]
+	public async Task TickAsync_TriggerRejectedMidFlight_SkipsPublishWithoutCountingRun()
+	{
+		// TriggerScheduledJob returns null when the template is canceled concurrently
+		// between listing and triggering: the pass must stay silent (no event, no count).
+		var scheduler = new RecurringJobScheduler(_store, _events, NullLogger<RecurringJobScheduler>.Instance);
+		DateTimeOffset due = DateTimeOffset.UtcNow.AddSeconds(-1);
+		_store.Templates.Add(MakeTemplate(new JobSchedule(IntervalSeconds: 60), due));
+
+		await scheduler.TickAsync(CancellationToken.None);
+
+		Assert.Equal(0, scheduler.TriggeredRuns);
+		Assert.Empty(_events.Events);
+		Assert.Empty(_store.CancelledJobIds); // Not a retirement — nothing was cancelled.
+	}
+
+	[Fact]
+	public async Task TickAsync_CronNeverMatchesAgain_RetiresTemplateWithCompletedEvent()
+	{
+		// A due template whose cron can never match again (Feb 30) has no future trigger
+		// point and no missed chain: the pass retires it (cancel + schedule_exhausted event).
+		var scheduler = new RecurringJobScheduler(_store, _events, NullLogger<RecurringJobScheduler>.Instance);
+		DateTimeOffset due = DateTimeOffset.UtcNow.AddSeconds(-1);
+		Job template = MakeTemplate(new JobSchedule(Cron: "0 0 30 2 *"), due);
+		_store.Templates.Add(template);
+
+		await scheduler.TickAsync(CancellationToken.None);
+
+		Assert.Equal(0, scheduler.TriggeredRuns);
+		Assert.Equal(new[] { template.Id }, _store.CancelledJobIds);
+		Event completed = Assert.Single(_events.Events);
+		Assert.Equal("job.scheduled_completed", completed.Type);
+		Assert.Equal(template.Id, completed.JobId);
+		Assert.Equal("schedule_exhausted", completed.Payload!["reason"]);
+	}
+
+	private static Job MakeTemplate(JobSchedule schedule, DateTimeOffset nextRunAt) =>
+		new(
+			Id: "template-1",
+			Action: "ping",
+			Region: "us-east",
+			Targets: ["alice"],
+			Meta: null,
+			Status: JobStatus.Scheduled,
+			CreatedAt: nextRunAt.AddSeconds(-60),
+			UpdatedAt: nextRunAt.AddSeconds(-60),
+			Schedule: schedule,
+			NextRunAt: nextRunAt);
+
+	/// <summary>Minimal store: lists injected due templates, records cancels, rejects triggers.</summary>
+	private sealed class RetiringJobStore : IJobStore
+	{
+		public List<Job> Templates { get; } = [];
+		public List<string> CancelledJobIds { get; } = [];
+
+		public Task<IReadOnlyList<Job>> ListDueScheduledJobs(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
+			Task.FromResult<IReadOnlyList<Job>>(Templates);
+
+		public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken)
+		{
+			CancelledJobIds.Add(jobId);
+			return Task.FromResult<IReadOnlyList<TaskCancel>>([]);
+		}
+
+		/// <summary>Mirrors a concurrent cancel: the guarded advance finds nothing to trigger.</summary>
+		public Task<Job?> TriggerScheduledJob(string templateJobId, DateTimeOffset nextRunAt, IReadOnlyDictionary<string, string>? extraMeta, CancellationToken cancellationToken) =>
+			Task.FromResult<Job?>(null);
+
+		public Task<bool> HasActiveChildJob(string templateJobId, CancellationToken cancellationToken) => Task.FromResult(false);
+		public Task<bool> AdvanceSchedule(string templateJobId, DateTimeOffset nextRunAt, CancellationToken cancellationToken) => Task.FromResult(true);
+
+		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<IReadOnlyList<Job>> ListJobs(int limit, string? account, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<IReadOnlyList<JobTask>> ListRecentTasksForTarget(string target, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<IReadOnlyDictionary<JobTaskStatus, int>> GetTaskStatusCounts(CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
+	}
+}

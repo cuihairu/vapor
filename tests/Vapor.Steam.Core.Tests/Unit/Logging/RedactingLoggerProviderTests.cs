@@ -15,6 +15,8 @@ public sealed class RedactingLoggerProviderTests
 
 		public List<CapturedLog> Captured { get; } = [];
 
+		public List<object?> CapturedScopes { get; } = [];
+
 		public bool Disposed { get; private set; }
 
 		public ILogger CreateLogger(string categoryName)
@@ -31,6 +33,11 @@ public sealed class RedactingLoggerProviderTests
 		{
 			public IDisposable? BeginScope<TState>(TState state) where TState : notnull
 			{
+				lock (owner._gate)
+				{
+					owner.CapturedScopes.Add(state);
+				}
+
 				return NullScope.Instance;
 			}
 
@@ -147,6 +154,78 @@ public sealed class RedactingLoggerProviderTests
 		Assert.NotNull(entry.Exception);
 		Assert.DoesNotContain("ABCD-EFGH", entry.Exception.ToString(), StringComparison.Ordinal);
 		Assert.Contains("InvalidOperationException", entry.Exception.Data["OriginalExceptionType"]?.ToString() ?? "", StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void Log_WithInnerException_RedactsNestedExceptionContent()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		var exception = new InvalidOperationException(
+			"outer failed",
+			new HttpRequestException("request failed with token=inner-secret-xyz"));
+		logger.LogError(exception, "operation failed");
+
+		var entry = Assert.Single(capturing.Captured);
+		object? inner = entry.Exception?.Data["InnerException"];
+		Assert.NotNull(inner);
+		Assert.DoesNotContain("inner-secret-xyz", inner.ToString()!, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void BeginScope_RedactsStringsAndStructuredPairsAndPassesThroughOtherState()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		using (logger.BeginScope("login password=hunter2"))
+		using (logger.BeginScope(new List<KeyValuePair<string, object?>>
+			   {
+				   new("accountName", "alice"),
+				   new("authCode", "987654")
+			   }))
+		using (logger.BeginScope(42))
+		{
+			logger.LogInformation("inside scopes");
+		}
+
+		Assert.Equal(3, capturing.CapturedScopes.Count);
+
+		string redactedString = Assert.IsType<string>(capturing.CapturedScopes[0]);
+		Assert.DoesNotContain("hunter2", redactedString, StringComparison.Ordinal);
+
+		var redactedPairs = Assert.IsAssignableFrom<IReadOnlyList<KeyValuePair<string, object?>>>(capturing.CapturedScopes[1]);
+		Assert.Equal("<redacted>", Assert.Single(redactedPairs, p => p.Key == "authCode").Value);
+		Assert.Equal("alice", Assert.Single(redactedPairs, p => p.Key == "accountName").Value);
+
+		// Unrecognized scope state passes through untouched.
+		Assert.Equal(42, capturing.CapturedScopes[2]);
+	}
+
+	[Fact]
+	public void Log_WithStructuredState_ExposesCountAndIndexerOverRedactedPairs()
+	{
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		var state = new List<KeyValuePair<string, object?>>
+		{
+			new("accountName", "alice"),
+			new("authCode", "987654")
+		};
+
+		logger.Log(LogLevel.Information, new EventId(1), state, null, static (s, _) => "formatted");
+
+		var entry = Assert.Single(capturing.Captured);
+		var structured = entry.StructuredState!;
+
+		// The redacted state appends the original format placeholder as the final pair.
+		Assert.Equal(3, structured.Count);
+		Assert.Equal("accountName", structured[0].Key);
+		Assert.Equal("<redacted>", structured[1].Value);
+		Assert.Equal("{OriginalFormat}", structured[2].Key);
+		Assert.Equal("formatted", structured[2].Value);
 	}
 
 	[Fact]

@@ -110,3 +110,58 @@ public sealed class HttpCircuitBreakerTests
 		Assert.Throws<ArgumentOutOfRangeException>(() => new HttpCircuitBreaker(failureThreshold: 0));
 	}
 }
+
+public sealed class WebRequestMetricsTests
+{
+	[Fact]
+	public void Counters_AreExposedThroughGettersAndSnapshot()
+	{
+		var metrics = new WebRequestMetrics();
+		metrics.RecordTotal();
+		metrics.RecordTotal();
+		metrics.RecordSuccess();
+		metrics.RecordRateLimited();
+		metrics.RecordServerError();
+		metrics.RecordClientError();
+		metrics.RecordNetworkFailure();
+		metrics.RecordRetry();
+		metrics.RecordCircuitBreakerRejection();
+
+		Assert.Equal(2, metrics.TotalRequests);
+		Assert.Equal(1, metrics.Successes);
+		Assert.Equal(1, metrics.RateLimited429);
+		Assert.Equal(1, metrics.ServerErrors5xx);
+		Assert.Equal(1, metrics.ClientErrors4xx);
+		Assert.Equal(1, metrics.NetworkFailures);
+		Assert.Equal(1, metrics.Retries);
+		Assert.Equal(1, metrics.CircuitBreakerRejections);
+
+		WebRequestMetricsSnapshot snapshot = metrics.Snapshot();
+		Assert.Equal(metrics.TotalRequests, snapshot.TotalRequests);
+		Assert.Equal(metrics.Successes, snapshot.Successes);
+		Assert.Equal(metrics.RateLimited429, snapshot.RateLimited429);
+		Assert.Equal(metrics.ServerErrors5xx, snapshot.ServerErrors5xx);
+		Assert.Equal(metrics.ClientErrors4xx, snapshot.ClientErrors4xx);
+		Assert.Equal(metrics.NetworkFailures, snapshot.NetworkFailures);
+		Assert.Equal(metrics.Retries, snapshot.Retries);
+		Assert.Equal(metrics.CircuitBreakerRejections, snapshot.CircuitBreakerRejections);
+		// (network failures + rate limits + 5xx) / total = 3 / 2
+		Assert.Equal(1.5, snapshot.FailureRate);
+	}
+
+	[Fact]
+	public void FailureRate_WithoutRequests_IsZero()
+	{
+		Assert.Equal(0, new WebRequestMetrics().Snapshot().FailureRate);
+	}
+
+	[Fact]
+	public void FailureRate_WithOnlySuccesses_IsZero()
+	{
+		var metrics = new WebRequestMetrics();
+		metrics.RecordTotal();
+		metrics.RecordSuccess();
+
+		Assert.Equal(0, metrics.Snapshot().FailureRate);
+	}
+}

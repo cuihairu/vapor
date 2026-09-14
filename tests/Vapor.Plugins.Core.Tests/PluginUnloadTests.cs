@@ -42,6 +42,54 @@ public class PluginUnloadTests : IDisposable
 	}
 
 	[Fact]
+	public async Task PluginUnloadingHandler_Throws_UnloadStillSucceeds()
+	{
+		// A host handler that throws during the unload notification must be logged and
+		// swallowed: the plugin still shuts down and leaves the manager.
+		PluginStaging.StageTestPlugin(_root);
+
+		await using var manager = PluginStaging.CreateManager();
+		await manager.LoadAsync(Assert.Single(manager.Discover(_root)));
+
+		manager.PluginUnloading += (_, _) => throw new InvalidOperationException("unloading boom");
+
+		Assert.True(await manager.UnloadAsync("vapor.test-plugin"));
+		Assert.Empty(manager.LoadedPlugins);
+	}
+
+	[Fact]
+	public async Task UnloadAsync_PluginShutdownThrows_IsSwallowed()
+	{
+		// A plugin whose ShutdownAsync crashes must not poison the unload: the manager
+		// logs, still removes the plugin and releases its load context.
+		PluginStaging.StageFixturePlugin(
+			_root,
+			entryType: "Vapor.Plugins.TestFixtures.ThrowingShutdownPlugin",
+			pluginId: "vapor.fixture-throwing-shutdown");
+
+		await using var manager = PluginStaging.CreateManager();
+		await manager.LoadAsync(Assert.Single(manager.Discover(_root)));
+
+		Assert.True(await manager.UnloadAsync("vapor.fixture-throwing-shutdown"));
+		Assert.Empty(manager.LoadedPlugins);
+	}
+
+	[Fact]
+	public async Task DisposeAsync_Twice_IsIdempotent()
+	{
+		PluginStaging.StageTestPlugin(_root);
+
+		var manager = PluginStaging.CreateManager();
+		await manager.LoadAllAsync(_root);
+		Assert.Single(manager.LoadedPlugins);
+
+		await manager.DisposeAsync();
+		await manager.DisposeAsync();
+
+		Assert.Empty(manager.LoadedPlugins);
+	}
+
+	[Fact]
 	public async Task UnloadAsync_LoadContextIsEventuallyCollected()
 	{
 		// coverlet's instrumentation hooks keep strong references into instrumented

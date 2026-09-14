@@ -106,6 +106,26 @@ public sealed class SwapDuplicatesActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_WhenInventoryLoadCanceled_Rethrows()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(
+				It.IsAny<ulong>(), It.IsAny<uint>(), It.IsAny<ulong>(), It.IsAny<ulong?>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new OperationCanceledException());
+		var session = CreateSession(CreateWebHandler());
+
+		// Cancellation must not be swallowed into an error result.
+		await Assert.ThrowsAsync<OperationCanceledException>(() => action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString() },
+			CancellationToken.None));
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_DryRunByDefault_MatchesWithoutSending()
 	{
 		var (action, clientMock) = CreateActionWithMock();
@@ -512,7 +532,7 @@ public sealed class SwapDuplicatesActionTests : IDisposable
 			});
 		var session = CreateSession(CreateWebHandler());
 
-		// long, JsonElement number, and JsonElement numeric string shapes all parse.
+		// int, long, JsonElement number, and JsonElement numeric string shapes all parse.
 		var viaLong = await action.ExecuteAsync(
 			session,
 			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString(), ["keep"] = 2L, ["max_swaps"] = 5L },
@@ -522,13 +542,32 @@ public sealed class SwapDuplicatesActionTests : IDisposable
 			System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
 				"""{"partner_steam_id":"76561198000000100","keep":2,"max_swaps":"5"}""")!,
 			CancellationToken.None);
+		var viaInt = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString(), ["keep"] = 2, ["max_swaps"] = 5 },
+			CancellationToken.None);
 
-		Assert.All(new[] { viaLong, viaElements }, r =>
+		Assert.All(new[] { viaLong, viaElements, viaInt }, r =>
 		{
 			Assert.True(r.Success);
 			Assert.Equal(2, r.Output!["keep"]);
 			Assert.Equal(1, r.Output["give_count"]);
 		});
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_KeepAsUnsupportedShape_Fails()
+	{
+		var (action, _) = CreateActionWithMock();
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString(), ["keep"] = true },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("keep", result.Error, StringComparison.Ordinal);
 	}
 
 	[Fact]

@@ -58,4 +58,12 @@ public sealed class SensitiveDataRedactorTests
 
 		Assert.Equal(input, redacted);
 	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	public void Redact_WithNullOrEmpty_ReturnsEmpty(string? value)
+	{
+		Assert.Equal(string.Empty, SensitiveDataRedactor.Redact(value));
+	}
 }

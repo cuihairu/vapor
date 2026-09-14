@@ -39,6 +39,7 @@ public class SteamTotpTests
 	[InlineData(29L, 1)]
 	[InlineData(30L, 30)]
 	[InlineData(45L, 15)]
+	[InlineData(-1L, 1)] // negative time: remainder wraps to positive
 	public void SecondsRemaining_ComputesCorrectly(long time, int expected)
 	{
 		Assert.Equal(expected, SteamTotp.SecondsRemaining(time));

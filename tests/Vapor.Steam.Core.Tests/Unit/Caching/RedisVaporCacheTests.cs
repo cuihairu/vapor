@@ -482,5 +482,55 @@ public sealed class RedisVaporCacheTests
 		Assert.Equal("p:__lock:", options.LockKeyPrefix);
 	}
 
+	[Fact]
+	public async Task GetOrSetAsync_SharedFillCanceledByInitiatingCaller_SecondCallerRetries()
+	{
+		var redis = new FakeRedis();
+		using var cache = redis.CreateCache();
+		int factoryCalls = 0;
+		using var initiatorCts = new CancellationTokenSource();
+
+		Task<Payload?> first = cache.GetOrSetAsync<Payload>("k", async ct =>
+		{
+			Interlocked.Increment(ref factoryCalls);
+			await Task.Delay(Timeout.Infinite, ct);
+			return null;
+		}, cancellationToken: initiatorCts.Token);
+		while (Volatile.Read(ref factoryCalls) == 0)
+		{
+			await Task.Delay(10);
+		}
+
+		Task<Payload?> second = cache.GetOrSetAsync("k", ct => Factory(new Payload("retry")));
+		await Task.Delay(100); // let the second caller attach to the shared in-flight fill
+		initiatorCts.Cancel();
+
+		Assert.Equal("retry", (await second)!.Value);
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+	}
+
+	[Fact]
+	public async Task GetAsync_WithDecodableEnvelopeButCorruptPayload_ReturnsNullAsHit()
+	{
+		var redis = new FakeRedis();
+		string envelope = System.Text.Json.JsonSerializer.Serialize(new
+		{
+			V = "{not-json",
+			E = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds(),
+			S = (long?)null
+		});
+		redis.Database
+			.Setup(d => d.StringGetAsync((RedisKey)"t:k", It.IsAny<CommandFlags>()))
+			.ReturnsAsync((RedisValue)envelope);
+		using var cache = redis.CreateCache();
+
+		// The envelope decodes fine, so this counts as a fresh hit — but the inner
+		// payload is not valid JSON for T and must degrade to a null value.
+		var result = await cache.GetAsync<Payload>("k");
+
+		Assert.Null(result);
+		Assert.Equal(1, cache.Hits);
+	}
+
 	private sealed record Payload(string Value);
 }

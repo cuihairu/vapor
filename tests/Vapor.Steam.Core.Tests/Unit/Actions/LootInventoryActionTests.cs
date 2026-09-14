@@ -361,6 +361,21 @@ public sealed class LootInventoryActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_WhenInventoryLoadCanceled_Rethrows()
+	{
+		var (action, client) = CreateActionWithMock();
+		client.OwnSteamIdProvider = () => OwnSteamId;
+		client.InventoryHandler = (_, _, _, _) => throw new OperationCanceledException();
+		var session = CreateSession(CreateWebHandler());
+
+		// Cancellation must not be swallowed into an error result.
+		await Assert.ThrowsAsync<OperationCanceledException>(() => action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString() },
+			CancellationToken.None));
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_DefaultsToApp753_WhenAppIdsMissing()
 	{
 		var (action, client) = CreateActionWithMock();
@@ -408,7 +423,7 @@ public sealed class LootInventoryActionTests : IDisposable
 			new Dictionary<string, object?>
 			{
 				["partner_steam_id"] = PartnerSteamId.ToString(),
-				["app_ids"] = new List<object?> { 753L, 570.0, "252490", null }
+				["app_ids"] = new List<object?> { 730, 753L, 570.0, "252490", null }
 			},
 			CancellationToken.None);
 		var viaSingleValue = await action.ExecuteAsync(
@@ -422,8 +437,8 @@ public sealed class LootInventoryActionTests : IDisposable
 
 		Assert.All(new[] { viaJsonArray, viaList, viaSingleValue }, r => Assert.False(r.Success)); // empty inventories
 		Assert.Equal(new[] { 753u, 730u, 440u }, scannedApps.Take(3).ToArray());
-		Assert.Equal(new[] { 753u, 570u, 252490u }, scannedApps.Skip(3).Take(3).ToArray());
-		Assert.Equal(new[] { 730u }, scannedApps.Skip(6).ToArray());
+		Assert.Equal(new[] { 730u, 753u, 570u, 252490u }, scannedApps.Skip(3).Take(4).ToArray());
+		Assert.Equal(new[] { 730u }, scannedApps.Skip(7).ToArray());
 	}
 
 	private (ulong Partner, TradeAsset[] Give, TradeAsset[] Receive, string? Token, string? Message)? sentArgs;

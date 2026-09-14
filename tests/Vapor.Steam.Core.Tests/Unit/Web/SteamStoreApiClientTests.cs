@@ -227,6 +227,153 @@ public sealed class SteamStoreApiClientTests
 	}
 
 	[Fact]
+	public async Task GetPriceAsync_FractionalNumberPrice_FallsBackToDecimalParsing()
+	{
+		string json = """
+		{
+			"620": {
+				"success": true,
+				"data": {
+					"name": "Portal 2", "steam_appid": 620, "is_free": false,
+					"price_overview": { "currency": "USD", "initial": 1999.5, "final": 999.25, "discount_percent": 50 }
+				}
+			}
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var price = await client.GetPriceAsync(620);
+
+		Assert.NotNull(price);
+		Assert.Equal(19.995m, price!.Initial);
+		Assert.Equal(9.9925m, price.Final);
+	}
+
+	[Fact]
+	public async Task GetPriceAsync_StringPrices_AreParsed()
+	{
+		string json = """
+		{
+			"620": {
+				"success": true,
+				"data": {
+					"name": "Portal 2", "steam_appid": 620, "is_free": false,
+					"price_overview": { "currency": "USD", "initial": "1999", "final": "999", "discount_percent": 50 }
+				}
+			}
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var price = await client.GetPriceAsync(620);
+
+		Assert.NotNull(price);
+		Assert.Equal(19.99m, price!.Initial);
+		Assert.Equal(9.99m, price.Final);
+	}
+
+	[Fact]
+	public async Task GetPriceAsync_PriceWithoutInitial_LeavesInitialNull()
+	{
+		string json = """
+		{
+			"620": {
+				"success": true,
+				"data": {
+					"name": "Portal 2", "steam_appid": 620, "is_free": false,
+					"price_overview": { "currency": "USD", "final": 999, "discount_percent": 0 }
+				}
+			}
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var price = await client.GetPriceAsync(620);
+
+		Assert.NotNull(price);
+		Assert.Null(price!.Initial);
+		Assert.Equal(9.99m, price.Final);
+	}
+
+	[Fact]
+	public async Task SearchGamesAsync_WhenHttpFails_ReturnsEmptyList()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+
+		var results = await client.SearchGamesAsync("portal");
+
+		Assert.Empty(results);
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_ListingWithoutListingId_IsSkipped()
+	{
+		string json = """
+		{
+			"success": true,
+			"start": 0,
+			"pagesize": 2,
+			"total_rowcount": 2,
+			"listinginfo": {
+				"1001": {
+					"listingid": "1001",
+					"asset": { "appid": 730, "contextid": "2", "id": "9001", "classid": "111", "instanceid": "222", "amount": "1" },
+					"converted_price": 1234,
+					"converted_fee": 50,
+					"converted_currencyid": 2001
+				},
+				"broken": {
+					"asset": { "appid": 730, "contextid": "2", "id": "9002", "classid": "333", "instanceid": "444", "amount": "1" },
+					"converted_price": 2500,
+					"converted_fee": 100,
+					"converted_currencyid": 2001
+				}
+			}
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var page = await client.GetMarketListingsAsync(730);
+
+		Assert.NotNull(page);
+		var listing = Assert.Single(page!.Listings);
+		Assert.Equal(1001UL, listing.ListingId);
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_SearchResultWithoutHashName_IsSkipped()
+	{
+		string json = """
+		{
+			"success": true,
+			"total_count": 2,
+			"results": [
+				{ "hash_name": "Keep Me", "sell_price": 500 },
+				{ "sell_price": 700 }
+			]
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var page = await client.GetMarketListingsAsync(730);
+
+		Assert.NotNull(page);
+		var listing = Assert.Single(page!.Listings);
+		Assert.Equal("Keep Me", listing.HashName);
+	}
+
+	[Fact]
 	public async Task GetMarketListingsAsync_WhenHttpFails_ReturnsNull()
 	{
 		var (client, fake) = Create();

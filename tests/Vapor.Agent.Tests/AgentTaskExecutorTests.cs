@@ -124,6 +124,34 @@ public class AgentTaskExecutorTests
 	}
 
 	[Fact]
+	public async Task PasswordWithRefreshToken_BuildsFullCredentials()
+	{
+		// Password + refresh token takes the combined branch: every optional payload
+		// field (aliases included) is carried onto the credentials record.
+		var session = CreateStubSession();
+		var (manager, captured) = CreateMockedManager(session);
+		var payload = new Dictionary<string, object?>
+		{
+			["password"] = "s3cret",
+			["refresh_token"] = "rt-combined",
+			["access_token"] = "at-combined",
+			["authCode"] = "12345",
+			["two_factor_code"] = "67890"
+		};
+
+		var (success, _, _) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(payload: payload), manager.Object, NullLogger.Instance, CancellationToken.None);
+
+		Assert.True(success);
+		var credentials = Assert.Single(captured);
+		Assert.Equal("s3cret", credentials.Password);
+		Assert.Equal("rt-combined", credentials.RefreshToken);
+		Assert.Equal("at-combined", credentials.AccessToken);
+		Assert.Equal("12345", credentials.AuthCode);
+		Assert.Equal("67890", credentials.TwoFactorCode);
+	}
+
+	[Fact]
 	public async Task AccessTokenAlongsideRefreshToken_IsForwarded()
 	{
 		var session = CreateStubSession();

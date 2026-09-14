@@ -136,6 +136,56 @@ public sealed class TradeOfferStateMachineTests
 	}
 
 	[Fact]
+	public void CanDecline_ForActiveReceivedOffer_ReturnsTrue()
+	{
+		Assert.True(TradeOfferStateMachine.CanDecline(ReceivedActiveOffer()));
+	}
+
+	[Fact]
+	public void CanDecline_ForSentOffer_ReturnsFalse()
+	{
+		var offer = ReceivedActiveOffer() with { IsOurOffer = true };
+
+		Assert.False(TradeOfferStateMachine.CanDecline(offer));
+	}
+
+	[Fact]
+	public void CanDecline_ForNonActiveState_ReturnsFalse()
+	{
+		var offer = ReceivedActiveOffer(state: TradeOfferState.Declined);
+
+		Assert.False(TradeOfferStateMachine.CanDecline(offer));
+	}
+
+	[Fact]
+	public void CanDecline_ForNullOffer_Throws()
+	{
+		Assert.Throws<ArgumentNullException>(() => TradeOfferStateMachine.CanDecline(null!));
+	}
+
+	[Fact]
+	public void ValidateForAccept_ForPendingConfirmationState_ExplainsOnlyActiveAccepted()
+	{
+		var offer = ReceivedActiveOffer(state: TradeOfferState.CreatedNeedsConfirmation, expires: Now.AddHours(1));
+
+		string? error = TradeOfferStateMachine.ValidateForAccept(offer, null, Now);
+
+		Assert.NotNull(error);
+		Assert.Contains("only Active offers", error, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public void ValidateForAccept_ForExpiredOffer_ReportsExpiry()
+	{
+		var offer = ReceivedActiveOffer(expires: Now.AddMinutes(-1));
+
+		string? error = TradeOfferStateMachine.ValidateForAccept(offer, null, Now);
+
+		Assert.NotNull(error);
+		Assert.Contains("expired", error, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
 	public void ValidateForDecline_ForReceivedActiveOffer_ReturnsNull()
 	{
 		Assert.Null(TradeOfferStateMachine.ValidateForDecline(ReceivedActiveOffer()));

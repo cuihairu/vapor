@@ -423,6 +423,32 @@ public sealed class MemoryVaporCacheTests
 		Assert.True(await condition(), "Condition not met within timeout");
 	}
 
+	[Fact]
+	public async Task GetOrSet_SharedFillCanceledByInitiatingCaller_SecondCallerRetries()
+	{
+		using var cache = Create();
+		int factoryCalls = 0;
+		using var initiatorCts = new CancellationTokenSource();
+
+		Task<FakePayload?> first = cache.GetOrSetAsync<FakePayload>("key", async ct =>
+		{
+			Interlocked.Increment(ref factoryCalls);
+			await Task.Delay(Timeout.Infinite, ct);
+			return null;
+		}, cancellationToken: initiatorCts.Token);
+		while (Volatile.Read(ref factoryCalls) == 0)
+		{
+			await Task.Delay(10);
+		}
+
+		Task<FakePayload?> second = cache.GetOrSetAsync("key", ct => Task.FromResult<FakePayload?>(new FakePayload { Value = "retry" }));
+		await Task.Delay(100); // let the second caller attach to the shared in-flight fill
+		initiatorCts.Cancel();
+
+		Assert.Equal("retry", (await second)!.Value);
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+	}
+
 	private sealed class FakePayload
 	{
 		public string Value { get; init; } = string.Empty;

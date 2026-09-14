@@ -38,6 +38,31 @@ public sealed class SteamTransportContractTests
 	}
 
 	[Fact]
+	public void TransportLogOnDetails_CarriesAllLogOnFields()
+	{
+		var details = new TransportLogOnDetails(
+			Username: "branch_account",
+			Password: "secret",
+			AuthCode: "12345",
+			TwoFactorCode: "ABC123",
+			AccessToken: "jwt.token",
+			ShouldRememberPassword: true);
+
+		Assert.Equal("branch_account", details.Username);
+		Assert.Equal("secret", details.Password);
+		Assert.Equal("12345", details.AuthCode);
+		Assert.Equal("ABC123", details.TwoFactorCode);
+		Assert.Equal("jwt.token", details.AccessToken);
+		Assert.True(details.ShouldRememberPassword);
+
+		// Token-based flows restage the details without the password.
+		var tokenOnly = details with { Password = string.Empty, ShouldRememberPassword = false };
+		Assert.Equal(string.Empty, tokenOnly.Password);
+		Assert.Equal("branch_account", tokenOnly.Username);
+		Assert.False(tokenOnly.ShouldRememberPassword);
+	}
+
+	[Fact]
 	public void SteamClientManager_IsAssignableToTransportInterface()
 	{
 		Assert.True(typeof(ISteamTransport).IsAssignableFrom(typeof(SteamClientManager)));

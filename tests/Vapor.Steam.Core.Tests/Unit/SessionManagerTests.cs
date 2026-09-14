@@ -277,6 +277,83 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task GetOrCreateSessionAsync_TrulyConcurrentCreation_LosersReturnWinnerInstance()
+	{
+		var accountName = "race_account";
+		var credentials = new AccountCredentials(accountName, "password");
+
+		// The sequential double-create test cannot lose the TryAdd race (the whole
+		// call is synchronous), so release real threads through a barrier instead.
+		using var barrier = new Barrier(16);
+		var tasks = Enumerable.Range(0, 16)
+			.Select(_ => Task.Run(() =>
+			{
+				barrier.SignalAndWait();
+				return _manager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
+			}))
+			.ToArray();
+
+		var sessions = await Task.WhenAll(tasks);
+
+		Assert.All(sessions, session => Assert.Same(sessions[0], session));
+	}
+
+	[Fact]
+	public async Task GetOrCreateSessionAsync_WithEventCallback_ForwardsSessionEventsToCallback()
+	{
+		var seen = new ConcurrentQueue<(string Account, string EventType, string State)>();
+		_manager.SetEventCallback((account, eventType, state, _) =>
+		{
+			seen.Enqueue((account, eventType, state));
+			return Task.CompletedTask;
+		});
+		_steamClientManagerMock
+			.Setup(m => m.LoginAsync("cb_account", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new SteamAuthCodeRequiredException("code please"));
+
+		var session = await _manager.GetOrCreateSessionAsync(
+			"cb_account", new AccountCredentials("cb_account", "password"), CancellationToken.None);
+		await session.LoginAsync(CancellationToken.None);
+
+		var deadline = DateTime.UtcNow.AddSeconds(5);
+		while (DateTime.UtcNow < deadline && !seen.Any(e => e.EventType == "auth_code_required"))
+		{
+			await Task.Delay(25);
+		}
+
+		var evt = Assert.Single(seen, e => e.EventType == "auth_code_required");
+		Assert.Equal("cb_account", evt.Account);
+		Assert.Equal("ConnectingWaitAuthCode", evt.State);
+	}
+
+	[Fact]
+	public async Task TryRestoreSessionAsync_TrulyConcurrentRestore_LosersReturnWinnerInstance()
+	{
+		var credentialStoreMock = CreateSuccessfulRestoreCredentialStore();
+		SetupSuccessfulTokenLogin();
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object,
+			tokenRefreshCheckInterval: TimeSpan.FromMinutes(10));
+
+		using var barrier = new Barrier(16);
+		var tasks = Enumerable.Range(0, 16)
+			.Select(_ => Task.Run(() =>
+			{
+				barrier.SignalAndWait();
+				return manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+			}))
+			.ToArray();
+
+		var sessions = await Task.WhenAll(tasks);
+
+		Assert.All(sessions, session => Assert.NotNull(session));
+		Assert.All(sessions, session => Assert.Same(sessions[0], session));
+	}
+
+	[Fact]
 	public async Task GetOrCreateSessionAsync_WithConcurrentCalls_CreatesOnlyOneSession()
 	{
 		// Arrange

@@ -71,6 +71,36 @@ public sealed class TradeRateLimiterTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Lease_DisposeAfterLimiterDisposed_DoesNotThrow()
+	{
+		var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 5,
+			Window = TimeSpan.FromMinutes(5)
+		});
+
+		var lease = await limiter.AcquireAsync("acct");
+		Assert.NotNull(lease);
+		limiter.Dispose(); // tears down the per-account semaphore under the live lease
+
+		// Releasing into a disposed semaphore is swallowed by the limiter.
+		lease!.Dispose();
+	}
+
+	[Fact]
+	public void Dispose_Twice_SecondIsNoOp()
+	{
+		var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 5,
+			Window = TimeSpan.FromMinutes(5)
+		});
+
+		limiter.Dispose();
+		limiter.Dispose(); // idempotent
+	}
+
+	[Fact]
 	public async Task Acquire_WhenWindowQuotaExhausted_ReturnsNull()
 	{
 		using var limiter = CreateLimiter(new TradeRateLimiterOptions
@@ -162,6 +192,102 @@ public sealed class TradeRateLimiterTests : IDisposable
 		var first = await limiter.AcquireAsync("acct");
 		// Hold the concurrency slot; the second acquire should observe cancellation.
 
+		var second = await limiter.AcquireAsync("acct", cts.Token);
+
+		Assert.Null(second);
+		first!.Dispose();
+	}
+
+	[Fact]
+	public async Task Acquire_WhenDeadlineAlreadyElapsedBeforeWaiting_ReturnsNull()
+	{
+		using var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 5,
+			Window = TimeSpan.FromMinutes(5),
+			AcquireTimeout = TimeSpan.Zero
+		});
+
+		var first = await limiter.AcquireAsync("acct");
+		Assert.NotNull(first);
+
+		// Slot held and the zero deadline already passed: fail before the timed wait.
+		var second = await limiter.AcquireAsync("acct");
+
+		Assert.Null(second);
+		first!.Dispose();
+	}
+
+	[Fact]
+	public async Task Acquire_WhenConcurrencyFreedDuringTimedWait_Succeeds()
+	{
+		using var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 10,
+			Window = TimeSpan.FromMinutes(5),
+			AcquireTimeout = TimeSpan.FromSeconds(5)
+		});
+
+		var first = await limiter.AcquireAsync("acct");
+		Assert.NotNull(first);
+
+		// Free the slot while the second acquire is parked in its timed wait, so
+		// the wait returns true instead of timing out or throwing.
+		_ = Task.Run(async () =>
+		{
+			await Task.Delay(50);
+			first!.Dispose();
+		});
+
+		var second = await limiter.AcquireAsync("acct");
+
+		Assert.NotNull(second);
+		second!.Dispose();
+	}
+
+	[Fact]
+	public async Task Acquire_WhenWindowWaitBelowOneMillisecond_ClampsToMinimum()
+	{
+		// Frozen logical clock 0.4ms before the window frees: the wait is always
+		// sub-millisecond (clamped to 1ms) and the window never actually frees,
+		// so the acquire keeps looping until the real deadline gives up.
+		_now += TimeSpan.FromMinutes(1);
+		using var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 1,
+			Window = TimeSpan.FromSeconds(10),
+			MaxConcurrentOperations = 2,
+			AcquireTimeout = TimeSpan.FromMilliseconds(120)
+		});
+
+		var first = await limiter.AcquireAsync("acct");
+		Assert.NotNull(first);
+
+		_now += TimeSpan.FromSeconds(10) - TimeSpan.FromTicks(4000);
+
+		var second = await limiter.AcquireAsync("acct");
+
+		Assert.Null(second);
+		first!.Dispose();
+	}
+
+	[Fact]
+	public async Task Acquire_WhenCanceledDuringWindowWait_ReturnsNull()
+	{
+		// Slot is free but the window is full: the cancellation must hit the
+		// window Task.Delay (not the semaphore wait) and still yield null.
+		using var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 1,
+			Window = TimeSpan.FromMinutes(10),
+			MaxConcurrentOperations = 2,
+			AcquireTimeout = TimeSpan.FromSeconds(30)
+		});
+
+		var first = await limiter.AcquireAsync("acct");
+		Assert.NotNull(first);
+
+		using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
 		var second = await limiter.AcquireAsync("acct", cts.Token);
 
 		Assert.Null(second);

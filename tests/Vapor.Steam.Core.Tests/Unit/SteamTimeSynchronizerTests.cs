@@ -6,6 +6,14 @@ namespace Vapor.Steam.Core.Tests.Unit;
 public class SteamTimeSynchronizerTests
 {
 	[Fact]
+	public void QueryTimeEndpoint_PointsAtSteamTwoFactorService()
+	{
+		Assert.Equal(
+			"https://api.steampowered.com/ITwoFactorService/QueryTime/v1/",
+			SteamTimeSynchronizer.QueryTimeEndpoint.ToString());
+	}
+
+	[Fact]
 	public void GetCurrentSteamTime_UsesLocalTimeBeforeSync()
 	{
 		var timeProvider = new FakeTimeProvider(new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero));

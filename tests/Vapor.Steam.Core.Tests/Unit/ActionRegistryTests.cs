@@ -16,6 +16,22 @@ public class ActionRegistryTests
 	}
 
 	[Fact]
+	public void Unregister_RemovesRegisteredAction()
+	{
+		_registry.Register(new TestAction("temp_action", "Temporary"));
+
+		Assert.True(_registry.Unregister("temp_action"));
+		Assert.Null(_registry.Get("temp_action"));
+		Assert.DoesNotContain("temp_action", _registry.ListNames());
+	}
+
+	[Fact]
+	public void Unregister_UnknownName_ReturnsFalse()
+	{
+		Assert.False(_registry.Unregister("never_registered"));
+	}
+
+	[Fact]
 	public void Register_AddsActionToRegistry()
 	{
 		// Arrange

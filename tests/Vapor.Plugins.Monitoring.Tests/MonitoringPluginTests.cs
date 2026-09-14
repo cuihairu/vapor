@@ -151,6 +151,124 @@ public class MonitoringPluginTests
 	}
 
 	[Fact]
+	public async Task Initialize_BindFails_PluginRemainsUsableWithoutEndpoint()
+	{
+		// Occupying an ephemeral port with a standalone server makes the plugin's bind on
+		// the same port fail; the plugin must log, disable the endpoint and stay usable
+		// for the in-process metrics surface.
+		var holder = new MetricsHttpServer("127.0.0.1", 0, "/metrics", () => "held\n");
+		holder.Start();
+		try
+		{
+			var plugin = new MonitoringPlugin();
+			var config = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+			{
+				["metrics.port"] = holder.Port.ToString(System.Globalization.CultureInfo.InvariantCulture)
+			};
+			var context = new StubPluginContext(plugin.Info, new StubServiceProvider(), config);
+
+			await plugin.InitializeAsync(context, CancellationToken.None);
+			try
+			{
+				// The endpoint field is internal state; reflect it to prove the failure path
+				// released the failed server instead of leaving it half-bound.
+				var serverField = typeof(MonitoringPlugin).GetField("_server", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+				Assert.Null(serverField!.GetValue(plugin));
+
+				var summary = JsonDocument.Parse(plugin.RenderMetricsJson());
+				Assert.True(summary.RootElement.TryGetProperty("uptimeSeconds", out _));
+			}
+			finally
+			{
+				await plugin.ShutdownAsync(CancellationToken.None);
+			}
+		}
+		finally
+		{
+			holder.Dispose();
+		}
+	}
+
+	[Fact]
+	public async Task SessionPump_SourceCompletes_SamplesSessionGauges()
+	{
+		// A session manager whose event stream finishes on its own drives the pump's
+		// normal-completion path, including the per-state session gauge sampling.
+		var manager = new CompletingSessionManager([TestSession.Create()]);
+		var services = new StubServiceProvider(new Dictionary<Type, object>
+		{
+			[typeof(ISessionManager)] = manager
+		});
+
+		var plugin = new MonitoringPlugin();
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, services), CancellationToken.None);
+		try
+		{
+			// Wait on the manager's own counter, then give the pump a moment to finish its
+			// post-event gauge sampling, so we never render while the pump is writing —
+			// the registry does not support a reader racing a writer.
+			await WaitForConditionAsync(() => manager.Observed >= 1);
+			await Task.Delay(300);
+
+			var exposition = plugin.RenderMetricsSnapshot();
+			Assert.Contains("vapor_session_events_total{type=\"StateChanged\"} 1", exposition, StringComparison.Ordinal);
+			Assert.Contains("vapor_sessions_active 1", exposition, StringComparison.Ordinal);
+			Assert.Contains("vapor_sessions_by_state{state=\"Disconnected\"} 1", exposition, StringComparison.Ordinal);
+		}
+		finally
+		{
+			// The pump already drained by itself; shutdown must not hang or throw.
+			await plugin.ShutdownAsync(CancellationToken.None);
+		}
+	}
+
+	[Fact]
+	public async Task SessionPump_SourceThrows_IsSwallowedAndShutdownStillWorks()
+	{
+		// A session event source that crashes with a non-cancellation error stops the pump
+		// quietly; the plugin keeps rendering metrics and shuts down cleanly.
+		var services = new StubServiceProvider(new Dictionary<Type, object>
+		{
+			[typeof(ISessionManager)] = new ThrowingSourceSessionManager()
+		});
+
+		var plugin = new MonitoringPlugin();
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, services), CancellationToken.None);
+
+		await Task.Delay(100);
+		await plugin.ShutdownAsync(CancellationToken.None);
+
+		Assert.Contains("process_uptime_seconds", plugin.RenderMetricsSnapshot(), StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task SessionPump_ListSessionsThrows_SamplingFailureIsSwallowed()
+	{
+		// Sampling session gauges must never take the pump down: a ListSessions that
+		// throws is logged per event while the event counters keep advancing.
+		var manager = new ThrowingListSessionManager();
+		var services = new StubServiceProvider(new Dictionary<Type, object>
+		{
+			[typeof(ISessionManager)] = manager
+		});
+
+		var plugin = new MonitoringPlugin();
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, services), CancellationToken.None);
+		try
+		{
+			await WaitForConditionAsync(() =>
+				plugin.RenderMetricsSnapshot().Contains(
+					"vapor_session_events_total{type=\"StateChanged\"} 1", StringComparison.Ordinal));
+
+			Assert.DoesNotContain("vapor_sessions_active", plugin.RenderMetricsSnapshot(), StringComparison.Ordinal);
+		}
+		finally
+		{
+			await plugin.ShutdownAsync(CancellationToken.None);
+		}
+	}
+
+	[Fact]
 	public async Task Plugin_LoadsThroughPluginManager()
 	{
 		var root = Path.Combine(Path.GetTempPath(), "vapor-monitoring-plugin-tests", Guid.NewGuid().ToString("N"));
@@ -261,6 +379,95 @@ public class MonitoringPluginTests
 		public void PublishState(string accountName, SessionState state)
 		{
 			_events.Writer.TryWrite(new SessionEvent(SessionEventType.StateChanged, accountName, state));
+		}
+	}
+
+	/// <summary>Session manager whose event stream yields one event and then completes.</summary>
+	private sealed class CompletingSessionManager(IReadOnlyList<BotSession> sessions) : ISessionManager
+	{
+		public int Observed { get; private set; }
+
+		public Task<BotSession> GetOrCreateSessionAsync(string accountName, AccountCredentials credentials, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
+		public Task<BotSession?> GetSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public Task RemoveSessionAsync(string accountName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+		public IReadOnlyList<BotSession> ListSessions() => sessions;
+
+		public void SetEventCallback(SessionEventDelegate? callback)
+		{
+		}
+
+		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+		{
+			Observed++;
+			yield return new SessionEvent(SessionEventType.StateChanged, "acct", SessionState.Connected);
+			// Let the stream end naturally so the pump drains without cancellation.
+		}
+	}
+
+	/// <summary>Session manager whose event subscription itself crashes.</summary>
+	private sealed class ThrowingSourceSessionManager : ISessionManager
+	{
+		public Task<BotSession> GetOrCreateSessionAsync(string accountName, AccountCredentials credentials, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
+		public Task<BotSession?> GetSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public Task RemoveSessionAsync(string accountName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+		public IReadOnlyList<BotSession> ListSessions() => [];
+
+		public void SetEventCallback(SessionEventDelegate? callback)
+		{
+		}
+
+		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public IAsyncEnumerable<SessionEvent> SubscribeAllEvents(CancellationToken cancellationToken = default) =>
+			throw new InvalidOperationException("session source exploded");
+	}
+
+	/// <summary>
+	/// Session manager with a working event stream but a ListSessions that always fails —
+	/// the gauge sampler must swallow that per event.
+	/// </summary>
+	private sealed class ThrowingListSessionManager : ISessionManager
+	{
+		public int Observed { get; private set; }
+
+		public Task<BotSession> GetOrCreateSessionAsync(string accountName, AccountCredentials credentials, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
+		public Task<BotSession?> GetSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public Task RemoveSessionAsync(string accountName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+		public IReadOnlyList<BotSession> ListSessions() => throw new InvalidOperationException("list exploded");
+
+		public void SetEventCallback(SessionEventDelegate? callback)
+		{
+		}
+
+		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+		{
+			Observed++;
+			yield return new SessionEvent(SessionEventType.StateChanged, "acct", SessionState.Connected);
+			await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
 		}
 	}
 }

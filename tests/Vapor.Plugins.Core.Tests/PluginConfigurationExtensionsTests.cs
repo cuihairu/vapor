@@ -10,7 +10,7 @@ public sealed class PluginConfigurationExtensionsTests : IDisposable
 	public void Dispose()
 	{
 		// Clear any environment variable a test may have set.
-		foreach (var key in new[] { "VAPOR_TEST_PLUGIN_STR", "VAPOR_TEST_PLUGIN_INT", "VAPOR_TEST_PLUGIN_BOOL" })
+		foreach (var key in new[] { "VAPOR_TEST_PLUGIN_STR", "VAPOR_TEST_PLUGIN_INT", "VAPOR_TEST_PLUGIN_BOOL", "VAPOR_TEST_PLUGIN_DECIMAL" })
 		{
 			Environment.SetEnvironmentVariable(key, null);
 		}
@@ -81,6 +81,56 @@ public sealed class PluginConfigurationExtensionsTests : IDisposable
 		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_INT", "1234");
 
 		Assert.Equal(1234, _config.GetInt32("port", 80, "VAPOR_TEST_PLUGIN_INT"));
+	}
+
+	// --- GetDecimal ---
+
+	[Fact]
+	public void GetDecimal_ParsesConfiguredValue()
+	{
+		_config["threshold"] = "33.3";
+
+		Assert.Equal(33.3m, _config.GetDecimal("threshold", 10m));
+	}
+
+	[Fact]
+	public void GetDecimal_FallsBackWhenUnparsableOrOutOfRange()
+	{
+		_config["bad"] = "abc";
+		_config["huge"] = "20000";
+		_config["tiny"] = "0.001";
+
+		Assert.Equal(10m, _config.GetDecimal("missing", 10m, min: 0.01m, max: 10_000m));
+		Assert.Equal(10m, _config.GetDecimal("bad", 10m, min: 0.01m, max: 10_000m));
+		Assert.Equal(10m, _config.GetDecimal("huge", 10m, min: 0.01m, max: 10_000m));
+		Assert.Equal(10m, _config.GetDecimal("tiny", 10m, min: 0.01m, max: 10_000m));
+	}
+
+	[Fact]
+	public void GetDecimal_EnvironmentVariableOverridesConfig()
+	{
+		_config["threshold"] = "1";
+		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_DECIMAL", "42.5");
+
+		Assert.Equal(42.5m, _config.GetDecimal("threshold", 10m, "VAPOR_TEST_PLUGIN_DECIMAL", min: 0.01m, max: 10_000m));
+	}
+
+	[Fact]
+	public void GetDecimal_UnparsableEnvironmentVariableFallsBackToConfig()
+	{
+		_config["threshold"] = "33.3";
+		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_DECIMAL", "not-a-number");
+
+		Assert.Equal(33.3m, _config.GetDecimal("threshold", 10m, "VAPOR_TEST_PLUGIN_DECIMAL"));
+	}
+
+	[Fact]
+	public void GetDecimal_OutOfRangeEnvironmentVariableFallsBackToConfig()
+	{
+		_config["threshold"] = "33.3";
+		Environment.SetEnvironmentVariable("VAPOR_TEST_PLUGIN_DECIMAL", "99999");
+
+		Assert.Equal(33.3m, _config.GetDecimal("threshold", 10m, "VAPOR_TEST_PLUGIN_DECIMAL", min: 0.01m, max: 10_000m));
 	}
 
 	// --- GetBool ---

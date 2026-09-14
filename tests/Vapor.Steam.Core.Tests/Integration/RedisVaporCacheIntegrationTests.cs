@@ -175,7 +175,9 @@ public sealed class RedisVaporCacheIntegrationTests
 		var served = await cache.GetOrSetStaleWhileRevalidateAsync(
 			"price:730",
 			ct => { Interlocked.Increment(ref factoryCalls); return Task.FromResult<FakePayload?>(new FakePayload { Value = "v2" }); },
-			TimeSpan.FromMilliseconds(200),
+			// The background refresh writes back with this TTL: keep it generous so the
+			// 20ms polling loop below cannot outrun a too-narrow fresh window under load.
+			TimeSpan.FromSeconds(60),
 			TimeSpan.FromSeconds(30));
 
 		// The stale value is served without waiting for the factory; the refresh

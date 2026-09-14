@@ -127,6 +127,54 @@ public sealed class GetInventoryActionBranchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_SingleAppReportsFailure_ReturnsError()
+	{
+		var client = new FakeTradeClient();
+		client.InventoryHandler = (_, _, _, _) => new InventoryResponse { Success = false, Error = "inventory is private" };
+		var (action, session) = CreateAction(client);
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["steam_id"] = OwnSteamId.ToString() },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("inventory is private", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_InventoryBeyondSafetyLimit_StopsPaginating()
+	{
+		var client = new FakeTradeClient();
+		int calls = 0;
+		client.InventoryHandler = (_, _, _, _) =>
+		{
+			calls++;
+			return new InventoryResponse
+			{
+				Success = true,
+				Items = Enumerable.Range(0, 30_000)
+					.Select(i => new InventoryItem { AssetId = (ulong)(calls * 100_000 + i) })
+					.ToList(),
+				HasMore = true,
+				LastAssetId = (ulong)(calls * 100_000)
+			};
+		};
+		var (action, session) = CreateAction(client);
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["steam_id"] = OwnSteamId.ToString() },
+			CancellationToken.None);
+
+		// Two pages reach 60000 items > the 50000 safety limit: stop and report
+		// what was collected instead of looping forever.
+		Assert.True(result.Success);
+		Assert.Equal(2, calls);
+		Assert.Equal(60000, result.Output!["total_count"]);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_SingleAppInventoryThrows_ReturnsError()
 	{
 		var client = new FakeTradeClient();
@@ -187,7 +235,7 @@ public sealed class GetInventoryActionBranchTests : IDisposable
 			new Dictionary<string, object?>
 			{
 				["steam_id"] = OwnSteamId.ToString(),
-				["app_ids"] = new List<object?> { 753L, 570.0, " 252490 ", null }
+				["app_ids"] = new List<object?> { 730, 753L, 570.0, " 252490 ", null }
 			},
 			CancellationToken.None);
 		var viaSingleValue = await action.ExecuteAsync(
@@ -202,10 +250,10 @@ public sealed class GetInventoryActionBranchTests : IDisposable
 
 		Assert.All(new[] { viaJsonArray, viaList, viaSingleValue, viaNullValue }, r => Assert.True(r.Success));
 		Assert.Equal(new[] { 753u, 730u, 440u }, scannedApps.Take(3).ToArray());
-		Assert.Equal(new[] { 753u, 570u, 252490u }, scannedApps.Skip(3).Take(3).ToArray());
+		Assert.Equal(new[] { 730u, 753u, 570u, 252490u }, scannedApps.Skip(3).Take(4).ToArray());
 		// The single-value dispatch and the app_ids:null fallback each scan the
 		// classic default (730/2).
-		Assert.Equal(new[] { 730u, 730u }, scannedApps.Skip(6).ToArray());
+		Assert.Equal(new[] { 730u, 730u }, scannedApps.Skip(7).ToArray());
 		Assert.Equal(730u, viaNullValue.Output!["app_id"]);
 	}
 

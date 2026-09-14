@@ -64,6 +64,25 @@ public sealed class TwoFactorAutoResponderTests
 	}
 
 	[Fact]
+	public async Task WithSharedSecret_ButNoActiveSession_LeavesChallengeUnanswered()
+	{
+		_credentials
+			.Setup(c => c.GetSharedSecretAsync("ghost", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(SharedSecret);
+		_sessionManager
+			.Setup(m => m.GetSessionAsync("ghost", It.IsAny<CancellationToken>()))
+			.ReturnsAsync((BotSession?)null);
+		var responder = CreateResponder();
+
+		bool answered = await responder.TryAnswerAsync("ghost");
+
+		Assert.False(answered);
+		Assert.Equal(0, responder.AnsweredCount);
+		// The secret existed, so the no-secret skip counter must stay untouched.
+		Assert.Equal(0, responder.SkippedNoSecretCount);
+	}
+
+	[Fact]
 	public async Task CooldownWindow_BlocksImmediateSecondAnswer()
 	{
 		BotSession session = CreateSession("alice");

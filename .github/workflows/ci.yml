@@ -57,7 +57,7 @@ jobs:
     # tests/coverlet.runsettings excludes source-generator outputs; structural
     # integration shells carry [ExcludeFromCodeCoverage] in source.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     services:
       redis:

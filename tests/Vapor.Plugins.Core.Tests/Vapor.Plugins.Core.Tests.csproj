@@ -22,6 +22,8 @@
     <ProjectReference Include="..\..\src\Vapor.Plugins.Core\Vapor.Plugins.Core.csproj" />
     <!-- Copies the test plugin DLL into this project's output; tests never reference its types directly. -->
     <ProjectReference Include="..\Vapor.Plugins.TestPlugin\Vapor.Plugins.TestPlugin.csproj" />
+    <!-- Broken/multi-plugin fixture assembly; loaded only through the plugin loader by path. -->
+    <ProjectReference Include="..\Vapor.Plugins.TestFixtures\Vapor.Plugins.TestFixtures.csproj" />
   </ItemGroup>
 
 </Project>

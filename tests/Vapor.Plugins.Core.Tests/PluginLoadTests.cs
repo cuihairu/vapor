@@ -69,6 +69,8 @@ public class PluginLoadTests : IDisposable
 		var report = await manager.LoadAllAsync(_root);
 		var command = Assert.Single(Assert.Single(report.Loaded).Commands);
 
+		Assert.False(string.IsNullOrWhiteSpace(command.Description));
+
 		var result = await command.ExecuteAsync([], CancellationToken.None);
 
 		Assert.True(result.Success);
@@ -166,6 +168,24 @@ public class PluginLoadTests : IDisposable
 		await manager.LoadAllAsync(_root);
 
 		Assert.Equal(["vapor.test-plugin"], fired);
+	}
+
+	[Fact]
+	public async Task PluginLoadedHandler_Throws_LoadStillSucceeds()
+	{
+		// Host notification handlers run inside the manager; a buggy handler must be logged
+		// and swallowed so it cannot fail the plugin load itself.
+		PluginStaging.StageTestPlugin(_root);
+
+		await using var manager = PluginStaging.CreateManager();
+		manager.PluginLoaded += (_, _) => throw new InvalidOperationException("handler boom");
+
+		var report = await manager.LoadAllAsync(_root);
+
+		Assert.Empty(report.Failures);
+		var plugin = Assert.Single(report.Loaded);
+		Assert.Single(manager.LoadedPlugins);
+		Assert.Equal("vapor.test-plugin", plugin.Info.Id);
 	}
 
 	public void Dispose()

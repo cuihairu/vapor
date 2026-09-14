@@ -102,6 +102,147 @@ public sealed class SqliteJobStoreTests
 			cts.Token));
 	}
 
+	// ── guard branches (defensive NOT-FOUND / recompute paths) ──
+
+	[Fact]
+	public void Constructor_BlankDbPath_Throws()
+	{
+		Assert.Throws<ArgumentException>(() => new SqliteJobStore("   "));
+	}
+
+	[Fact]
+	public async Task TriggerScheduledJob_UnknownTemplate_ReturnsNull()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		Job? triggered = await store.TriggerScheduledJob(
+			"does-not-exist",
+			DateTimeOffset.UtcNow.AddMinutes(1),
+			extraMeta: null,
+			cts.Token);
+
+		Assert.Null(triggered);
+	}
+
+	[Fact]
+	public async Task RequeueTask_UnknownTask_IsNoop()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		// Must complete without throwing: an unknown task id simply has nothing to requeue.
+		await store.RequeueTask("does-not-exist", TimeSpan.FromSeconds(5), cts.Token);
+	}
+
+	[Fact]
+	public async Task SetTaskResult_QueuedTaskNeverClaimed_ThrowsNotFound()
+	{
+		// The result guard requires a Running task; a still-queued one is rejected
+		// the same way as an unknown id ("task not running").
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+
+		NotFoundException ex = await Assert.ThrowsAsync<NotFoundException>(() => store.SetTaskResult(
+			new TaskResult(created.Tasks[0].Id, true, null, null, DateTimeOffset.UtcNow),
+			cts.Token));
+
+		Assert.Equal("task not running", ex.Message);
+	}
+
+	[Fact]
+	public async Task SetTaskResult_TaskWithEmptyJobId_ThrowsNotFound()
+	{
+		// Corrupt row: a task whose job_id is empty cannot be recomputed, so the
+		// result must be rejected instead of silently updating the task.
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+		RawExec(store, """
+			INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms)
+			VALUES ('', 'ping', 'local', '["acct-1"]', '{}', 'Running', $now, $now);
+			INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms)
+			VALUES ('orphan-task', '', 'acct-1', 'ping', 'local', '{}', 'Running', 1, $now, $now);
+			""", ("$now", nowMs));
+
+		NotFoundException ex = await Assert.ThrowsAsync<NotFoundException>(() => store.SetTaskResult(
+			new TaskResult("orphan-task", true, null, null, DateTimeOffset.UtcNow, 1),
+			cts.Token));
+
+		Assert.Equal("task not found", ex.Message);
+	}
+
+	[Fact]
+	public async Task FailRunningTask_QueuedTaskNeverClaimed_ThrowsNotFound()
+	{
+		// The failing UPDATE only matches Running tasks; a queued task yields 0 rows
+		// and must surface as NotFound instead of a silent no-op.
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+
+		NotFoundException ex = await Assert.ThrowsAsync<NotFoundException>(() =>
+			store.FailRunningTask(created.Tasks[0].Id, "boom", cts.Token));
+
+		Assert.Equal("task not running", ex.Message);
+	}
+
+	[Fact]
+	public async Task SetTaskResult_CanceledJob_IsNotRecomputed()
+	{
+		// RecomputeJob must leave canceled jobs alone (a late result for an already
+		// canceled job must not resurrect it into Running/Finished).
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+		JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(claimed);
+
+		// Simulate the cancel landing between the claim and the result report.
+		RawExec(store, "UPDATE jobs SET status = 'Canceled' WHERE id = $id;", ("$id", created.Job.Id));
+
+		(_, Job job) = await store.SetTaskResult(
+			new TaskResult(claimed!.Id, true, null, null, DateTimeOffset.UtcNow, claimed.Attempt),
+			cts.Token);
+
+		Assert.Equal(JobStatus.Canceled, job.Status);
+	}
+
+	[Fact]
+	public async Task SetTaskResult_PartiallyFinishedJob_StaysRunningForRemainingTasks()
+	{
+		// One of two tasks finished while the other is still queued: the job cannot
+		// be Finished (work remains) nor Queued (progress happened) — it stays Running.
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1", "acct-2"], null, null),
+			cts.Token);
+
+		JobTask? first = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(first);
+		await store.SetTaskResult(
+			new TaskResult(first!.Id, true, null, null, DateTimeOffset.UtcNow, first.Attempt),
+			cts.Token);
+
+		JobWithTasks updated = await store.GetJob(created.Job.Id, cts.Token);
+
+		Assert.Equal(JobStatus.Running, updated.Job.Status);
+		Assert.Equal(1, updated.Tasks.Count(t => t.Status == JobTaskStatus.Finished));
+		Assert.Equal(1, updated.Tasks.Count(t => t.Status == JobTaskStatus.Queued));
+	}
+
 	[Fact]
 	public async Task RequeueTaskMovesJobBackToQueuedWhenNoOtherWorkRemains()
 	{
@@ -414,6 +555,27 @@ public sealed class SqliteJobStoreTests
 				// Microsoft.Data.Sqlite pooling may still hold the file on Windows; best-effort cleanup.
 			}
 		}
+	}
+
+	/// <summary>
+	/// Runs raw SQL on the store's own connection to inject or mutate rows the public
+	/// API cannot produce (corrupt/canceled states the guard branches must survive).
+	/// </summary>
+	private static void RawExec(SqliteJobStore store, string sql, params (string Name, object Value)[] parameters)
+	{
+		var connectionField = typeof(SqliteJobStore).GetField("_connection", BindingFlags.Instance | BindingFlags.NonPublic);
+		Assert.NotNull(connectionField);
+		var connection = (Microsoft.Data.Sqlite.SqliteConnection?)connectionField!.GetValue(store);
+		Assert.NotNull(connection);
+
+		using var cmd = connection!.CreateCommand();
+		cmd.CommandText = sql;
+		foreach ((string name, object value) in parameters)
+		{
+			cmd.Parameters.AddWithValue(name, value);
+		}
+
+		cmd.ExecuteNonQuery();
 	}
 
 	private static void MarkNextAttemptAt(SqliteJobStore store, string taskId, DateTimeOffset nextAttemptAt)

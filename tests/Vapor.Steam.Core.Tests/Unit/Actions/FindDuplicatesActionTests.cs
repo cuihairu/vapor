@@ -72,6 +72,23 @@ public sealed class FindDuplicatesActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_WhenInventoryLoadCanceled_Rethrows()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, 753, 6, null, It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new OperationCanceledException());
+		var session = CreateSession(CreateWebHandler());
+
+		// Cancellation must not be swallowed into an error result.
+		await Assert.ThrowsAsync<OperationCanceledException>(() =>
+			action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None));
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_GroupsDuplicates_WithExcessAssetIds()
 	{
 		var (action, clientMock) = CreateActionWithMock();
@@ -247,6 +264,52 @@ public sealed class FindDuplicatesActionTests : IDisposable
 
 		Assert.True(result.Success);
 		Assert.Equal(new List<uint> { 753u, 730u, 570u, 252490u, 440u }, scannedApps);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_AppIdsInMemoryValueShapes_ParseKnownAndSkipRest()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		var scannedApps = new List<uint>();
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, It.IsAny<uint>(), It.IsAny<ulong>(), null, It.IsAny<CancellationToken>()))
+			.Callback<ulong, uint, ulong, ulong?, CancellationToken>((_, app, _, _, _) => scannedApps.Add(app))
+			.ReturnsAsync(new InventoryResponse { Success = true, Items = [] });
+		var session = CreateSession(CreateWebHandler());
+
+		// In-memory dispatch skips the JSON round-trip, so values keep their .NET
+		// types: int, long, uint and plain string all parse; fractional doubles,
+		// bools and null are silently dropped.
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?>
+			{
+				["app_ids"] = new object?[] { 753, 730L, 252490u, "570", 570.5, true, null }
+			},
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(new List<uint> { 753u, 730u, 252490u, 570u }, scannedApps);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_KeepAsInt_IsAccepted()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, It.IsAny<uint>(), It.IsAny<ulong>(), null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new InventoryResponse { Success = true, Items = [] });
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["keep"] = 2 }, CancellationToken.None);
+
+		Assert.True(result.Success);
 	}
 
 	[Fact]

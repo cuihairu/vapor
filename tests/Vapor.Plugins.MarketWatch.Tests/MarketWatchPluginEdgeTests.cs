@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
 using Vapor.Steam.Core.Models;
 using Vapor.Steam.Core.Web;
@@ -21,6 +22,17 @@ public sealed class MarketWatchPluginEdgeTests
 		Assert.Equal(300, MarketWatchPlugin.DefaultIntervalSeconds);
 		Assert.Equal(10, MarketWatchPlugin.MinIntervalSeconds);
 		Assert.Equal(10m, MarketWatchPlugin.DefaultThresholdPercent);
+	}
+
+	[Fact]
+	public void ParameterlessConstructor_ExposesPluginInfo()
+	{
+		// The host activates plugins through the parameterless constructor; a bare
+		// instance holds no resources (nothing is created until InitializeAsync).
+		var plugin = new MarketWatchPlugin();
+
+		Assert.Equal("vapor.market-watch", plugin.Info.Id);
+		Assert.Equal(PluginApi.Current, plugin.Info.ApiVersion);
 	}
 
 	[Fact]
@@ -73,6 +85,190 @@ public sealed class MarketWatchPluginEdgeTests
 	}
 
 	[Fact]
+	public async Task PollOnce_CanceledDuringParkedFreeFetch_Rethrows()
+	{
+		// The free-watch source has its own cancellation filter: a cancellation surfacing
+		// from the appdetails fetch while the cycle token is already cancelled must
+		// rethrow, not be swallowed as a failed fetch. The token is only cancelled once
+		// the cycle is parked inside the fetch — cancelling any earlier trips the loop
+		// guard before the fetch is ever reached.
+		var client = new ScriptedStoreClient();
+		var parked = new TaskCompletionSource<GameInfo?>(TaskCreationOptions.RunContinuationsAsynchronously);
+		await using var plugin = await CreateInitializedAsync(client);
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570", ["kind"] = "free" });
+
+		client.PendingGameInfo = parked.Task;
+		client.GameInfoFetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		using var cts = new CancellationTokenSource();
+		var poll = plugin.PollOnceAsync(cts.Token);
+		await client.GameInfoFetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		cts.Cancel();
+		parked.SetException(new OperationCanceledException(cts.Token));
+
+		// A TCS faulted with an OCE surfaces as TaskCanceledException on await.
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => poll);
+	}
+
+	[Fact]
+	public async Task PollOnce_WebhookCanceledDuringSend_Rethrows()
+	{
+		// A webhook transport that cancels mid-send while the cycle token is cancelled
+		// must propagate the cancellation instead of treating it as a delivery failure.
+		// The cycle starts with a live token and is cancelled while parked in the send.
+		var client = new ScriptedStoreClient(new PriceOverview { Currency = "USD", Final = 100m, Initial = 100m });
+		var config = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+		{
+			["market.webhook_url"] = "http://webhook.test/alerts"
+		};
+		var handler = new ParkedWebhookHandler();
+		await using var plugin = new MarketWatchPlugin(client, new HttpClient(handler));
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+		await plugin.PollOnceAsync(CancellationToken.None); // baseline, no alert yet
+
+		client.NextPrice = new PriceOverview { Currency = "USD", Final = 10m, Initial = 100m };
+		using var cts = new CancellationTokenSource();
+		var poll = plugin.PollOnceAsync(cts.Token);
+		await handler.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		cts.Cancel();
+		handler.Release.SetException(new OperationCanceledException());
+
+		// HttpClient surfaces the cancelled send as TaskCanceledException (an OCE subclass).
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => poll);
+	}
+
+	[Fact]
+	public async Task Shutdown_WhileLoopParkedInFetch_UnwindsThroughCancellationFilters()
+	{
+		// Park the background loop inside its price fetch, then cancel: the parked fetch
+		// unwinds with OperationCanceledException while the token is already cancelled, so
+		// the per-fetch filter rethrows and the loop-level filter stops the cycle quietly.
+		var client = new ScriptedStoreClient();
+		var parked = new TaskCompletionSource<PriceOverview?>(TaskCreationOptions.RunContinuationsAsynchronously);
+		client.PendingPrice = parked.Task;
+		var plugin = new MarketWatchPlugin(client, new HttpClient(new ThrowingHandler()));
+		await plugin.InitializeAsync(
+			new StubPluginContext(
+				plugin.Info,
+				new StubServiceProvider(),
+				new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				{
+					["market.check_interval_seconds"] = "10"
+				}),
+			CancellationToken.None);
+
+		// Script the parked fetch before any cycle can reach it, then restart the loop
+		// with a fast interval: the original loop's first delay arm captured the
+		// configured 10s before any test-side change could land. Cycle 1 sees no
+		// watches; the next cycle enters GetPriceAsync, signals and parks.
+		client.PriceFetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		client.PendingPrice = parked.Task;
+		await plugin.RestartLoopForTestsAsync(TimeSpan.FromMilliseconds(30));
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+
+		await client.PriceFetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+		var shutdown = plugin.ShutdownAsync(CancellationToken.None);
+		await Task.Delay(100);
+		parked.SetException(new OperationCanceledException());
+		await shutdown.WaitAsync(TimeSpan.FromSeconds(5));
+	}
+
+	[Fact]
+	public async Task PollLoop_ShortInterval_RunsRepeatedCyclesUntilShutdown()
+	{
+		// Collapse the polling interval so several full poll/delay cycles run in test time;
+		// the loop keeps cycling through its delay arm until shutdown cancels it.
+		var client = new ScriptedStoreClient(new PriceOverview { Currency = "USD", Final = 20m, Initial = 20m });
+		var plugin = new MarketWatchPlugin(client, new HttpClient(new ThrowingHandler()));
+		await plugin.InitializeAsync(
+			new StubPluginContext(
+				plugin.Info,
+				new StubServiceProvider(),
+				new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+				{
+					["market.check_interval_seconds"] = "10"
+				}),
+			CancellationToken.None);
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+
+		// Restart the loop with a fast interval: the original loop's first delay arm
+		// captured the configured 10s before any test-side change could land.
+		await plugin.RestartLoopForTestsAsync(TimeSpan.FromMilliseconds(30));
+
+		try
+		{
+			var deadline = Environment.TickCount64 + 5000;
+			while (plugin.Store.Snapshot()[0].LastCheckedAt is null && Environment.TickCount64 < deadline)
+			{
+				await Task.Delay(25);
+			}
+
+			Assert.NotNull(plugin.Store.Snapshot()[0].LastCheckedAt);
+
+			// A few more cycles run through the delay arm before the shutdown below.
+			await Task.Delay(150);
+		}
+		finally
+		{
+			using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+			await plugin.ShutdownAsync(timeout.Token);
+		}
+	}
+
+	[Fact]
+	public async Task AddAction_ExplicitPriceKind_IsStored()
+	{
+		// An explicit (case-insensitive) kind=price takes the same normalization path as
+		// the default and stores a price watch.
+		await using var plugin = await CreateInitializedAsync(new ScriptedStoreClient());
+
+		var result = await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?>
+		{
+			["app_id"] = "570",
+			["kind"] = " Price "
+		});
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal("price", result.Output!["kind"]);
+		WatchEntry entry = Assert.Single(plugin.Store.Snapshot());
+		Assert.Equal(WatchKind.Price, entry.Kind);
+	}
+
+	[Fact]
+	public async Task AddAction_DecimalThresholdShape_Accepted()
+	{
+		// A boxed decimal payload value is accepted as-is (host adapters pass typed values).
+		await using var plugin = await CreateInitializedAsync(new ScriptedStoreClient());
+
+		var result = await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?>
+		{
+			["app_id"] = "570",
+			["threshold_percent"] = 5.5m
+		});
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(5.5m, plugin.Store.Snapshot()[0].ThresholdPercent);
+	}
+
+	[Fact]
+	public async Task AddAction_LongThresholdShape_Accepted()
+	{
+		// A boxed long is distinct from int at runtime; both must be accepted.
+		await using var plugin = await CreateInitializedAsync(new ScriptedStoreClient());
+
+		var result = await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?>
+		{
+			["app_id"] = "570",
+			["threshold_percent"] = 7L
+		});
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(7m, plugin.Store.Snapshot()[0].ThresholdPercent);
+	}
+
+	[Fact]
 	public async Task PollOnce_WebhookTransportCrash_IsSwallowed()
 	{
 		var client = new ScriptedStoreClient(new PriceOverview { Currency = "USD", Final = 100m, Initial = 100m });
@@ -110,7 +306,15 @@ public sealed class MarketWatchPluginEdgeTests
 			CancellationToken.None);
 		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
 
+		// Script the fetch before any cycle can reach it, then restart with a fast
+		// interval and wait until the loop is deterministically parked inside the
+		// price fetch before shutting down.
+		client.PriceFetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		client.PendingPrice = parked.Task;
+		await plugin.RestartLoopForTestsAsync(TimeSpan.FromMilliseconds(30));
+
 		// Begin shutdown while the loop is parked inside the fetch, then unwind the fetch.
+		await client.PriceFetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 		var shutdown = plugin.ShutdownAsync(CancellationToken.None);
 		await Task.Delay(100);
 		parked.SetException(new OperationCanceledException());
@@ -287,8 +491,17 @@ public sealed class MarketWatchPluginEdgeTests
 
 		public Task<PriceOverview?>? PendingPrice { get; set; }
 
+		public Task<GameInfo?>? PendingGameInfo { get; set; }
+
+		/// <summary>Completed when a price fetch is entered; lets tests park the poll loop deterministically.</summary>
+		public TaskCompletionSource? PriceFetchStarted { get; set; }
+
+		/// <summary>Completed when a free-state fetch is entered.</summary>
+		public TaskCompletionSource? GameInfoFetchStarted { get; set; }
+
 		public Task<PriceOverview?> GetPriceAsync(uint appId, string country = "us", CancellationToken cancellationToken = default)
 		{
+			PriceFetchStarted?.TrySetResult();
 			if (PendingPrice is not null)
 			{
 				return PendingPrice;
@@ -301,6 +514,12 @@ public sealed class MarketWatchPluginEdgeTests
 
 		public Task<GameInfo?> GetGameInfoAsync(uint appId, string country = "us", CancellationToken cancellationToken = default)
 		{
+			GameInfoFetchStarted?.TrySetResult();
+			if (PendingGameInfo is not null)
+			{
+				return PendingGameInfo;
+			}
+
 			return GameInfoFailures.TryGetValue(appId, out var failure)
 				? Task.FromException<GameInfo?>(failure)
 				: Task.FromResult(NextGameInfo);
@@ -321,5 +540,20 @@ public sealed class MarketWatchPluginEdgeTests
 	{
 		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
 			throw new HttpRequestException("webhook transport down");
+	}
+
+	/// <summary>Webhook transport that parks each send until the test releases it.</summary>
+	private sealed class ParkedWebhookHandler : HttpMessageHandler
+	{
+		public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+		{
+			Started.TrySetResult();
+			await Release.Task;
+			return new HttpResponseMessage(HttpStatusCode.OK);
+		}
 	}
 }

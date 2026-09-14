@@ -54,6 +54,27 @@ public sealed class VaporCryptoHelperMethodTests : IDisposable
 		Assert.False(VaporCryptoHelper.HasDefaultKey);
 	}
 
+	[Fact]
+	public async Task SetEncryptionKeyFromFile_NonBase64Text_FallsBackToRawUtf8Key()
+	{
+		VaporCryptoHelper.ResetForTests();
+		string path = Path.Combine(Path.GetTempPath(), "vapor-key-" + Guid.NewGuid().ToString("N"));
+		await File.WriteAllTextAsync(path, "raw vapor key file content with spaces !! not base64");
+		try
+		{
+			VaporCryptoHelper.SetEncryptionKeyFromFile(path);
+
+			// The raw UTF-8 bytes became the active key material and round-trip cleanly.
+			string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, "roundtrip");
+			Assert.NotNull(encrypted);
+			Assert.Equal("roundtrip", await VaporCryptoHelper.Decrypt(ECryptoMethod.AES, encrypted!));
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
 	// --- per-method dispatch (Encrypt) ---
 
 	[Fact]
@@ -155,6 +176,26 @@ public sealed class VaporCryptoHelperMethodTests : IDisposable
 	{
 		string? decrypted = await VaporCryptoHelper.Decrypt(ECryptoMethod.File, "file:/nonexistent/secret");
 		Assert.Null(decrypted);
+	}
+
+	[Fact]
+	public async Task Decrypt_File_UnreadableFile_ReturnsNull()
+	{
+		string path = Path.Combine(Path.GetTempPath(), "vapor-secret-" + Guid.NewGuid().ToString("N"));
+		await File.WriteAllTextAsync(path, "locked");
+		try
+		{
+			// An exclusive handle makes the file unreadable to ReadAllTextAsync;
+			// the failure degrades to null like a miss.
+			using (File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None))
+			{
+				Assert.Null(await VaporCryptoHelper.Decrypt(ECryptoMethod.File, path));
+			}
+		}
+		finally
+		{
+			File.Delete(path);
+		}
 	}
 
 	[Fact]

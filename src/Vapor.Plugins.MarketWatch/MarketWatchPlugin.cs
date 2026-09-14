@@ -130,6 +130,35 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 	/// <summary>Current polling interval (for tests).</summary>
 	internal TimeSpan Interval => _interval;
 
+	/// <summary>
+	/// Test hook: restarts the poll loop with a custom interval. The loop started by
+	/// InitializeAsync captures the configured interval (minimum 10s) in its first
+	/// delay arm before a test can shorten it, so loop-level tests restart with a
+	/// fast interval to stay deterministic in test time.
+	/// </summary>
+	internal async Task RestartLoopForTestsAsync(TimeSpan interval)
+	{
+		_loopCts?.Cancel();
+		if (_loop is not null)
+		{
+			try
+			{
+				await _loop.ConfigureAwait(false);
+			}
+			catch (OperationCanceledException)
+			{
+			}
+		}
+
+		_loopCts?.Dispose();
+
+		ISteamStoreApiClient? client = _storeClient;
+		_interval = interval;
+		_loopCts = new CancellationTokenSource();
+		_storeClient = client;
+		_loop = Task.Run(() => PollLoopAsync(_loopCts.Token), CancellationToken.None);
+	}
+
 	private ISteamStoreApiClient CreateDefaultStoreClient()
 	{
 		// The price overview endpoint is public; an anonymous web handler suffices and no

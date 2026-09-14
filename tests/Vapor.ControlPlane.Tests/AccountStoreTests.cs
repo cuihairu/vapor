@@ -143,6 +143,43 @@ public sealed class AccountStoreTests
 		Assert.Empty(store.List());
 	}
 
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("   ")]
+	public void SetEnabled_WhitespaceAccount_ReturnsNull(string? accountName)
+	{
+		var store = new AccountStore();
+		store.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null);
+
+		Assert.Null(store.SetEnabled(accountName!, enabled: true));
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("   ")]
+	public void Remove_WhitespaceAccount_ReturnsNull(string? accountName)
+	{
+		var store = new AccountStore();
+		store.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null);
+
+		Assert.Null(store.Remove(accountName!));
+		Assert.NotNull(store.Get("alice")); // untouched
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("   ")]
+	public void Upsert_WhitespaceAccount_Throws(string? accountName)
+	{
+		var store = new AccountStore();
+
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert(accountName!, enabled: true, AccountDesiredState.Online, null, null, null, null));
+	}
+
 	[Fact]
 	public void List_IsOrderedByAccountName()
 	{
