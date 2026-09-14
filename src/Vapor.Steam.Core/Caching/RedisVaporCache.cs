@@ -83,7 +83,28 @@ public sealed class RedisVaporCache : IVaporCache, IDisposable
 		ArgumentException.ThrowIfNullOrWhiteSpace(configuration);
 
 		RedisVaporCacheOptions resolved = (options ?? new RedisVaporCacheOptions()) with { Configuration = configuration };
-		return new RedisVaporCache(ConnectionMultiplexer.Connect(resolved.Configuration), resolved, ownsMultiplexer: true);
+		return new RedisVaporCache(ConnectWithRetry(resolved.Configuration), resolved, ownsMultiplexer: true);
+	}
+
+	// The initial multiplexer connection is all-or-nothing (abortConnect defaults to
+	// true unless the caller opts out in the connection string), so one transient
+	// blip — a busy server or a container still coming up — fails the factory
+	// outright. Retry briefly; steady-state reconnects remain the multiplexer's job.
+	private const int ConnectAttempts = 3;
+
+	private static IConnectionMultiplexer ConnectWithRetry(string configuration)
+	{
+		for (int attempt = 1; ; attempt++)
+		{
+			try
+			{
+				return ConnectionMultiplexer.Connect(configuration);
+			}
+			catch (RedisConnectionException) when (attempt < ConnectAttempts)
+			{
+				Thread.Sleep(200 * attempt);
+			}
+		}
 	}
 
 	public int Count => checked((int)_database.SetLength(_options.IndexKey));

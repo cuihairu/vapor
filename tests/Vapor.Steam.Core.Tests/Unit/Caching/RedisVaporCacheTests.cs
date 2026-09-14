@@ -474,6 +474,15 @@ public sealed class RedisVaporCacheTests
 	}
 
 	[Fact]
+	public void CreateFromConnectionString_UnreachableServer_ThrowsAfterRetries()
+	{
+		// An unreachable server exhausts the factory's transient-failure retries and
+		// then surfaces the connection failure (short connect timeout keeps this fast).
+		Assert.Throws<RedisConnectionException>(() =>
+			RedisVaporCache.CreateFromConnectionString("localhost:1,connectTimeout=100"));
+	}
+
+	[Fact]
 	public void Options_DeriveLockAndIndexKeys()
 	{
 		var options = new RedisVaporCacheOptions { KeyPrefix = "p:" };
