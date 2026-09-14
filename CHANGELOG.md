@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Own market listings (P7-1): `get_my_market_listings` action plus
+  `GET /v1/accounts/{name}/market/listings`; `SteamMarketClient` parses the
+  login-gated mylistings page (listing id, hash name, buyer price, seller
+  proceeds, asset summary) with a contract test pinning the response shape.
 - Store data actions (P3): `get_game_info`, `search_games`, `get_price` and
   `get_market_listings`, all wired through the shared `IVaporCache` layer with
   per-call `cache_ttl_seconds` override (0 disables caching).
