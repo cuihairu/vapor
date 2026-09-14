@@ -202,12 +202,14 @@ public sealed class BotSessionBranchTests : IDisposable
 		SetupQrApproved();
 		// The session-level token (linked into the transport call) is what the OCE
 		// filters check: bridge it so disposing the session cancels the parked call.
+		var parkedInLogon = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		_transportMock
 			.Setup(t => t.LoginAsync(Account, string.Empty, It.IsAny<CancellationToken>()))
 			.Returns((string _, string _, CancellationToken ct) =>
 			{
 				var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 				ct.Register(() => parked.TrySetCanceled(ct));
+				parkedInLogon.TrySetResult(); // the loop is now parked inside the post-QR logon
 				return parked.Task;
 			});
 		_transportMock
@@ -216,11 +218,14 @@ public sealed class BotSessionBranchTests : IDisposable
 		var session = CreateSession(qrLogin: true);
 
 		var pending = session.LoginAsync();
-		await WaitForEventsAsync(e => e.EventType == "qr_required"); // parked inside the post-QR logon
+		// Wait for the transport call itself rather than the qr_required event:
+		// RaiseEventCallback hands delivery to Task.Run, which a starved CI thread
+		// pool can delay for seconds — the parked call is the deterministic proof.
+		await parkedInLogon.Task.WaitAsync(TimeSpan.FromSeconds(10));
 		session.Dispose();
 		_sessions.Remove(session);
 
-		var result = await pending.WaitAsync(TimeSpan.FromSeconds(3));
+		var result = await pending.WaitAsync(TimeSpan.FromSeconds(10));
 		Assert.False(result.Success);
 		Assert.Equal("canceled", result.Error);
 	}
@@ -249,22 +254,24 @@ public sealed class BotSessionBranchTests : IDisposable
 	{
 		// The session-level token (linked into the transport call) is what the OCE
 		// filters check: bridge it so disposing the session cancels the parked call.
+		var parkedInChallenge = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		_transportMock
 			.Setup(t => t.BeginQrLoginAsync(Account, It.IsAny<Action<string>>(), It.IsAny<CancellationToken>()))
 			.Returns((string _, Action<string> _, CancellationToken ct) =>
 			{
 				var parked = new TaskCompletionSource<QrLoginResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 				ct.Register(() => parked.TrySetCanceled(ct));
+				parkedInChallenge.TrySetResult(); // the loop is now parked inside the challenge
 				return parked.Task;
 			});
 		var session = CreateSession(qrLogin: true);
 
 		var pending = session.LoginAsync();
-		await Task.Delay(150); // let the loop reach the parked BeginQrLoginAsync
+		await parkedInChallenge.Task.WaitAsync(TimeSpan.FromSeconds(10)); // deterministically parked
 		session.Dispose();
 		_sessions.Remove(session);
 
-		var result = await pending.WaitAsync(TimeSpan.FromSeconds(3));
+		var result = await pending.WaitAsync(TimeSpan.FromSeconds(10));
 		Assert.False(result.Success);
 		Assert.Equal("canceled", result.Error);
 	}
