@@ -77,6 +77,8 @@ var serviceCollection = new ServiceCollection()
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
 	.AddSingleton<GetTradeOffersAction>(p => new GetTradeOffersAction(
 		p.GetRequiredService<ILogger<GetTradeOffersAction>>()))
+	.AddSingleton<GetMyMarketListingsAction>(p => new GetMyMarketListingsAction(
+		p.GetRequiredService<ILogger<GetMyMarketListingsAction>>()))
 	.AddSingleton<AcceptTradeOfferAction>(p => new AcceptTradeOfferAction(
 		p.GetRequiredService<ILogger<AcceptTradeOfferAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
@@ -173,6 +175,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<GetInventoryAction>()
 actionRegistry.Register(serviceProvider.GetRequiredService<GetCardDropsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SendTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetTradeOffersAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetMyMarketListingsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<AcceptTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<DeclineTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CancelTradeOfferAction>());

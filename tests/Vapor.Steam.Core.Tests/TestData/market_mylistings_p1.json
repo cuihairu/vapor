@@ -1,0 +1,126 @@
+{
+  "success": 1,
+  "start": 0,
+  "pagesize": 100,
+  "total_count": 3,
+  "num_active_listings": 2,
+  "mylistings": [
+    {
+      "listingid": "3547123456789012345",
+      "steamid_lister": "76561198000000001",
+      "game_appid": 730,
+      "game_name": "Counter-Strike 2",
+      "contextid": "2",
+      "assetid": "51234567890",
+      "classid": "4593095276",
+      "instanceid": "0",
+      "price": 103,
+      "fee": 12,
+      "steam_fee": 7,
+      "publisher_fee": 5,
+      "publisher_fee_app": 730,
+      "publisher_fee_percent": "0.1000",
+      "currencyid": 1,
+      "time_created": 1760000000,
+      "cancel_requested": 0,
+      "asset_description": {
+        "appid": 730,
+        "classid": "4593095276",
+        "instanceid": "0",
+        "icon_url": "economy/image/fWfeUw/360fx360f",
+        "name": "AK-47 | Redline (Field-Tested)",
+        "market_name": "AK-47 | Redline (Field-Tested)",
+        "market_hash_name": "AK-47 | Redline (Field-Tested)",
+        "type": "Rifle",
+        "tradable": 1,
+        "marketable": 1,
+        "commodity": 0
+      },
+      "asset": {
+        "appid": 730,
+        "contextid": "2",
+        "id": "51234567890",
+        "amount": "1"
+      }
+    },
+    {
+      "listingid": "3547123456789012346",
+      "game_appid": 753,
+      "game_name": "Steam",
+      "contextid": "6",
+      "assetid": "9988776655",
+      "classid": "1111112222",
+      "price": 30,
+      "fee": 4,
+      "currencyid": 1,
+      "time_created": 1760000100,
+      "cancel_requested": 0,
+      "asset_description": {
+        "appid": 753,
+        "icon_url": "economy/image/coupon/360fx360f",
+        "market_name": "Summer 2026 Coupon",
+        "market_hash_name": "Summer 2026 Coupon",
+        "commodity": 1
+      }
+    },
+    {
+      "listingid": "3547123456789012347",
+      "game_appid": 440,
+      "game_name": "Team Fortress 2",
+      "contextid": "2",
+      "assetid": "6677889900",
+      "classid": "5031995431",
+      "price": 250,
+      "fee": 38,
+      "currencyid": 1,
+      "time_created": 1760000200,
+      "cancel_requested": 1,
+      "asset": {
+        "appid": 440,
+        "contextid": "2",
+        "id": "6677889900",
+        "amount": "1"
+      }
+    }
+  ],
+  "listing_on_hold": [
+    {
+      "listingid": "3547123456789012999",
+      "price": 50,
+      "fee": 7
+    }
+  ],
+  "listing_to_be_confirmed": [
+    {
+      "listingid": "3547123456789012888",
+      "price": 20,
+      "fee": 3
+    },
+    {
+      "listingid": "3547123456789012889",
+      "price": 20,
+      "fee": 3
+    }
+  ],
+  "assets": {
+    "730": {
+      "2": {
+        "51234567890": {
+          "appid": 730,
+          "market_hash_name": "AK-47 | Redline (Field-Tested)"
+        }
+      }
+    },
+    "440": {
+      "2": {
+        "6677889900": {
+          "appid": 440,
+          "market_hash_name": "Mann Co. Supply Crate Key",
+          "market_name": "Mann Co. Supply Crate Key",
+          "icon_url": "economy/image/key/360fx360f"
+        }
+      }
+    }
+  },
+  "hovers": "CreateItemHoverFromContainer( 730, 2, 'mylisting_3547123456789012345_name', 4593095276, '51234567890' );CreateItemHoverFromContainer( 440, 2, 'mylisting_3547123456789012347_name', 5031995431, '6677889900' );"
+}

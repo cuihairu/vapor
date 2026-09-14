@@ -674,6 +674,56 @@ app.MapGet("/v1/accounts/{name}/inventory", async (HttpContext ctx, Config cfg, 
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
+app.MapGet("/v1/accounts/{name}/market/listings", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, int? start, int? count) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name.Trim());
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	int startValue = Math.Max(start ?? 0, 0);
+	int countValue = Math.Clamp(count ?? 100, 1, 500);
+	TaskRunResult read = await AccountTaskRunner.ReadMarketListingsAsync(store, spec.AccountName, startValue, countValue, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"market_listings.read",
+		accountName: spec.AccountName,
+		jobId: read.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["start"] = startValue,
+			["count"] = countValue,
+			["outcome"] = read.Status.ToString()
+		});
+
+	if (read.Status == JobTaskStatus.Finished)
+	{
+		return Results.Ok(new { job_id = read.JobId, account = spec.AccountName, market_listings = read.Output });
+	}
+
+	if (read.Status != JobTaskStatus.Queued)
+	{
+		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
+	}
+
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+})
+	.WithTags("Accounts")
+	.WithSummary("List an account's own community market listings (dispatches get_my_market_listings and waits for the agent; start/count page through total_count; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
 app.MapPost("/v1/accounts/{name}/trade-offers/{offerId}/accept", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, string offerId, TradeOfferDecisionRequest? req) =>
 {
 	ulong offerIdValue = 0;

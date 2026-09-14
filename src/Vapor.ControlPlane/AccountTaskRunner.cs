@@ -23,6 +23,23 @@ internal static class AccountTaskRunner
 	internal const string GetInventoryAction = "get_inventory";
 	internal const string FindDuplicatesAction = "find_duplicates";
 	internal const string SwapDuplicatesAction = "swap_duplicates";
+	internal const string GetMyMarketListingsAction = "get_my_market_listings";
+
+	/// <summary>Lists an account's own market listings via the get_my_market_listings action.</summary>
+	public static Task<TaskRunResult> ReadMarketListingsAsync(
+		IJobStore store,
+		string accountName,
+		int start,
+		int count,
+		CancellationToken cancellationToken)
+	{
+		return DispatchAsync(
+			store,
+			GetMyMarketListingsAction,
+			accountName,
+			new Dictionary<string, object?> { ["start"] = start, ["count"] = count },
+			cancellationToken);
+	}
 
 	/// <summary>Lists an account's trade offers via the get_trade_offers action.</summary>
 	public static Task<TaskRunResult> ReadTradeOffersAsync(

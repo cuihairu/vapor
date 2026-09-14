@@ -417,6 +417,103 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task GetMarketListings_RequireAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/market/listings");
+
+		Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task GetMarketListings_AccountMissing_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/market/listings");
+
+		Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task GetMarketListings_AgentReportsFinished_ReturnsListings()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstMarketListingsTaskAsync(store, success: true, cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/market/listings");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.NotEmpty(doc.RootElement.GetProperty("job_id").GetString()!);
+		JsonElement page = doc.RootElement.GetProperty("market_listings");
+		Assert.Equal(3, page.GetProperty("total_count").GetInt32());
+		JsonElement listings = page.GetProperty("listings");
+		Assert.Equal(1, listings.GetArrayLength());
+		Assert.Equal("3547123456789012345", listings[0].GetProperty("listing_id").GetString());
+		Assert.Equal(103, listings[0].GetProperty("price_cents").GetInt32());
+		Assert.Equal(91, listings[0].GetProperty("seller_proceeds_cents").GetInt32());
+	}
+
+	[Fact]
+	public async Task GetMarketListings_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstMarketListingsTaskAsync(store, success: false, cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/market/listings");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("agent refused", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task GetMarketListings_StillPending_Returns202WithJobId()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/market/listings");
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
+	[Fact]
 	public async Task AcceptTradeOffer_InvalidRequest_Returns400()
 	{
 		await using var factory = CreateFactory();
@@ -1513,6 +1610,38 @@ public sealed class AccountApiTests
 				["received_offers"] = new List<Dictionary<string, object?>>
 				{
 					new() { ["trade_offer_id"] = "43591234567890", ["state"] = "Active" }
+				}
+			},
+			"agent refused",
+			ct);
+	}
+
+	/// <summary>Plays the agent side: claims the queued get_my_market_listings task and reports a result.</summary>
+	private static Task RespondToFirstMarketListingsTaskAsync(IJobStore store, bool success, CancellationToken ct)
+	{
+		return RespondToFirstTaskAsync(
+			store,
+			"get_my_market_listings",
+			success,
+			new Dictionary<string, object?>
+			{
+				["start"] = 0,
+				["count"] = 100,
+				["total_count"] = 3,
+				["active_count"] = 2,
+				["on_hold_count"] = 1,
+				["to_be_confirmed_count"] = 2,
+				["listings"] = new List<Dictionary<string, object?>>
+				{
+					new()
+					{
+						["listing_id"] = "3547123456789012345",
+						["app_id"] = 730u,
+						["price_cents"] = 103,
+						["fee_cents"] = 12,
+						["seller_proceeds_cents"] = 91,
+						["market_hash_name"] = "AK-47 | Redline (Field-Tested)"
+					}
 				}
 			},
 			"agent refused",
