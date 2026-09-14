@@ -59,7 +59,9 @@ public sealed class TradeRateLimiterTests : IDisposable
 		{
 			MaxOperationsPerWindow = 5,
 			Window = TimeSpan.FromMinutes(5),
-			AcquireTimeout = TimeSpan.FromSeconds(5)
+			// Budget only covers pool scheduling of the completion; the slot is
+			// already free so the wait returns immediately in healthy paths.
+			AcquireTimeout = TimeSpan.FromSeconds(30)
 		});
 
 		var first = await limiter.AcquireAsync("acct");
@@ -127,7 +129,9 @@ public sealed class TradeRateLimiterTests : IDisposable
 		{
 			MaxOperationsPerWindow = 1,
 			Window = TimeSpan.FromMinutes(10),
-			AcquireTimeout = TimeSpan.FromSeconds(1)
+			// Window already elapsed on the logical clock; budget only covers
+			// pool scheduling of the completion.
+			AcquireTimeout = TimeSpan.FromSeconds(30)
 		});
 
 		var first = await limiter.AcquireAsync("acct");
@@ -225,21 +229,21 @@ public sealed class TradeRateLimiterTests : IDisposable
 		{
 			MaxOperationsPerWindow = 10,
 			Window = TimeSpan.FromMinutes(5),
-			AcquireTimeout = TimeSpan.FromSeconds(5)
+			AcquireTimeout = TimeSpan.FromSeconds(30)
 		});
 
 		var first = await limiter.AcquireAsync("acct");
 		Assert.NotNull(first);
 
-		// Free the slot while the second acquire is parked in its timed wait, so
-		// the wait returns true instead of timing out or throwing.
-		_ = Task.Run(async () =>
-		{
-			await Task.Delay(50);
-			first!.Dispose();
-		});
+		// The slot is held, so the second acquire cannot complete before the
+		// release: it is either already parked in its timed wait or about to
+		// park. SemaphoreSlim turns a pre-park release into available count,
+		// so both interleavings succeed — no Task.Delay guesswork about when
+		// the waiter parks. The budget only covers pool scheduling.
+		var waiter = limiter.AcquireAsync("acct");
+		first!.Dispose();
 
-		var second = await limiter.AcquireAsync("acct");
+		var second = await waiter.WaitAsync(TimeSpan.FromSeconds(30));
 
 		Assert.NotNull(second);
 		second!.Dispose();
