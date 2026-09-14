@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the batch and per-listing results are reported back. `dry_run` defaults to
   previewing the would-cancel list, and a real run with no filter is refused
   both at the endpoint and inside the action itself.
+- Market listing creation (P7-3): `create_market_listing` action plus
+  `POST /v1/accounts/{name}/market/listings` with fee-aware pricing
+  (`MarketFeeCalculator`: Steam 5% + publisher 10% on the seller amount,
+  buyer/seller conversion both ways). Without `send` it is a dry run
+  reporting the pricing plan only; a real listing is doubly gated by the
+  per-account `marketListingsEnabled` switch and the agent's
+  `AGENT_MARKET_LISTINGS_ENABLED`. Prices come from the caller on either
+  side (`seller_proceeds_cents` / `buyer_price_cents`); a mobile/email
+  confirmation requirement is reported back for the existing
+  market-confirmations loop.
 - Store data actions (P3): `get_game_info`, `search_games`, `get_price` and
   `get_market_listings`, all wired through the shared `IVaporCache` layer with
   per-call `cache_ttl_seconds` override (0 disables caching).
@@ -131,6 +141,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Coverage pipeline: misplaced `MaxCpuCount` runsettings token silently
   disabling collection, stale-report cleanup ordering, and cross-report
   filename-prefix normalization for merged coverage totals.
+- `MaFileParser` no longer leaks a raw `JsonException` on the rare
+  wrong-password path where the garbage plaintext happens to pass PKCS7
+  padding validation; it surfaces as the same decrypt `InvalidDataException`
+  as every other failure on that route.
+- `RedisVaporCache.CreateFromConnectionString` retries transient connection
+  failures (3 attempts, short backoff) instead of failing outright on the
+  first blip — a bare connection string had dropped the options'
+  `abortConnect=false` default.
 
 ### Fixed
 

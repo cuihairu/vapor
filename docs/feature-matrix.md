@@ -69,7 +69,7 @@
 | 行情读取(app 详情/价格/搜索) | ⚠️ | ✅ | ✅ | ➖ | ✅(契约测试锁定的 Web 客户端 + 缓存) |
 | 价格监控告警 | ➖ | ➖ | ✅ | ➖ | ✅(MarketWatch 插件 + webhook) |
 | 挂单读取(自己的 mylistings) | ➖ | ➖ | ✅ | ➖ | ✅(`GET /accounts/{name}/market/listings`,P7-1,契约测试锁定解析) |
-| 挂单创建(含费用感知定价) | ➖ | ➖ | ✅ | ➖ | 📋 P7(todo §12) |
+| 挂单创建(含费用感知定价) | ➖ | ➖ | ✅ | ➖ | ✅(`POST /accounts/{name}/market/listings`,P7-3,dry_run 默认+账户/agent 双开关+费用感知定价) |
 | 挂单管理 / 批量撤单 | ➖ | ➖ | ✅ | ➖ | ✅(`POST /accounts/{name}/market/listings/cancel`,P7-2,dry_run 默认+无过滤实撤双层拒绝) |
 
 ### 3.6 自动化 / 编排
@@ -102,6 +102,7 @@
 > **2026-09-14**:P7 立项(市场闭环——挂单读取/批量撤单/挂单创建),挂单两项自 P6-4 后置升级立项——"需库存/定价前置"已被 P6 补齐,ToS 灰区以分期 + dry_run 默认 + per-account 开关缓解;成就管理维持后置。见 `todo.md` §12。
 > **2026-09-14**:P7-1 挂单读取落地(只读零风险增量)——`get_my_market_listings` + `GET /v1/accounts/{name}/market/listings`,mylistings 解析以构造 fixture + 三方互证契约测试锁定,供 P7-2 批量撤单取数。见 `todo.md` §12。
 > **2026-09-14**:P7-2 批量撤单落地——`cancel_market_listings` + `POST /v1/accounts/{name}/market/listings/cancel`,过滤器(应用/名称/价格区间/挂龄)+逐条节奏+单项失败不中断如实汇总,dry_run 默认、无过滤实撤双层拒绝(CP 400 + action 独立拒绝),市场专用保守频控独立于交易限流预算。见 `todo.md` §12。
+> **2026-09-14**:P7-3 挂单创建落地——`create_market_listing` + `POST /v1/accounts/{name}/market/listings` + `MarketFeeCalculator`(Steam 5%+发行商 10% 按卖方所得计费、买/卖两侧换算,契约与官方 economy_v2.js/market_multisell.js 四源互证),send 缺省 dry run 只出定价方案,实撤需账户 `marketListingsEnabled` + agent `AGENT_MARKET_LISTINGS_ENABLED` 双开关;价格仅来自调用方,market 类确认复用既有闭环。P7 市场闭环三期全部完成。见 `todo.md` §12。
 
 ### P6-1 卡牌 farming 闭环(GA 出口条件,平台杠杆最大)✅ 全部完成
 

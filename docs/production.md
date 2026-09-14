@@ -73,6 +73,7 @@ are in [docker.md](docker.md).
 | `AGENT_RECONNECT_BACKOFF_FACTOR` | no | `2` | Exponential factor |
 | `AGENT_RECONNECT_MAX_RETRIES` | no | `0` | `0` = retry forever |
 | `AGENT_2FA_AUTO_SUBMIT` | no | off | `true` = answer 2FA challenges locally from stored shared secrets (Steam TOTP); off leaves them to the manual SSE channel |
+| `AGENT_MARKET_LISTINGS_ENABLED` | no | off | `true` = allow real market listing creation (`create_market_listing` with `send=true`); the per-account switch must be on too (see below) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | no | off | OTLP endpoint; enables distributed tracing export |
 
 #### Automatic 2FA answering (opt-in)
@@ -88,6 +89,22 @@ instance, which cannot be generated locally) fall through to the manual
 SSE challenge channel unchanged. Repeat answers for the same account
 are rate-limited by a 60-second per-account cooldown, and Steam server
 time is synchronized at startup and hourly so TOTP windows stay valid.
+
+
+#### Market listing creation (opt-in, doubly gated)
+
+Putting an item up for sale is the sensitive end of the market loop, so a
+real listing (`POST /v1/accounts/{name}/market/listings` with `send=true`)
+requires two explicit switches, both default off: the account spec's
+`marketListingsEnabled` flag (control plane, set via `PUT /v1/accounts/{name}`)
+and the agent's `AGENT_MARKET_LISTINGS_ENABLED=true`. Either switch off, the
+endpoint refuses; a direct agent dispatch is guarded by the agent-side check.
+Without `send` the call is a dry run: it reports the fee-aware pricing plan
+(seller proceeds, Steam fee, publisher fee, buyer price) and sends nothing.
+Prices always come from the caller — no auto-repricing. A listing that needs
+a mobile confirmation is reported back via `needs_mobile_confirmation`;
+confirming it is the existing market-confirmations loop's job
+(`POST /v1/accounts/{name}/confirmations/accept-all` with `type=market`).
 
 
 #### Cache backend (Redis)
