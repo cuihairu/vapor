@@ -254,6 +254,7 @@
 8. ~~横向: 生产部署指南、故障排查手册、OpenAPI 完整化、自动发布流水线与回滚~~（全部完成：`docs/production.md` + `docs/troubleshooting.md` + OpenAPI 22 端点注解 + release workflow 补齐 GHCR 镜像发布与打包文档）。
 9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: ~~**方向 A 账户农场编排**~~（✅ 已完成）→ ~~**方向 C 通知与自动化闭环**~~（✅ 已完成）→ ~~**方向 B 质量与协议韧性**~~（✅ 已完成：统计修正 + contract tests 抓到真实上游漂移 + WS 协议 replay tests + ISteamTransport 协议适配层 + 覆盖率管道修复与 74.3% 真实基线）。**P5 三个方向全部完成。**
 10. ~~P6 推进（2026-09-12 立项）~~（✅ 2026-09-13 完成：P6-1 卡牌 farming 闭环 → P6-2 交易与确认闭环 → P6-3 互操作与认领全部落地，GA 出口条件 #2 闭环；P6-4 仅剩两项明确后置（挂单创建/批量撤单 ToS 灰区、成就管理需求弱），对标矩阵已同步勾选 `docs/feature-matrix.md`）。**todo.md 全部计划阶段（P0-P6 + GA 收口横向）至此完成。**
+11. P7 推进（2026-09-14 立项）：市场闭环——挂单读取 → 批量撤单 → 挂单创建（灰区核心分期最后落地，默认 dry_run + per-account 显式开关），详见 §12。
 
 ---
 
@@ -315,13 +316,35 @@
 ### 11.4 P6-4 竞品对齐但后置（记录待决，不承诺）
 
 - [x] Web Dashboard 只读面板（对标 ASF-ui 只读部分）：`wwwroot/dashboard.html`——统计卡/账户/Agent/会话/作业（点击展开任务明细）/审计日志 + jobs/sessions 双 SSE 流 + 30s 轮询兜底，纯 GET + EventSource 零写操作；无写动词契约测试守护（DashboardStaticTests 4 个）；与 admin.html 互链，`/` 重定向不变。（管理功能继续走 admin.html；功能扩展待后续评估）
-- [ ] 市场挂单创建/批量撤单（对标 SGI）：ToS 灰区 + 需库存/定价前置。
+- [x] 市场挂单创建/批量撤单（对标 SGI）：ToS 灰区 + 需库存/定价前置。（2026-09-14：前置条件经 P6 补齐，立项为 P7 市场闭环，见 §12）
 - [x] QR 扫码登录（对标 SGI/steamguard-cli）：SteamKit2 BeginAuthSessionViaQR + 轮询，login 任务 payload `qr_login:true` 触发；挑战 URL 经 session 事件 `qr_required` 上浮（CP 归类为挑战类型 `qr_required`，轮转自动重发，批准/超时自动清挑战），request_key 不出 transport，refresh token 走既有加密落盘 + token 登录路径；3 分钟等待窗。
 - [ ] 成就解锁/管理（对标 SGI）：需求弱，后置。
 
 ### 11.5 明确不采用（定位外）
 
 网络加速（Watt 品类不同）、本地账号切换（客户端概念）、通用 TOTP 保险箱（偏离核心）、游戏内脚本/成就数值编辑（高风险灰区）。
+
+---
+
+## 12. P7 阶段：市场闭环（📋 已立项 2026-09-14，对标矩阵见 `docs/feature-matrix.md` §3.5）
+
+> 立项动机：P6 闭环了 farming→库存→交易（挂机掉卡 → 重复物清单/换卡 → loot/swap），但卡牌最终变现一环——挂单出售——仍是矩阵 §3.5 唯一双 ❌ 能力域（对标产品中仅 SGI 具备）。当初 P6-4 后置的理由是两半："需库存/定价前置"已被 P6 自身补齐（库存 REST `/inventory`+`/duplicates` 与 marketable 过滤、行情底座 `SteamStoreApiClient` + MarketWatch 价格告警、市场类 mobile 确认（`confirm_all_confirmations` 已归一化 market 类型）、限流/熔断/dry_run 底座 TradeRateLimiter / HttpCircuitBreaker / swap_duplicates 先例）；另一半"ToS 灰区"以分期 + 显式开关缓解，不回避也不抢跑。
+>
+> **ToS 缓解设计（立项约束，实施时逐条对照）**：① 分期把低风险面先落地——挂单读取（纯读）→ 批量撤单（降低市场暴露）→ 挂单创建（灰区核心，最后做）；② 创建默认 dry_run 只出定价方案，真实挂单需 per-account 显式开关（默认关，对齐 `AGENT_2FA_AUTO_SUBMIT` 先例）；③ 市场专用保守频控（独立于交易限流预算），不做自动重定价/爬价——价格输入仅来自用户显式给定或既有行情接口，MarketWatch 保持只监控不回写；④ 红线延续：identity/shared secret 不出 agent，market 确认复用既有 mobile 确认闭环。
+>
+> **为什么不立项成就解锁/管理**：后置记录"需求弱"未变，无新驱动；且成就解锁紧邻"明确不采用"清单中的"成就数值编辑（高风险灰区）"，安全边界模糊，不宜在无需求拉动下开垦。
+
+### 12.1 P7-1 挂单读取（只读，零风险增量）
+
+- [ ] 自己的挂单列表解析（挂单 id / hash 名称 / 买方价格 / 卖方所得 / 资产摘要），REST 化 `GET /v1/accounts/{name}/market/listings`；也是撤单的前置供数。
+
+### 12.2 P7-2 批量撤单
+
+- [ ] 按过滤器批量撤单（app / hash 名称 / 价格区间 / 挂单时长），逐条撤单 + 限流 + 单项失败不中断如实汇总（对齐 `confirm_all_confirmations` 语义），REST `POST /v1/accounts/{name}/market/listings/cancel`；dry_run 默认输出将撤清单。
+
+### 12.3 P7-3 挂单创建（灰区核心，最后落地）
+
+- [ ] web 通道挂单创建 + 费用感知定价（Steam 手续费买方支付模型，输出买/卖两侧价格）；默认 dry_run 输出定价方案，`send=true` 且账户显式开启市场开关才真实挂单；market 类 mobile 确认复用既有闭环。
 
 > 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
 > 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。
@@ -359,3 +382,4 @@
 > 2026-09-14：**修复 CI 三失败（format / coverage / windows Release），run 34800549008 全绿**。① format：`BotSessionBranchTests.cs` 事件回调三元表达式缩进，`dotnet format` 修复（417ecd1）。②③ coverage 与 windows Release 挂**同一测试** `QrLogin_PostQrLogonCanceledBySessionShutdown_ReportsCanceled`（两平台同报 `expected event not observed; seen: []`）——测试确定性缺陷而非产品 bug，根因链：BotSession 事件回调经 `RaiseEventCallback` → `Task.Run` fan-out（投递延迟无上界）+ 每个活会话的 `RunSteamCallbacksAsync` 泵线程占一个池线程阻塞 `Thread.Sleep(100)` → CI 4 核 runner 上并行测试类的泵线程数超池最小线程数 → **线程池饥饿**（~500ms 注入一线程）；该测试 t≈0 就等 `qr_required` 事件，3s 预算内回调零执行（`seen: []`，连最初 state_changed 都没有）。`BotSessionQrLoginTests` 同等事件却没挂——它们先 `await LoginAsync()` 走完整轮，池早已消化回调。修复（f151ba6）：park 前置条件改用 **mock 被调用本身的 TCS 确定性信号**（mock Returns 回调内 TrySetResult），不再以事件 fan-out/`Task.Delay(150)` 作 park 代理；同文件 `QrLogin_BeginChallengeCanceledBySessionShutdown` 同族隐患一并修；Dispose 后结果等待 3s→10s；`qr_required` 事件路径行为覆盖由 `BotSessionQrLoginTests:51` 承担不丢。本地验证：单跑 5 轮 + `taskset -c 0,1` 限 2 核全量 Steam.Core.Tests 2 轮 970/970（复现 CI 失败环境）+ `dotnet format --verify-no-changes`。**经验**：本地多核必过、CI 必挂先查池饥饿；park 前置条件用 mock TCS 信号，事件等待只配在整轮 await 完成之后。
 > 2026-09-14（补记，fd1ae2e）：覆盖率第二轮半（+36 测试，1756→1792，全部通过）。新增 TracingTests（Agent/ControlPlane 各 1 组）、TestFixturesTests（Plugins.Core，故障 fixture 库 68.3%→100% 全覆盖）、SteamTimeSynchronizerTests（9 测试，HttpListener 真实 HTTP 壳覆盖，集成壳清单相应缩水），扩展 13 个既有测试文件；执行 §10.3 日志此前"归档不投入"的死代码删除（VaporCryptoHelper 防御 catch、HttpCircuitBreaker HalfOpen 存储态分支、RecurringJobScheduler missed 组合、SteamTotp 空 base64、RedactingLoggerProvider.AppendPairs）并简化永不到达的错误处理（永不满 TryWrite、按构造非空的 null 守卫等）；coverage/ 进 .gitignore。本地覆盖率汇总 99.5%（11003/11058）。**该提交违反文档同步工作流（零 .md 变更、未跑 format 门禁与限核回归），随后 CI 三失败（见下条），本条与 TESTING.md 基线刷新（1756→1792、逐类明细重算、归档改三类 57 行）为补记。**
 > 2026-09-14：**修复 CI 三失败（fd1ae2e 轮：format / ubuntu Release / windows Release）+ 回调泵结构性修复**。① format：fd1ae2e 新增的 SteamTimeSynchronizerTests.cs 20 处 WHITESPACE（提交前未跑 format 门禁），`dotnet format` 修复、`--verify-no-changes` 过。②③ 两处测试失败同属文档在案的池饥饿 flake 家族，被 fd1ae2e +36 测试的负载压破，本轮除预算兜底外**消除了饥饿根源**：`BotSession.RunSteamCallbacksAsync` 由 `Thread.Sleep(100)` 同步泵改 `await Task.Delay(100, ct)` 异步泵——此前每个带 transport 的活会话永久占一个池线程（f151ba6 日志记载的根源），节奏不变（100ms 轮询 RunCallbacks）、空档期线程归还池子、OCE 静默退出语义保持；该泵本就跑在 Task.Run 池线程上，无线程亲和性假设，生产行为等价。- **ubuntu Release**：`QrLogin_PostQrLogonCanceledBySessionShutdown_ReportsCanceled` 在 parkedInLogon 10s 预算内未等到 transport 调用——f151ba6 的确定性 park 信号本身有效，是抵达 park 的整条登录链在饥饿下爬行超预算；同族 4 处预算 10s→30s（park 等待与结果等待对称，预算只覆盖池调度，健康路径不等待）。- **windows Release**：`SessionWorkflowTests.Workflow_EventSubscription_ReceivesEvents` 重写——该测试**从未验证过事件投递**：fixture 的 SessionManager 无 transport，创建会话零事件，收集器永远凑不满 2 条，历史全靠 `cts.Cancel()` 路径假通过（断言仅 NotNull）；本次失败即 Task.Run 主体未在 2.2s 窗口（Task.Delay(200)+WaitAsync(2s)）内被调度。重写为确定性双事件流：stub 登录（Disconnected→Connected）+ DisconnectAsync（→Disconnecting）恰好 2 次 StateChanged，删除 Task.Delay(200) 就绪睡眠，断言收紧为 events.Count==2 且逐条校验类型与状态（通道无界不丢事件，晚启动照样收齐）。验证：定点 4/4；`taskset -c 0,1` 限 2 核复现 CI 饥饿环境 Steam.Core.Tests Release 985/985 + Debug 985/985；全解决方案覆盖率轮 1792 全绿、99.5%（11003/11060）；format 门禁过。TESTING.md 基线全面刷新（1792/逐类明细/覆盖率表/归档三类）。
+> 2026-09-14：**P7 立项：市场闭环（挂单读取 → 批量撤单 → 挂单创建）**。从矩阵两个后置项（挂单创建/批量撤单、成就解锁/管理）中选前者的依据：其"需库存/定价前置"已被 P6 自身补齐（库存 REST + duplicates、行情读取 + MarketWatch、mobile 确认已支持 market 类型、TradeRateLimiter/熔断/dry_run 底座），后置理由只剩 ToS 灰区半边，以四层缓解应对（分期把灰区核心放最后 / 创建默认 dry_run / per-account 显式开关默认关 / 市场专用保守频控 + 不做自动重定价），且补齐 farming→变现最后一环契合平台定位；成就解锁/管理维持后置（"需求弱"记录未变，且紧邻明确不采用的"成就数值编辑"灰区，无新驱动）。附带记录：矩阵 §3.6 积分商店认领（ASF ✅ / Vapor ❌）既非后置也非定位外，属未立项缺口，留待 P7 后评估。文档同步：todo.md 新增 §12（P7 三子项 + ToS 缓解设计 + 不立项成就的理由）、§9 新增第 11 项、§11.4 挂单项勾选指向 §12；feature-matrix.md 图例新增 📋（已立项）、§3.5 挂单两行与 P6-4 对应项同步。纯文档提交，无代码变更，基线参照 1792 / 99.5%。
