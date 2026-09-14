@@ -724,6 +724,95 @@ app.MapGet("/v1/accounts/{name}/market/listings", async (HttpContext ctx, Config
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
+app.MapPost("/v1/accounts/{name}/market/listings/cancel", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, MarketCancelRequest? req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name.Trim());
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	bool dryRun = req?.DryRun ?? true;
+	bool hasFilter = req is not null &&
+		(req.AppId is not null ||
+		 !string.IsNullOrWhiteSpace(req.MarketHashName) ||
+		 req.MinPriceCents is not null ||
+		 req.MaxPriceCents is not null ||
+		 req.OlderThanSeconds is not null);
+	if (!dryRun && !hasFilter)
+	{
+		// A dry run with no filter previews everything and is allowed; a real
+		// run with no filter would wipe every listing — refuse it.
+		return Results.BadRequest(new ErrorResponse("refusing to cancel with no filter: pass at least one filter, or keep dry_run=true to preview"));
+	}
+
+	var payload = new Dictionary<string, object?> { ["dry_run"] = dryRun };
+	if (req?.AppId is > 0)
+	{
+		payload["app_id"] = req.AppId;
+	}
+
+	if (!string.IsNullOrWhiteSpace(req?.MarketHashName))
+	{
+		payload["market_hash_name"] = req.MarketHashName.Trim();
+	}
+
+	if (req?.MinPriceCents is not null)
+	{
+		payload["min_price_cents"] = req.MinPriceCents;
+	}
+
+	if (req?.MaxPriceCents is not null)
+	{
+		payload["max_price_cents"] = req.MaxPriceCents;
+	}
+
+	if (req?.OlderThanSeconds is > 0)
+	{
+		payload["older_than_seconds"] = req.OlderThanSeconds;
+	}
+
+	TaskRunResult run = await AccountTaskRunner.CancelMarketListingsAsync(store, spec.AccountName, payload, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"market_listings.cancel",
+		accountName: spec.AccountName,
+		jobId: run.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["dryRun"] = dryRun,
+			["hasFilter"] = hasFilter,
+			["outcome"] = run.Status.ToString()
+		});
+
+	if (run.Status == JobTaskStatus.Finished)
+	{
+		return Results.Ok(new { job_id = run.JobId, account = spec.AccountName, result = run.Output });
+	}
+
+	if (run.Status != JobTaskStatus.Queued)
+	{
+		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
+	}
+
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+})
+	.WithTags("Accounts")
+	.WithSummary("Cancel an account's own market listings matching a filter (app / hash name / price range / age; dry_run=true by default only previews the matched listings; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
 app.MapPost("/v1/accounts/{name}/trade-offers/{offerId}/accept", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, string offerId, TradeOfferDecisionRequest? req) =>
 {
 	ulong offerIdValue = 0;
@@ -2267,6 +2356,17 @@ public sealed record TradeOfferDecisionRequest(
 public sealed record ConfirmationsBatchRequest(
 	string? Operation = null,
 	string? Type = null
+);
+
+// Request body for the market listing cancel endpoint (all filters optional
+// together, but a real run — dry_run=false — requires at least one)
+public sealed record MarketCancelRequest(
+	uint? AppId = null,
+	string? MarketHashName = null,
+	int? MinPriceCents = null,
+	int? MaxPriceCents = null,
+	int? OlderThanSeconds = null,
+	bool? DryRun = null
 );
 
 // Request body for the loot endpoint (send tradable inventory to a partner)

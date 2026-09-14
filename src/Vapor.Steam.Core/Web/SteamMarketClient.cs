@@ -93,6 +93,49 @@ public sealed class SteamMarketClient
 	}
 
 	/// <summary>
+	/// Cancels one own market listing. Same POST the market page's cancel
+	/// button issues: the session id must be echoed in the form body, with
+	/// XHR-style headers. True on any 2xx; false on failure (429 rate limits
+	/// are already retried with backoff by the web handler's resilience).
+	/// </summary>
+	public async Task<bool> CancelListingAsync(string listingId, CancellationToken cancellationToken = default)
+	{
+		if (string.IsNullOrEmpty(listingId))
+		{
+			throw new ArgumentException("Listing id is required", nameof(listingId));
+		}
+
+		if (!_webHandler.TryGetSessionId(out string? sessionId) || string.IsNullOrEmpty(sessionId))
+		{
+			_logger.LogWarning("cancel listing {ListingId}: no session id on the web handler (is the session logged on?)", listingId);
+			return false;
+		}
+
+		var url = new Uri($"https://steamcommunity.com/market/removelisting/{Uri.EscapeDataString(listingId)}");
+		// Referer/Origin for community hosts are added by the web handler;
+		// only the XHR marker is cancel-specific.
+		var headers = new Dictionary<string, string>
+		{
+			["X-Requested-With"] = "XMLHttpRequest"
+		};
+
+		var content = new FormUrlEncodedContent(
+		[
+			new KeyValuePair<string, string>("sessionid", sessionId)
+		]);
+
+		var response = await _webHandler.PostAsync(url, content, headers, cancellationToken).ConfigureAwait(false);
+		if (!response.IsSuccess)
+		{
+			_logger.LogWarning("cancel listing {ListingId} failed: {StatusCode}", listingId, response.StatusCode);
+			return false;
+		}
+
+		_logger.LogInformation("Canceled market listing {ListingId}", listingId);
+		return true;
+	}
+
+	/// <summary>
 	/// Parses one mylistings response. The live page is login-gated (like the
 	/// badges page), so the shape is pinned by the market_mylistings_p1.json
 	/// fixture, whose skeleton is cross-confirmed (2026-09-14) against three

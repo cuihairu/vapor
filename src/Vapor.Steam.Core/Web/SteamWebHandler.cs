@@ -207,6 +207,16 @@ public sealed class SteamWebHandler : IDisposable
 	}
 
 	/// <summary>
+	/// Returns the current session id, when one has been set. Some community
+	/// endpoints require it echoed in the POST body (e.g. market listing
+	/// cancellation); it is a plain session cookie, not a credential.
+	/// </summary>
+	public bool TryGetSessionId([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? sessionId)
+	{
+		return _sessionCookies.TryGetValue("sessionid", out sessionId) && !string.IsNullOrEmpty(sessionId);
+	}
+
+	/// <summary>
 	/// Gets all current cookies as a dictionary.
 	/// </summary>
 	public IReadOnlyDictionary<string, string> GetAllCookies()

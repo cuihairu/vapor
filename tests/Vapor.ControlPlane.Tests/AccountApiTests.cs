@@ -514,6 +514,92 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task PostMarketListingsCancel_RequireAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings/cancel", new { appId = 730 });
+
+		Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task PostMarketListingsCancel_AccountMissing_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings/cancel", new { appId = 730 });
+
+		Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task PostMarketListingsCancel_DryRunDefault_AgentReportsFinished_ReturnsPreview()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstMarketCancelTaskAsync(store, success: true, dryRun: true, cts.Token));
+
+		// No dry_run in the body: the default preview run.
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings/cancel", new { appId = 730 });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement result = doc.RootElement.GetProperty("result");
+		Assert.True(result.GetProperty("dry_run").GetBoolean());
+		Assert.Equal(2, result.GetProperty("matched").GetInt32());
+		// Dry runs carry no success counters at all.
+		bool succeededAbsentOrNull = !result.TryGetProperty("succeeded", out JsonElement succeededElem)
+			|| succeededElem.ValueKind == JsonValueKind.Null;
+		Assert.True(succeededAbsentOrNull);
+	}
+
+	[Fact]
+	public async Task PostMarketListingsCancel_RealRunWithoutFilter_Returns400()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		// A real run (dry_run=false) with no filter must be refused up front —
+		// no job is created and the agent is never involved.
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings/cancel", new { dryRun = false });
+
+		Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task PostMarketListingsCancel_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstMarketCancelTaskAsync(store, success: false, dryRun: false, cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings/cancel", new { appId = 730, dryRun = false });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("agent refused", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
 	public async Task AcceptTradeOffer_InvalidRequest_Returns400()
 	{
 		await using var factory = CreateFactory();
@@ -1646,6 +1732,35 @@ public sealed class AccountApiTests
 			},
 			"agent refused",
 			ct);
+	}
+
+	/// <summary>Plays the agent side: claims the queued cancel_market_listings task and reports a result.</summary>
+	private static Task RespondToFirstMarketCancelTaskAsync(IJobStore store, bool success, bool dryRun, CancellationToken ct)
+	{
+		var output = new Dictionary<string, object?>
+		{
+			["dry_run"] = dryRun,
+			["matched"] = 2,
+			["scanned"] = 5,
+			["succeeded"] = dryRun ? null : 2,
+			["failed"] = dryRun ? null : 0,
+			["listings"] = new List<Dictionary<string, object?>>
+			{
+				new() { ["listing_id"] = "3547123456789012345", ["market_hash_name"] = "AK-47 | Redline (Field-Tested)", ["price_cents"] = 103, ["would_cancel"] = true },
+				new() { ["listing_id"] = "3547123456789012347", ["market_hash_name"] = "Mann Co. Supply Crate Key", ["price_cents"] = 250, ["would_cancel"] = true }
+			}
+		};
+		if (!dryRun)
+		{
+			// Real runs report success/failure per listing instead of would_cancel.
+			output["listings"] = new List<Dictionary<string, object?>>
+			{
+				new() { ["listing_id"] = "3547123456789012345", ["succeeded"] = true },
+				new() { ["listing_id"] = "3547123456789012347", ["succeeded"] = true }
+			};
+		}
+
+		return RespondToFirstTaskAsync(store, "cancel_market_listings", success, output, "agent refused", ct);
 	}
 
 	/// <summary>Plays the agent side: claims the first queued task for <paramref name="action"/> and reports a result.</summary>

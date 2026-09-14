@@ -24,6 +24,7 @@ internal static class AccountTaskRunner
 	internal const string FindDuplicatesAction = "find_duplicates";
 	internal const string SwapDuplicatesAction = "swap_duplicates";
 	internal const string GetMyMarketListingsAction = "get_my_market_listings";
+	internal const string CancelMarketListingsAction = "cancel_market_listings";
 
 	/// <summary>Lists an account's own market listings via the get_my_market_listings action.</summary>
 	public static Task<TaskRunResult> ReadMarketListingsAsync(
@@ -38,6 +39,21 @@ internal static class AccountTaskRunner
 			GetMyMarketListingsAction,
 			accountName,
 			new Dictionary<string, object?> { ["start"] = start, ["count"] = count },
+			cancellationToken);
+	}
+
+	/// <summary>Cancels an account's own market listings matching a filter via the cancel_market_listings action.</summary>
+	public static Task<TaskRunResult> CancelMarketListingsAsync(
+		IJobStore store,
+		string accountName,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		return DispatchAsync(
+			store,
+			CancelMarketListingsAction,
+			accountName,
+			payload,
 			cancellationToken);
 	}
 

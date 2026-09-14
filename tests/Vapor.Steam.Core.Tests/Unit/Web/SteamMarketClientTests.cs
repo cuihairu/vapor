@@ -233,4 +233,71 @@ public sealed class SteamMarketClientTests
 
 		Assert.Null(page);
 	}
+
+	// --- CancelListing ---
+
+	private static (SteamMarketClient Client, FakeHttpMessageHandler Fake) CreateWithSession(string sessionId = "session-123")
+	{
+		var fake = new FakeHttpMessageHandler();
+		var webHandler = new SteamWebHandler(
+			new SteamWebHandlerConfig { RateLimitIntervalMs = 0, MaxRetries = 1, EnableCircuitBreaker = false },
+			NullLogger<SteamWebHandler>.Instance,
+			fake);
+		webHandler.SetSessionCookies(sessionId, "token");
+		return (new SteamMarketClient(webHandler, NullLogger<SteamMarketClient>.Instance), fake);
+	}
+
+	[Fact]
+	public async Task CancelListing_SendsSessionIdInBodyAndXhrHeaders()
+	{
+		var (client, fake) = CreateWithSession();
+		Uri? requestUri = null;
+		string? body = null;
+		string? xhrHeader = null;
+		fake.Responder = request =>
+		{
+			requestUri = request.RequestUri;
+			xhrHeader = request.Headers.TryGetValues("X-Requested-With", out var values) ? string.Join(',', values) : null;
+			body = request.Content is null ? null : request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+			return Json("{}");
+		};
+
+		var canceled = await client.CancelListingAsync("3547123456789012345");
+
+		Assert.True(canceled);
+		Assert.Equal("/market/removelisting/3547123456789012345", requestUri!.AbsolutePath);
+		Assert.Equal("XMLHttpRequest", xhrHeader);
+		Assert.Contains("sessionid=session-123", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task CancelListing_ServerError_ReturnsFalse()
+	{
+		var (client, fake) = CreateWithSession();
+		fake.Responder = _ => Json("{}", HttpStatusCode.InternalServerError);
+
+		var canceled = await client.CancelListingAsync("42");
+
+		Assert.False(canceled);
+	}
+
+	[Fact]
+	public async Task CancelListing_WithoutSessionId_FailsWithoutSendingRequest()
+	{
+		var (client, fake) = Create();
+		// No SetSessionCookies call: the session id is missing.
+
+		var canceled = await client.CancelListingAsync("42");
+
+		Assert.False(canceled);
+		Assert.Empty(fake.Requests);
+	}
+
+	[Fact]
+	public async Task CancelListing_EmptyListingId_Throws()
+	{
+		var (client, _) = CreateWithSession();
+
+		await Assert.ThrowsAsync<ArgumentException>(() => client.CancelListingAsync(string.Empty));
+	}
 }
