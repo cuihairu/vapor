@@ -207,6 +207,41 @@ public sealed class MaFileParserTests
 		Assert.Contains("not a JSON object", ex.Message, StringComparison.Ordinal);
 	}
 
+	[Fact]
+	public void Parse_EncryptedSda_DecryptedPayloadNotJson_ThrowsDecryptError()
+	{
+		// Correct password, but the decrypted Steamguard blob is not JSON at all —
+		// the corrupted-file shape a wrong password only sometimes reaches (when the
+		// PKCS7 padding of the garbage plaintext happens to validate). Must surface
+		// as the decrypt error, never a raw JsonException.
+		string password = "hunter2";
+		byte[] salt = RandomNumberGenerator.GetBytes(8);
+		byte[] iv = RandomNumberGenerator.GetBytes(16);
+		byte[] key = Rfc2898DeriveBytes.Pbkdf2(password, salt, 50_000, HashAlgorithmName.SHA1, 32);
+		string cipherBase64;
+		using (var aes = Aes.Create())
+		{
+			aes.Key = key;
+			aes.IV = iv;
+			aes.Mode = CipherMode.CBC;
+			aes.Padding = PaddingMode.PKCS7;
+			using var encryptor = aes.CreateEncryptor();
+			byte[] plain = [0x1E, 0x1F, 0x00, 0x02, 0x03, 0x04, 0x05, 0x06];
+			cipherBase64 = Convert.ToBase64String(encryptor.TransformFinalBlock(plain, 0, plain.Length));
+		}
+
+		string json = JsonSerializer.Serialize(new Dictionary<string, object?>
+		{
+			["encryption_iv"] = Convert.ToBase64String(iv),
+			["encryption_salt"] = Convert.ToBase64String(salt),
+			["Steamguard"] = cipherBase64
+		});
+
+		InvalidDataException ex = Assert.Throws<InvalidDataException>(() => MaFileParser.Parse(json, password));
+
+		Assert.Contains("decrypt", ex.Message, StringComparison.OrdinalIgnoreCase);
+	}
+
 	/// <summary>Builds an SDA-style password-encrypted maFile exactly the way SDA writes it.</summary>
 	private static string BuildEncryptedSda(string password, byte[] salt, byte[] iv, string guardJson, string steamId, string accountName)
 	{

@@ -107,19 +107,34 @@ public static class MaFileParser
 			throw new InvalidDataException("failed to decrypt the maFile (wrong password or corrupted file)");
 		}
 
-		using JsonDocument guardDoc = JsonDocument.Parse(guardJson);
-		if (guardDoc.RootElement.ValueKind != JsonValueKind.Object)
+		// A wrong password only sometimes trips PKCS7 padding validation; when it
+		// doesn't, the plaintext is garbage that usually isn't even JSON. Route
+		// that through the same wrong-password error instead of a raw JsonException.
+		JsonDocument guardDoc;
+		try
 		{
-			throw new InvalidDataException("decrypted maFile payload is not a JSON object");
+			guardDoc = JsonDocument.Parse(guardJson);
+		}
+		catch (JsonException ex)
+		{
+			throw new InvalidDataException($"failed to decrypt the maFile (wrong password or corrupted file): {ex.Message}");
 		}
 
-		bool hasSession = root.TryGetProperty("Session", out var sessionElem) &&
-						  sessionElem.ValueKind == JsonValueKind.String;
+		using (guardDoc)
+		{
+			if (guardDoc.RootElement.ValueKind != JsonValueKind.Object)
+			{
+				throw new InvalidDataException("decrypted maFile payload is not a JSON object");
+			}
 
-		// The outer shell may carry the steam id / account name; the decrypted guard
-		// blob carries the secrets.
-		var info = FromJson(root, guardDoc.RootElement);
-		return info with { HasSession = info.HasSession || hasSession };
+			bool hasSession = root.TryGetProperty("Session", out var sessionElem) &&
+							  sessionElem.ValueKind == JsonValueKind.String;
+
+			// The outer shell may carry the steam id / account name; the decrypted guard
+			// blob carries the secrets.
+			var info = FromJson(root, guardDoc.RootElement);
+			return info with { HasSession = info.HasSession || hasSession };
+		}
 	}
 
 	private static MaFileInfo FromJson(JsonElement root, JsonElement guard)
