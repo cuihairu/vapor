@@ -104,7 +104,7 @@ public sealed class BotSessionBranchTests : IDisposable
 
 		using var cts = new CancellationTokenSource();
 		var pending = session.ExecuteActionAsync("hang", new Dictionary<string, object?>(), cts.Token);
-		await parkedInAction.Task.WaitAsync(TimeSpan.FromSeconds(10)); // deterministically parked
+		await parkedInAction.Task.WaitAsync(TimeSpan.FromSeconds(30)); // deterministically parked
 
 		cts.Cancel();
 		releaseAction.TrySetResult();
@@ -114,7 +114,7 @@ public sealed class BotSessionBranchTests : IDisposable
 		// action first and hand back its "canceled" result. Accept both outcomes.
 		try
 		{
-			SessionCommandResult result = await pending.WaitAsync(TimeSpan.FromSeconds(10));
+			SessionCommandResult result = await pending.WaitAsync(TimeSpan.FromSeconds(30));
 			Assert.False(result.Success);
 			Assert.Equal("canceled", result.Error);
 		}
@@ -237,11 +237,12 @@ public sealed class BotSessionBranchTests : IDisposable
 		// Wait for the transport call itself rather than the qr_required event:
 		// RaiseEventCallback hands delivery to Task.Run, which a starved CI thread
 		// pool can delay for seconds — the parked call is the deterministic proof.
-		await parkedInLogon.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		// The budget only covers pool scheduling of the login chain, so be generous.
+		await parkedInLogon.Task.WaitAsync(TimeSpan.FromSeconds(30));
 		session.Dispose();
 		_sessions.Remove(session);
 
-		var result = await pending.WaitAsync(TimeSpan.FromSeconds(10));
+		var result = await pending.WaitAsync(TimeSpan.FromSeconds(30));
 		Assert.False(result.Success);
 		Assert.Equal("canceled", result.Error);
 	}
@@ -283,11 +284,11 @@ public sealed class BotSessionBranchTests : IDisposable
 		var session = CreateSession(qrLogin: true);
 
 		var pending = session.LoginAsync();
-		await parkedInChallenge.Task.WaitAsync(TimeSpan.FromSeconds(10)); // deterministically parked
+		await parkedInChallenge.Task.WaitAsync(TimeSpan.FromSeconds(30)); // deterministically parked
 		session.Dispose();
 		_sessions.Remove(session);
 
-		var result = await pending.WaitAsync(TimeSpan.FromSeconds(10));
+		var result = await pending.WaitAsync(TimeSpan.FromSeconds(30));
 		Assert.False(result.Success);
 		Assert.Equal("canceled", result.Error);
 	}

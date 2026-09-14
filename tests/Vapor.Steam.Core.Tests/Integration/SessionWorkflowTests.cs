@@ -267,12 +267,13 @@ public class SessionWorkflowTests : IDisposable
 		// Arrange
 		var accountName = "test_account";
 		var credentials = new AccountCredentials(accountName, "password");
-		await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
+		var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
 
 		var events = new List<SessionEvent>();
 		var cts = new CancellationTokenSource();
 
-		// Start collecting events
+		// Start collecting events. The SessionManager channel is unbounded, so events
+		// published before the collector's first MoveNextAsync are buffered, not dropped.
 		var collectTask = Task.Run(async () =>
 		{
 			try
@@ -288,13 +289,20 @@ public class SessionWorkflowTests : IDisposable
 			}
 		});
 
-		// Wait for events
-		await Task.Delay(200);
-		cts.Cancel();
-		await collectTask.WaitAsync(TimeSpan.FromSeconds(2));
+		// Act - stub 登录与断开各产生确定的 StateChanged 事件
+		//（Disconnected→Connected→Disconnecting），收集器凑满 2 条即退出；
+		// 等待预算只覆盖线程池调度，无就绪睡眠。
+		await session.LoginAsync();
+		await session.DisconnectAsync();
 
-		// Assert - 事件应该被收集
-		Assert.NotNull(events);
+		await collectTask.WaitAsync(TimeSpan.FromSeconds(10));
+		cts.Cancel();
+
+		// Assert - 两条事件都经 SessionManager 转发泵到达
+		Assert.Equal(2, events.Count);
+		Assert.All(events, e => Assert.Equal(SessionEventType.StateChanged, e.Type));
+		Assert.Equal(SessionState.Connected, events[0].NewState);
+		Assert.Equal(SessionState.Disconnecting, events[1].NewState);
 	}
 
 	[Fact]

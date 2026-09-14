@@ -232,15 +232,20 @@ public sealed class BotSession : IDisposable
 		}
 	}
 
-	private void RunSteamCallbacksAsync(CancellationToken cancellationToken)
+	private async Task RunSteamCallbacksAsync(CancellationToken cancellationToken)
 	{
 		try
 		{
 			while (!cancellationToken.IsCancellationRequested)
 			{
 				_steamClientManager?.RunCallbacks();
-				Thread.Sleep(100);
+				// 异步等待把线程在轮询空档归还线程池；同步 Sleep 会让每个活会话
+				// 永久占住一个池线程，是 CI 线程池饥饿的已知根源。
+				await Task.Delay(100, cancellationToken).ConfigureAwait(false);
 			}
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
 		}
 		catch (Exception ex)
 		{

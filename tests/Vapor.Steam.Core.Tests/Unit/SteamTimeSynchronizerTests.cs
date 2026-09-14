@@ -105,7 +105,8 @@ public class SteamTimeSynchronizerTests
 			ctx.Response.ContentType = "application/json";
 			await ctx.Response.OutputStream.WriteAsync("""{"response":{"server_time":"1700000123"}}"""u8.ToArray());
 			ctx.Response.Close();
-		}));
+		}
+		));
 
 		long serverTime = await SteamTimeSynchronizer.QuerySteamServerTimeAsync(
 			new Uri(server.Prefix + "time/"), CancellationToken.None);
@@ -121,7 +122,8 @@ public class SteamTimeSynchronizerTests
 			ctx.Response.StatusCode = 500;
 			ctx.Response.Close();
 			return Task.CompletedTask;
-		}));
+		}
+		));
 
 		await Assert.ThrowsAsync<HttpRequestException>(() =>
 			SteamTimeSynchronizer.QuerySteamServerTimeAsync(
@@ -136,7 +138,8 @@ public class SteamTimeSynchronizerTests
 			ctx.Response.ContentType = "application/json";
 			await ctx.Response.OutputStream.WriteAsync("""{"response":{"unexpected":true}}"""u8.ToArray());
 			ctx.Response.Close();
-		}));
+		}
+		));
 
 		InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
 			SteamTimeSynchronizer.QuerySteamServerTimeAsync(
