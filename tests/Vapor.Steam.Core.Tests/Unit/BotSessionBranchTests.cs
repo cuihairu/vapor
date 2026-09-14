@@ -54,7 +54,7 @@ public sealed class BotSessionBranchTests : IDisposable
 
 					return Task.CompletedTask;
 				}
-				: null);
+		: null);
 		_sessions.Add(session);
 		session.Start();
 		return session;
