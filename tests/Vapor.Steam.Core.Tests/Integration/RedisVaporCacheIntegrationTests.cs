@@ -34,8 +34,15 @@ public sealed class RedisVaporCacheIntegrationTests
 	// instance created inside a test must share it — they stand in for separate processes.
 	private readonly string _keyPrefix = $"vapor:test:{Guid.NewGuid():N}:";
 
+	// The coverage CI job runs the whole suite under coverlet instrumentation on a
+	// 4-core runner; the resulting thread-pool queueing makes SE.Redis's default
+	// 5s command timeout flaky even against a healthy local server (the timeout
+	// exception's own POOL dump showed QueuedItems=19, Min=4). The tests can afford
+	// a wider budget — the server is on localhost.
+	private const string TestRedisTimeouts = ",syncTimeout=15000,asyncTimeout=15000";
+
 	private RedisVaporCache CreateCache() => RedisVaporCache.CreateFromConnectionString(
-		Environment.GetEnvironmentVariable("VAPOR_TEST_REDIS")!,
+		Environment.GetEnvironmentVariable("VAPOR_TEST_REDIS")! + TestRedisTimeouts,
 		new RedisVaporCacheOptions { KeyPrefix = _keyPrefix });
 
 	[Fact]
