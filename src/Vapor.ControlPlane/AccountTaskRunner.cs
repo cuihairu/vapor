@@ -26,6 +26,8 @@ internal static class AccountTaskRunner
 	internal const string GetMyMarketListingsAction = "get_my_market_listings";
 	internal const string CancelMarketListingsAction = "cancel_market_listings";
 	internal const string CreateMarketListingAction = "create_market_listing";
+	internal const string GetPointsShopSummaryAction = "get_points_shop_summary";
+	internal const string ClaimPointsShopItemsAction = "claim_points_shop_items";
 
 	/// <summary>Lists an account's own market listings via the get_my_market_listings action.</summary>
 	public static Task<TaskRunResult> ReadMarketListingsAsync(
@@ -68,6 +70,36 @@ internal static class AccountTaskRunner
 		return DispatchAsync(
 			store,
 			CreateMarketListingAction,
+			accountName,
+			payload,
+			cancellationToken);
+	}
+
+	/// <summary>Reads an account's points shop balance (and definitions) via the get_points_shop_summary action.</summary>
+	public static Task<TaskRunResult> ReadPointsShopSummaryAsync(
+		IJobStore store,
+		string accountName,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		return DispatchAsync(
+			store,
+			GetPointsShopSummaryAction,
+			accountName,
+			payload,
+			cancellationToken);
+	}
+
+	/// <summary>Redeems points shop reward definitions via the claim_points_shop_items action.</summary>
+	public static Task<TaskRunResult> ClaimPointsShopItemsAsync(
+		IJobStore store,
+		string accountName,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		return DispatchAsync(
+			store,
+			ClaimPointsShopItemsAction,
 			accountName,
 			payload,
 			cancellationToken);

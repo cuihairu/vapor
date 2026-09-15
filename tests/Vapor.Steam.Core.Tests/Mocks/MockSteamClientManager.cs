@@ -9,6 +9,9 @@ public sealed class MockSteamClientManager : ISteamClientManager
 {
 	private RedeemKeyResult? _redeemKeyResult;
 	private FreeLicenseResult? _freeLicenseResult;
+	private PointsShopSummary? _pointsShopSummary;
+	private IReadOnlyList<PointsShopItemInfo>? _pointsShopItems;
+	private RedeemPointsResult? _redeemPointsResult;
 	private TaskCompletionSource<bool>? _connectTcs;
 	private bool _isConnected;
 
@@ -73,6 +76,23 @@ public sealed class MockSteamClientManager : ISteamClientManager
 		return Task.FromResult<FreeLicenseResult?>(_freeLicenseResult ?? new FreeLicenseResult(SteamResult.OK, appIds.ToList(), []));
 	}
 
+	public Task<PointsShopSummary?> GetPointsShopSummaryAsync(CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult<PointsShopSummary?>(_pointsShopSummary ?? new PointsShopSummary(1000, 1500, 500));
+	}
+
+	public Task<IReadOnlyList<PointsShopItemInfo>?> QueryPointsShopItemsAsync(IReadOnlyCollection<uint> definitionIds, CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult<IReadOnlyList<PointsShopItemInfo>?>(_pointsShopItems ?? definitionIds
+			.Select(id => new PointsShopItemInfo(id, 753, 3, $"mock item {id}", 0, true, 0))
+			.ToList());
+	}
+
+	public Task<RedeemPointsResult?> RedeemPointsShopItemAsync(uint definitionId, CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult<RedeemPointsResult?>(_redeemPointsResult ?? new RedeemPointsResult(SteamResult.OK, definitionId));
+	}
+
 	public void PlayGames(HashSet<uint> appIds) { }
 
 	public IReadOnlySet<uint> GetPlayingGames()
@@ -99,6 +119,24 @@ public sealed class MockSteamClientManager : ISteamClientManager
 	public void SetFreeLicenseResult(FreeLicenseResult result)
 	{
 		_freeLicenseResult = result;
+	}
+
+	/// <summary>Sets the summary to return from GetPointsShopSummaryAsync.</summary>
+	public void SetPointsShopSummary(PointsShopSummary summary)
+	{
+		_pointsShopSummary = summary;
+	}
+
+	/// <summary>Sets the definitions to return from QueryPointsShopItemsAsync (null = per-id free-item defaults).</summary>
+	public void SetPointsShopItems(IReadOnlyList<PointsShopItemInfo> items)
+	{
+		_pointsShopItems = items;
+	}
+
+	/// <summary>Sets the result to return from RedeemPointsShopItemAsync.</summary>
+	public void SetRedeemPointsResult(RedeemPointsResult result)
+	{
+		_redeemPointsResult = result;
 	}
 
 	/// <summary>

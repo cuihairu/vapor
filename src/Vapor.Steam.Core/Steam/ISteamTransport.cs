@@ -51,6 +51,18 @@ public interface ISteamTransport
 	/// <summary>Requests free licenses for the given apps on the logged-on account (client protocol). Returns null when not connected or Steam did not answer.</summary>
 	Task<FreeLicenseResult?> RequestFreeLicenseAsync(IReadOnlyCollection<uint> appIds, CancellationToken cancellationToken = default);
 
+	/// <summary>Gets the logged-on account's points shop balance summary. Returns null when not connected, not logged on, or Steam did not answer.</summary>
+	Task<PointsShopSummary?> GetPointsShopSummaryAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Queries points shop reward definitions by definition id (cursor pagination
+	/// handled internally). Returns null when not connected or Steam did not answer.
+	/// </summary>
+	Task<IReadOnlyList<PointsShopItemInfo>?> QueryPointsShopItemsAsync(IReadOnlyCollection<uint> definitionIds, CancellationToken cancellationToken = default);
+
+	/// <summary>Redeems one points shop reward definition on the logged-on account. Returns null only when not connected; a Steam-side rejection comes back as the result code.</summary>
+	Task<RedeemPointsResult?> RedeemPointsShopItemAsync(uint definitionId, CancellationToken cancellationToken = default);
+
 	/// <summary>Plays the specified games on Steam. Pass an empty set to stop playing all games.</summary>
 	void PlayGames(HashSet<uint> appIds);
 
@@ -120,6 +132,34 @@ public sealed record FreeLicenseResult(
 	SteamResult Result,
 	IReadOnlyList<uint> GrantedApps,
 	IReadOnlyList<uint> GrantedPackages
+);
+
+/// <summary>Balance summary of the logged-on account's points shop.</summary>
+public sealed record PointsShopSummary(
+	long Points,
+	long PointsEarned,
+	long PointsSpent
+);
+
+/// <summary>
+/// A points shop reward definition — an item that can be redeemed with points.
+/// Free claimables (the points-shop flavor of addlicense) are the ones with
+/// <see cref="PointCost"/> == 0.
+/// </summary>
+public sealed record PointsShopItemInfo(
+	uint DefId,
+	uint AppId,
+	int Type,
+	string? InternalDescription,
+	long PointCost,
+	bool Active,
+	uint FreeUntilTimestamp
+);
+
+/// <summary>Outcome of a single points shop redemption.</summary>
+public sealed record RedeemPointsResult(
+	SteamResult Result,
+	ulong CommunityItemId
 );
 
 /// <summary>

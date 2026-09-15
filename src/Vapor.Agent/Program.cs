@@ -105,7 +105,11 @@ var serviceCollection = new ServiceCollection()
 	.AddSingleton<FindDuplicatesAction>(p => new FindDuplicatesAction(
 		p.GetRequiredService<ILogger<FindDuplicatesAction>>()))
 	.AddSingleton<AddLicenseAction>(p => new AddLicenseAction(
-		p.GetRequiredService<ILogger<AddLicenseAction>>()));
+		p.GetRequiredService<ILogger<AddLicenseAction>>()))
+	.AddSingleton<GetPointsShopSummaryAction>(p => new GetPointsShopSummaryAction(
+		p.GetRequiredService<ILogger<GetPointsShopSummaryAction>>()))
+	.AddSingleton<ClaimPointsShopItemsAction>(p => new ClaimPointsShopItemsAction(
+		p.GetRequiredService<ILogger<ClaimPointsShopItemsAction>>()));
 
 // Cache backend: Redis when VAPOR_REDIS points at a server, in-memory otherwise.
 string redisConfiguration = Environment.GetEnvironmentVariable("VAPOR_REDIS") ?? string.Empty;
@@ -193,6 +197,8 @@ actionRegistry.Register(serviceProvider.GetRequiredService<LootInventoryAction>(
 actionRegistry.Register(serviceProvider.GetRequiredService<FindDuplicatesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SwapDuplicatesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<AddLicenseAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetPointsShopSummaryAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<ClaimPointsShopItemsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SearchGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetPriceAction>());
