@@ -256,7 +256,8 @@
 10. ~~P6 推进（2026-09-12 立项）~~（✅ 2026-09-13 完成：P6-1 卡牌 farming 闭环 → P6-2 交易与确认闭环 → P6-3 互操作与认领全部落地，GA 出口条件 #2 闭环；P6-4 仅剩两项明确后置（挂单创建/批量撤单 ToS 灰区、成就管理需求弱），对标矩阵已同步勾选 `docs/feature-matrix.md`）。**todo.md 全部计划阶段（P0-P6 + GA 收口横向）至此完成。**
 11. ~~P7 推进（2026-09-14 立项）：市场闭环——挂单读取 → 批量撤单 → 挂单创建~~（✅ 2026-09-14 完成：三期全部落地，灰区核心以 dry_run 默认 + 账户/agent 双开关缓解，详见 §12）。
 12. ~~P8 推进（2026-09-15 立项）：积分商店认领（矩阵 §3.6 最后一个非后置非定位外缺口；免费定义默认认领、付费需显式 force、defid 仅来自调用方）~~（✅ 2026-09-15 完成：`get_points_shop_summary` + `claim_points_shop_items` + `GET/POST /v1/accounts/{name}/points-shop/*`，详见 §13）。
-13. GA 出口条件验收盘点（2026-09-15）：对 §0 五条逐条仓库实证盘点——4 条达成、#4 缺性能基线，详见 §14。
+13. ~~GA 出口条件验收盘点（2026-09-15）：对 §0 五条逐条仓库实证盘点~~（盘点结论 4 达成 / #4 缺性能基线，详见 §14）。
+14. ~~性能基线（GA 盘点 §14 #4 唯一缺口，2026-09-15 立项即收口）：时延/吞吐/资源三维度基准 + `docs/performance.md` 权威基线 + `run-benchmarks.sh`~~（✅ 2026-09-15 完成，详见 §16；**GA 出口条件 5/5 全部达成**）。
 
 ---
 
@@ -356,7 +357,7 @@
 
 - [x] 余额与定义查询（发现供数）+ 免费定义默认认领（ASF RP 语义：`point_cost == 0`；付费需 `force=true` 且缺省整批前置拒绝）；REST `GET /v1/accounts/{name}/points-shop/summary` + `POST /v1/accounts/{name}/points-shop/claim`，三态 200/202/502。（✅ 2026-09-15 `get_points_shop_summary` + `claim_points_shop_items`，见下方日志）
 
-## 14. GA 出口条件验收盘点（✅ 2026-09-15：4 达成 / 1 部分达成）
+## 14. GA 出口条件验收盘点（✅ 2026-09-15：5/5 达成——#4 缺口同日收口，见 §16）
 
 > 对 §0 五条 GA Exit Criteria 逐条以**仓库实证**盘点（本地实跑 + CI 记录 + 文件存在性核查，非转述历史结论）。盘点为纯文档动作，未改产品代码。
 
@@ -387,7 +388,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - 审计：`SqliteAuditStore` + `GET /v1/audit/logs`（过滤/分页/脱敏入库）+ 敏感动作专项审计点（登录转移、`task.result.reported`、交易 accept/decline/确认、loot、换卡、编排决策、points-shop）；
 - 红线（测试断言守护）：identity secret 不出 agent、payload 零 secret、验证码只出 bool、webhook HMAC 签名且不载验证码。
 
-### #4 可运维 — ⚠️（5/6 达成，唯一缺口：性能基线）
+### #4 可运维 — ✅（6/6 达成；性能基线 2026-09-15 收口，见 §16）
 
 | 要素 | 证据 | 判定 |
 |---|---|---|
@@ -396,7 +397,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 | Docker | Agent/ControlPlane 双 Dockerfile + docker-compose（CP+Redis+Prometheus+Grafana）+ CI docker-build job | ✅ |
 | CI/CD | ci.yml（10 job）+ codeql + dependency-review + release.yml（5 RID 多平台发布） | ✅ |
 | 可观测性 | OTel tracing（W3C traceparent 跨 agent 隧道）+ Prometheus 文本端点/Grafana 面板 + 编排/通知/调度 metrics + 告警规则 | ✅ |
-| 性能基线 | 无基准测试、无基线数据记录（时延/吞吐/资源占用） | ❌ |
+| 性能基线 | 三维度基准（只读端点 p50/p95 时延 + 任务派发写入口对照、组件吞吐、每操作托管分配量）+ 权威基线 `docs/performance.md`（含环境/口径/归档）+ `scripts/run-benchmarks.sh`；2026-09-15 收口（§16） | ✅ |
 
 ### #5 文档闭环 — ✅
 
@@ -404,8 +405,8 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 ### 结论与后续
 
-- **#1/#2/#3/#5 达成，#4 部分达成（性能基线缺）**——GA 出口条件基本达成，无功能性缺口。
-- 性能基线列为独立后续小项：对 CP 只读端点与任务派发路径做轻量压测并落 `docs/performance.md`；不随本盘点扩 scope 实施。
+- **#1/#2/#3/#4/#5 全部达成**（#4 的性能基线缺口于 2026-09-15 作为独立小项收口，见 §16）——GA 出口条件全部达成。
+- 性能基线已按本盘点定位作为独立小项落地：轻量压测（时延/吞吐/资源三维度）+ `docs/performance.md` 权威基线；盘点本身未扩 scope。
 
 > 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
 > 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。
@@ -464,3 +465,17 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] Core 执行单元：`get_game_info_batch`（≤200 app/批，单项失败不中断，与单应用共享 `game:{appId}:{cc}` 缓存层级，真实 HTTP 间 `interval_ms` 节流）。（✅ 2026-09-15）
 
 > 2026-09-15：**P9 游戏数据采集落地（+98 测试，1899→1997 全绿；feat 提交 c5e06e7 + docs 提交）**。① Core：`GetGameInfoBatchAction`（`app_ids` CSV/JSON 数组双解析、逐 app 走 `FetchCachedAsync` SWR、`storeError` 隔离传输异常、`fetched>0` 即成功、pacing 仅对缓存未命中生效——`Func<TimeSpan,Task>` 注入测试零等待）。② CP：`CrawlShardPlanner`（override 优先/池外回落+告警、轮转确定性可断言、`Chunk` clamp 1..200）；`SqliteCrawlStore`（独立 DB 两表、`ClaimDuePlanAsync` 刻意不动 cursor——崩溃恢复重复可见而非静默跳过、完成时收尾游标、`ListRunsAsync` GROUP BY 聚合、`PruneRunsAsync` 幂等）；`CrawlRunWorker`（5s tick、`_inflight` 防重叠、超时 CancelJob+整片失败行、部分 dispatch 失败留 in-flight 由轮询收尾、输出解析 JsonElement/对象双路径）。③ REST 8 端点（全 admin + 审计；`ScheduleClock.Validate` 只在确有 cron/interval 时调用——one-shot 是合法默认形态，初版一律校验导致所有 one-shot create 400，被 CrawlApiTests 当场抓住）。④ 页面 `gamedata.html` 只读（六模型字典/来源与 TTL 表/计划/轮次/结果浏览，30s 轮询），dashboard/admin 互链，DashboardStaticTests +4 锁契约。⑤ 与计划的偏差记录：重叠 tick 只 `OverlapSkips++` 计数**不发** `crawl.run_skipped` 事件（周期计划长运行下 5s tick × 30min run 会产生 360 条噪音事件，skip 语义收敛为指标+审计；`crawl.run_skipped` 保留给空池）；StoreDataActionBase 之外新增 `internal` 构造注入 store client 工厂与 delay 便于单测。⑥ 测试 +98：Core 22 + CP 76（planner 9 / store 11 / worker 14 / REST 38 / 静态 4）。⑦ 附带卫生：6 个测试 factory 的 Config 显式 `CrawlDbPath: ":memory:"`，避免 DI 解析 `SqliteCrawlStore` 在测试工作目录落地 `data/crawl.db`。验证：全量 1997/1997；format 门禁过；CI（ci 10 job + codeql）以 c5e06e7 全绿为准。
+
+## 16. 性能基线（GA 盘点 §14 #4 唯一缺口收口）（✅ 2026-09-15 完成）
+
+> 立项动机：GA 盘点 §14 #4"可运维"的唯一字面缺口——无基准测试、无基线数据记录（时延/吞吐/资源占用）。既有 4 个组件级基准（队列/并发 claimer/EventBroker/SSE）的数字手抄在 TESTING.md 且出处环境未记录；缺 CP 只读端点时延（§14 收尾注点名"对 CP 只读端点与任务派发路径做轻量压测"）与资源占用两个维度，且无权威落点与归档机制。纯测试 + 脚本 + 文档动作，不动产品代码。
+
+### 16.1 基准与文档
+
+- [x] 时延基准：`ApiLatencyBenchmarks.cs`——6 个只读端点（8 并发 × 200 请求，p50/p95/max/RPS，真实 `:memory:` 存储 + 移除全部后台服务）+ `POST /v1/jobs` 任务派发写入口对照（串行 200）。（✅ 2026-09-15）
+- [x] 资源基准：`ResourceFootprintBenchmarks.cs`——job store create+claim+finish 每操作托管分配量（进程级 `GC.GetTotalAllocatedBytes` 差值口径，异步代码跨线程池线程不能用 per-thread 计数器）。（✅ 2026-09-15）
+- [x] 缓存基准：`CacheBenchmarks.cs`（Steam.Core.Tests/Performance）——热读并发吞吐 + 每读分配量 + distinct-key 写吞吐（P9 批量采集依赖层）。（✅ 2026-09-15）
+- [x] 运行脚本 `scripts/run-benchmarks.sh`（两项目 Release + MaxCpuCount=2）+ 权威基线 `docs/performance.md`（实测环境/口径说明/三维度基线表/归档区）。（✅ 2026-09-15）
+- [x] TESTING.md 性能章节收敛：手抄数字表移除，指向 performance.md 单一权威源（避免双处漂移）。（✅ 2026-09-15）
+
+> 2026-09-15：**性能基线落地（+10 测试，1997→2007 全绿：CP 467→475 / Steam.Core 1090→1092；perf 提交）**。三维度齐备——时延（6 只读端点 p50 0–16ms / p95 4–47ms + `POST /v1/jobs` p50 1ms 对照，in-memory handler 口径）、吞吐（既有 4 项重录 + 缓存写 67,759/s、热读 >10⁶/s）、资源（job store 68,860 B/操作、缓存 252 B/读）。**取舍记录**：①基准不挂 CI（延续"本地开发机实测为准"口径——数字与机器强相关，CI runner 无横向可比性，挂上去只添 flake 面；CI 继续只保证测试通过，数字刷新走本地 `run-benchmarks.sh` + performance.md 归档）；②时延口径 = `WebApplicationFactory` in-memory handler（覆盖框架管道+序列化+存储，**不含真实网络栈**，performance.md 与测试注释双处注明——是代码回归基线，非端到端网络时延）；③断言语义 = 功能正确 + 宽数量级上限（p95<5s、分配 <10–20 万 B/操作，防 CI 抖动 flake），打印的数字才是基线；④手写基准延续（不引 BenchmarkDotNet，仓库零新增 NuGet 依赖约束）。实现要点：时延宿主 `BenchmarkApiFactory` 自建（既有 `ControlPlaneApiTests.TestFactory` 是 FakeJobStore 拒写，写路径基准不可用）并 `ConfigureLogging(ClearProviders)`——ASP.NET 每请求 info 日志既污染测量又淹没基准输出；`dotnet test` 显示 ITestOutputHelper 需 `--logger "console;verbosity=detailed"`（run-benchmarks.sh 已固化）。与旧手抄数字差异（队列 ~5,200/s → 本机 644/s 等）属测量环境不同，不构成回归信号，已在 performance.md 归档区注明。验证：全量 2007/2007；format 门禁过；CI 以本轮提交全绿为准。

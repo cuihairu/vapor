@@ -351,31 +351,27 @@ CI（`.github/workflows/ci.yml`）在 Ubuntu Release 上跑全解决方案测试
 
 ## 性能基准
 
-### ControlPlane 基准（`Vapor.ControlPlane.Tests/Performance/ControlPlaneBenchmarks.cs`）
+### 基线数字（唯一权威源：`docs/performance.md`）
 
-覆盖三个跟踪维度：队列吞吐（SQLite job store）、并发任务派发（多 claimer 竞争）、
-SSE 扇出（HTTP 连接数 + EventBroker 订阅数）。断言只设置宽松上限（30–60s）防止
-CI 抖动；实际数字以本地开发机（.NET 10, Linux x64）实测为准：
+基准覆盖三个维度：**时延**（只读 REST 端点 p50/p95 + 任务派发写入口对照，
+`ApiLatencyBenchmarks.cs`）、**吞吐**（队列、并发 claimer、EventBroker/SSE 扇出、
+缓存层，`ControlPlaneBenchmarks.cs` + `CacheBenchmarks.cs`）、**资源占用**
+（每操作托管分配量，`ResourceFootprintBenchmarks.cs`）。
 
-| 基准 | 规模 | 实测 |
-|------|------|------|
-| 队列吞吐：job 创建 | 500 jobs | ~5,200/s |
-| 队列吞吐：claim+finish 循环 | 500 tasks | ~2,000/s |
-| 并发 claimer（4 竞争者） | 200 tasks | ~1,760/s，0 重复派发 |
-| EventBroker 扇出 | 600 订阅者 × 100 事件 | ~19ms 全量送达 |
-| SSE 并发连接 | 50 连接 | ~193ms 全部收到事件 |
+断言只设置宽松上限防止 CI 抖动；**打印出来的数字才是基线**，实测数字、测量环境
+与口径说明统一记录在 `docs/performance.md`（刷新走其文末归档），此处不再手抄
+以免双处漂移。`Vapor.Steam.Core.Tests/Performance/ConcurrencyTests.cs` 只断言
+并发正确性，不记录数字。
 
-运行方式：`dotnet test tests/Vapor.ControlPlane.Tests --filter "FullyQualifiedName~Performance"`
+运行方式：
 
-### Steam.Core（基于 ConcurrencyTests 的观察）
-
-| 操作 | 预期性能 |
-|------|----------|
-| 单个动作执行 | < 10ms |
-| 会话创建 | < 50ms |
-| 会话移除 | < 100ms |
-| 100 个并发动作 | < 1s |
-| 1000 个并发会话 | < 5s |
+```bash
+./scripts/run-benchmarks.sh
+# 或手动（detailed 是必须的，否则 xunit 不显示基准打印的数字）
+dotnet test tests/Vapor.ControlPlane.Tests -c Release \
+  --logger "console;verbosity=detailed" \
+  --filter "FullyQualifiedName~Performance" -- RunConfiguration.MaxCpuCount=2
+```
 
 ## 最佳实践
 

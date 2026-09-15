@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Performance baselines (GA audit §14 #4): latency benchmarks for the read
+  REST endpoints under concurrent load plus the job-creation write path for
+  comparison (`ApiLatencyBenchmarks.cs`), per-operation managed-allocation
+  baselines for the job store and cache layer, cache read/write throughput
+  benchmarks, and `scripts/run-benchmarks.sh` to run them all. Measured
+  numbers, environment and methodology notes live in `docs/performance.md`
+  (the authoritative record with a dated archive); benchmark assertions only
+  guard order-of-magnitude regressions.
 - Game-data harvesting (P9): `get_game_info_batch` (up to 200 apps per batch,
   per-app errors isolated, shares the `game:{appId}:{cc}` cache tier with
   `get_game_info`) plus a crawl orchestration layer on the control plane —
