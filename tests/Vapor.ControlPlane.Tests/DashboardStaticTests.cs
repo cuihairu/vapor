@@ -55,6 +55,58 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public async Task GameDataHtml_IsServedWithoutAuth()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage response = await client.GetAsync("/gamedata.html");
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		string html = await response.Content.ReadAsStringAsync();
+		Assert.Contains("游戏数据字典", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/crawl/plans", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void GameDataHtml_ContainsNoWriteVerbs()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/gamedata.html"));
+
+		// Same read-only contract as the dashboard: the game-data page may only
+		// GET; crawl plans are triggered through the admin REST surface.
+		Assert.DoesNotContain("POST", html, StringComparison.Ordinal);
+		Assert.DoesNotContain("PUT", html, StringComparison.Ordinal);
+		Assert.DoesNotContain("DELETE", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void GameDataHtml_LinksWithBothConsoles()
+	{
+		string gamedata = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/gamedata.html"));
+		string dashboard = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));
+		string admin = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		Assert.Contains("href=\"/dashboard.html\"", gamedata, StringComparison.Ordinal);
+		Assert.Contains("href=\"/admin.html\"", gamedata, StringComparison.Ordinal);
+		Assert.Contains("href=\"/gamedata.html\"", dashboard, StringComparison.Ordinal);
+		Assert.Contains("href=\"/gamedata.html\"", admin, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void GameDataHtml_DocumentsAllSixModels()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/gamedata.html"));
+
+		foreach (string model in new[] { "GameInfo", "PriceOverview", "GameSearchResult", "ItemInfo", "MarketListing", "MarketListingsPage" })
+		{
+			Assert.Contains(model, html, StringComparison.Ordinal);
+		}
+
+		Assert.Contains("get_game_info_batch", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task RootPath_RedirectsToAdminConsole()
 	{
 		await using var factory = CreateFactory();
@@ -93,7 +145,7 @@ public sealed class DashboardStaticTests
 				services.RemoveAll<IJobStore>();
 				services.RemoveAll<IAuditStore>();
 				services.RemoveAll<AccountStore>();
-				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, ":memory:", 300, false, ":memory:"));
+				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
 				services.AddSingleton<IJobStore>(sp => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();

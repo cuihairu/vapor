@@ -282,7 +282,7 @@ public sealed class ControlPlaneApiTests
 				services.RemoveAll<IEventBroker>();
 				services.RemoveAll<SessionTracker>();
 				services.RemoveAll<AuthChallengeTracker>();
-				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, "Data Source=:memory:", 300, false, ":memory:"));
+				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, "Data Source=:memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
 				services.AddSingleton<IJobStore>(JobStore ?? new FakeJobStore());
 				services.AddSingleton<IEventBroker>(Events);
 				services.AddSingleton<SessionTracker>();

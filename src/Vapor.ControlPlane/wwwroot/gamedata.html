@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vapor 游戏数据字典</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <style>
+        :root {
+            --bg: #eef3ea;
+            --surface: rgba(255, 252, 245, 0.92);
+            --surface-strong: #fffdf8;
+            --surface-muted: #f4efe4;
+            --border: rgba(61, 73, 45, 0.14);
+            --border-strong: rgba(61, 73, 45, 0.24);
+            --text: #25301f;
+            --text-muted: #65715c;
+            --primary: #325c42;
+            --primary-strong: #234332;
+            --success: #2f7d4d;
+            --warning: #a86c12;
+            --danger: #b2473e;
+            --shadow: 0 18px 40px rgba(42, 56, 34, 0.12);
+            --radius-lg: 24px;
+            --radius-md: 16px;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text);
+            background:
+                radial-gradient(circle at top left, rgba(152, 180, 114, 0.25), transparent 28%),
+                radial-gradient(circle at top right, rgba(201, 167, 104, 0.20), transparent 32%),
+                linear-gradient(180deg, var(--bg) 0%, #f6f4ed 48%, #edf2e7 100%);
+            font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        }
+
+        .container {
+            width: min(1520px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 28px 0 40px;
+        }
+
+        .hero {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 22px;
+            padding: 26px 28px;
+            border: 1px solid var(--border);
+            border-radius: 30px;
+            box-shadow: var(--shadow);
+            background: linear-gradient(135deg, rgba(250, 247, 239, 0.94), rgba(239, 245, 232, 0.96)), var(--surface);
+        }
+
+        .eyebrow {
+            margin-bottom: 10px;
+            color: var(--text-muted);
+            font-size: 12px;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .hero h1 {
+            margin: 0;
+            font-size: clamp(28px, 3.6vw, 40px);
+            line-height: 1;
+            letter-spacing: -0.04em;
+            color: var(--primary-strong);
+        }
+
+        .hero p {
+            margin: 12px 0 0;
+            max-width: 680px;
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        .hero-side {
+            display: grid;
+            gap: 10px;
+            min-width: 300px;
+        }
+
+        .token-box {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.62);
+            border: 1px solid var(--border);
+        }
+
+        .token-box input {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 9px 12px;
+            font-size: 13px;
+            background: var(--surface-strong);
+            color: var(--text);
+        }
+
+        .btn {
+            border: 1px solid var(--border-strong);
+            border-radius: 12px;
+            background: var(--primary);
+            color: #fffdf8;
+            padding: 9px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .nav-link {
+            justify-self: start;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 14px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.78);
+            color: var(--primary);
+            font-size: 13px;
+            text-decoration: none;
+            transition: transform 0.16s ease, border-color 0.16s ease;
+        }
+
+        .nav-link:hover { transform: translateY(-1px); border-color: var(--primary); }
+
+        .panel {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            background: var(--surface);
+            box-shadow: var(--shadow);
+            padding: 20px 22px;
+            margin-bottom: 22px;
+        }
+
+        .panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 14px;
+        }
+
+        .panel-head h2 { margin: 0; font-size: 20px; color: var(--primary-strong); letter-spacing: -0.02em; }
+        .panel-head .hint { color: var(--text-muted); font-size: 13px; }
+
+        .table-wrap { overflow-x: auto; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+        }
+
+        th {
+            text-align: left;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 12px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-strong);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 9px 10px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        tr.clickable { cursor: pointer; }
+        tr.clickable:hover td { background: rgba(50, 92, 66, 0.06); }
+        tr.selected td { background: rgba(50, 92, 66, 0.12); }
+
+        .mono {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 12.5px;
+        }
+
+        .muted { color: var(--text-muted); }
+        .tiny { font-size: 12px; color: var(--text-muted); }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            border: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.7);
+            color: var(--text-muted);
+        }
+
+        .badge.ok { color: var(--success); border-color: rgba(47, 125, 77, 0.4); }
+        .badge.bad { color: var(--danger); border-color: rgba(178, 71, 62, 0.4); }
+        .badge.warn { color: var(--warning); border-color: rgba(168, 108, 18, 0.4); }
+
+        .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+
+        .tab {
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.75);
+            color: var(--text-muted);
+            padding: 7px 14px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .tab.active { background: var(--primary); border-color: var(--primary); color: #fffdf8; }
+
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .filters input, .filters select {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 8px 10px;
+            font-size: 13px;
+            background: var(--surface-strong);
+            color: var(--text);
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .filters input { width: 150px; }
+        .filters .wide { width: 260px; font-family: inherit; }
+
+        .pager { display: flex; gap: 10px; align-items: center; margin-top: 12px; font-size: 13px; color: var(--text-muted); }
+
+        .empty-state {
+            padding: 24px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        details.json-view summary { cursor: pointer; color: var(--primary); font-size: 12.5px; }
+        details.json-view pre {
+            margin: 8px 0 0;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--surface-strong);
+            font-size: 12px;
+            max-width: 640px;
+            overflow: auto;
+        }
+
+        .notice {
+            border: 1px solid rgba(168, 108, 18, 0.35);
+            border-radius: var(--radius-md);
+            background: rgba(244, 226, 190, 0.45);
+            color: var(--text);
+            padding: 12px 16px;
+            font-size: 13.5px;
+            line-height: 1.6;
+            margin-bottom: 22px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <section class="hero">
+            <div>
+                <div class="eyebrow">Vapor · game data</div>
+                <h1>游戏数据字典与采集记录</h1>
+                <p>
+                    Vapor 的数据抓取底座覆盖 Steam 公开商店端点（应用详情、搜索、价格、市场挂单），
+                    匿名可达、不涉及任何账号凭证；多账号分片采集（crawl）把应用列表轮转分配给已入库账号，
+                    仅用于分摊频控与审计归属。本页只读：字段字典说明每个模型的语义、来源与缓存层级，
+                    下方展示采集计划、轮次与逐应用结果。
+                </p>
+            </div>
+            <div class="hero-side">
+                <div class="token-box">
+                    <input id="apiKeyInput" type="password" placeholder="管理员 API Key">
+                    <button class="btn" id="saveTokenButton">保存</button>
+                </div>
+                <a class="nav-link" href="/dashboard.html">→ 实时面板（dashboard.html）</a>
+                <a class="nav-link" href="/admin.html">→ 管理视图（admin.html）</a>
+            </div>
+        </section>
+
+        <div class="notice">
+            <strong>无凭证约束：</strong>商店端点匿名可达，采集不接触任何 secret；但分片任务经由常规作业队列派发，
+            <span class="mono">payload</span> 无凭证时 agent 一律回放该账号的已入库会话——
+            因此采集池内的账号必须先在某个 agent 完成登录入库，否则该账号的分片会失败（不影响其他分片）。
+        </div>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>数据来源与缓存层级</h2>
+                <span class="hint">fresh 为直接回缓存的有效期；stale 为过期后仍可返回旧值的窗口</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>action</th><th>Steam 端点</th><th>返回模型</th><th>fresh</th><th>stale</th><th>缓存键</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="mono">get_game_info</td><td class="mono">store.appdetails</td><td>GameInfo</td><td>30 分钟</td><td>2 小时</td><td class="mono">game:{appId}:{cc}</td></tr>
+                        <tr><td class="mono">get_game_info_batch</td><td class="mono">store.appdetails × N</td><td>GameInfo 数组</td><td>30 分钟</td><td>2 小时</td><td class="mono">与单应用共享</td></tr>
+                        <tr><td class="mono">search_games</td><td class="mono">storesearch</td><td>GameSearchResult 数组</td><td>1 小时</td><td>6 小时</td><td class="mono">search:{term}:{cc}</td></tr>
+                        <tr><td class="mono">get_price</td><td class="mono">store.appdetails（价格段）</td><td>PriceOverview</td><td>3 分钟</td><td>15 分钟</td><td class="mono">price:{appId}:{cc}</td></tr>
+                        <tr><td class="mono">get_market_listings</td><td class="mono">community market</td><td>MarketListingsPage</td><td>5 分钟</td><td>30 分钟</td><td class="mono">market:{appId}:{start}:{count}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="tiny" style="margin: 10px 0 0;">
+                载荷可用 <span class="mono">cache_ttl_seconds</span>（0 禁用缓存）与 <span class="mono">force_refresh</span> 覆盖默认层级；
+                自定义 fresh 的 stale 窗口为 4 倍。<span class="mono">ItemInfo</span>（市场单件检价）由交易与市场监控流程内部使用，不在公开 data action 里。
+            </p>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>字段字典</h2>
+                <span class="hint">JSON 键为 API 实际输出（camelCase）· 权威源 docs/data-dictionary.md</span>
+            </div>
+            <div class="tabs" id="modelTabs"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>字段</th><th>JSON 键</th><th>类型</th><th>语义</th></tr>
+                    </thead>
+                    <tbody id="dictionaryBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>采集计划</h2>
+                <span class="hint">点击行查看轮次 · 仅展示，触发走 REST</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>名称</th><th>计划 ID</th><th>应用数</th><th>账号池</th><th>分片</th><th>区域</th><th>调度</th><th>状态</th><th>下次触发</th><th>已跑轮次</th></tr>
+                    </thead>
+                    <tbody id="plansBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>轮次记录</h2>
+                <span class="hint" id="runsHint">未选择计划</span>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>轮次 ID</th><th>开始</th><th>最近结果</th><th>总数</th><th>成功</th><th>失败</th></tr>
+                    </thead>
+                    <tbody id="runsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-head">
+                <h2>结果浏览</h2>
+                <span class="hint">逐应用采集结果，data 列可展开原始 JSON</span>
+            </div>
+            <div class="filters">
+                <input id="filterPlanId" class="wide" placeholder="计划 ID（planId）">
+                <input id="filterRunId" placeholder="轮次 ID（runId）">
+                <input id="filterAppId" placeholder="AppID">
+                <input id="filterAccount" placeholder="账号">
+                <select id="filterOk">
+                    <option value="">全部结果</option>
+                    <option value="true">成功</option>
+                    <option value="false">失败</option>
+                </select>
+                <button class="btn" id="applyFiltersButton">查询</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr><th>时间</th><th>AppID</th><th>名称</th><th>账号</th><th>轮次</th><th>结果</th><th>data</th></tr>
+                    </thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+            <div class="pager">
+                <button class="btn" id="prevPageButton">上一页</button>
+                <button class="btn" id="nextPageButton">下一页</button>
+                <span id="pageInfo">-</span>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        "use strict";
+
+        const state = {
+            apiKey: localStorage.getItem("apiKey") || "",
+            models: [],
+            activeModel: "GameInfo",
+            selectedPlanId: null,
+            page: { limit: 20, offset: 0 }
+        };
+
+        // ── 字段字典（与 docs/data-dictionary.md 同步维护）──
+
+        const DICTIONARY = {
+            GameInfo: {
+                source: "get_game_info / get_game_info_batch",
+                fields: [
+                    ["AppId", "appId", "uint", "Steam AppID"],
+                    ["Name", "name", "string", "游戏显示名"],
+                    ["Type", "type", "string?", "内容类型：game / dlc / application / music 等"],
+                    ["Developer", "developer", "string?", "开发商（多个时合并）"],
+                    ["Publisher", "publisher", "string?", "发行商（多个时合并）"],
+                    ["ReleaseDate", "releaseDate", "datetime?", "发行时间（未知为空）"],
+                    ["IsFree", "isFree", "bool", "是否免费游玩"],
+                    ["RequiresPurchase", "requiresPurchase", "bool", "是否需要购买/订阅才能使用"],
+                    ["Price", "price", "PriceOverview?", "当前价格概览（见下方模型）"],
+                    ["MetacriticScore", "metacriticScore", "int?", "Metacritic 评分（缺失为空）"],
+                    ["RecommendationsTotal", "recommendationsTotal", "long?", "评测总数（好评+差评）"],
+                    ["Genres", "genres", "string[]", "类型标签（RPG、动作等）"],
+                    ["Categories", "categories", "string[]", "功能分类（单人/多人/云存档等）"],
+                    ["HeaderImage", "headerImage", "string?", "页头图 URL"],
+                    ["SmallCapsuleImage", "smallCapsuleImage", "string?", "小胶囊图 URL"],
+                    ["ShortDescription", "shortDescription", "string?", "简短描述（源侧已截断）"],
+                    ["SupportedLanguages", "supportedLanguages", "string?", "支持语言（Steam 原始逗号串）"],
+                    ["FetchedAt", "fetchedAt", "datetime", "快照抓取时间（缓存新鲜度标记）"]
+                ]
+            },
+            PriceOverview: {
+                source: "get_price / GameInfo.price",
+                fields: [
+                    ["Currency", "currency", "string", "币种代码（USD、CNY 等）"],
+                    ["Final", "final", "decimal?", "折后现价（主货币单位）"],
+                    ["Initial", "initial", "decimal?", "折扣前原价"],
+                    ["DiscountPercent", "discountPercent", "int", "折扣百分比（0-100）"],
+                    ["FinalFormatted", "finalFormatted", "string?", "Steam 返回的格式化现价（展示用）"]
+                ]
+            },
+            GameSearchResult: {
+                source: "search_games",
+                fields: [
+                    ["AppId", "appId", "uint", "Steam AppID"],
+                    ["Name", "name", "string", "游戏显示名"],
+                    ["Type", "type", "string?", "内容类型"],
+                    ["IsFree", "isFree", "bool", "是否免费"],
+                    ["Price", "price", "PriceOverview?", "价格概览（搜索结果可能缺省）"],
+                    ["HeaderImage", "headerImage", "string?", "页头图 URL"],
+                    ["FetchedAt", "fetchedAt", "datetime", "快照抓取时间"]
+                ]
+            },
+            ItemInfo: {
+                source: "市场单件检价（交易/市场监控内部使用）",
+                fields: [
+                    ["AppId", "appId", "uint", "物品所属应用"],
+                    ["MarketHashName", "marketHashName", "string", "市场哈希名（物品类唯一标识）"],
+                    ["Name", "name", "string?", "显示名"],
+                    ["Type", "type", "string?", "物品类型描述"],
+                    ["IconUrl", "iconUrl", "string?", "图标 URL"],
+                    ["LowestPrice", "lowestPrice", "decimal?", "市场当前最低挂单价"],
+                    ["MedianPrice", "medianPrice", "decimal?", "成交中位价"],
+                    ["Currency", "currency", "string", "上方价格的币种"],
+                    ["Volume24h", "volume24h", "int?", "24 小时成交量（可得时）"],
+                    ["FetchedAt", "fetchedAt", "datetime", "快照抓取时间"]
+                ]
+            },
+            MarketListing: {
+                source: "get_market_listings",
+                fields: [
+                    ["ListingId", "listingId", "ulong", "挂单 ID（搜索聚合结果为 0）"],
+                    ["Name", "name", "string?", "物品显示名"],
+                    ["HashName", "hashName", "string?", "市场哈希名（搜索聚合的稳定标识）"],
+                    ["SellListings", "sellListings", "int?", "搜索聚合背后的在售挂单数"],
+                    ["AppId", "appId", "uint", "所属应用"],
+                    ["AssetId", "assetId", "ulong", "资产 ID（搜索聚合为 0）"],
+                    ["ClassId", "classId", "ulong", "类别 ID（映射物品描述）"],
+                    ["InstanceId", "instanceId", "ulong", "实例 ID"],
+                    ["TotalPrice", "totalPrice", "decimal?", "买方到手总价（含手续费）"],
+                    ["CurrencyId", "currencyId", "int?", "Steam 币种 ID（如 2001 = USD）"],
+                    ["FetchedAt", "fetchedAt", "datetime", "快照抓取时间"]
+                ]
+            },
+            MarketListingsPage: {
+                source: "get_market_listings",
+                fields: [
+                    ["AppId", "appId", "uint", "所属应用"],
+                    ["Listings", "listings", "MarketListing[]", "本页挂单列表"],
+                    ["TotalCount", "totalCount", "int", "符合查询的挂单总数"],
+                    ["Start", "start", "int", "本页起始偏移"],
+                    ["PageSize", "pageSize", "int", "页大小"],
+                    ["HasMore", "hasMore", "bool", "是否还有下一页"]
+                ]
+            }
+        };
+
+        // ── 基础工具 ──
+
+        function authHeaders() {
+            return state.apiKey ? { "Authorization": `Bearer ${state.apiKey}` } : {};
+        }
+
+        async function apiFetch(path) {
+            const response = await fetch(path, { headers: authHeaders() });
+            if (!response.ok) {
+                const detail = await response.text().catch(() => "");
+                throw new Error(`HTTP ${response.status} ${detail.slice(0, 200)}`);
+            }
+            return response.json();
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? "")
+                .replaceAll("&", "&amp;")
+                .replaceAll("<", "&lt;")
+                .replaceAll(">", "&gt;")
+                .replaceAll('"', "&quot;")
+                .replaceAll("'", "&#39;");
+        }
+
+        function shortId(value) {
+            if (!value) { return "-"; }
+            return value.length > 12 ? `${value.slice(0, 10)}…` : value;
+        }
+
+        function formatDate(value) {
+            if (!value) { return "-"; }
+            return new Date(value).toLocaleString("zh-CN", { hour12: false });
+        }
+
+        // ── 字段字典渲染 ──
+
+        function renderModelTabs() {
+            const tabs = document.getElementById("modelTabs");
+            tabs.innerHTML = Object.keys(DICTIONARY).map((name) =>
+                `<button class="tab${name === state.activeModel ? " active" : ""}" data-model="${name}">${name}</button>`
+            ).join("");
+            tabs.querySelectorAll(".tab").forEach((tab) => {
+                tab.addEventListener("click", () => {
+                    state.activeModel = tab.dataset.model;
+                    renderDictionary();
+                });
+            });
+        }
+
+        function renderDictionary() {
+            const model = DICTIONARY[state.activeModel];
+            document.getElementById("dictionaryBody").innerHTML = model.fields.map(([field, key, type, meaning]) =>
+                `<tr>
+                    <td class="mono">${escapeHtml(field)}</td>
+                    <td class="mono">${escapeHtml(key)}</td>
+                    <td class="mono muted">${escapeHtml(type)}</td>
+                    <td>${escapeHtml(meaning)}</td>
+                </tr>`
+            ).join("");
+            renderModelTabs();
+        }
+
+        // ── 计划 / 轮次 / 结果 ──
+
+        function describeSchedule(plan) {
+            if (plan.cron) { return `cron ${plan.cron}`; }
+            if (plan.intervalSeconds > 0) { return `每 ${plan.intervalSeconds}s`; }
+            return "一次性";
+        }
+
+        async function loadPlans() {
+            const data = await apiFetch("/v1/crawl/plans");
+            const body = document.getElementById("plansBody");
+            if (!data.plans.length) {
+                body.innerHTML = `<tr><td colspan="10"><div class="empty-state">暂无采集计划（REST 创建）</div></td></tr>`;
+                return;
+            }
+            body.innerHTML = data.plans.map((plan) => {
+                const accounts = (plan.accounts && plan.accounts.length) ? plan.accounts.join(", ") : "全部启用账号";
+                const pool = plan.enabled
+                    ? `<span class="badge ok">启用</span>`
+                    : `<span class="badge bad">停用</span>`;
+                return `<tr class="clickable${plan.id === state.selectedPlanId ? " selected" : ""}" data-plan="${escapeHtml(plan.id)}">
+                    <td class="strong">${escapeHtml(plan.name)}</td>
+                    <td class="mono" title="${escapeHtml(plan.id)}">${escapeHtml(shortId(plan.id))}</td>
+                    <td>${(plan.appIds || []).length}</td>
+                    <td>${escapeHtml(accounts)}</td>
+                    <td>${plan.shardSize ?? "-"}</td>
+                    <td class="mono">${escapeHtml(plan.cc || "-")}</td>
+                    <td>${escapeHtml(describeSchedule(plan))}</td>
+                    <td>${pool}</td>
+                    <td class="tiny">${escapeHtml(formatDate(plan.nextRunAt))}</td>
+                    <td>${plan.runCount ?? 0}</td>
+                </tr>`;
+            }).join("");
+            body.querySelectorAll("tr.clickable").forEach((row) => {
+                row.addEventListener("click", () => {
+                    state.selectedPlanId = row.dataset.plan;
+                    document.getElementById("filterPlanId").value = state.selectedPlanId;
+                    state.page.offset = 0;
+                    loadRuns();
+                    loadResults();
+                    loadPlans().catch(() => {});
+                });
+            });
+        }
+
+        async function loadRuns() {
+            const body = document.getElementById("runsBody");
+            const hint = document.getElementById("runsHint");
+            if (!state.selectedPlanId) {
+                hint.textContent = "未选择计划";
+                body.innerHTML = `<tr><td colspan="6"><div class="empty-state">在“采集计划”中点击一个计划</div></td></tr>`;
+                return;
+            }
+            hint.textContent = `计划 ${shortId(state.selectedPlanId)}`;
+            const data = await apiFetch(`/v1/crawl/plans/${encodeURIComponent(state.selectedPlanId)}/runs`);
+            if (!data.runs.length) {
+                body.innerHTML = `<tr><td colspan="6"><div class="empty-state">该计划尚无轮次记录</div></td></tr>`;
+                return;
+            }
+            body.innerHTML = data.runs.map((run) => `<tr>
+                <td class="mono" title="${escapeHtml(run.runId)}">${escapeHtml(shortId(run.runId))}</td>
+                <td class="tiny">${escapeHtml(formatDate(run.startedAt))}</td>
+                <td class="tiny">${escapeHtml(formatDate(run.finishedAt))}</td>
+                <td>${run.total}</td>
+                <td>${run.ok}</td>
+                <td>${run.failed > 0 ? `<span class="badge bad">${run.failed}</span>` : `<span class="badge ok">0</span>`}</td>
+            </tr>`).join("");
+        }
+
+        function filtersQuery() {
+            const params = new URLSearchParams();
+            const planId = document.getElementById("filterPlanId").value.trim();
+            const runId = document.getElementById("filterRunId").value.trim();
+            const appId = document.getElementById("filterAppId").value.trim();
+            const account = document.getElementById("filterAccount").value.trim();
+            const ok = document.getElementById("filterOk").value;
+            if (planId) { params.set("planId", planId); }
+            if (runId) { params.set("runId", runId); }
+            if (appId) { params.set("appId", appId); }
+            if (account) { params.set("account", account); }
+            if (ok !== "") { params.set("ok", ok); }
+            params.set("limit", String(state.page.limit));
+            params.set("offset", String(state.page.offset));
+            return params.toString();
+        }
+
+        async function loadResults() {
+            const body = document.getElementById("resultsBody");
+            const data = await apiFetch(`/v1/crawl/results?${filtersQuery()}`);
+            const pageInfo = document.getElementById("pageInfo");
+            pageInfo.textContent = `第 ${state.page.offset + 1}-${state.page.offset + data.results.length} 条 / 共 ${data.total} 条`;
+            if (!data.results.length) {
+                body.innerHTML = `<tr><td colspan="7"><div class="empty-state">没有匹配的采集结果</div></td></tr>`;
+                return;
+            }
+            body.innerHTML = data.results.map((row) => {
+                const badge = row.ok
+                    ? `<span class="badge ok">成功</span>`
+                    : `<span class="badge bad" title="${escapeHtml(row.error || "")}">失败</span>`;
+                const name = row.data && row.data.name ? row.data.name : "-";
+                const json = row.data
+                    ? `<details class="json-view"><summary>查看 JSON</summary><pre>${escapeHtml(JSON.stringify(row.data, null, 2))}</pre></details>`
+                    : `<span class="tiny muted">${escapeHtml(row.error || "-")}</span>`;
+                return `<tr>
+                    <td class="tiny">${escapeHtml(formatDate(row.fetchedAt))}</td>
+                    <td class="mono">${row.appId}</td>
+                    <td>${escapeHtml(name)}</td>
+                    <td>${escapeHtml(row.account || "-")}</td>
+                    <td class="mono" title="${escapeHtml(row.runId)}">${escapeHtml(shortId(row.runId))}</td>
+                    <td>${badge}</td>
+                    <td>${json}</td>
+                </tr>`;
+            }).join("");
+        }
+
+        // ── 启动与轮询 ──
+
+        function saveToken() {
+            const nextKey = document.getElementById("apiKeyInput").value.trim();
+            state.apiKey = nextKey;
+            localStorage.setItem("apiKey", nextKey);
+            refreshAll().catch(() => {});
+        }
+
+        async function refreshAll() {
+            await loadPlans();
+            await loadRuns();
+            await loadResults();
+        }
+
+        document.getElementById("saveTokenButton").addEventListener("click", saveToken);
+        document.getElementById("apiKeyInput").addEventListener("keydown", (event) => {
+            if (event.key === "Enter") { saveToken(); }
+        });
+        document.getElementById("applyFiltersButton").addEventListener("click", () => {
+            state.page.offset = 0;
+            loadResults().catch(() => {});
+        });
+        document.getElementById("prevPageButton").addEventListener("click", () => {
+            state.page.offset = Math.max(0, state.page.offset - state.page.limit);
+            loadResults().catch(() => {});
+        });
+        document.getElementById("nextPageButton").addEventListener("click", () => {
+            state.page.offset += state.page.limit;
+            loadResults().catch(() => {});
+        });
+
+        if (state.apiKey) {
+            document.getElementById("apiKeyInput").value = state.apiKey;
+        }
+
+        renderDictionary();
+        refreshAll().catch(() => {});
+        setInterval(() => refreshAll().catch(() => {}), 30000);
+    </script>
+</body>
+</html>

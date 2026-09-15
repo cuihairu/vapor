@@ -20,7 +20,14 @@ public sealed record Config(
 	string? WebhookNotificationsSecret = null,
 	string? WebhookNotificationsEvents = null,
 	int WebhookNotificationsMaxRetries = 3,
-	int WebhookNotificationsRetryBaseDelayMs = 500
+	int WebhookNotificationsRetryBaseDelayMs = 500,
+	string CrawlDbPath = "data/crawl.db",
+	int CrawlWorkerTickSeconds = 5,
+	int CrawlKeepRuns = 10,
+	int CrawlMaxAppsPerPlan = 500,
+	int CrawlMaxAppsPerTask = 200,
+	int CrawlRunTimeoutSeconds = 1800,
+	int CrawlIntervalMs = 500
 )
 {
 	/// <summary>Max dispatch attempts per task before it fails permanently; 0 or less means unlimited retries.</summary>
@@ -48,6 +55,13 @@ public sealed record Config(
 		string? webhookEvents = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_EVENTS");
 		int webhookMaxRetries = int.TryParse(Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_MAX_RETRIES"), out int whRetries) && whRetries >= 0 ? whRetries : 3;
 		int webhookRetryBaseDelayMs = int.TryParse(Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_RETRY_BASE_DELAY_MS"), out int whDelayMs) && whDelayMs >= 0 ? whDelayMs : 500;
+		string crawlDbPath = Environment.GetEnvironmentVariable("Vapor_CRAWL_DB_PATH") ?? "data/crawl.db";
+		int crawlWorkerTickSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_WORKER_TICK_SECONDS"), out int crawlTick) ? crawlTick : 5;
+		int crawlKeepRuns = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_KEEP_RUNS"), out int crawlKeep) && crawlKeep > 0 ? crawlKeep : 10;
+		int crawlMaxAppsPerPlan = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_MAX_APPS_PER_PLAN"), out int crawlAppsPerPlan) && crawlAppsPerPlan > 0 ? crawlAppsPerPlan : 500;
+		int crawlMaxAppsPerTask = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_MAX_APPS_PER_TASK"), out int crawlAppsPerTask) && crawlAppsPerTask > 0 ? crawlAppsPerTask : 200;
+		int crawlRunTimeoutSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_RUN_TIMEOUT_SECONDS"), out int crawlRunTimeout) && crawlRunTimeout > 0 ? crawlRunTimeout : 1800;
+		int crawlIntervalMs = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_INTERVAL_MS"), out int crawlInterval) && crawlInterval >= 0 ? crawlInterval : 500;
 
 		HashSet<string> agentApiKeys = new(StringComparer.Ordinal);
 		foreach (string key in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -59,7 +73,7 @@ public sealed record Config(
 			agentApiKeys.Add(key);
 		}
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs);
 	}
 }
 

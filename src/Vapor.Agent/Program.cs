@@ -128,6 +128,9 @@ serviceCollection
 	.AddSingleton<GetGameInfoAction>(p => new GetGameInfoAction(
 		p.GetRequiredService<ILogger<GetGameInfoAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
+	.AddSingleton<GetGameInfoBatchAction>(p => new GetGameInfoBatchAction(
+		p.GetRequiredService<ILogger<GetGameInfoBatchAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
 	.AddSingleton<SearchGamesAction>(p => new SearchGamesAction(
 		p.GetRequiredService<ILogger<SearchGamesAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
@@ -200,6 +203,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<AddLicenseAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetPointsShopSummaryAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<ClaimPointsShopItemsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoBatchAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SearchGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetPriceAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetMarketListingsAction>());

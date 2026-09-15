@@ -159,7 +159,7 @@ public sealed class AuditApiTests
 			{
 				services.RemoveAll<IJobStore>();
 				services.RemoveAll<IAuditStore>();
-				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, ":memory:", 300, false, ":memory:"));
+				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
 				services.AddSingleton<IJobStore>(sp => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(":memory:"));
 			});

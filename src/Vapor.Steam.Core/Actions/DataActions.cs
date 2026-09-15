@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Caching;
@@ -161,6 +162,219 @@ public sealed class GetGameInfoAction : StoreDataActionBase, IAction
 		catch (Exception ex)
 		{
 			_logger.LogError(ex, "Failed to get game info for app {AppId}", appId);
+			return new ActionResult(false, ex.Message, null);
+		}
+	}
+}
+
+/// <summary>
+/// Action to fetch Steam store details for a batch of apps in one task.
+/// Per-app failures are reported in <c>errors</c> without aborting the rest
+/// (confirm_all semantics); the batch succeeds if at least one app resolves.
+/// </summary>
+public sealed class GetGameInfoBatchAction : StoreDataActionBase, IAction
+{
+	internal const int MaxAppsPerBatch = 200;
+	private const int DefaultIntervalMs = 500;
+	private const int MaxIntervalMs = 5000;
+
+	private readonly ILogger<GetGameInfoBatchAction> _logger;
+	private readonly Func<TimeSpan, Task> _delay;
+
+	public GetGameInfoBatchAction(ILogger<GetGameInfoBatchAction> logger, IVaporCache? cache = null)
+		: this(logger, static webHandler => new SteamStoreApiClient(webHandler, NullLogger<SteamStoreApiClient>.Instance), cache)
+	{
+	}
+
+	internal GetGameInfoBatchAction(
+		ILogger<GetGameInfoBatchAction> logger,
+		Func<SteamWebHandler, ISteamStoreApiClient> storeClientFactory,
+		IVaporCache? cache = null,
+		Func<TimeSpan, Task>? delay = null)
+		: base(storeClientFactory, cache)
+	{
+		_logger = logger;
+		_delay = delay ?? DefaultDelay;
+	}
+
+	private static Task DefaultDelay(TimeSpan span) => Task.Delay(span);
+
+	public string Name => "get_game_info_batch";
+
+	public ActionMetadata Metadata => new ActionMetadata(
+		Name,
+		"Fetch Steam store details for a batch of apps (per-app errors do not abort the batch)",
+		RequiresLogin: false,
+		TimeoutSeconds: 240
+	);
+
+	/// <summary>
+	/// Parses <c>app_ids</c> from a CSV string, an in-memory list, or a JSON array
+	/// (numbers or strings — payload values become JsonElements after the
+	/// WS/SQLite round-trip). Zero or unparsable entries fail with an error.
+	/// </summary>
+	internal static bool TryParseAppIds(object? raw, out List<uint> appIds, out string? error)
+	{
+		appIds = new List<uint>();
+		error = null;
+
+		IEnumerable<object?>? items = raw switch
+		{
+			string csv when !string.IsNullOrWhiteSpace(csv) => csv.Split(','),
+			JsonElement { ValueKind: JsonValueKind.Array } array => array.EnumerateArray().Cast<object?>().ToList(),
+			IEnumerable<object?> list => list.ToList(),
+			_ => null
+		};
+
+		if (items == null)
+		{
+			error = "app_ids is required";
+			return false;
+		}
+
+		foreach (object? item in items)
+		{
+			string? text = item switch
+			{
+				string s => s.Trim(),
+				JsonElement { ValueKind: JsonValueKind.Number } n => n.GetRawText(),
+				JsonElement { ValueKind: JsonValueKind.String } s => s.GetString(),
+				byte or sbyte or short or ushort or int or uint or long or ulong => item.ToString(),
+				_ => null
+			};
+
+			if (string.IsNullOrEmpty(text) || !uint.TryParse(text, out uint appId) || appId == 0)
+			{
+				error = $"invalid app_ids entry '{item}'";
+				return false;
+			}
+
+			appIds.Add(appId);
+		}
+
+		if (appIds.Count == 0)
+		{
+			error = "app_ids is required";
+			return false;
+		}
+
+		if (appIds.Count > MaxAppsPerBatch)
+		{
+			error = $"app_ids exceeds the batch limit of {MaxAppsPerBatch}";
+			return false;
+		}
+
+		return true;
+	}
+
+	public async Task<ActionResult> ExecuteAsync(
+		BotSession session,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		PayloadReader.TryGetValue(payload, "app_ids", out object? rawAppIds);
+		if (!TryParseAppIds(rawAppIds, out List<uint> appIds, out string? parseError))
+		{
+			return new ActionResult(false, parseError, null);
+		}
+
+		var country = PayloadReader.GetString(payload, "cc") ?? "us";
+		int intervalMs = Math.Clamp(PayloadReader.GetInt32(payload, "interval_ms") ?? DefaultIntervalMs, 0, MaxIntervalMs);
+		TimeSpan? ttlOverride = ResolveTtlOverride(payload, out bool disableCache);
+		bool forceRefresh = ResolveForceRefresh(payload);
+
+		try
+		{
+			var client = CreateClient(session);
+			var games = new List<GameInfo>();
+			var errors = new List<Dictionary<string, object?>>();
+
+			for (int i = 0; i < appIds.Count; i++)
+			{
+				cancellationToken.ThrowIfCancellationRequested();
+				uint appId = appIds[i];
+				bool fetchedFromSteam = false;
+				string? storeError = null;
+				string cacheKey = $"{GameInfo.CacheKey(appId)}:{country.ToLowerInvariant()}";
+
+				GameInfo? game = await FetchCachedAsync(
+					disableCache,
+					forceRefresh,
+					cacheKey,
+					SteamCacheTtl.GameInfo,
+					SteamCacheTtl.GameInfoStale,
+					ttlOverride,
+					async ct =>
+					{
+						fetchedFromSteam = true;
+						try
+						{
+							return await client.GetGameInfoAsync(appId, country, ct).ConfigureAwait(false);
+						}
+						catch (Exception ex) when (ex is not OperationCanceledException)
+						{
+							// One unreachable app must not abort the batch.
+							storeError = ex.Message;
+							return null;
+						}
+					},
+					cancellationToken).ConfigureAwait(false);
+
+				if (game == null)
+				{
+					errors.Add(new Dictionary<string, object?>
+					{
+						["app_id"] = appId,
+						["error"] = storeError ?? $"Game {appId} not found or store request failed"
+					});
+				}
+				else
+				{
+					games.Add(game);
+				}
+
+				// Pacing only around real store requests: cache hits (including
+				// SWR-stale serves) skip the gap entirely.
+				if (fetchedFromSteam && i < appIds.Count - 1)
+				{
+					await _delay(TimeSpan.FromMilliseconds(intervalMs)).ConfigureAwait(false);
+				}
+			}
+
+			_logger.LogInformation(
+				"Batch game info: {Fetched}/{Total} fetched, {Failed} failed (cc={Country})",
+				games.Count, appIds.Count, errors.Count, country);
+
+			if (games.Count == 0)
+			{
+				return new ActionResult(false, $"all {appIds.Count} apps failed", new Dictionary<string, object?>
+				{
+					["total_count"] = appIds.Count,
+					["fetched"] = 0,
+					["failed"] = errors.Count,
+					["games"] = games,
+					["errors"] = errors,
+					["cc"] = country
+				});
+			}
+
+			return new ActionResult(true, null, new Dictionary<string, object?>
+			{
+				["total_count"] = appIds.Count,
+				["fetched"] = games.Count,
+				["failed"] = errors.Count,
+				["games"] = games,
+				["errors"] = errors,
+				["cc"] = country
+			});
+		}
+		catch (InvalidOperationException) when (session.SteamWebHandler == null)
+		{
+			return new ActionResult(false, "Steam web handler not available", null);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogError(ex, "Batch game info failed with an unexpected error");
 			return new ActionResult(false, ex.Message, null);
 		}
 	}

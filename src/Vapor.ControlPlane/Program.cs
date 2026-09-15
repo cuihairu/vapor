@@ -42,6 +42,9 @@ builder.Services.AddSingleton<DesiredStateReconciler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateReconciler>());
 builder.Services.AddSingleton<RecurringJobScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RecurringJobScheduler>());
+builder.Services.AddSingleton<SqliteCrawlStore>(sp => new SqliteCrawlStore(sp.GetRequiredService<Config>().CrawlDbPath));
+builder.Services.AddSingleton<CrawlRunWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<CrawlRunWorker>());
 
 // Notification sinks: wired only when at least one delivery target is configured.
 if (!string.IsNullOrWhiteSpace(startupConfig.WebhookNotificationsUrl))
@@ -129,7 +132,7 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, RecurringJobScheduler recurringJobs, IEnumerable<INotificationSink> notificationSinks) =>
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, RecurringJobScheduler recurringJobs, CrawlRunWorker crawl, IEnumerable<INotificationSink> notificationSinks) =>
 {
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
@@ -177,6 +180,23 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 	sb.Append("vapor_controlplane_schedule_triggers_total{outcome=\"overlap_skipped\"} ").Append(recurringJobs.SkippedOverlaps).Append('\n');
 	sb.Append("vapor_controlplane_schedule_triggers_total{outcome=\"missed_skipped\"} ").Append(recurringJobs.MissedDropped).Append('\n');
 	sb.Append("vapor_controlplane_schedule_triggers_total{outcome=\"missed_catchup\"} ").Append(recurringJobs.MissedCatchUps).Append('\n');
+
+	sb.Append("# HELP vapor_controlplane_crawl_runs_total Crawl run outcomes since startup.\n");
+	sb.Append("# TYPE vapor_controlplane_crawl_runs_total counter\n");
+	sb.Append("vapor_controlplane_crawl_runs_total{outcome=\"triggered\"} ").Append(crawl.RunsTriggered).Append('\n');
+	sb.Append("vapor_controlplane_crawl_runs_total{outcome=\"completed\"} ").Append(crawl.RunsCompleted).Append('\n');
+	sb.Append("vapor_controlplane_crawl_runs_total{outcome=\"failed\"} ").Append(crawl.RunsFailed).Append('\n');
+	sb.Append("vapor_controlplane_crawl_runs_total{outcome=\"timeout\"} ").Append(crawl.RunsTimedOut).Append('\n');
+	sb.Append("# HELP vapor_controlplane_crawl_apps_total Crawl per-app outcomes persisted since startup.\n");
+	sb.Append("# TYPE vapor_controlplane_crawl_apps_total counter\n");
+	sb.Append("vapor_controlplane_crawl_apps_total{outcome=\"ok\"} ").Append(crawl.AppsSucceeded).Append('\n');
+	sb.Append("vapor_controlplane_crawl_apps_total{outcome=\"failed\"} ").Append(crawl.AppsFailed).Append('\n');
+	sb.Append("# HELP vapor_controlplane_crawl_tasks_dispatched get_game_info_batch jobs dispatched for crawl runs.\n");
+	sb.Append("# TYPE vapor_controlplane_crawl_tasks_dispatched counter\n");
+	sb.Append("vapor_controlplane_crawl_tasks_dispatched ").Append(crawl.TasksDispatched).Append('\n');
+	sb.Append("# HELP vapor_controlplane_crawl_overlap_skips Ticks skipped because the plan's previous run was still in flight.\n");
+	sb.Append("# TYPE vapor_controlplane_crawl_overlap_skips counter\n");
+	sb.Append("vapor_controlplane_crawl_overlap_skips ").Append(crawl.OverlapSkips).Append('\n');
 
 	foreach (INotificationSink sink in notificationSinks)
 	{
@@ -2162,6 +2182,283 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 	.Produces<ErrorResponse>(400)
 	.Produces<ErrorResponse>(401);
 
+// ── Crawl (game-data harvesting: shard app lists over account pools, persist per-app outcomes) ──
+
+app.MapGet("/v1/crawl/plans", async (HttpContext ctx, Config cfg, SqliteCrawlStore crawl) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	return Results.Ok(new { plans = await crawl.ListPlansAsync(ctx.RequestAborted) });
+})
+	.WithTags("Crawl")
+	.WithSummary("List all crawl plans")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
+
+app.MapPost("/v1/crawl/plans", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	IAuditStore audit,
+	AccountStore accounts,
+	SqliteCrawlStore crawl,
+	CreateCrawlPlanRequest req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	string? validationError = ValidateCrawlPlanRequest(req, cfg, accounts);
+	if (validationError != null)
+	{
+		return Results.BadRequest(new ErrorResponse(validationError));
+	}
+
+	// One-shots are always due immediately; recurring plans honor StartNow=false
+	// to arm the schedule without an immediate first run.
+	bool oneShot = string.IsNullOrWhiteSpace(req.Cron) && req.IntervalSeconds is null or <= 0;
+	DateTimeOffset now = DateTimeOffset.UtcNow;
+	DateTimeOffset? nextRun = oneShot || req.StartNow != false ? now : null;
+
+	CrawlPlan plan = BuildCrawlPlan(req, cfg, Id.New(), now, now, runCount: 0, lastRunId: null, lastRunAt: null, nextRun);
+
+	await crawl.UpsertPlanAsync(plan, ctx.RequestAborted);
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"crawl.plan.created",
+		details: new Dictionary<string, object?>
+		{
+			["planId"] = plan.Id,
+			["name"] = plan.Name,
+			["apps"] = plan.AppIds.Count,
+			["accounts"] = plan.Accounts,
+			["cron"] = plan.Cron,
+			["intervalSeconds"] = plan.IntervalSeconds
+		});
+
+	return Results.Accepted($"/v1/crawl/plans/{plan.Id}", plan);
+})
+	.WithTags("Crawl")
+	.WithSummary("Create a crawl plan (one-shot by default; optionally recurring via cron or intervalSeconds)")
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
+
+app.MapGet("/v1/crawl/plans/{id}", async Task<IResult> (HttpContext ctx, Config cfg, SqliteCrawlStore crawl, string id) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	CrawlPlan? plan = await crawl.GetPlanAsync(id, ctx.RequestAborted);
+	return plan == null ? Results.NotFound(new ErrorResponse("crawl plan not found")) : Results.Ok(plan);
+})
+	.WithTags("Crawl")
+	.WithSummary("Get one crawl plan")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPut("/v1/crawl/plans/{id}", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	IAuditStore audit,
+	AccountStore accounts,
+	SqliteCrawlStore crawl,
+	string id,
+	UpdateCrawlPlanRequest req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	CrawlPlan? existing = await crawl.GetPlanAsync(id, ctx.RequestAborted);
+	if (existing == null)
+	{
+		return Results.NotFound(new ErrorResponse("crawl plan not found"));
+	}
+
+	// Merge onto the current definition: null/omitted fields keep their values,
+	// so a rename never silently rewrites the app list.
+	var merged = new CreateCrawlPlanRequest(
+		Name: req.Name ?? existing.Name,
+		AppIds: req.AppIds ?? existing.AppIds.Select(a => a.ToString()).ToList(),
+		Accounts: req.Accounts ?? existing.Accounts?.ToList(),
+		Overrides: req.Overrides ?? (existing.Overrides is { Count: > 0 } existingOverrides
+			? existingOverrides.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value)
+			: null),
+		ShardSize: req.ShardSize ?? existing.ShardSize,
+		IntervalMs: req.IntervalMs ?? existing.IntervalMs,
+		Cc: req.Cc ?? existing.Cc,
+		Cron: req.Cron ?? existing.Cron,
+		IntervalSeconds: req.IntervalSeconds ?? existing.IntervalSeconds,
+		StartNow: req.StartNow,
+		Enabled: req.Enabled ?? existing.Enabled);
+
+	string? validationError = ValidateCrawlPlanRequest(merged, cfg, accounts);
+	if (validationError != null)
+	{
+		return Results.BadRequest(new ErrorResponse(validationError));
+	}
+
+	DateTimeOffset now = DateTimeOffset.UtcNow;
+	DateTimeOffset? nextRun = existing.NextRunAt;
+	if (req.StartNow == true)
+	{
+		nextRun = now; // explicit re-arm; StartNow=false keeps the current cursor
+	}
+
+	CrawlPlan updated = BuildCrawlPlan(
+		merged, cfg, existing.Id, existing.CreatedAt, now,
+		existing.RunCount, existing.LastRunId, existing.LastRunAt, nextRun);
+
+	await crawl.UpsertPlanAsync(updated, ctx.RequestAborted);
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"crawl.plan.updated",
+		details: new Dictionary<string, object?> { ["planId"] = updated.Id, ["enabled"] = updated.Enabled });
+
+	return Results.Ok(updated);
+})
+	.WithTags("Crawl")
+	.WithSummary("Update a crawl plan (omitted fields keep their current values)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapDelete("/v1/crawl/plans/{id}", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, SqliteCrawlStore crawl, string id) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	bool deleted = await crawl.DeletePlanAsync(id, ctx.RequestAborted);
+	if (!deleted)
+	{
+		return Results.NotFound(new ErrorResponse("crawl plan not found"));
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"crawl.plan.deleted",
+		details: new Dictionary<string, object?> { ["planId"] = id, ["resultsKept"] = true });
+
+	return Results.NoContent();
+})
+	.WithTags("Crawl")
+	.WithSummary("Delete a crawl plan (persisted results are kept)")
+	.Produces(204)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPost("/v1/crawl/plans/{id}/trigger", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, SqliteCrawlStore crawl, string id) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	CrawlPlan? plan = await crawl.GetPlanAsync(id, ctx.RequestAborted);
+	if (plan == null)
+	{
+		return Results.NotFound(new ErrorResponse("crawl plan not found"));
+	}
+
+	if (!plan.Enabled)
+	{
+		return Results.BadRequest(new ErrorResponse("crawl plan is disabled"));
+	}
+
+	await crawl.SetNextRunAsync(id, DateTimeOffset.UtcNow, ctx.RequestAborted);
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"crawl.plan.triggered",
+		details: new Dictionary<string, object?> { ["planId"] = id });
+
+	return Results.Accepted($"/v1/crawl/plans/{id}", plan);
+})
+	.WithTags("Crawl")
+	.WithSummary("Trigger a crawl plan now (overlapping runs are skipped by the worker)")
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapGet("/v1/crawl/plans/{id}/runs", async Task<IResult> (HttpContext ctx, Config cfg, SqliteCrawlStore crawl, string id, int? limit) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	CrawlPlan? plan = await crawl.GetPlanAsync(id, ctx.RequestAborted);
+	if (plan == null)
+	{
+		return Results.NotFound(new ErrorResponse("crawl plan not found"));
+	}
+
+	return Results.Ok(new { runs = await crawl.ListRunsAsync(id, Math.Clamp(limit ?? 20, 1, 100), ctx.RequestAborted) });
+})
+	.WithTags("Crawl")
+	.WithSummary("List recent runs of a crawl plan (aggregated, newest first)")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapGet("/v1/crawl/results", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	SqliteCrawlStore crawl,
+	string? planId,
+	string? runId,
+	long? appId,
+	string? account,
+	bool? ok,
+	int? limit,
+	int? offset) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	var query = new CrawlResultQuery(
+		PlanId: planId,
+		RunId: runId,
+		AppId: appId is > 0 ? (uint)appId : null,
+		Account: account,
+		Ok: ok,
+		Limit: Math.Clamp(limit ?? 100, 1, 500),
+		Offset: Math.Max(offset ?? 0, 0));
+
+	return Results.Ok(new
+	{
+		results = await crawl.QueryResultsAsync(query, ctx.RequestAborted),
+		total = await crawl.CountResultsAsync(query, ctx.RequestAborted),
+		limit = query.Limit,
+		offset = query.Offset
+	});
+})
+	.WithTags("Crawl")
+	.WithSummary("Query persisted crawl results (filter by plan, run, app, account, outcome; limit 1-500)")
+	.Produces(200)
+	.Produces<ErrorResponse>(401);
+
 app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IAuditStore audit, IEventBroker events) =>
 {
 	if (!Auth.TryAgent(cfg, GetAuthorization(ctx), out _))
@@ -2356,6 +2653,111 @@ static bool IsAuthChallengeRequired(string normalizedEventType, string state)
 		   string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal) ||
 		   string.Equals(state, "ConnectingWaitQr", StringComparison.Ordinal);
 }
+
+// Validates a crawl plan request (create, or a merged update); returns an error message, null when valid.
+static string? ValidateCrawlPlanRequest(CreateCrawlPlanRequest req, Config cfg, AccountStore accounts)
+{
+	if (string.IsNullOrWhiteSpace(req.Name))
+	{
+		return "name is required";
+	}
+
+	if (req.AppIds is not { Count: > 0 })
+	{
+		return "app_ids is required";
+	}
+
+	if (req.AppIds.Count > cfg.CrawlMaxAppsPerPlan)
+	{
+		return $"app_ids exceeds the plan limit of {cfg.CrawlMaxAppsPerPlan}";
+	}
+
+	foreach (string entry in req.AppIds)
+	{
+		if (!uint.TryParse(entry, out uint appId) || appId == 0)
+		{
+			return $"invalid app_ids entry: '{entry}'";
+		}
+	}
+
+	if (req.ShardSize is < 1 or > CrawlShardPlanner.MaxShardApps)
+	{
+		return $"shard_size must be between 1 and {CrawlShardPlanner.MaxShardApps}";
+	}
+
+	if (req.IntervalMs is < 0 or > 60000)
+	{
+		return "interval_ms must be between 0 and 60000";
+	}
+
+	// One-shot plans (no cadence at all) are the default shape; ScheduleClock
+	// only governs recurring combinations, so validate those exclusively.
+	if (!string.IsNullOrWhiteSpace(req.Cron) || (req.IntervalSeconds ?? 0) > 0)
+	{
+		try
+		{
+			ScheduleClock.Validate(new JobSchedule(
+				IntervalSeconds: req.IntervalSeconds ?? 0,
+				Cron: string.IsNullOrWhiteSpace(req.Cron) ? null : req.Cron));
+		}
+		catch (ArgumentException ex)
+		{
+			return ex.Message;
+		}
+	}
+
+	foreach (string name in req.Accounts ?? new List<string>())
+	{
+		if (accounts.Get(name.Trim()) == null)
+		{
+			return $"unknown account '{name}'";
+		}
+	}
+
+	foreach ((string key, string target) in req.Overrides ?? new Dictionary<string, string>())
+	{
+		if (!uint.TryParse(key, out uint appId) || appId == 0)
+		{
+			return $"invalid overrides key: '{key}'";
+		}
+
+		if (accounts.Get(target.Trim()) == null)
+		{
+			return $"unknown account '{target}' in overrides";
+		}
+	}
+
+	return null;
+}
+
+// Materializes a validated request into a plan row (shared by create and update).
+static CrawlPlan BuildCrawlPlan(
+	CreateCrawlPlanRequest req,
+	Config cfg,
+	string id,
+	DateTimeOffset createdAt,
+	DateTimeOffset updatedAt,
+	int runCount,
+	string? lastRunId,
+	DateTimeOffset? lastRunAt,
+	DateTimeOffset? nextRun) => new CrawlPlan(
+	Id: id,
+	Name: req.Name!.Trim(),
+	AppIds: req.AppIds!.Select(uint.Parse).ToList(),
+	Accounts: req.Accounts is { Count: > 0 } ? req.Accounts.Select(a => a.Trim()).ToList() : null,
+	Overrides: req.Overrides is { Count: > 0 } ? req.Overrides.ToDictionary(kv => uint.Parse(kv.Key), kv => kv.Value) : null,
+	ShardSize: Math.Clamp(req.ShardSize ?? 50, 1, CrawlShardPlanner.MaxShardApps),
+	IntervalMs: Math.Clamp(req.IntervalMs ?? cfg.CrawlIntervalMs, 0, 60000),
+	Cc: string.IsNullOrWhiteSpace(req.Cc) ? "us" : req.Cc.Trim(),
+	Cron: string.IsNullOrWhiteSpace(req.Cron) ? null : req.Cron.Trim(),
+	IntervalSeconds: req.IntervalSeconds ?? 0,
+	Enabled: req.Enabled ?? true,
+	CreatedAt: createdAt,
+	UpdatedAt: updatedAt,
+	RunCount: runCount,
+	LastRunId: lastRunId,
+	LastRunAt: lastRunAt,
+	NextRunAt: nextRun);
 
 static async Task WriteAuditLog(
 	ILogger logger,
@@ -2657,5 +3059,36 @@ public sealed record SwapOfferRequest(
 public sealed record LicenseRequest(
 	int[]? AppIds = null,
 	int[]? SubIds = null
+);
+
+// Request body for creating a crawl plan (game-data harvesting). One-shot unless
+// Cron or IntervalSeconds is set; StartNow=false arms a recurring schedule later.
+public sealed record CreateCrawlPlanRequest(
+	string? Name = null,
+	List<string>? AppIds = null,
+	List<string>? Accounts = null,
+	Dictionary<string, string>? Overrides = null,
+	int? ShardSize = null,
+	int? IntervalMs = null,
+	string? Cc = null,
+	string? Cron = null,
+	int? IntervalSeconds = null,
+	bool? StartNow = null,
+	bool? Enabled = null
+);
+
+// Request body for updating a crawl plan; omitted fields keep their current values.
+public sealed record UpdateCrawlPlanRequest(
+	string? Name = null,
+	List<string>? AppIds = null,
+	List<string>? Accounts = null,
+	Dictionary<string, string>? Overrides = null,
+	int? ShardSize = null,
+	int? IntervalMs = null,
+	string? Cc = null,
+	string? Cron = null,
+	int? IntervalSeconds = null,
+	bool? StartNow = null,
+	bool? Enabled = null
 );
 
