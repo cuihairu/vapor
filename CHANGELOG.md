@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Game-data harvesting (P9): `get_game_info_batch` (up to 200 apps per batch,
+  per-app errors isolated, shares the `game:{appId}:{cc}` cache tier with
+  `get_game_info`) plus a crawl orchestration layer on the control plane —
+  `CrawlShardPlanner` (round-robin over enabled accounts with explicit
+  per-app overrides), `SqliteCrawlStore` (plans + per-app results, due-cursor
+  claiming, run aggregation, per-plan pruning) and `CrawlRunWorker` (claims
+  due plans, dispatches shards through the regular job queue, persists
+  per-app outcomes, run timeout, one-shot/recurring cursors). Admin REST at
+  `/v1/crawl/plans` CRUD + trigger + runs + results queries, `crawl.*` events
+  on the existing webhook pipeline, and a read-only `gamedata.html` page with
+  a field dictionary for the six store models (`docs/data-dictionary.md` is
+  the authoritative source). Store fetches stay anonymous; accounts are
+  dispatch/audit identity only and payloads never carry credentials.
 - Points shop claiming (P8): `get_points_shop_summary` (balance plus reward
   definitions by id, `free_only` filter) and `claim_points_shop_items` (free
   definitions by default, paid ones need `force=true`; the batch is validated

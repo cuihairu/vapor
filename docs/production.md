@@ -51,6 +51,13 @@ are in [docker.md](docker.md).
 | `Vapor_WEBHOOK_NOTIFICATIONS_EVENTS` | no | all | Comma-separated event-type allowlist (e.g. `task.completed,auth.challenge`) |
 | `Vapor_WEBHOOK_NOTIFICATIONS_MAX_RETRIES` | no | `3` | Per-event delivery attempts before the failure is counted and dropped |
 | `Vapor_WEBHOOK_NOTIFICATIONS_RETRY_BASE_DELAY_MS` | no | `500` | Retry backoff base (`base × 2^attempt`) |
+| `Vapor_CRAWL_DB_PATH` | no | `data/crawl.db` | SQLite file for crawl plans and per-app harvest results |
+| `Vapor_CRAWL_WORKER_TICK_SECONDS` | no | `5` | Crawl worker claim/poll cadence; `<= 0` disables crawl orchestration |
+| `Vapor_CRAWL_KEEP_RUNS` | no | `10` | Recent runs whose results are kept per plan (older runs pruned on completion) |
+| `Vapor_CRAWL_MAX_APPS_PER_PLAN` | no | `500` | Upper bound on app_ids per crawl plan (rejects larger requests) |
+| `Vapor_CRAWL_MAX_APPS_PER_TASK` | no | `200` | Upper bound on apps per dispatched shard (clamps plan shard_size) |
+| `Vapor_CRAWL_RUN_TIMEOUT_SECONDS` | no | `1800` | Hard stop for a crawl run; outstanding shards are canceled and recorded as failures |
+| `Vapor_CRAWL_INTERVAL_MS` | no | `500` | Default pacing between live store fetches inside a batch shard |
 | `Vapor_ENABLE_SWAGGER` | no | off | Keep off in production |
 | `VAPOR_ENCRYPTION_KEY` | recommended | — | ≥32 bytes; encrypts stored credentials (AES-GCM) |
 | `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` | no | off | Escape hatch; do not enable in production |
