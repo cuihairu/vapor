@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Points shop claiming (P8): `get_points_shop_summary` (balance plus reward
+  definitions by id, `free_only` filter) and `claim_points_shop_items` (free
+  definitions by default, paid ones need `force=true`; the batch is validated
+  before the first redemption and single failures don't abort the rest) with
+  REST endpoints `GET/POST /v1/accounts/{name}/points-shop/*`, backed by the
+  SteamKit2 LoyaltyRewards unified service.
 - Own market listings (P7-1): `get_my_market_listings` action plus
   `GET /v1/accounts/{name}/market/listings`; `SteamMarketClient` parses the
   login-gated mylistings page (listing id, hash name, buyer price, seller
@@ -149,6 +155,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures (3 attempts, short backoff) instead of failing outright on the
   first blip — a bare connection string had dropped the options'
   `abortConnect=false` default.
+- Redis integration tests under the coverage CI job (coverlet instrumentation
+  on a 4-core runner queues the thread pool enough to trip SE.Redis's 5s
+  command timeout against the healthy local server): the test connection
+  string now sets `syncTimeout`/`asyncTimeout` to 15s.
 
 ### Fixed
 

@@ -80,7 +80,7 @@
 | 期望状态编排 / 节点丢失重平衡 | ❌ | ❌ | ❌ | ❌ | ✅(DesiredStateReconciler,**独有**) |
 | 事件通知(webhook 等) | ⚠️(Steam 消息) | ➖ | ✅ | ➖ | ✅(HMAC webhook + 规则过滤) |
 | 免费游戏提醒 + license 认领 | ✅(addlicense) | ➖ | ✅(提醒+自动认领) | ➖ | ✅(`add_license` + MarketWatch `kind=free` 边沿告警,提醒→认领闭环) |
-| 积分商店认领 | ✅ | ➖ | ➖ | ➖ | ❌ |
+| 积分商店认领 | ✅ | ➖ | ➖ | ➖ | ✅(`get_points_shop_summary` + `claim_points_shop_items`,P8,免费默认认领+付费需 force+defid 仅来自调用方) |
 
 ### 3.7 平台 / 安全
 
@@ -103,6 +103,7 @@
 > **2026-09-14**:P7-1 挂单读取落地(只读零风险增量)——`get_my_market_listings` + `GET /v1/accounts/{name}/market/listings`,mylistings 解析以构造 fixture + 三方互证契约测试锁定,供 P7-2 批量撤单取数。见 `todo.md` §12。
 > **2026-09-14**:P7-2 批量撤单落地——`cancel_market_listings` + `POST /v1/accounts/{name}/market/listings/cancel`,过滤器(应用/名称/价格区间/挂龄)+逐条节奏+单项失败不中断如实汇总,dry_run 默认、无过滤实撤双层拒绝(CP 400 + action 独立拒绝),市场专用保守频控独立于交易限流预算。见 `todo.md` §12。
 > **2026-09-14**:P7-3 挂单创建落地——`create_market_listing` + `POST /v1/accounts/{name}/market/listings` + `MarketFeeCalculator`(Steam 5%+发行商 10% 按卖方所得计费、买/卖两侧换算,契约与官方 economy_v2.js/market_multisell.js 四源互证),send 缺省 dry run 只出定价方案,实撤需账户 `marketListingsEnabled` + agent `AGENT_MARKET_LISTINGS_ENABLED` 双开关;价格仅来自调用方,market 类确认复用既有闭环。P7 市场闭环三期全部完成。见 `todo.md` §12。
+> **2026-09-15**:P8 积分商店认领落地——`get_points_shop_summary` + `claim_points_shop_items` + `GET/POST /v1/accounts/{name}/points-shop/*`(SteamKit2 LoyaltyRewards unified service,语义对齐 ASF RP 命令):免费定义默认认领、付费需 `force=true` 且缺省整批前置拒绝、defid 仅来自调用方显式输入(不做扫描全部可认领的自动化)。矩阵最后一个非后置非定位外缺口收口,§3.6 仅余后置的成就管理。见 `todo.md` §13。
 
 ### P6-1 卡牌 farming 闭环(GA 出口条件,平台杠杆最大)✅ 全部完成
 
