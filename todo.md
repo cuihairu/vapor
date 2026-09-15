@@ -255,7 +255,8 @@
 9. P5 推进（2026-09-12 定案，实施顺序 A → C → B）: ~~**方向 A 账户农场编排**~~（✅ 已完成）→ ~~**方向 C 通知与自动化闭环**~~（✅ 已完成）→ ~~**方向 B 质量与协议韧性**~~（✅ 已完成：统计修正 + contract tests 抓到真实上游漂移 + WS 协议 replay tests + ISteamTransport 协议适配层 + 覆盖率管道修复与 74.3% 真实基线）。**P5 三个方向全部完成。**
 10. ~~P6 推进（2026-09-12 立项）~~（✅ 2026-09-13 完成：P6-1 卡牌 farming 闭环 → P6-2 交易与确认闭环 → P6-3 互操作与认领全部落地，GA 出口条件 #2 闭环；P6-4 仅剩两项明确后置（挂单创建/批量撤单 ToS 灰区、成就管理需求弱），对标矩阵已同步勾选 `docs/feature-matrix.md`）。**todo.md 全部计划阶段（P0-P6 + GA 收口横向）至此完成。**
 11. ~~P7 推进（2026-09-14 立项）：市场闭环——挂单读取 → 批量撤单 → 挂单创建~~（✅ 2026-09-14 完成：三期全部落地，灰区核心以 dry_run 默认 + 账户/agent 双开关缓解，详见 §12）。
-12. P8 推进（2026-09-15 立项）：积分商店认领（矩阵 §3.6 最后一个非后置非定位外缺口；免费定义默认认领、付费需显式 force、defid 仅来自调用方），详见 §13。
+12. ~~P8 推进（2026-09-15 立项）：积分商店认领（矩阵 §3.6 最后一个非后置非定位外缺口；免费定义默认认领、付费需显式 force、defid 仅来自调用方）~~（✅ 2026-09-15 完成：`get_points_shop_summary` + `claim_points_shop_items` + `GET/POST /v1/accounts/{name}/points-shop/*`，详见 §13）。
+13. GA 出口条件验收盘点（2026-09-15）：对 §0 五条逐条仓库实证盘点——4 条达成、#4 缺性能基线，详见 §14。
 
 ---
 
@@ -355,6 +356,57 @@
 
 - [x] 余额与定义查询（发现供数）+ 免费定义默认认领（ASF RP 语义：`point_cost == 0`；付费需 `force=true` 且缺省整批前置拒绝）；REST `GET /v1/accounts/{name}/points-shop/summary` + `POST /v1/accounts/{name}/points-shop/claim`，三态 200/202/502。（✅ 2026-09-15 `get_points_shop_summary` + `claim_points_shop_items`，见下方日志）
 
+## 14. GA 出口条件验收盘点（✅ 2026-09-15：4 达成 / 1 部分达成）
+
+> 对 §0 五条 GA Exit Criteria 逐条以**仓库实证**盘点（本地实跑 + CI 记录 + 文件存在性核查，非转述历史结论）。盘点为纯文档动作，未改产品代码。
+
+### #1 主分支 build/test 稳定通过 — ✅
+
+- 本地实跑（2026-09-15，Debug）：`dotnet build` 0 警告 0 错误；全量 **1899/1899**（Steam.Core 1068 / ControlPlane 391 / Plugins.Core 127 / MobileAuthenticator 126 / Agent 53 / MarketWatch 56 / Monitoring 35 / Protocol 37 / E2E 6）。
+- CI：ci workflow 10 job（format、docker-build、integration-redis、build-test × Debug/Release × ubuntu/windows/macos、coverage）+ codeql + dependency-review；P8 代码提交（2ca78a8）起 ci + codeql 全绿。
+- 稳定性：2026-09-13 eaa764e 首次全绿后主分支保持绿；其间 ci 失败均可归因且当轮闭环——三个真缺陷（maFile 错密码解析泄漏 c8061c9、Redis 初始连接重试 afdef0c、coverage 插桩下 SE.Redis 命令超时 2ca78a8）+ 一次 runner VM 挂死（windows Debug 四个独立测试进程同时静默 41 分钟触发 45 分钟 job 超时，`--failed` rerun 绿，同 commit 姊妹 job 全绿佐证非代码问题）。
+
+### #2 核心动作闭环 — ✅
+
+Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthenticator/MarketWatch 插件动作，六域全覆盖：
+
+| 域 | 落点 |
+|---|---|
+| 登录 | `login`（密码/refresh token/`qr_login` 三路径）+ 挑战自动应答（TwoFactorAutoResponder，显式开启） |
+| 2FA | MobileAuthenticator 插件：TOTP（SteamTotp + 服务器时间同步）、确认列举/响应、`confirm_all_confirmations` 批量（类型过滤 + allow/cancel） |
+| 游戏状态 | `play_games` / `idle`（白名单） |
+| 激活 Key | `redeem_key`（Store#RegisterCDKey） |
+| 库存/交易 | `get_inventory`（多 app 扫描 + 可交易/可市场过滤）、`get_trade_offers`、`accept_trade_offer`/`decline_trade_offer` + mobile 确认自动续派、`send_trade_offer`/`loot_inventory`、`find_duplicates`/`swap_duplicates` |
+| farming | `get_card_drops`（徽章页解析，SWR 缓存）+ `farm` 期望状态（队首掉完自动轮换、排除名单） |
+
+### #3 安全闭环 — ✅
+
+- 凭证加密存储：`FileCredentialStore` v2（AES-GCM、原子写、`.bak` 恢复、owner-only 600）+ master key 外置（env/file/KMS 密钥源优先级）；
+- 令牌持久化与轮换：refresh token 加密落盘（`TokenRefreshTests`）+ `CredentialStoreRotator` / `tools/Vapor.KeyRotation`（密钥轮换 CLI，`--dry-run`，失败即停）；
+- 敏感日志脱敏：`RedactingLoggerProvider`（消息/结构化值/scope/异常内容全覆盖，Agent `AddRedactingConsole()`）；
+- 审计：`SqliteAuditStore` + `GET /v1/audit/logs`（过滤/分页/脱敏入库）+ 敏感动作专项审计点（登录转移、`task.result.reported`、交易 accept/decline/确认、loot、换卡、编排决策、points-shop）；
+- 红线（测试断言守护）：identity secret 不出 agent、payload 零 secret、验证码只出 bool、webhook HMAC 签名且不载验证码。
+
+### #4 可运维 — ⚠️（5/6 达成，唯一缺口：性能基线）
+
+| 要素 | 证据 | 判定 |
+|---|---|---|
+| OpenAPI | SwaggerGen + bearer security definition | ✅ |
+| E2E | `Vapor.E2E.Tests` CP+Agent 双进程真实闭环（6 测） | ✅ |
+| Docker | Agent/ControlPlane 双 Dockerfile + docker-compose（CP+Redis+Prometheus+Grafana）+ CI docker-build job | ✅ |
+| CI/CD | ci.yml（10 job）+ codeql + dependency-review + release.yml（5 RID 多平台发布） | ✅ |
+| 可观测性 | OTel tracing（W3C traceparent 跨 agent 隧道）+ Prometheus 文本端点/Grafana 面板 + 编排/通知/调度 metrics + 告警规则 | ✅ |
+| 性能基线 | 无基准测试、无基线数据记录（时延/吞吐/资源占用） | ❌ |
+
+### #5 文档闭环 — ✅
+
+架构（`docs/architecture.md` + `docs/session-engine.md`）、运行（`docs/running.md` + `docs/docker.md`）、运维（`docs/production.md`）、发布（`docs/releasing.md`）、故障排查（`docs/troubleshooting.md`）全部在库；社区文档（README/CHANGELOG/SECURITY/CONTRIBUTING/SUPPORT/CODE_OF_CONDUCT）+ `docs/plugins.md` + `docs/feature-matrix.md` 齐备。
+
+### 结论与后续
+
+- **#1/#2/#3/#5 达成，#4 部分达成（性能基线缺）**——GA 出口条件基本达成，无功能性缺口。
+- 性能基线列为独立后续小项：对 CP 只读端点与任务派发路径做轻量压测并落 `docs/performance.md`；不随本盘点扩 scope 实施。
+
 > 2026-09-11：全解决方案已从 net8.0 迁移到 net10.0（SDK 10.x，CI 同步）。
 > 2026-09-11：MonitoringPlugin + Docker/compose + Prometheus/Grafana 可观测性栈落地；660 个测试全部通过。
 > 2026-09-11：Agent 单元测试（41 个）+ E2E 测试（5 个，真实双进程闭环）落地；全解决方案 706 个测试通过。
@@ -397,3 +449,4 @@
 > 2026-09-14：**P7-2 批量撤单落地：`cancel_market_listings` action + `POST /v1/accounts/{name}/market/listings/cancel` REST 端点（+19 测试，1818→1837 全绿）**。① `SteamMarketClient.CancelListingAsync`（撤单契约对标 SGI market.rs 与市场页取消按钮同款请求）：`POST steamcommunity.com/market/removelisting/{listingId}`，form body 回显 `sessionid`（`SteamWebHandler` 新增 `TryGetSessionId` 读取——sessionid 是普通会话 cookie 而非凭证，可回显；无 sessionid 即未登录，直接失败零请求）；XHR 标记头 `X-Requested-With: XMLHttpRequest` 单独由 client 传入，Referer/Origin 由 web handler 对 community 域自动补齐（client 层不可重复加，实测重复会拼出双值头）；429 由 handler 既有弹性层退避重试，任意 2xx 即成功。② `cancel_market_listings` action（RequiresLogin，超时 600s）：过滤器 app_id / market_hash_name（Ordinal 精确）/ 买方价格含边界区间 / `older_than_seconds` 挂龄；action 内部翻页收集（PageSize 500 × MaxPages 20 防御上限，对 Steam 谎报 total_count 兜底）；逐条撤单间隔 `delay_ms`（默认 1000 对齐市场页节奏，测试注入 0），即市场专用保守频控、独立于交易限流预算；单项失败不中断，输出 `{dry_run, matched, scanned, succeeded, failed, listings[]}` 如实汇总（对齐 `confirm_all_confirmations` 语义）。③ dry_run 双层护栏：默认 true 只输出 `would_cancel` 清单零 POST；无过滤器 + 实撤在 **CP 400 拒绝 + action 层独立拒绝**（绕过 REST 直接派发也拦住，"refusing to cancel with no filter"）——一个手滑调用不能清空全部挂单；负价格 / min>max 同样前置拒绝。④ CP 端点：dryRun 默认 true，payload 只装显式出现的过滤器（避免缺省值伪装成用户选择），审计 `market_listings.cancel` 带 dryRun/hasFilter/outcome，三态 200/202/502 对称。⑤ 测试：client 4（sessionid 回显与 XHR 头、5xx→false、无 sessionid 零请求、空 id 抛参错）+ action 10（dry_run 默认/实撤/单项失败不中断/hash 精确/价格含边界/挂龄时钟无关——`older_than_seconds=1` 全匹配 vs `int.MaxValue` 全不匹配两极避免依赖真实时钟/无过滤实撤拒绝/倒挂价格区间拒绝/列表拉取失败报错）+ CP 5（鉴权/404/dry_run 默认/无过滤实撤 400/agent 失败 502）。全量 1837/1837；format 门禁过
 > 2026-09-14：**P7-3 挂单创建落地：`create_market_listing` action + `POST /v1/accounts/{name}/market/listings` REST 端点 + `MarketFeeCalculator`（+36 测试，1837→1873 全绿）——P7 市场闭环三期全部完成**。① 契约四源互证（SGI market.rs / Steam 官方 economy_v2.js / Steam 官方 market_multisell.js / node-steamcommunity 社区实现群）：`POST steamcommunity.com/market/sellitem/`，form `sessionid/appid/contextid/assetid/amount/price` + XHR 头（Referer/Origin 仍由 web handler 对 community 域自动补）；**price 字段 = 卖方所得**——官方 `OnAccept` 取卖方框（`market_sell_currency_input`）值提交、买方框仅经 `GetItemPriceFromTotal` 联动换算，SGI 亦从买方目标价 `find_seller_price` 反推后发送，两路独立证实；响应 `success` bool（HTTP 200 也可被拒）+ `message`（限流无专用错误码仅文本）+ `requires_confirmation`/`needs_mobile_confirmation`/`needs_email_confirmation`/`email_domain`，非 JSON 回复返回 null，JSON 回复即便 HTTP 错误也带出 message。② 费用感知定价 `MarketFeeCalculator`：Steam 手续费按**卖方所得**计算——Steam 5% + 发行商 10%（各 floor 到整分、每项最低 1 分），买方支付 = 卖方所得 + 两费；反推从 `floor(target/1.15)` 向下走到不超买方目标（费率 floor 使精确目标不可达时落在下方，如 114 → 99/112）；dry_run 定价方案输出买/卖两侧价格，注明个别游戏发行商费率不同、以 Steam 卖单对话框为准。③ 三重护栏（ToS 缓解②落实）：`send` 缺省 = dry run 零请求只出定价方案；实撤需**账户显式开关**（`AccountSpec.MarketListingsEnabled` 默认 false，PUT 只在显式携带 `marketListingsEnabled` 时翻转——不带字段的 PUT 不会静默重置，CP 400 拒绝）+ **agent 显式开关**（`AGENT_MARKET_LISTINGS_ENABLED`，对齐 `AGENT_2FA_AUTO_SUBMIT` 先例，默认关，直接派发也拦住）。④ 价格输入仅来自调用方（不做自动重定价/爬价，ToS 缓解③延续）：`seller_proceeds_cents` / `buyer_price_cents` 二选一（双给/缺一/非正前置拒绝）。⑤ market 类 mobile 确认复用既有闭环：action 如实上报 `needs_mobile_confirmation`，确认走既有 `confirm_all_confirmations(type=market)`；CP 端点刻意不做自动确认链——挂单创建是灰区核心，保持显式步骤。⑥ CP 端点三态 200/202/502、审计 `market_listings.create`（send/账户开关/outcome）；payload 只装显式字段，`send` 仅在 true 时进入 payload（缺省键即 agent 侧 dry-run 默认）。⑦ 测试坑：payload 经 SqliteJobStore JSON 往返后**全部值变 JsonElement**（数值/字符串/布尔皆然），CP 侧断言需 Scalar helper 归一后再比；端点初版漏装 `send` 键（agent 将永远收到 dry run）被 `SendEnabled` 测试当场抓住——payload 透传断言的价值实证。⑧ 测试 +36：Core 30（费率 11：5%+10% 数学/双最低 1 分/买方反推精确与 floor 陷阱/往返不变式 + client 6：表单字段与 XHR/确认旗标/Steam 拒绝仍出 message/非 JSON/无 sessionid 零请求/参数校验 + action 13：dry run 默认零请求/买方价反推/双价·缺价·非正·缺 asset 拒绝/无 agent 开关拒绝/实撤 POST 与确认旗标/Steam 拒绝冒泡/请求层失败）+ CP 6（鉴权/404/无账户开关 send 400/dry run 默认与 payload 断言/开启后 send 透传/开关经不带字段 PUT 存活）。全量 1873/1873；format 门禁过。（收尾插曲：CI 暴露两个既有问题、两个独立 fix 提交修复——① macos 节点概率性暴露 `MaFileParserTests.Parse_EncryptedSda_WithWrongPassword_Throws` 泄漏裸 `JsonReaderException`：错密码约 1/256 概率垃圾明文恰好通过 PKCS7 padding 校验、其后 JSON 解析异常未包装；`c8061c9` 把解密后 JSON 解析统一包装成同一条 decrypt 错误并加确定性回归测试（正确密码 + 非 JSON 明文）。② coverage job 两轮先后挂 Redis 集成测试（SWR 8s 超时 / `SetAndGet` RedisConnectionException）而同配置的 integration-redis 专 job 两轮全绿：调用方连接串整体覆盖 options 默认值把 `abortConnect=false` 丢了，裸 `host:port` 下初始连接一次毛刺即整体失败；`afdef0c` 给 `CreateFromConnectionString` 初始连接加 3 次短退避重试（不可达服务器仍快速失败，+1 测试）。终态基线 1875，`afdef0c` CI 全绿。）
 > 2026-09-15：**P8 积分商店认领落地：`get_points_shop_summary` + `claim_points_shop_items` action + `GET/POST /v1/accounts/{name}/points-shop/*` REST 端点（+24 测试，1875→1899 全绿）**。① 契约与通道：SteamKit2 3.4.0 内置 `LoyaltyRewards` unified service 全套类型（`SteamKit2.WebUI.Internal`），经既有 `SteamUnifiedMessages` 通道调用（与 RedeemKeyAsync 的 `Store#RegisterCDKey` 同写法先例）——`LoyaltyRewards#GetSummary`（余额：points/points_earned/points_spent）、`LoyaltyRewards#QueryRewardItems`（按 definitionids 点查 + cursor 分页，防 Steam 循环同一 cursor 的 bulletproofing 照抄 ASF）、`LoyaltyRewards#RedeemPoints`（defid → communityitemid）；`ISteamTransport` 新增三方法协议无关面（`GetPointsShopSummaryAsync`/`QueryPointsShopItemsAsync`/`RedeemPointsShopItemAsync`），对齐 ASF ArchiHandler 同源实现（GetPointsBalance/GetRewardItems/RedeemPoints）。② 语义对齐 ASF RP 命令：免费定义（`point_cost == 0`）默认可兑，付费定义需 `force=true`（ASF 的 defid 后缀 `!` 等价物）且缺省**整批前置拒绝**——批内先 QueryRewardItems 验证（未知 defid 或付费无 force → 一个都不兑），通过后逐条兑换、单项失败不中断如实汇总（confirm_all 语义）；`expected_points_cost` 留 0 不校验（对齐 ASF：调用方已前置验价，避免竞价类失败面）。③ 发现供数与 ToS 节制：`get_points_shop_summary`（balance + `definition_ids` 点查 + `free_only` 客户端侧过滤 + `items_total` 报查询命中总数）是认领的必要前置（defid 没有发现途径 claim 就没法用）；**刻意不做"扫描全部可认领"的自动化**——defid 只来自调用方显式输入，与 add_license 同档风险控制。④ CP 端点：GET summary 的 `definition_ids` 走逗号分隔 query，不可解析值 400 而非静默跳过（掩盖调用方错误）；POST claim 的 `force` 仅 true 时进 payload（缺省键即 agent 侧免费默认，false 不伪装成选择，对齐 `send` 惯例）；三态 200/202/502、审计 `points_shop.summary` / `points_shop.claim`。⑤ 红线延续：全程无 secret 接触（走已登录 transport 会话），`community_item_id` 64 位一律字符串化防 JS 精度丢失（P6-2 教训复用）。⑥ 测试 +24：Core action 16（summary 7：余额/点查形状/free_only 过滤保 items_total/无 client/无响应/定义查询失败保余额 + claim 9：缺 ids/无 client/免费兑换含 64 位字符串断言/付费无 force 零兑换前置拒绝/未知 defid 前置拒绝/force 跳过查询/单项失败不中断/无响应如实报告）+ CP 8（summary 鉴权/404/非法 query 400/透传断言 + claim 鉴权/缺 ids 400/payload 透传/force 缺省键）。测试坑：claim 的 "no response" 测试必须 `force=true` 直达兑换路径——Loose mock 的 QueryPointsShopItemsAsync 默认返回 null 会提前走 lookup 失败分支（error 路径测试要显式避开未 mock 的前置依赖）。全量 1899/1899；format 门禁过。收尾补一笔：代码提交的 coverage job 三轮连挂三个不同 Redis 集成测试，本轮实锤为 `RedisTimeoutException`（command=GET，6977ms > 默认 5s syncTimeout）——异常自带 POOL dump（QueuedItems=19、Min=4）证明是 coverlet 插桩下线程池排队拖慢命令响应，连接本身健康（integration-redis 专 job 三轮全绿佐证）；2ca78a8 测试连接串加 `syncTimeout/asyncTimeout=15s`（仅测试面，产品代码零改动，不加重试以免掩盖 SWR 时序语义）。
+> 2026-09-15：**GA 出口条件验收盘点（§14）**：五条逐条仓库实证——#1（本地 Debug 全量 1899/1899、CI 10 job + codeql 全绿、自 eaa764e 起失败均可归因当轮闭环）/ #2（Core 27 action + 插件动作，六域全覆盖）/ #3（加密存储 v2、令牌持久化与密钥轮换、全链路脱敏、审计端点+专项审计点、secret 红线测试断言）/ #5（架构/运行/运维/发布/故障排查五类文档齐备）达成；#4 可运维 5/6，唯一字面缺口为**性能基线**（无基准测试与基线数据记录）。结论：GA 出口条件基本达成；性能基线列为独立后续小项（轻量压测 + `docs/performance.md`），不随盘点扩 scope。盘点为纯文档动作，未改产品代码、未动测试。
