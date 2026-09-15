@@ -62,7 +62,10 @@ public sealed class BotSessionBranchTests : IDisposable
 		return session;
 	}
 
-	private async Task WaitForEventsAsync(Func<(string EventType, string State, string? Message), bool> predicate, int timeoutMs = 3000)
+	// 30s budget: healthy paths deliver in milliseconds; the budget only covers
+	// thread-pool scheduling delays (the coverage CI job's coverlet instrumentation
+	// can park event fan-out for seconds — same family 88371dc raised to 30s).
+	private async Task WaitForEventsAsync(Func<(string EventType, string State, string? Message), bool> predicate, int timeoutMs = 30000)
 	{
 		var start = Environment.TickCount64;
 		while (Environment.TickCount64 - start < timeoutMs)
