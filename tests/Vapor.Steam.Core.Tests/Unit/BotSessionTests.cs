@@ -480,7 +480,11 @@ public class BotSessionTests : IDisposable
 		// No fixed sleep: under CI load the disconnect command (which itself waits
 		// 100ms internally before publishing the state change) can take longer than
 		// a small budget to reach the channel — wait on the collector directly.
-		await collectTask.WaitAsync(TimeSpan.FromSeconds(5));
+		// 30s budget: healthy paths deliver in milliseconds; the budget only covers
+		// thread-pool scheduling (same starved-pool family dd0cf94 raised to 30s —
+		// this test timed out at exactly its old 5s budget on a 3-core macos Debug
+		// runner while the whole suite hammered the pool).
+		await collectTask.WaitAsync(TimeSpan.FromSeconds(30));
 
 		// Assert
 		// At minimum, we should have received state change events
