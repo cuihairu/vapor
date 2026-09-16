@@ -516,3 +516,15 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 确定性加固（顺手）：`RecurringJobSchedulerTests`/`TaskSchedulerServiceTests` 的 StartStop 冒烟从 Task.Delay 猜时序改为等 store 被调用信号（ListedDue TCS / StaleRequeueLeases 轮询），消除两处 CI 饥饿隐患。（✅ 2026-09-16）
 
 > 2026-09-16：**覆盖率收尾冲刺（+21 测试，2065→2086 全绿：ControlPlane 503→511 / Steam.Core 1117→1128 / Agent 53→54 / Plugins.Core 127→128；合计 99.5%→99.7% 即 13354/13427→13394/13433，未覆盖 74→39 行；test 提交）**。Agent 99.5%→**100%**、Plugins.Core 99.4%→**100%**、ControlPlane 99.5%→99.8%、Steam.Core 99.4%→99.6%。**方法论**：两个可测性分析子代理对 74 行逐条分级，DETERMINISTIC 全收、PLATFORM/TIMING/DEAD 归档——本轮证明其中 Monitoring 断连 catch 类"时序边沿"两轮实测均未命中，维持豁免判断。**关键手法**：①symlink→/dev/null 让 chmod 命中 EPERM（root 守卫跳过）；②合法 base64 且文本 ≥32 字符使 raw 回退满足密钥长度（"c2hvcnQ=" 双双过短会抛）；③有限流 IAsyncEnumerable fake 覆盖泵自然排空（`ExecuteTask.Status` 为 WaitingForActivation——BackgroundService 附加 continuation，轮询须用 IsCompleted）；④Moq 验证 ILogger.Log 的 exception 参数必须 `It.IsAny<Exception?>()`（实际调用带 UnauthorizedAccessException，字面量 null 不匹配）；⑤PeriodicTimer 取消双路径（等待中取消→OCE faulted / 已取消再评估→false 优雅退出）断言须路径无关（IsCompleted）。**归档豁免（39 行，四类）**：平台分支 2（FileCredentialStore Windows return）、集成壳/反射 ~21（SteamClientManager SteamKit 内部反射、SteamStoreApiClient 真实 HTTP、SessionManager 通道不 Complete 的正常出口、BotSession 回调深处）、结构性 DEAD ~9（RedisVaporCache for(;;)、RecurringJobScheduler/TaskSchedulerService 的 PeriodicTimer 仅 Dispose 返 false、MarketWatchPlugin 不可注入防御）、防御兜底 ~7（SqliteJobStore 迁移边沿、SqliteCrawlStore 同事务 CAS、SteamTimeSynchronizer 真实网络超时、MetricsHttpServer 断连 catch、CrawlRunWorker 105/106 为 coverlet 异步行归属偏差、Program 135 测试 bin wwwroot、MarketWatch const 行）。验证：全量 2086/2086；taskset 0,1 双核饥饿抽查新时序测试 10/10；format 门禁过；CI 以本轮提交全绿为准。
+
+## 20. admin 页 QR 扫码登录按钮（✅ 2026-09-16 完成）
+
+> 立项动机：feature-matrix P6-4 记录在案的后置项"管理面暂用 POST /v1/jobs 触发(UI 按钮后置)"。§18 已修好 QR 挑战渲染闭环（挑战 URL 展示+复制+轮转刷新），但触发入口仍要手 curl。本轮在 admin.html 会话面板补一键触发按钮，补全"按钮→login 作业→qrLogin 凭证→挑战 URL 上浮→手机扫码"的最后一段 UI。
+
+### 20.1 实现内容
+
+- [x] admin.html 会话面板 header 加"QR 扫码登录"按钮（与刷新按钮同容器并排）：`startQrLogin()` 经 `window.prompt` 取账户名（空/取消静默返回）→ POST `/v1/jobs` `{action:"login", targets:[name], payload:{qrLogin:true}}`（`AgentTaskExecutor` 读取的 camelCase 契约键，无需 password）→ `addEvent` 提示挑战链接将出现在认证挑战面板 + `refreshJobs` 跳转新作业；失败 alert 点名。（✅ 2026-09-16）
+- [x] 契约守护测试 `AdminHtml_QrLoginButton_DispatchesLoginJobWithQrPayload`（DashboardStaticTests +1）：断言按钮 id、startQrLogin 绑定、`action: "login"` 与 `payload: { qrLogin: true }` 字面量——防止后续前端重构悄悄改掉 agent 读取的契约键。（✅ 2026-09-16）
+- [x] feature-matrix.md 同步：L132 后置标记更新为 UI 按钮已落地。（✅ 2026-09-16）
+
+> 2026-09-16：**admin 页 QR 登录按钮（+1 守护测试，2086→2087 全绿；feat 提交）**。改动纯前端（admin.html 单文件）+ 一条静态契约测试；脚本 `node --check` 过；复用 §18 的 QR 挑战渲染分支与 SSE 监听，零后端改动。**取舍延续**：二维码图片渲染仍不做（§18 三轮取舍不变：自研 encoder 数百行无护栏/零新增 NuGet/第三方图片服务泄 token 红线）。验证：ControlPlane 全量 511→512 绿；format 门禁过；CI 以本轮提交全绿为准。

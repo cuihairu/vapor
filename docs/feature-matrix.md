@@ -129,7 +129,7 @@
 
 - [x] Web Dashboard 只读面板(对标 ASF-ui 只读部分):`wwwroot/dashboard.html` 落地——统计卡/账户/Agent/会话/作业/审计 + 双 SSE 流 + 轮询兜底,零写操作(契约测试守护);管理功能走既有 admin.html。功能扩展(向导式配置等)后置。
 - [x] 挂单创建/批量撤单(对标 SGI):ToS 灰区 + 需要库存/定价前置,后置。(2026-09-14 前置条件经 P6 补齐,立项为 P7 市场闭环,见 `todo.md` §12)
-- [x] QR 扫码登录(对标 SGI/steamguard-cli):SteamKit2 QR 挑战 + 轮询落地;挑战 URL 经 session 事件上浮供人扫码,request_key 与 token 均不出 agent;管理面暂用 POST /v1/jobs 触发(UI 按钮后置)。
+- [x] QR 扫码登录(对标 SGI/steamguard-cli):SteamKit2 QR 挑战 + 轮询落地;挑战 URL 经 session 事件上浮供人扫码,request_key 与 token 均不出 agent;管理面 admin.html 会话面板内置"QR 扫码登录"按钮一键触发(✅ 2026-09-16 UI 按钮落地,后置项闭环)。
 - [ ] 成就解锁/管理(对标 SGI):需求弱,后置。
 
 ### 明确不采用(定位外)
