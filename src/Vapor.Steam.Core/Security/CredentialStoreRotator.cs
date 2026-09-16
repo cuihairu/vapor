@@ -139,7 +139,7 @@ public static class CredentialStoreRotator
 		string? plain;
 		if (value.StartsWith(EncryptedValuePrefix, StringComparison.Ordinal))
 		{
-			plain = VaporCryptoHelper.DecryptWithKey(oldKey, value).ConfigureAwait(false).GetAwaiter().GetResult();
+			plain = VaporCryptoHelper.DecryptWithKey(oldKey, value);
 			if (plain == null)
 			{
 				throw new CredentialRotationException("decryption with old key failed");

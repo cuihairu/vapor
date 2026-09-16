@@ -213,13 +213,13 @@ public static partial class VaporCryptoHelper
 	/// Decrypts text with an explicit key material, without touching the global key.
 	/// Used by key rotation tooling.
 	/// </summary>
-	public static Task<string?> DecryptWithKey(byte[] keyMaterial, string text)
+	public static string? DecryptWithKey(byte[] keyMaterial, string text)
 	{
 		ArgumentNullException.ThrowIfNull(keyMaterial);
 		ArgumentException.ThrowIfNullOrEmpty(text);
 		ThrowIfKeyTooShort(keyMaterial);
 
-		return Task.FromResult(DecryptAes(keyMaterial, text));
+		return DecryptAes(keyMaterial, text);
 	}
 
 	private static void ApplyEncryptionKey(byte[] encryptionKey)

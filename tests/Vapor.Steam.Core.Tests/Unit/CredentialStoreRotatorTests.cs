@@ -83,10 +83,10 @@ public sealed class CredentialStoreRotatorTests : IDisposable
 
 		Assert.StartsWith("gcm:", encryptedRefresh, StringComparison.Ordinal);
 
-		string decryptedWithNewKey = (await VaporCryptoHelper.DecryptWithKey(NewKey, encryptedRefresh))!;
+		string decryptedWithNewKey = VaporCryptoHelper.DecryptWithKey(NewKey, encryptedRefresh)!;
 		Assert.Equal("refresh-plain-value", decryptedWithNewKey);
 
-		string? decryptedWithOldKey = await VaporCryptoHelper.DecryptWithKey(OldKey, encryptedRefresh);
+		string? decryptedWithOldKey = VaporCryptoHelper.DecryptWithKey(OldKey, encryptedRefresh);
 		Assert.Null(decryptedWithOldKey);
 	}
 
@@ -154,7 +154,7 @@ public sealed class CredentialStoreRotatorTests : IDisposable
 		Assert.DoesNotContain("plain-legacy-token", json, StringComparison.Ordinal);
 
 		string encrypted = document.RootElement.GetProperty("accounts").GetProperty("legacy-account").GetProperty("refreshToken").GetString()!;
-		string decrypted = (await VaporCryptoHelper.DecryptWithKey(NewKey, encrypted))!;
+		string decrypted = VaporCryptoHelper.DecryptWithKey(NewKey, encrypted)!;
 		Assert.Equal("plain-legacy-token", decrypted);
 	}
 

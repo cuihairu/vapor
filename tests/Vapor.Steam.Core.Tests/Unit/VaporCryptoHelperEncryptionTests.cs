@@ -53,13 +53,13 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 	}
 
 	[Fact]
-	public async Task EncryptWithKey_DecryptWithKey_RoundTripsWithoutGlobalKey()
+	public void EncryptWithKey_DecryptWithKey_RoundTripsWithoutGlobalKey()
 	{
 		byte[] keyMaterial = Encoding.UTF8.GetBytes(new string('Z', 40));
 		const string plaintext = "rotation-secret";
 
 		string? encrypted = VaporCryptoHelper.EncryptWithKey(keyMaterial, plaintext);
-		string? decrypted = await VaporCryptoHelper.DecryptWithKey(keyMaterial, encrypted!);
+		string? decrypted = VaporCryptoHelper.DecryptWithKey(keyMaterial, encrypted!);
 
 		Assert.NotNull(encrypted);
 		Assert.StartsWith("gcm:", encrypted, StringComparison.Ordinal);
@@ -77,11 +77,11 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 	public void DecryptWithKey_WithNullKey_Throws()
 	{
 		Assert.Throws<ArgumentNullException>(
-			() => VaporCryptoHelper.DecryptWithKey(null!, "value").ConfigureAwait(false).GetAwaiter().GetResult());
+			() => VaporCryptoHelper.DecryptWithKey(null!, "value"));
 	}
 
 	[Fact]
-	public async Task ConfigureFromEnvironment_WithBase64Key_AppliesRawKeyBytes()
+	public void ConfigureFromEnvironment_WithBase64Key_AppliesRawKeyBytes()
 	{
 		VaporCryptoHelper.ResetForTests();
 		byte[] rawKey = RandomNumberGenerator.GetBytes(32);
@@ -97,7 +97,7 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 
 		const string plaintext = "kms-provisioned-secret";
 		string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
-		string? decryptedWithRawKey = await VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
+		string? decryptedWithRawKey = VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
 
 		Assert.Equal(plaintext, decryptedWithRawKey);
 	}
@@ -124,7 +124,7 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 
 			const string plaintext = "file-provisioned-secret";
 			string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
-			string? decryptedWithRawKey = await VaporCryptoHelper.DecryptWithKey(Encoding.UTF8.GetBytes(keyText), encrypted!);
+			string? decryptedWithRawKey = VaporCryptoHelper.DecryptWithKey(Encoding.UTF8.GetBytes(keyText), encrypted!);
 
 			Assert.Equal(plaintext, decryptedWithRawKey);
 		}
@@ -155,7 +155,7 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 
 			const string plaintext = "file-b64-secret";
 			string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
-			string? decryptedWithRawKey = await VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
+			string? decryptedWithRawKey = VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
 
 			Assert.Equal(plaintext, decryptedWithRawKey);
 		}
@@ -166,7 +166,7 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 	}
 
 	[Fact]
-	public async Task ConfigureFromEnvironment_Base64TakesPrecedenceOverPlainKey()
+	public void ConfigureFromEnvironment_Base64TakesPrecedenceOverPlainKey()
 	{
 		VaporCryptoHelper.ResetForTests();
 		byte[] rawKey = RandomNumberGenerator.GetBytes(32);
@@ -180,7 +180,7 @@ public sealed class VaporCryptoHelperEncryptionTests : IDisposable
 
 		const string plaintext = "precedence-secret";
 		string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, plaintext);
-		string? decryptedWithBase64Key = await VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
+		string? decryptedWithBase64Key = VaporCryptoHelper.DecryptWithKey(rawKey, encrypted!);
 
 		Assert.Equal(plaintext, decryptedWithBase64Key);
 	}
