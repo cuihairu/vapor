@@ -349,6 +349,58 @@ public sealed class BotSessionBranchTests : IDisposable
 		await pump.WaitAsync(TimeSpan.FromSeconds(3));
 	}
 
+	[Fact]
+	public async Task QrChallengeRotation_WithoutEventCallback_RepublishesWithoutFanOut()
+	{
+		// A rotated challenge URL arrives while already in ConnectingWaitQr: the
+		// republish path calls RaiseEventCallback unconditionally, and the
+		// callback-less session must return from it instead of fanning out.
+		_transportMock
+			.Setup(t => t.BeginQrLoginAsync(Account, It.IsAny<Action<string>>(), It.IsAny<CancellationToken>()))
+			.Returns((string _, Action<string> onUrl, CancellationToken _) =>
+			{
+				onUrl("https://s.team/q/1/NOCHAT");
+				onUrl("https://s.team/q/1/ROTATED");
+				return Task.FromResult(new QrLoginResult(true, null, QrRefreshToken));
+			});
+		SetupConnect();
+		_transportMock
+			.Setup(t => t.LoginAsync(Account, string.Empty, It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_transportMock
+			.Setup(t => t.UpdateLogOnDetailsAsync(Account, null, QrRefreshToken))
+			.Returns(Task.CompletedTask);
+		var session = CreateSession(withEventCallback: false, qrLogin: true);
+
+		var received = new List<SessionEvent>();
+		using var cts = new CancellationTokenSource();
+		var pump = Task.Run(async () =>
+		{
+			await foreach (var evt in session.SubscribeEvents(cts.Token))
+			{
+				lock (received)
+				{
+					received.Add(evt);
+				}
+
+				// The first URL also emits a StateChanged alongside the challenge;
+				// count challenges, not raw events.
+				if (received.Count(e => e.Type == SessionEventType.QrCodeNeeded) == 2)
+				{
+					return;
+				}
+			}
+		});
+
+		var result = await session.LoginAsync();
+
+		Assert.True(result.Success);
+		await pump.WaitAsync(TimeSpan.FromSeconds(30)); // both challenges delivered
+		var urls = received.Where(e => e.Type == SessionEventType.QrCodeNeeded).Select(e => e.Message).ToList();
+		Assert.Equal(new[] { "https://s.team/q/1/NOCHAT", "https://s.team/q/1/ROTATED" }, urls);
+		cts.Cancel();
+	}
+
 	private const string QrRefreshToken = "refresh.jwt";
 
 	private void SetupQrApproved()

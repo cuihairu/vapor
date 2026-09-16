@@ -535,6 +535,21 @@ public class BotSessionTests : IDisposable
 		);
 	}
 
+	[Fact]
+	public void SessionCommand_PositionalMembers_RoundTrip()
+	{
+		// Exercises the synthesized members (Id getter, equality) of the command record.
+		using var cts = new CancellationTokenSource();
+		var command = new SessionCommand(
+			"cmd-1", SessionCommandType.Provide2FACode, null, null, null, cts.Token);
+		var same = command with { };
+
+		Assert.Equal("cmd-1", command.Id);
+		Assert.Equal(SessionCommandType.Provide2FACode, command.Type);
+		Assert.Equal(command, same);
+		Assert.NotEqual(command, command with { Id = "cmd-2" });
+	}
+
 	public void Dispose()
 	{
 		// Cleanup if needed

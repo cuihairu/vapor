@@ -75,6 +75,29 @@ public sealed class VaporCryptoHelperMethodTests : IDisposable
 		}
 	}
 
+	[Fact]
+	public async Task SetEncryptionKeyFromFile_ValidBase64ButTooShort_FallsBackToRawUtf8Key()
+	{
+		// "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4" is valid base64 but decodes to only 24
+		// bytes — below the 32-byte minimum, so the 32 raw text bytes must become
+		// the key instead (which then satisfies the length check).
+		VaporCryptoHelper.ResetForTests();
+		string path = Path.Combine(Path.GetTempPath(), "vapor-key-" + Guid.NewGuid().ToString("N"));
+		await File.WriteAllTextAsync(path, "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4");
+		try
+		{
+			VaporCryptoHelper.SetEncryptionKeyFromFile(path);
+
+			string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, "roundtrip");
+			Assert.NotNull(encrypted);
+			Assert.Equal("roundtrip", await VaporCryptoHelper.Decrypt(ECryptoMethod.AES, encrypted!));
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
 	// --- per-method dispatch (Encrypt) ---
 
 	[Fact]

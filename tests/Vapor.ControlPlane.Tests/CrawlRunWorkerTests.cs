@@ -563,6 +563,106 @@ public sealed class CrawlRunWorkerTests : IDisposable
 		Assert.Single(await _crawl.ListRunsAsync("plan-1")); // run 1 pruned, run 2 kept
 	}
 
+	[Fact]
+	public async Task AuditCanceledWhileStopping_PropagatesCancellation()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+		_audit.ThrowCanceledOnRecord = true;
+
+		var worker = CreateWorker();
+
+		// Cancellation escaping the audit write must not be mistaken for an audit
+		// failure (which would swallow it) — it rethrows so the loop can stop.
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunTickAsync(CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task BrokenTick_LogsErrorAndKeepsServing()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		// Real hosting loop: a tick that throws must be logged, not kill the service.
+		var worker = CreateWorker(tickSeconds: 1);
+		await worker.StartAsync(CancellationToken.None);
+		try
+		{
+			await WaitUntilAsync(() => _jobs.Created.Count == 1); // tick 1: dispatch
+
+			string jobId = _jobs.CreatedJobs[0].Job.Id;
+			_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+			_jobs.Outputs[jobId] = BatchOutput(new uint[] { 570 });
+			_events.ThrowOnPublishRuns = 1; // tick 2: completion event blows up mid-tick
+
+			// Tick 2 fails inside CompleteRunAsync (publish throws); the cursor was never
+			// settled, so tick 3 claims the still-due plan again — proof the loop survived.
+			await WaitUntilAsync(() => _jobs.Created.Count == 2);
+
+			Assert.Equal(2, worker.RunsTriggered);
+			Assert.Contains(_events.Published, e => e.Type == "crawl.run_triggered"
+				&& Equals(e.Payload!["run_id"], _jobs.Created[1].Meta!["crawl_run_id"]));
+		}
+		finally
+		{
+			await worker.StopAsync(CancellationToken.None);
+		}
+
+		// Reaching tick 3 already proves the loop survived the broken tick (an escaping
+		// tick failure would have faulted ExecuteTask and stopped all further ticks).
+		Assert.NotNull(worker.ExecuteTask);
+		Assert.True(worker.ExecuteTask!.IsCompleted);
+	}
+
+	[Fact]
+	public async Task StopRequestedWhileDispatchInFlight_BreaksLoopQuietly()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		// The dispatch call parks in the gate; stop is requested, then the gate opens
+		// so CreateJob throws cancellation on an already-cancelled stopping token —
+		// the loop must break through the OperationCanceledException arm, not the
+		// generic one (which would keep the service running past shutdown).
+		var createEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var openGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		_jobs.CreateGate = _ =>
+		{
+			createEntered.TrySetResult();
+			return openGate.Task;
+		};
+		_jobs.ThrowCanceledOnCreate = true;
+
+		var worker = CreateWorker(tickSeconds: 1);
+		await worker.StartAsync(CancellationToken.None);
+		await createEntered.Task.WaitAsync(TimeSpan.FromSeconds(30)); // tick 1 parked in dispatch
+
+		Task stopTask = worker.StopAsync(CancellationToken.None); // cancels the stopping token
+		openGate.TrySetResult();
+
+		await stopTask.WaitAsync(TimeSpan.FromSeconds(30));
+
+		Assert.NotNull(worker.ExecuteTask);
+		Assert.True(worker.ExecuteTask!.IsCompletedSuccessfully); // broke out, did not fault
+		Assert.Equal(0, worker.RunsCompleted); // the aborted run never settled
+	}
+
+	private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan? budget = null)
+	{
+		// Ticks come from a real PeriodicTimer (1s), so wait for observable state
+		// instead of guessing timing; the budget only covers timer drift on slow CI.
+		var deadline = DateTimeOffset.UtcNow + (budget ?? TimeSpan.FromSeconds(30));
+		while (!condition())
+		{
+			if (DateTimeOffset.UtcNow > deadline)
+			{
+				throw new TimeoutException("Condition not reached within budget");
+			}
+
+			await Task.Delay(10);
+		}
+	}
+
 	private static string _latestRunId(FakeCrawlJobStore jobs) =>
 		jobs.Created.Select(j => j.Meta!["crawl_run_id"]).Last();
 }
@@ -571,9 +671,16 @@ internal sealed class FakeCrawlAuditStore : IAuditStore
 {
 	public List<AuditEntry> Entries { get; } = [];
 	public bool ThrowOnRecord { get; set; }
+	/// <summary>RecordAsync throws cancellation (the stopping-token rethrow path).</summary>
+	public bool ThrowCanceledOnRecord { get; set; }
 
 	public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
 	{
+		if (ThrowCanceledOnRecord)
+		{
+			throw new OperationCanceledException();
+		}
+
 		if (ThrowOnRecord)
 		{
 			throw new IOException("audit store unavailable");
@@ -609,11 +716,18 @@ internal sealed class FakeCrawlJobStore : IJobStore
 	/// <summary>Exceptions thrown from GetJob once each (OCE → rethrow path, IOException → swallow path).</summary>
 	public Queue<Exception> GetJobExceptions { get; } = new();
 	public Func<CreateJobRequest, bool>? ThrowOnCreateWhen { get; set; }
+	/// <summary>Awaited inside CreateJob before the throw decision (parks a dispatch mid-call).</summary>
+	public Func<CreateJobRequest, Task>? CreateGate { get; set; }
 
 	public void Drop(string jobId) => _jobs.Remove(jobId);
 
-	public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
+	public async Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
 	{
+		if (CreateGate is { } gate)
+		{
+			await gate(request);
+		}
+
 		if (ThrowCanceledOnCreate)
 		{
 			throw new OperationCanceledException(cancellationToken);
@@ -632,7 +746,7 @@ internal sealed class FakeCrawlJobStore : IJobStore
 		_jobs[jobId] = jobWithTasks;
 		Created.Add(request);
 		CreatedJobs.Add(jobWithTasks);
-		return Task.FromResult(jobWithTasks);
+		return jobWithTasks;
 	}
 
 	public Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken)
@@ -727,8 +841,19 @@ internal sealed class FakeCrawlJobStore : IJobStore
 internal sealed class FakeCrawlEventBroker : IEventBroker
 {
 	public List<(string? JobId, string Type, IReadOnlyDictionary<string, object?>? Payload)> Published { get; } = [];
+	/// <summary>Publish throws InvalidOperationException this many times before behaving again.</summary>
+	public int ThrowOnPublishRuns { get; set; }
 
-	public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload) => Published.Add((jobId, type, payload));
+	public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload)
+	{
+		if (ThrowOnPublishRuns > 0)
+		{
+			ThrowOnPublishRuns--;
+			throw new InvalidOperationException("event broker unavailable");
+		}
+
+		Published.Add((jobId, type, payload));
+	}
 
 	public void PublishSession(string accountName, string eventType, string state, string? message = null)
 	{

@@ -1451,10 +1451,12 @@ internal sealed class SlowHeartbeatStore : IJobStore
 
 	public async Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken)
 	{
-		// The delay must ignore the token: the whole point is to return after the
-		// abort instead of unwinding through an OperationCanceledException.
+		// Both the delay and the inner call must ignore the token: the whole point
+		// is to return normally after the abort so the read loop re-evaluates its
+		// condition (RequestAborted) and exits through the regular loop end — the
+		// graceful teardown path, not the exception path.
 		await Task.Delay(600).ConfigureAwait(false);
-		return await _inner.HeartbeatTask(taskId, attempt, cancellationToken).ConfigureAwait(false);
+		return await _inner.HeartbeatTask(taskId, attempt, CancellationToken.None).ConfigureAwait(false);
 	}
 
 	public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken) => _inner.CreateJob(request, cancellationToken);

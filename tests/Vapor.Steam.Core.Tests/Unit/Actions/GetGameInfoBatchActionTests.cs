@@ -148,6 +148,19 @@ public sealed class GetGameInfoBatchActionTests : IDisposable
 	}
 
 	[Fact]
+	public void TryParseAppIds_WithUnsupportedElementKind_NamesTheEntry()
+	{
+		// Elements that are neither text nor numeric (a boxed bool here, likewise a
+		// JsonElement of kind True/Object/Null) must be rejected naming the entry.
+		var raw = new List<object?> { 730, true };
+
+		bool ok = GetGameInfoBatchAction.TryParseAppIds(raw, out _, out string? error);
+
+		Assert.False(ok);
+		Assert.Contains("invalid app_ids entry 'True'", error);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_WhenClientFactoryThrows_SurfacesError()
 	{
 		var action = new GetGameInfoBatchAction(

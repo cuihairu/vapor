@@ -88,6 +88,46 @@ public sealed class SteamMarketMyListingsContractTests
 	}
 
 	[Fact]
+	public void Contract_AcceptsCurrencyIdAsJsonString()
+	{
+		// Some endpoint variants return currencyid as a string instead of a number
+		// (the helper accepts either); the parsed value must stay normalized text.
+		const string json = """
+		{
+			"success": true, "start": 0, "pagesize": 100, "total_count": 1,
+			"num_active_listings": 1, "listing_on_hold": [], "listing_to_be_confirmed": [],
+			"mylistings": [
+				{
+					"listingid": "3547123456789012348",
+					"steamid_lister": "76561198000000001",
+					"game_appid": 730, "game_name": "Counter-Strike 2",
+					"contextid": "2", "assetid": "51234567891", "classid": "4593095276",
+					"instanceid": "0", "price": 103, "fee": 12, "steam_fee": 7,
+					"publisher_fee": 5, "publisher_fee_app": 730,
+					"publisher_fee_percent": "0.1000",
+					"currencyid": "1", "time_created": 1760000000, "cancel_requested": 0,
+					"asset_description": {
+						"appid": 730, "classid": "4593095276", "instanceid": "0",
+						"icon_url": "economy/image/fWfeUw/360fx360f",
+						"name": "AK-47 | Redline (Field-Tested)",
+						"market_name": "AK-47 | Redline (Field-Tested)",
+						"market_hash_name": "AK-47 | Redline (Field-Tested)",
+						"type": "Rifle", "tradable": 1, "marketable": 1, "commodity": 0
+					}
+				}
+			]
+		}
+		""";
+		using var doc = JsonDocument.Parse(json);
+
+		var page = SteamMarketClient.ParseMyListings(doc.RootElement, start: 0, pageSize: 100);
+
+		var listing = Assert.Single(page.Listings);
+		Assert.Equal("1", listing.CurrencyId);
+		Assert.Equal(103, listing.PriceCents);
+	}
+
+	[Fact]
 	public void Contract_ExposesPagingTotalsAndHoldCounts()
 	{
 		var page = Replay();

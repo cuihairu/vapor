@@ -86,6 +86,32 @@ public sealed class TracingTests
 	}
 
 	[Fact]
+	public async Task DispatchWithoutListener_DispatchesWithoutTraceparent()
+	{
+		// With no ActivityListener registered the dispatch span is null, so the
+		// tunnel message carries no trace headers (the documented inert mode) and
+		// InjectTraceparent degrades to null for both null and id-less activities.
+		var registry = new AgentRegistry();
+		ConnectedAgent agent = new(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["login"] = true }, null),
+			new NoopWebSocket());
+		AddAgent(registry, agent);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
+		var scheduler = new TaskSchedulerService(registry, store, new RecordingNoopEventBroker(), CreateConfig());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		WSMessage dispatched = ReadQueuedMessage(agent);
+		Assert.Null(dispatched.TraceHeaders);
+
+		Assert.Null(VaporTracing.InjectTraceparent(null));
+		using Activity unstarted = new("op"); // constructed but never started: Id stays null
+		Assert.Null(VaporTracing.InjectTraceparent(unstarted));
+	}
+
+	[Fact]
 	public void TryExtractContext_RejectsMalformedTraceparent()
 	{
 		Assert.False(VaporTracing.TryExtractContext(new Dictionary<string, string> { ["traceparent"] = "not-a-traceparent" }, out _));

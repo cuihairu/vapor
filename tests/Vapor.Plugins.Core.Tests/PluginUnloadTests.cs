@@ -1,5 +1,7 @@
 using Xunit;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Plugins.Core;
 
 namespace Vapor.Plugins.Core.Tests;
@@ -87,6 +89,69 @@ public class PluginUnloadTests : IDisposable
 		await manager.DisposeAsync();
 
 		Assert.Empty(manager.LoadedPlugins);
+	}
+
+	[Fact]
+	public async Task DisposeAsync_WhenUnloadItselfThrows_LogsAndStillCompletes()
+	{
+		// An unload that blows up outside its handler try (here: the logger throwing
+		// on the "Unloading plugin" announcement) must be caught per-plugin by the
+		// dispose loop: DisposeAsync completes and no plugin is reported loaded.
+		PluginStaging.StageTestPlugin(_root);
+
+		var manager = new PluginManager(
+			new DefaultPluginHostServices(NullLoggerFactory.Instance, new NullServiceProvider()),
+			new ThrowingOnUnloadAnnouncementLoggerFactory());
+		await manager.LoadAllAsync(_root);
+		Assert.Single(manager.LoadedPlugins);
+
+		await manager.DisposeAsync(); // must not throw
+
+		Assert.Empty(manager.LoadedPlugins);
+	}
+
+	private sealed class NullServiceProvider : IServiceProvider
+	{
+		public object? GetService(Type serviceType) => null;
+	}
+
+	/// <summary>
+	/// A logger factory whose loggers throw only on the "Unloading plugin" information
+	/// announcement — that call sits outside UnloadAsync's handler try, so the throw
+	/// escapes into DisposeAsync's per-plugin catch (the warning it then logs is plain
+	/// text and passes through silently).
+	/// </summary>
+	private sealed class ThrowingOnUnloadAnnouncementLoggerFactory : ILoggerFactory
+	{
+		public ILogger CreateLogger(string categoryName) => new ThrowingLogger();
+
+		public void AddProvider(ILoggerProvider provider)
+		{
+		}
+
+		public void Dispose()
+		{
+		}
+
+		private sealed class ThrowingLogger : ILogger
+		{
+			public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+			public bool IsEnabled(LogLevel logLevel) => true;
+
+			public void Log<TState>(
+				LogLevel logLevel,
+				EventId eventId,
+				TState state,
+				Exception? exception,
+				Func<TState, Exception?, string> formatter)
+			{
+				if (formatter(state, exception).Contains("Unloading plugin", StringComparison.Ordinal))
+				{
+					throw new InvalidOperationException("logger exploded during unload announcement");
+				}
+			}
+		}
 	}
 
 	[Fact]

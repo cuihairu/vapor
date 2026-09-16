@@ -180,6 +180,20 @@ public sealed class MaFileImportCliTests : IDisposable
 	}
 
 	[Fact]
+	public async Task RunAsync_NonexistentPath_KeptForPerFileErrorAndFails()
+	{
+		// A path that matches neither directory nor file is kept in the expansion so
+		// the per-file failure names it (not "no .maFile files found").
+		string ghost = Path.Combine(_workDirectory, "ghost.maFile");
+		using var store = CreateStore();
+
+		int exitCode = await MaFileImportCli.RunAsync([ghost], store, NullLogger.Instance);
+
+		Assert.Equal(1, exitCode); // per-file failure, not the usage exit (2)
+		Assert.False(await store.HasCredentialsAsync("ghost"));
+	}
+
+	[Fact]
 	public async Task RunAsync_PasswordWithoutValue_ReturnsUsageExitCode()
 	{
 		using var store = CreateStore();

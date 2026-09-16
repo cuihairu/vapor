@@ -299,6 +299,27 @@ public sealed class RedisVaporCacheTests
 	}
 
 	[Fact]
+	public async Task GetOrSetStaleWhileRevalidateAsync_AbsentKey_MissesAndFillsWithoutDelete()
+	{
+		var redis = new FakeRedis();
+		using var cache = redis.CreateCache();
+
+		var result = await cache.GetOrSetStaleWhileRevalidateAsync("k", ct => Factory(new Payload("made")), TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(9));
+
+		Assert.Equal("made", result!.Value);
+		Assert.Equal(1, cache.Misses);
+		Assert.Empty(redis.DeletedKeys); // nothing stale to evict — straight to the fill
+		var deadline = DateTime.UtcNow.AddSeconds(5);
+		while (redis.Sets.Count == 0 && DateTime.UtcNow < deadline)
+		{
+			await Task.Delay(25);
+		}
+
+		Assert.True(RedisCacheEntry.TryDecode(redis.Sets[0].Json!, out var payload, out _, out _));
+		Assert.Equal("made", System.Text.Json.JsonSerializer.Deserialize<Payload>(payload!)!.Value);
+	}
+
+	[Fact]
 	public async Task GetOrSetStaleWhileRevalidateAsync_FactoryThrowsDuringRefresh_IsSwallowed()
 	{
 		var redis = new FakeRedis();
@@ -396,6 +417,28 @@ public sealed class RedisVaporCacheTests
 
 		Assert.Equal(0, cache.RemoveByPrefix("none:"));
 		Assert.Empty(redis.BatchDeletes);
+	}
+
+	[Fact]
+	public void RemoveByPrefix_WhenNoServerReportsConnected_FallsBackToFirstEndpoint()
+	{
+		// Every endpoint reports disconnected: the scan must still run against the
+		// first endpoint instead of skipping the invalidation.
+		var redis = new FakeRedis();
+		redis.Multiplexer.Setup(m => m.GetEndPoints(It.IsAny<bool>())).Returns([new DnsEndPoint("redis.test", 6379)]);
+		redis.Multiplexer.Setup(m => m.GetServer(It.IsAny<EndPoint>(), It.IsAny<object>())).Returns(redis.Server.Object);
+		redis.Server.Setup(s => s.IsConnected).Returns(false);
+		redis.Server.Setup(s => s.Keys(It.IsAny<int>(), It.IsAny<RedisValue>(), It.IsAny<int>(), It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CommandFlags>()))
+			.Returns([new RedisKey("t:user:1")]);
+		redis.Database.Setup(d => d.KeyDelete(It.IsAny<RedisKey[]>(), It.IsAny<CommandFlags>()))
+			.Callback((RedisKey[] keys, CommandFlags _) => redis.BatchDeletes.Add(keys.Select(k => k.ToString()!).ToArray()))
+			.Returns(1);
+		redis.Database.Setup(d => d.SetRemove(It.IsAny<RedisKey>(), It.IsAny<RedisValue[]>(), It.IsAny<CommandFlags>()))
+			.Returns(1);
+		using var cache = redis.CreateCache();
+
+		Assert.Equal(1, cache.RemoveByPrefix("user:"));
+		Assert.Equal([["t:user:1"]], redis.BatchDeletes);
 	}
 
 	[Fact]

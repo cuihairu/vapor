@@ -242,6 +242,48 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task BrokenUnassignPass_IsLoggedAndLoopKeepsServing()
+	{
+		// Drives the background loop (not ReconcileOnce directly): the cancel store
+		// blowing up during the unassign path escapes the per-account catch into the
+		// ExecuteAsync catch — the pass is logged as broken and the loop keeps ticking.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, intervalSeconds: 1);
+
+		await reconciler.StartAsync(CancellationToken.None);
+
+		// Tick 1: the login job is dispatched and the active job id pinned.
+		var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+		while (jobs.Created.Count == 0 && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		Assert.Single(jobs.Created);
+
+		// Tick 2: disabling the account unassigns it, but the store's cancel throws —
+		// only the NotFoundException arm swallows, so the IOException escapes to the
+		// background loop's catch (the line under coverage).
+		accounts.SetEnabled("alice", enabled: false);
+		jobs.ThrowOnCancel = true;
+
+		// Tick 3 proves the loop survived: the active job id was cleared ahead of the
+		// failed cancel, so the retry unassigns cleanly.
+		deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+		while (reconciler.Unassignments == 0 && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		await reconciler.StopAsync(CancellationToken.None);
+
+		Assert.Equal(1, reconciler.Unassignments);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.AssignedAgent);
+	}
+
+	[Fact]
 	public async Task DryRun_ReportsDeviationsWithoutDispatching()
 	{
 		var audit = new FakeAuditStore();

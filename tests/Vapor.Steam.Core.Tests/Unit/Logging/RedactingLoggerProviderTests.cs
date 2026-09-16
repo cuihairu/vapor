@@ -142,6 +142,35 @@ public sealed class RedactingLoggerProviderTests
 	}
 
 	[Fact]
+	public void Log_StructuredState_EnumeratesViaNonGenericInterface()
+	{
+		// The redacted state wraps the pairs in a custom IReadOnlyList implementation;
+		// consumers that only see System.Collections.IEnumerable (older log sinks,
+		// debuggers) must enumerate the same redacted pairs through it.
+		var capturing = new CapturingProvider();
+		var logger = CreateLogger(capturing);
+
+		logger.Log(
+			LogLevel.Information,
+			new EventId(1),
+			new List<KeyValuePair<string, object?>> { new("accountName", "bob"), new("authCode", "123456") },
+			null,
+			static (_, _) => "structured");
+
+		var entry = Assert.Single(capturing.Captured);
+		Assert.NotNull(entry.StructuredState);
+		var plain = new List<KeyValuePair<string, object?>>();
+		foreach (var pair in (System.Collections.IEnumerable)entry.StructuredState!)
+		{
+			plain.Add((KeyValuePair<string, object?>)pair!);
+		}
+
+		Assert.Contains(plain, p => p.Key == "authCode" && "<redacted>".Equals(p.Value));
+		Assert.Contains(plain, p => p.Key == "accountName" && "bob".Equals(p.Value));
+		Assert.Contains(plain, p => p.Key == "{OriginalFormat}" && "structured".Equals(p.Value));
+	}
+
+	[Fact]
 	public void Log_WithException_ReddactsExceptionContent()
 	{
 		var capturing = new CapturingProvider();

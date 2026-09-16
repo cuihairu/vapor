@@ -388,7 +388,79 @@ public sealed class NotificationTests
 		Assert.Equal(TaskStatus.RanToCompletion, service.ExecuteTask!.Status);
 	}
 
+	[Fact]
+	public async Task FiniteBrokerStreams_WhenDrained_ServiceCompletesWithoutStop()
+	{
+		// A broker whose subscription streams end naturally (e.g. a replay/projection
+		// source) exercises the pumps' normal loop exits: all three drain, and
+		// ExecuteAsync runs to completion without StopAsync being called.
+		var broker = new FiniteBroker();
+		var sink = new RecordingSink();
+		using var service = new NotificationService(broker, new[] { sink }, NullLogger<NotificationService>.Instance);
+
+		await service.StartAsync(CancellationToken.None);
+
+		NotificationEvent delivered = await sink.WaitForEventAsync();
+		Assert.Equal("job.created", delivered.Type);
+
+		// The three pumps all reached their natural stream ends. (The ExecuteTask
+		// status is WaitingForActivation while pending — BackgroundService attaches
+		// a continuation — so poll completion, not TaskStatus.Running.)
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+		while (!service.ExecuteTask!.IsCompleted && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		Assert.Equal(TaskStatus.RanToCompletion, service.ExecuteTask!.Status);
+	}
+
 	// ── fixtures ──
+
+	/// <summary>
+	/// A broker whose streams are finite: one job event, then end of enumeration;
+	/// the session and auth-challenge streams are empty. Backs the natural-drain
+	/// coverage of the notification pumps.
+	/// </summary>
+	private sealed class FiniteBroker : IEventBroker
+	{
+		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload)
+		{
+		}
+
+		public void PublishSession(string accountName, string eventType, string state, string? message = null)
+		{
+		}
+
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+		{
+		}
+
+		public async IAsyncEnumerable<Vapor.Protocol.Event> Subscribe(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+			string jobId)
+		{
+			await Task.Yield();
+			yield return new Vapor.Protocol.Event(
+				"evt-finite-1", "job-finite", "job.created", DateTimeOffset.UtcNow, null);
+		}
+
+		public async IAsyncEnumerable<SessionEvent> SubscribeSessions(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+			string? accountName = null)
+		{
+			await Task.Yield();
+			yield break;
+		}
+
+		public async IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+			string? accountName = null)
+		{
+			await Task.Yield();
+			yield break;
+		}
+	}
 
 	/// <summary>
 	/// Starts the background service and waits until its three pumps have actually

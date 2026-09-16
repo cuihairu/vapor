@@ -67,8 +67,16 @@ public sealed class TaskSchedulerServiceTests
 		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
 
 		await scheduler.StartAsync(CancellationToken.None);
-		// The dispatch timer fires every 250ms; one tick exercises the loop body.
-		await Task.Delay(400);
+		// The dispatch timer fires every 250ms; the stale-requeue probe that opens
+		// every first DispatchOnce is the deterministic signal the loop body ran —
+		// a fixed delay would race the first tick on a loaded CI runner.
+		var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+		while (store.StaleRequeueLeases.Count == 0)
+		{
+			Assert.True(DateTimeOffset.UtcNow < deadline, "scheduler never ran a dispatch tick");
+			await Task.Delay(10);
+		}
+
 		await scheduler.StopAsync(CancellationToken.None);
 
 		// Reaching a clean stop without exceptions is the assertion: the background

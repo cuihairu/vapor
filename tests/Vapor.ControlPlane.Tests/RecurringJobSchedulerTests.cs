@@ -295,9 +295,16 @@ public sealed class RecurringJobSchedulerRetireTests
 	{
 		public List<Job> Templates { get; } = [];
 		public List<string> CancelledJobIds { get; } = [];
+		/// <summary>Set on the first due-listing call — the hosting loop's deterministic tick signal.</summary>
+		public TaskCompletionSource ListedDue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public int DueListCalls;
 
-		public Task<IReadOnlyList<Job>> ListDueScheduledJobs(DateTimeOffset now, int limit, CancellationToken cancellationToken) =>
-			Task.FromResult<IReadOnlyList<Job>>(Templates);
+		public Task<IReadOnlyList<Job>> ListDueScheduledJobs(DateTimeOffset now, int limit, CancellationToken cancellationToken)
+		{
+			Interlocked.Increment(ref DueListCalls);
+			ListedDue.TrySetResult();
+			return Task.FromResult<IReadOnlyList<Job>>(Templates);
+		}
 
 		public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken)
 		{
@@ -328,18 +335,17 @@ public sealed class RecurringJobSchedulerRetireTests
 	[Fact]
 	public async Task StartStop_RunsAtLeastOneSchedulerTick()
 	{
-		// The scheduler's PeriodicTimer fires every second; one tick exercises the
-		// ExecuteAsync loop body (an empty store makes the pass a no-op).
-		using var store = new SqliteJobStore(":memory:");
-		var scheduler = new RecurringJobScheduler(
-			store, new ControlPlaneApiTests.RecordingEventBroker(), NullLogger<RecurringJobScheduler>.Instance);
-		scheduler.Clock = static () => DateTimeOffset.UtcNow.AddMinutes(-5);
+		// The scheduler's PeriodicTimer fires every second; the tick's store read is
+		// the deterministic signal that the ExecuteAsync loop body actually ran (a
+		// fixed delay would race the first tick on a loaded CI runner).
+		var scheduler = new RecurringJobScheduler(_store, _events, NullLogger<RecurringJobScheduler>.Instance);
 
 		await scheduler.StartAsync(CancellationToken.None);
-		await Task.Delay(1200);
+		await _store.ListedDue.Task.WaitAsync(TimeSpan.FromSeconds(30));
 		await scheduler.StopAsync(CancellationToken.None);
 
-		// Reaching a clean stop without exceptions is the assertion.
+		Assert.True(_store.DueListCalls >= 1);
+		Assert.True(scheduler.ExecuteTask?.IsCompleted); // clean stop, no fault
 	}
 
 	[Fact]

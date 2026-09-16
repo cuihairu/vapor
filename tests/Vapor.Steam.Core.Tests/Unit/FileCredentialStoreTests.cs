@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Vapor.Steam.Core.Security;
 using Xunit;
 
@@ -389,6 +390,60 @@ public sealed class FileCredentialStoreTests : IDisposable
 
 		UnixFileMode mode = File.GetUnixFileMode(StorePath);
 		Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
+	}
+
+	[Fact]
+	public async Task Save_WhenPermissionRestrictionFails_LogsWarningAndStillSaves()
+	{
+		if (OperatingSystem.IsWindows() || Environment.UserName == "root")
+		{
+			return; // Needs a Unix unprivileged user: chmod on the target must fail with EPERM.
+		}
+
+		// The atomic-save temp path resolves to /dev/null: the write succeeds (data is
+		// discarded), but restricting permissions on the character device is refused,
+		// so the save must swallow the failure and still complete.
+		File.CreateSymbolicLink(StorePath + ".tmp", "/dev/null");
+		var logger = new Mock<Microsoft.Extensions.Logging.ILogger<FileCredentialStore>>(MockBehavior.Loose);
+		using var store = new FileCredentialStore(logger.Object, _dataDirectory);
+
+		await store.SaveRefreshTokenAsync("account-a", "token");
+
+		logger.Verify(
+			l => l.Log(
+				Microsoft.Extensions.Logging.LogLevel.Warning,
+				It.IsAny<Microsoft.Extensions.Logging.EventId>(),
+				It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Failed to restrict permissions", StringComparison.Ordinal)),
+				It.IsAny<Exception?>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task Load_WhenPermissionCheckFails_LogsWarningAndStartsFresh()
+	{
+		if (OperatingSystem.IsWindows() || Environment.UserName == "root")
+		{
+			return; // Needs a Unix unprivileged user: chmod on the target must fail with EPERM.
+		}
+
+		// The credentials path resolves to /dev/null: reading yields empty content
+		// (store starts fresh) while the permission tightening hits the device's
+		// 0666 mode and the chmod itself is refused — both logged, neither fatal.
+		File.CreateSymbolicLink(StorePath, "/dev/null");
+		var logger = new Mock<Microsoft.Extensions.Logging.ILogger<FileCredentialStore>>(MockBehavior.Loose);
+		using var store = new FileCredentialStore(logger.Object, _dataDirectory);
+
+		Assert.False(await store.HasCredentialsAsync("account-a"));
+
+		logger.Verify(
+			l => l.Log(
+				Microsoft.Extensions.Logging.LogLevel.Warning,
+				It.IsAny<Microsoft.Extensions.Logging.EventId>(),
+				It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Failed to check permissions", StringComparison.Ordinal)),
+				It.IsAny<Exception?>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Once);
 	}
 
 	[Fact]

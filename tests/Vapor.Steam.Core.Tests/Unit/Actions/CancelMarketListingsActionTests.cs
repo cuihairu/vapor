@@ -139,6 +139,24 @@ public sealed class CancelMarketListingsActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_MinPriceAboveCheapestListing_ExcludesIt()
+	{
+		var (action, _, session) = CreateAction();
+
+		// min=100 sits strictly above the 30c coupon but below the other two, so the
+		// lower bound itself rejects an entry (the inclusive test only proved the max side).
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["min_price_cents"] = 100 },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(2, result.Output!["matched"]);
+		var listings = Assert.IsType<List<Dictionary<string, object?>>>(result.Output["listings"]);
+		Assert.DoesNotContain(listings, l => "3547123456789012346".Equals(l["listing_id"])); // the 30c coupon
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_AgeFilter_MatchesOldListings()
 	{
 		var (action, _, session) = CreateAction();
