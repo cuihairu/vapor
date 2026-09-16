@@ -1,7 +1,7 @@
 # 游戏数据字段字典（data dictionary）
 
 > 权威源。`src/Vapor.ControlPlane/wwwroot/gamedata.html` 的"字段字典"面板与本文件同步维护；
-> 修改任一侧时必须同步另一侧（`DashboardStaticTests.GameDataHtml_DocumentsAllSixModels` 只锁模型名清单）。
+> 修改任一侧时必须同步另一侧（`DashboardStaticTests.GameDataHtml_DocumentsAllFiveModels` 只锁模型名清单）。
 > 模型定义：`src/Vapor.Steam.Core/Models/GameModels.cs`。
 
 ## 数据来源与无凭证约束
@@ -76,21 +76,6 @@
 | IsFree | `isFree` | bool | 是否免费 |
 | Price | `price` | PriceOverview? | 价格概览（搜索结果可能缺省） |
 | HeaderImage | `headerImage` | string? | 页头图 URL |
-| FetchedAt | `fetchedAt` | DateTimeOffset | 快照抓取时间 |
-
-### ItemInfo（市场单件检价：交易/MarketWatch 内部使用，不在公开 data action 里）
-
-| 字段 | JSON 键 | 类型 | 语义 |
-|---|---|---|---|
-| AppId | `appId` | uint | 物品所属应用 |
-| MarketHashName | `marketHashName` | string | 市场哈希名（物品类唯一标识） |
-| Name | `name` | string? | 显示名 |
-| Type | `type` | string? | 物品类型描述 |
-| IconUrl | `iconUrl` | string? | 图标 URL |
-| LowestPrice | `lowestPrice` | decimal? | 市场当前最低挂单价 |
-| MedianPrice | `medianPrice` | decimal? | 成交中位价 |
-| Currency | `currency` | string | 上方价格的币种 |
-| Volume24h | `volume24h` | int? | 24 小时成交量（可得时） |
 | FetchedAt | `fetchedAt` | DateTimeOffset | 快照抓取时间 |
 
 ### MarketListing（`get_market_listings`）

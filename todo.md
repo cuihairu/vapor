@@ -542,3 +542,16 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 环境变量文档漂移检查（负面结果）：文档 VAPOR_* 与代码/compose 交叉核对——docker.md 的 9 个变量全部由 docker-compose.yml 消费;plugins.md 的 `VAPOR_METRICS_VERBOSE`/`VAPOR_ALERT_THRESHOLD` 是配置扩展示例代码里的示意名非系统变量;唯一未文档化的是 `VAPOR_ENVIRONMENT`（环境判定第三回退,低价值不补）。无真实漂移。（✅ 2026-09-16）
 
 > 2026-09-16：**维护轮（2090 全绿;refactor/test/docs 三个提交）**。**过程中发现并归档**：裸 `dotnet test Vapor.sln` 九项目并行会饿死 60s 预算的 `SseEndpoint_ConcurrentConnections_AllReceiveEvents` 基准（并行全跑超时假红,项目单独重跑 39s 515/515 全绿）——已写入 TESTING.md 运行测试节,全量跑必须走 `./scripts/run-tests.sh`。**取舍记录**：审计的 15 个候选全部保留并逐条注明理由（契约面/扩展面/测试断言面/产品决策）,本轮零 API 删除——与此前"死代码删除轮"（删内部防御分支）不同,公共 API 的删除是契约决策;`ItemInfo` 与 data-dictionary 的对账单独立项待做（涉及 gamedata.html 六模型文案与守护测试联动）。验证：全解决方案 2090 用例——并行全跑 2089 过 + 1 基准饥饿假红,ControlPlane 单独重跑 515/515 后全绿收口;Steam.Core 加密/轮换相关 44/44;format 门禁过;CI 以本轮提交全绿为准。
+
+## 22. data-dictionary 对账：移除幻影模型 ItemInfo（六模型→五模型）（✅ 2026-09-16 完成）
+
+> 立项动机：§21 审计记录在案的待专项——`ItemInfo` record 生产零引用（lowest/median/volume 字段解析在 src 全仓不存在,get_price 返回的是 `PriceOverview` 形状）,但 data-dictionary.md 与 gamedata.html 以"六模型"文档化,且声称"由交易与市场监控流程内部使用"——文档与现实不符。git 历史保留完整形状,未来真做单件检价时可复活。对账确认其余五模型（GameInfo/PriceOverview/GameSearchResult/MarketListing/MarketListingsPage）全部生产在用。
+
+### 22.1 实施内容
+
+- [x] 代码移除：`GameModels.cs` 删 `ItemInfo` record（39 行,含 `item:{appId}:{marketHashName}` CacheKey）;`GameModelsTests` 删 `ItemInfo_SerializesWithCamelCase_AndRoundTrips` 并同步删 `CacheKeys_AreStable` 里的 ItemInfo 断言（4→3 测试）。（✅ 2026-09-16）
+- [x] 守护测试更新：`DashboardStaticTests.GameDataHtml_DocumentsAllSixModels` → `DocumentsAllFiveModels`（数组去 ItemInfo）,并新增反向守卫 `Assert.DoesNotContain("ItemInfo", html)` 防幻影模型回流文档（与 `PointsShopItemInfo` 无子串冲突,gamedata 页不含积分商店内容）。（✅ 2026-09-16）
+- [x] 文档双侧同步：data-dictionary.md 删 ItemInfo 节 + 头注守护测试名更新;architecture.md L319 模型列表去 ItemInfo;gamedata.html 删缓存表 prose 尾句（"由交易与市场监控流程内部使用"的不实声明）+ JS DICTIONARY 数据块（tab 由 `Object.keys(DICTIONARY)` 动态生成,自动五模型）,`node --check` 过。（✅ 2026-09-16）
+- [x] TESTING.md 计数联动：Steam.Core 1128→1127、合计 2090→2089、GameModelsTests 4→3、DashboardStaticTests 行"六模型文档"→"五模型文档(含不回流守卫)"。（✅ 2026-09-16）
+
+> 2026-09-16：**data-dictionary 对账收口（-1 测试,2089 全绿;refactor + docs 提交）**。此为 §21 审计②号处置的落地：公共 API 删除属契约决策,经对账确认零生产引用后执行;与 §21 维护轮"零 API 删除"不矛盾——那轮把决策时间留给本轮专项。教训延续：grep 结论不得被 `head` 截断（§21 曾因此误判 MarketListing,本轮复核确认其生产在用故只删 ItemInfo）。验证：GameModelsTests 3/3、DashboardStaticTests 9/9（含新反向守卫）、全解决方案 build 0 warning 0 error、format 门禁过;CI 以本轮提交全绿为准。

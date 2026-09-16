@@ -316,7 +316,7 @@ Agent enables it via `AddRedactingConsole()`.
 
 ## Data & Caching
 
-- Models: `GameInfo`, `ItemInfo`, `PriceOverview`, `GameSearchResult`,
+- Models: `GameInfo`, `PriceOverview`, `GameSearchResult`,
   `MarketListing`/`MarketListingsPage` (with cache key helpers and `FetchedAt`
   freshness markers).
 - `IVaporCache` abstraction with two implementations: per-entry
