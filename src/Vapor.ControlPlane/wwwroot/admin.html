@@ -748,11 +748,58 @@
                             <div class="field">
                                 <label for="actionSelect">动作</label>
                                 <select id="actionSelect">
-                                    <option value="ping">ping</option>
-                                    <option value="echo">echo</option>
-                                    <option value="login">login</option>
-                                    <option value="idle">idle</option>
-                                    <option value="redeem_key">redeem_key</option>
+                                    <optgroup label="基础">
+                                        <option value="ping">ping</option>
+                                        <option value="echo">echo</option>
+                                        <option value="login">login</option>
+                                        <option value="idle">idle</option>
+                                        <option value="play_games">play_games</option>
+                                    </optgroup>
+                                    <optgroup label="Key 与许可">
+                                        <option value="redeem_key">redeem_key</option>
+                                        <option value="add_license">add_license</option>
+                                    </optgroup>
+                                    <optgroup label="数据查询">
+                                        <option value="get_game_info">get_game_info</option>
+                                        <option value="get_game_info_batch">get_game_info_batch</option>
+                                        <option value="search_games">search_games</option>
+                                        <option value="get_price">get_price</option>
+                                        <option value="get_market_listings">get_market_listings</option>
+                                        <option value="get_card_drops">get_card_drops</option>
+                                        <option value="get_inventory">get_inventory</option>
+                                    </optgroup>
+                                    <optgroup label="交易">
+                                        <option value="get_trade_offers">get_trade_offers</option>
+                                        <option value="send_trade_offer">send_trade_offer</option>
+                                        <option value="accept_trade_offer">accept_trade_offer</option>
+                                        <option value="decline_trade_offer">decline_trade_offer</option>
+                                        <option value="cancel_trade_offer">cancel_trade_offer</option>
+                                        <option value="loot_inventory">loot_inventory</option>
+                                        <option value="find_duplicates">find_duplicates</option>
+                                        <option value="swap_duplicates">swap_duplicates</option>
+                                    </optgroup>
+                                    <optgroup label="市场">
+                                        <option value="get_my_market_listings">get_my_market_listings</option>
+                                        <option value="create_market_listing">create_market_listing</option>
+                                        <option value="cancel_market_listings">cancel_market_listings</option>
+                                    </optgroup>
+                                    <optgroup label="积分商店">
+                                        <option value="get_points_shop_summary">get_points_shop_summary</option>
+                                        <option value="claim_points_shop_items">claim_points_shop_items</option>
+                                    </optgroup>
+                                    <optgroup label="缓存">
+                                        <option value="cache_invalidate">cache_invalidate</option>
+                                    </optgroup>
+                                    <optgroup label="插件（需 Agent 装载对应插件）">
+                                        <option value="confirm_trade_offer">confirm_trade_offer</option>
+                                        <option value="confirm_all_confirmations">confirm_all_confirmations</option>
+                                        <option value="get_trade_confirmations">get_trade_confirmations</option>
+                                        <option value="respond_trade_confirmation">respond_trade_confirmation</option>
+                                        <option value="get_metrics">get_metrics</option>
+                                        <option value="market_watch_add">market_watch_add</option>
+                                        <option value="market_watch_list">market_watch_list</option>
+                                        <option value="market_watch_remove">market_watch_remove</option>
+                                    </optgroup>
                                 </select>
                             </div>
                             <div class="field">
@@ -890,7 +937,34 @@
             echo: '{"message":"hello"}',
             login: '{"password":"<steam-password>"}',
             idle: '{"seconds":60}',
-            redeem_key: '{"key":"AAAAA-BBBBB-CCCCC"}'
+            play_games: '{"app_ids":[730,570]}',
+            redeem_key: '{"key":"AAAAA-BBBBB-CCCCC"}',
+            add_license: '{"app_ids":[730]}',
+            get_game_info: '{"app_id":"730","cc":"us"}',
+            get_game_info_batch: '{"app_ids":[730,570,440],"cc":"us"}',
+            search_games: '{"term":"portal","cc":"us"}',
+            get_price: '{"app_id":"730","market_hash_name":"..."}',
+            get_market_listings: '{"app_id":"730","market_hash_name":"...","count":20}',
+            get_inventory: '{"app_ids":[753,730],"tradable_only":true}',
+            get_trade_offers: '{"active_only":true}',
+            send_trade_offer: '{"trade_url":"...","asset_ids":[...]}',
+            accept_trade_offer: '{"trade_offer_id":"123","partner_steam_id":"765..."}',
+            decline_trade_offer: '{"trade_offer_id":"123","partner_steam_id":"765..."}',
+            cancel_trade_offer: '{"trade_offer_id":"123"}',
+            loot_inventory: '{"partner_steam_id":"765...","app_ids":[753]}',
+            find_duplicates: '{"app_ids":[753],"keep":1}',
+            swap_duplicates: '{"partner_steam_id":"765...","send":false}',
+            get_my_market_listings: '{"start":0,"count":100}',
+            create_market_listing: '{"app_id":753,"context_id":"6","asset_id":"...","seller_proceeds_cents":100}',
+            cancel_market_listings: '{"dry_run":true,"app_id":753}',
+            get_points_shop_summary: '{"definition_ids":[1,2],"free_only":true}',
+            claim_points_shop_items: '{"definition_ids":[1,2]}',
+            cache_invalidate: '{"prefix":"game:730"}',
+            confirm_trade_offer: '{"trade_offer_id":"123"}',
+            confirm_all_confirmations: '{"operation":"allow","type":"trade"}',
+            get_trade_confirmations: '{}',
+            respond_trade_confirmation: '{"id":"...","operation":"allow"}',
+            market_watch_add: '{"kind":"price","app_id":730,"threshold_percent":10}'
         };
 
         document.addEventListener("DOMContentLoaded", async () => {
@@ -1590,17 +1664,45 @@
             const input = document.getElementById("payloadInput");
             input.placeholder = payloadPlaceholders[action] || "";
 
-            if (action === "login") {
-                hint.textContent = "login 常见参数: password, authCode, twoFactorCode, refreshToken, accessToken。";
-            } else if (action === "redeem_key") {
-                hint.textContent = "redeem_key 一般传 {\"key\":\"AAAAA-BBBBB-CCCCC\"}。";
-            } else if (action === "idle") {
-                hint.textContent = "idle 可传动作专用参数；若留空则按服务端默认行为执行。";
-            } else if (action === "echo") {
-                hint.textContent = "echo 会返回 payload 内容，适合连通性和负载格式验证。";
-            } else {
-                hint.textContent = "默认无需负载；仅在目标动作需要额外参数时传 JSON。";
-            }
+            const hints = {
+                ping: "连通性探测，无需负载。",
+                echo: "echo 会返回 payload 内容，适合连通性和负载格式验证。",
+                login: "login 常见参数: password, authCode, twoFactorCode, refreshToken, accessToken（扫码登录在 payload 传 {\"qrLogin\":true}，二维码经认证挑战面板展示）。",
+                idle: "idle 可传动作专用参数；若留空则按服务端默认行为执行。",
+                play_games: "play_games 挂机游玩，app_ids 支持 \"730,570\" 字符串或数组。",
+                redeem_key: "redeem_key 一般传 {\"key\":\"AAAAA-BBBBB-CCCCC\"}。",
+                add_license: "认领免费内容：app_ids 走客户端协议，sub_ids 走商店结账，可只传其一。",
+                get_game_info: "商店应用详情（匿名抓取），cc 为国家代码，默认 us。",
+                get_game_info_batch: "批量应用详情（≤200 app/批），与 get_game_info 共享缓存层。",
+                search_games: "商店搜索，term 为关键词。",
+                get_price: "价格概览，需 app_id 与 market_hash_name。",
+                get_market_listings: "社区市场挂单列表，count 默认 20。",
+                get_card_drops: "查询账户卡牌剩余掉落（目标账户需已登录），可传 force_refresh。",
+                get_inventory: "读取账户库存，app_ids 多 app 扫描，tradable_only / marketable_only 过滤。",
+                get_trade_offers: "active_only=true 只看进行中的报价。",
+                send_trade_offer: "向伙伴发送报价：trade_url 或 partner_steam_id + 资产清单（大额交易默认校验资产，skip_verification 可显式绕过）。",
+                accept_trade_offer: "接受收到报价，需报价 id 与伙伴 SteamID；默认校验方向与有效期。",
+                decline_trade_offer: "拒绝收到报价，需报价 id 与伙伴 SteamID。",
+                cancel_trade_offer: "撤销自己发出的报价，只需报价 id。",
+                loot_inventory: "把可交易物品全部发给伙伴：partner_steam_id 或 trade_url 二选一。",
+                find_duplicates: "分析重复卡：keep 为每组保留数（默认 1）。",
+                swap_duplicates: "与伙伴做 1:1 互补换卡，默认 dry_run 预览，send=true 才发送。",
+                get_my_market_listings: "账户自己的市场挂单，start/count 分页。",
+                create_market_listing: "创建挂单：默认干跑只报定价方案；真实挂单需 send=true 且账户侧已开启 marketListingsEnabled。",
+                cancel_market_listings: "批量撤单：默认 dry_run 预览；真实撤单（dry_run=false）必须带至少一个过滤器。",
+                get_points_shop_summary: "积分余额与奖励定义查询，definition_ids 可选，free_only 只看免费项。",
+                claim_points_shop_items: "兑换积分奖励，免费项默认；force=true 才动积分。",
+                cache_invalidate: "按 key 前缀清缓存，留空清全部。",
+                confirm_trade_offer: "替账户完成一笔移动确认（MobileAuthenticator 插件）。",
+                confirm_all_confirmations: "批量响应移动确认：operation=allow|cancel，type=all|trade|market。",
+                get_trade_confirmations: "列出待处理的移动确认。",
+                respond_trade_confirmation: "响应单条移动确认。",
+                get_metrics: "读取 Agent/插件指标快照（Monitoring 插件）。",
+                market_watch_add: "新增监视：kind=price 阈值或 kind=free 免费游戏（MarketWatch 插件）。",
+                market_watch_list: "列出当前监视项。",
+                market_watch_remove: "按 id 移除监视项。"
+            };
+            hint.textContent = hints[action] || "默认无需负载；仅在目标动作需要额外参数时传 JSON。";
         }
 
         function summarizeTasks(tasks) {
