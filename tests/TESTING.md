@@ -8,15 +8,15 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (985 tests)
+├── Vapor.Steam.Core.Tests/               (1128 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (367 tests)
-│   └── Performance/                      队列吞吐/派发/SSE 扇出基准
-├── Vapor.Plugins.Core.Tests/             (127 tests)
+├── Vapor.ControlPlane.Tests/             (515 tests)
+│   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
+├── Vapor.Plugins.Core.Tests/             (128 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (126 tests)
-├── Vapor.Agent.Tests/                    (53 tests)
+├── Vapor.Agent.Tests/                    (54 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (56 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (35 tests)
 ├── Vapor.Protocol.Tests/                 (37 tests)
@@ -29,22 +29,27 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 985 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、payload 值形状与分支加固、熔断器/限流器边界 |
-| Vapor.ControlPlane.Tests | 367 | REST API、SQLite job/审计存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、静态只读面板契约、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
-| Vapor.Plugins.Core.Tests | 127 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
+| Vapor.Steam.Core.Tests | 1128 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、payload 值形状与分支加固、熔断器/限流器边界 |
+| Vapor.ControlPlane.Tests | 515 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin QR 按钮契约)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
+| Vapor.Plugins.Core.Tests | 128 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 126 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
-| Vapor.Agent.Tests | 53 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload)、WS URI 构造、maFile 离线导入 CLI、追踪注入 |
+| Vapor.Agent.Tests | 54 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload)、WS URI 构造、maFile 离线导入 CLI、追踪注入 |
 | Vapor.Plugins.MarketWatch.Tests | 56 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/轮询循环确定性停机/阈值 payload 值形状/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 35 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 37 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
-| **合计** | **1792** | (2026-09-14 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2090** | (2026-09-16 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
-> 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
+> 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
+> ```bash
+> find tests -name "*.trx" -delete
+> dotnet test Vapor.sln -c Release --logger "trx;LogFileName=count.trx"
+> for f in $(find tests -name count.trx); do echo "== $f"; grep -o '<UnitTestResult [^>]*?testName="[^"]*"' "$f" | sed 's/.*testName="//;s/(.*//' | awk -F. '{print $(NF-1)}' | sort | uniq -c | sort -rn; done
+> ```
 
 ## 测试分类
 
-### Steam.Core(985 个测试)
+### Steam.Core(1128 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -64,15 +69,22 @@ tests/
 | GetCardDropsActionTests | 13 | 卡牌剩余掉落查询(排序/错误/steam_id 缺省 cookie 反解/缓存 SWR/force_refresh/名称与元数据/默认真实客户端装配) |
 | GetTradeOffersActionTests | 8 | 报价列表读取(active_only 透传/输出映射/失败语义) |
 | AddLicenseActionTests | 18 | 免费 license 认领(app 走 client 协议/sub 走商店 checkout/已拥有视为成功/双 ID 混合/去重/JSON 往返 payload/边界/混合值形状) |
+| GetGameInfoBatchActionTests | 26 | 批量应用详情(≤200 app/批、缓存层共享、List 混合数值解析、空列表 400、工厂异常面) |
 | LoginActionTests | 17 | 登录动作 |
 | TradeOfferActionExecutionTests | 40 | 交易动作执行流(fake trade client 全分支) |
+| MarketFeeCalculatorTests | 11 | 市场手续费计算(买家/卖家定价换算) |
+| GetMyMarketListingsActionTests | 7 | 账户自己的市场挂单(start/count 分页) |
+| CreateMarketListingActionTests | 21 | 创建挂单(参数校验/默认干跑/EmailConfirmation 域上报/amount 与 buyer 下限) |
+| CancelMarketListingsActionTests | 16 | 批量撤单(负价格区间/pacing 间隔/取消透传/min_price 过滤) |
+| GetPointsShopSummaryActionTests | 10 | 积分余额与奖励定义查询(definition_ids/free_only) |
+| ClaimPointsShopItemsActionTests | 13 | 兑换积分奖励(metadata 契约/force 语义/lookup 失败前置短路) |
 
 #### 会话与核心组件
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
-| BotSessionTests | 26 | 会话状态机 |
+| BotSessionTests | 27 | 会话状态机 |
 | BotSessionQrLoginTests | 7 | QR 扫码登录会话流(批准后 refresh token 走 token 登录、挑战 URL 上浮与轮转重发、拒绝/超时/连接失败映射、stub 模式) |
-| BotSessionBranchTests | 13 | 会话分支加固(命令循环崩溃/action 取消与超时 unwind/QR park 信号取消/QR 事件上浮/懒启动) |
+| BotSessionBranchTests | 14 | 会话分支加固(命令循环崩溃/action 取消与超时 unwind/QR park 信号取消/QR 事件上浮/懒启动) |
 | SessionManagerTests | 37 | 会话管理器(恢复回调/事件订阅/无凭证库/重复恢复恢复同一会话/登录失败清会话/后台 token 刷新跳过与故障吸收) |
 | SteamClientManagerTests | 22 | Steam 客户端管理器 |
 | SteamTransportContractTests | 14 | 传输层契约(SteamResult 线上编码镜像 + 接口可替换性) |
@@ -80,6 +92,7 @@ tests/
 | EdgeCaseTests | 23 | 边界和异常场景 |
 | SessionWorkflowTests(集成) | 19 | 完整工作流(含事件订阅确定性投递:stub 登录+断开双 StateChanged) |
 | ConcurrencyTests(性能) | 9 | 并发和压力 |
+| CacheBenchmarks(性能) | 2 | 缓存吞吐基准(打印数字为准,见 docs/performance.md) |
 | TwoFactorAutoResponderTests | 7 | 2FA 自动应答(本地 TOTP 闭环 + 无活跃会话跳过) |
 | TokenRefreshTests / LoginFlowTests / RedeemKeyFlowTests | 5 | 认证与激活流程 |
 
@@ -96,11 +109,11 @@ tests/
 #### 安全与凭据
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
-| FileCredentialStoreTests | 25 | 凭据存储(加密落盘/备份恢复/权限收紧/shared/identity secret/新版本拒载/缺 accounts 拒载) |
-| MaFileParserTests | 12 | maFile 解析(SDA 嵌套/steamguard-cli 平铺/密码加密 PBKDF2+AES-CBC/无密码与错密码/无 secret/账户键回退/根数组与坏 payload 拒绝) |
-| VaporCryptoHelper(Encryption)Tests + VaporCryptoHelperMethodTests + VaporCryptoHelperTests | 38 | AES-GCM 加密助手(12+22+4:往返/篡改/边界 + 方法级分支/文件密钥回退/不可读文件降级) |
+| FileCredentialStoreTests | 27 | 凭据存储(加密落盘/备份恢复/权限收紧含 symlink EPERM 降级/shared/identity secret/新版本拒载/缺 accounts 拒载) |
+| MaFileParserTests | 13 | maFile 解析(SDA 嵌套/steamguard-cli 平铺/密码加密 PBKDF2+AES-CBC/无密码与错密码/无 secret/账户键回退/根数组与坏 payload 拒绝) |
+| VaporCryptoHelper(Encryption)Tests + VaporCryptoHelperMethodTests + VaporCryptoHelperTests | 39 | AES-GCM 加密助手(12+23+4:往返/篡改/边界 + 方法级分支/文件密钥回退含 base64 过短回退 raw/不可读文件降级) |
 | CredentialStoreRotatorTests | 5 | 密钥轮换 |
-| RedactingLoggerProviderTests / SensitiveDataRedactorTests | 16 | 日志脱敏(11+5:嵌套异常/结构化 scope/计数与索引器/空值归一) |
+| RedactingLoggerProviderTests / SensitiveDataRedactorTests | 17 | 日志脱敏(12+5:嵌套异常/结构化 scope/非泛型枚举臂/计数与索引器/空值归一) |
 | AgentReconnectPolicyTests | 4 | Agent 重连策略 |
 
 #### 数据与 Web 客户端
@@ -108,10 +121,12 @@ tests/
 |--------|------|------|
 | MemoryVaporCacheTests | 22 | 内存缓存(TTL/SWR/单飞行去重) |
 | RedisCacheEntryTests | 11 | Redis 信封编解码/新鲜度判定(纯逻辑,无需 Redis) |
-| RedisVaporCacheTests | 33 | Redis 缓存全路径离线覆盖(mock IConnectionMultiplexer/IDatabase:信封协议/SWR 跨实例锁/索引维护/SCAN 前缀清理/单飞行共享) |
+| RedisVaporCacheTests | 36 | Redis 缓存全路径离线覆盖(mock IConnectionMultiplexer/IDatabase:信封协议/SWR 跨实例锁/索引维护/SCAN 前缀清理含全端点断连回退/单飞行共享) |
 | RedisVaporCacheIntegrationTests(集成,门控) | 11 | Redis 端到端(需 `VAPOR_TEST_REDIS`) |
 | SteamStoreApiClientTests | 32 | 商店 API 客户端(解析/降级与畸形响应/market 新旧双契约回退) + addlicense 结账端点(detail 解析/已拥有/HTTP 失败) |
 | SteamStoreApiContractTests | 4 | 录制响应契约回放(appdetails/storesearch/market render 新旧双契约,fixture 见 `TestData/`) |
+| SteamMarketClientTests | 23 | 社区市场客户端(挂单列表新旧契约/currencyid 字符串臂/非标准 JSON 值类型防御/空响应体) |
+| SteamMarketMyListingsContractTests | 4 | 我的挂单契约回放(数值字段 JSON 字符串形状) |
 | SteamBadgesClientTests | 14 | 徽章页解析变体(appid 双载体/掉落文案/分页/失败语义) |
 | SteamBadgesPageContractTests | 3 | 徽章页 HTML 契约回放(fixture 为三方解析器互证构造,登录门控不可匿名录制) |
 | SteamWebHandlerResilienceTests | 8 | 429/5xx 退避重试与熔断 |
@@ -128,48 +143,55 @@ tests/
 | SteamTotpTests | 14 | Steam TOTP(本地 2FA 码生成) |
 | SteamTimeSynchronizerTests | 9 | Steam 服务器时间同步 |
 
-### ControlPlane(367 个测试)
+### ControlPlane(515 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | ProgramBranchCoverageTests | 73 | Program 组装层分支(配置解析/环境变量回退/装配路径逐支驱动) |
-| AccountApiTests | 58 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取:fake agent 顺序回报) |
-| DesiredStateReconcilerTests | 55 | 账户编排(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固) |
+| AccountApiTests | 93 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取、挂单创建/撤单、积分兑换、重复查询/换卡报价:fake agent 顺序回报;五端点 202/502 三态与 claim 校验) |
+| DesiredStateReconcilerTests | 56 | 账户编排(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸) |
+| CrawlApiTests | 40 | 数据抓取 REST(计划 CRUD/PUT merge 语义/触发/分片领取/行回写/claim 校验与去重) |
+| CrawlRunWorkerTests | 27 | 抓取执行 worker(读取/派发取消传播/GetJob 故障吞咽/坏 tick 兜底/停机竞态双路径/审计故障不阻断/混合列表输出解析) |
 | SqliteJobStoreTests | 25 | job 存储(并发/迁移/周期模板) |
 | AccountStoreTests | 23 | 账户存储(ConfigVersion 并发/空名校验) |
-| NotificationTests | 19 | 通知规则/webhook 签名/派发隔离/无 sink 快速返回 |
+| AccountTaskRunnerTests | 2 | 账户任务运行器(TaskRunResult record 合成成员/克隆等值) |
+| NotificationTests | 20 | 通知规则/webhook 签名/派发隔离/无 sink 快速返回/有限流 broker 三泵自然排空 |
 | ScheduleClockTests | 16 | 周期计划时钟(interval/cron/触发点计数) |
+| SqliteCrawlStoreTests | 15 | 抓取存储(守卫/同事务防御性 CAS) |
 | RecurringJobSchedulerTests + RetireTests | 14 | 周期任务触发/missed/overlap/退役(10+4) |
-| ControlPlaneApiTests | 10 | REST API(鉴权/任务/SSE/计划 job、QR 挑战归类与 URL 透传) |
-| TaskSchedulerServiceTests | 8 | 任务派发/终态机制 |
+| ControlPlaneApiTests | 13 | REST API(鉴权/任务/SSE/计划 job、QR 挑战归类与 URL 透传、坏 JSON 体 400 边界) |
+| DashboardStaticTests | 9 | 静态面板(/dashboard.html 服务、无写动词契约、三视图互链、`/` 302 重定向、gamedata 六模型文档、admin QR 按钮契约) |
+| CrawlShardPlannerTests | 10 | 抓取分片规划(空池告警/overrides) |
+| TaskSchedulerServiceTests | 8 | 任务派发/终态机制/无 listener 惰性分发 |
 | SqliteAuditStoreTests | 8 | 审计存储 |
 | EventBrokerTests | 8 | 事件总线 |
 | AuthTests | 8 | Bearer 鉴权解析(合法/缺 scheme/非 Bearer/空 header/空配置键 fail-closed) |
 | WsProtocolReplayTests | 7 | WS 隧道协议录制回放(5 类帧快照 roundtrip + 会话序列路由 + 前向兼容) |
 | AgentRegistryTests | 7 | Agent 注册表 |
 | AuditApiTests | 6 | 审计查询 API |
-| TracingTests | 4 | OpenTelemetry 追踪注入 |
+| TracingTests | 5 | OpenTelemetry 追踪注入(无 listener 惰性分发/双 null 臂) |
 | ControlPlaneBenchmarks(性能) | 4 | 吞吐/派发/扇出基准 |
-| DashboardStaticTests | 4 | 静态只读面板(/dashboard.html 服务、无写动词契约、与管理视图互链、`/` 302 重定向) |
 | ConfigStoreTests | 3 | 配置存储 |
 | AuthChallengeTrackerTests | 3 | 挑战追踪 |
 | SessionTrackerTests | 2 | 会话追踪 |
 | CompositionRootSmokeTests | 2 | 组装根冒烟 |
+| ApiLatencyBenchmarks(性能) | 7 | 只读端点与任务创建入口时延基准 |
+| ResourceFootprintBenchmarks(性能) | 1 | 每操作托管分配量基准 |
 
-### 插件体系(344 个测试)
+### 插件体系(345 个测试)
 
-- **Plugins.Core(127)**:清单解析(13)、发现(5)、加载(11)+加载器(8)、卸载与 ALC 回收(8)、信任与权限(18)、事件分发(12)、配置扩展(20)、能力(7)、插件 API 与 SemVer 兼容(18,含 TryParseVersion theory 展开)、管理器并发(1)、故障 fixture 库(6)
+- **Plugins.Core(128)**:清单解析(13)、发现(5)、加载(11)+加载器(8)、卸载与 ALC 回收(9,含 DisposeAsync 卸载自身抛错隔离)、信任与权限(18)、事件分发(12)、配置扩展(20)、能力(7)、插件 API 与 SemVer 兼容(18,含 TryParseVersion theory 展开)、管理器并发(1)、故障 fixture 库(6)
 - **MobileAuthenticator(126)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(41)+ 动作边界:payload 形状/失败语义/冷却与并发(44)、确认客户端解析含 type 归一化(10)+ 客户端会话分支(17)、解析分支(10)、确认哈希(8)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
 - **MarketWatch(56)**:watch 存储(18)/阈值评估/三个 watch action(kind=price/free)/轮询告警与 webhook(free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机/循环重启测试钩子)/单 app 抓取失败隔离/阈值 payload 值形状/无参构造 Info/插件宿主实战加载(2)
 - **Monitoring(35)**:指标注册表(9)/HTTP 服务(16)/插件生命周期(10)
 
-### Agent(53 个测试)
+### Agent(54 个测试)
 
-重连退避策略(25)、任务执行器(15,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、maFile 离线导入 CLI(8)、WS URI 构造(4)、追踪注入(1)
+重连退避策略(25)、任务执行器(15,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、maFile 离线导入 CLI(9,含幽灵路径点名)、WS URI 构造(4)、追踪注入(1)
 
 ### E2E(11 个测试)
 
-真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。覆盖:健康检查、job 全链路(创建→派发→执行→回报→REST 读取 output)、任务取消、SSE 事件流、2FA 挑战人工提交、账户声明→自动分配→kill agent→重平衡、静态页守护(`StaticPagesE2ETests`:E2E 的 CP 进程是"bin dll + 测试器 cwd"的裸部署形态,守护 admin/dashboard/gamedata/favicon 匿名 200 与 `/`→admin UI 落地——曾因 Web SDK 只在 publish 复制 wwwroot + WebRoot 锚 cwd 导致部署态全 404 而全测试套件无一页面请求)。
+真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。分类:ControlPlaneAgentE2ETests(5,健康检查/job 全链路/任务取消/SSE 事件流/2FA 挑战人工提交)、AccountOrchestrationE2ETests(1,账户声明→自动分配→kill agent→重平衡)、StaticPagesE2ETests(5,静态页守护:E2E 的 CP 进程是"bin dll + 测试器 cwd"的裸部署形态,守护 admin/dashboard/gamedata/favicon 匿名 200 与 `/`→admin UI 落地——曾因 Web SDK 只在 publish 复制 wwwroot + WebRoot 锚 cwd 导致部署态全 404 而全测试套件无一页面请求)。
 
 ## 运行测试
 
@@ -226,6 +248,8 @@ dotnet test --filter "FullyQualifiedName~ConcurrencyTests"
 .\scripts\run-tests.ps1 -Coverage
 .\scripts\run-tests.ps1 -Verbose
 ```
+
+> 注意:全量跑请用上面的脚本而不是裸 `dotnet test Vapor.sln`——后者九个测试项目并行执行,`ControlPlaneBenchmarks.SseEndpoint_ConcurrentConnections_AllReceiveEvents` 等 60s 预算的基准会因 CPU 争抢超时假红(2026-09-16 实测:并行全跑该基准超时,单独重跑项目 39s 全绿)。
 
 ### 生成代码覆盖率报告
 

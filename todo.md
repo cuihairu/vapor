@@ -528,3 +528,17 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] feature-matrix.md 同步：L132 后置标记更新为 UI 按钮已落地。（✅ 2026-09-16）
 
 > 2026-09-16：**admin 页 QR 登录按钮（+1 守护测试，2086→2087 全绿；feat 提交）**。改动纯前端（admin.html 单文件）+ 一条静态契约测试；脚本 `node --check` 过；复用 §18 的 QR 挑战渲染分支与 SSE 监听，零后端改动。**取舍延续**：二维码图片渲染仍不做（§18 三轮取舍不变：自研 encoder 数百行无护栏/零新增 NuGet/第三方图片服务泄 token 红线）。验证：ControlPlane 全量 511→512 绿；format 门禁过；CI 以本轮提交全绿为准。
+
+## 21. 维护轮：假异步清理 + 坏 JSON 边界 + 测试普查刷新 + 无用 API 审计（✅ 2026-09-16 完成）
+
+> 立项动机：feature-matrix 与 todo 计划项全部闭环后,用户指定方向：性能优化/代码清理/文档完善/边界测试。本轮四线并行,全部收口。
+
+### 21.1 实施内容
+
+- [x] 假异步清理（代码清理）：`VaporCryptoHelper.DecryptWithKey` 原为 `Task.FromResult(DecryptAes(...))` 的假异步（CPU 密集解密包成 Task）,唯一生产调用方 `CredentialStoreRotator.ReEncrypt` 再 `.ConfigureAwait(false).GetAwaiter().GetResult()` 阻塞取值——全仓唯一一处 sync-over-async。改为与 `EncryptWithKey` 对称的同步签名,rotator 直呼,测试侧 8 处 await 同步清理。（✅ 2026-09-16）
+- [x] 坏 JSON 体边界测试（+3,ControlPlaneApiTests）：POST 语法损坏 JSON（`{"action": `）到 `/v1/jobs`、`/v1/accounts/{name}/loot`、`/v1/auth/challenges/{name}/code`,断言模型绑定层 400 而非 500——现有测试只覆盖语义校验 400（如 intervalSeconds=0）,从未覆盖不可解析体。（✅ 2026-09-16）
+- [x] TESTING.md 测试普查刷新（文档完善）：结构块/统计表/全部每类表格从 2026-09-14 基线（1792）刷新到 2026-09-16 实测（2090）。方法论:`dotnet test --list-tests` 会在终端宽度折行长 theory 名（实测漏 14 个）,改用 TRX `UnitTestResult` 条目计数（与各项目运行数逐一对上）；全部每类计数经脚本与 TRX 真值交叉校验（两类同名跨项目误报人工核过）。补齐此前漏列的 12 个测试类行（市场/积分/抓取/批量详情等）,并记录"勿用裸 `dotnet test Vapor.sln` 全量跑"的基准饥饿坑（见下）。（✅ 2026-09-16）
+- [x] 无用公共 API 审计（子代理全量普查,记录处置）：~340 个公共类型逐一 grep 生产引用。**处置**：①Protocol 死记录簇（`ActionDescriptor`/`ActionParamSchema`/`PermissionLevel`/`CommandRequest`/`CommandResult`/`JobEvent`/`TaskEvent`/`PluginEvent`,仅测试往返构造）与插件 Routes/Commands 扩展面互为预留（协议概念镜像 ASF,宿主侧暂未接线）——保留,属产品决策非死代码;②`ItemInfo` record 生产零引用,但 data-dictionary/gamedata.html 以"六模型"文档化且声称"交易/MarketWatch 内部使用"与现实不符——记录为待专项（数据字典对账）,不在维护轮草率删;③`ECryptoMethod.EnvironmentVariable/File` 臂、`SessionState.DisconnectedByUser`、`EPasswordFormat` 值 2/3——序列化契约面,保留;④`MetricsRegistry.GetValue`/`GaugeAdd`、`MetricsHttpServer.IsRunning`、`ScheduleClock.CountTriggerPoints`、`VaporCryptoHelper.HasTransformation`/`HasDefaultKey`——测试断言面/诊断面,保留（删除的计数 churn 大于价值）。负面结论同样有价值:PayloadReader/ActionRegistry/全部结果 record/全部状态枚举经查全部生产在用;`CredentialStoreRotator` 有 tools/Vapor.KeyRotation 生产工具消费（此前误判仅测试使用）。（✅ 2026-09-16）
+- [x] 环境变量文档漂移检查（负面结果）：文档 VAPOR_* 与代码/compose 交叉核对——docker.md 的 9 个变量全部由 docker-compose.yml 消费;plugins.md 的 `VAPOR_METRICS_VERBOSE`/`VAPOR_ALERT_THRESHOLD` 是配置扩展示例代码里的示意名非系统变量;唯一未文档化的是 `VAPOR_ENVIRONMENT`（环境判定第三回退,低价值不补）。无真实漂移。（✅ 2026-09-16）
+
+> 2026-09-16：**维护轮（2090 全绿;refactor/test/docs 三个提交）**。**过程中发现并归档**：裸 `dotnet test Vapor.sln` 九项目并行会饿死 60s 预算的 `SseEndpoint_ConcurrentConnections_AllReceiveEvents` 基准（并行全跑超时假红,项目单独重跑 39s 515/515 全绿）——已写入 TESTING.md 运行测试节,全量跑必须走 `./scripts/run-tests.sh`。**取舍记录**：审计的 15 个候选全部保留并逐条注明理由（契约面/扩展面/测试断言面/产品决策）,本轮零 API 删除——与此前"死代码删除轮"（删内部防御分支）不同,公共 API 的删除是契约决策;`ItemInfo` 与 data-dictionary 的对账单独立项待做（涉及 gamedata.html 六模型文案与守护测试联动）。验证：全解决方案 2090 用例——并行全跑 2089 过 + 1 基准饥饿假红,ControlPlane 单独重跑 515/515 后全绿收口;Steam.Core 加密/轮换相关 44/44;format 门禁过;CI 以本轮提交全绿为准。
