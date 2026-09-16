@@ -479,3 +479,16 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] TESTING.md 性能章节收敛：手抄数字表移除，指向 performance.md 单一权威源（避免双处漂移）。（✅ 2026-09-15）
 
 > 2026-09-15：**性能基线落地（+10 测试，1997→2007 全绿：CP 467→475 / Steam.Core 1090→1092；perf 提交）**。三维度齐备——时延（6 只读端点 p50 0–16ms / p95 4–47ms + `POST /v1/jobs` p50 1ms 对照，in-memory handler 口径）、吞吐（既有 4 项重录 + 缓存写 67,759/s、热读 >10⁶/s）、资源（job store 68,860 B/操作、缓存 252 B/读）。**取舍记录**：①基准不挂 CI（延续"本地开发机实测为准"口径——数字与机器强相关，CI runner 无横向可比性，挂上去只添 flake 面；CI 继续只保证测试通过，数字刷新走本地 `run-benchmarks.sh` + performance.md 归档）；②时延口径 = `WebApplicationFactory` in-memory handler（覆盖框架管道+序列化+存储，**不含真实网络栈**，performance.md 与测试注释双处注明——是代码回归基线，非端到端网络时延）；③断言语义 = 功能正确 + 宽数量级上限（p95<5s、分配 <10–20 万 B/操作，防 CI 抖动 flake），打印的数字才是基线；④手写基准延续（不引 BenchmarkDotNet，仓库零新增 NuGet 依赖约束）。实现要点：时延宿主 `BenchmarkApiFactory` 自建（既有 `ControlPlaneApiTests.TestFactory` 是 FakeJobStore 拒写，写路径基准不可用）并 `ConfigureLogging(ClearProviders)`——ASP.NET 每请求 info 日志既污染测量又淹没基准输出；`dotnet test` 显示 ITestOutputHelper 需 `--logger "console;verbosity=detailed"`（run-benchmarks.sh 已固化）。与旧手抄数字差异（队列 ~5,200/s → 本机 644/s 等）属测量环境不同，不构成回归信号，已在 performance.md 归档区注明。验证：全量 2007/2007；format 门禁过；CI 以本轮提交全绿为准。
+
+## 17. 覆盖率回填冲刺（P7-3/P8/P9 新代码债还清）（✅ 2026-09-16 完成）
+
+> 立项动机：2026-09-15 三个功能阶段（P7-3 挂单创建、P8 积分商店、P9 游戏数据采集）落地后新增 ~138 行未覆盖，合计覆盖率从仓库基线 99.5% 回落到 98.5%（Steam.Core 97.8%、ControlPlane 98.8%）。纯测试补齐（零产品代码改动），把新代码债补回至基线水平。
+
+### 17.1 补测内容
+
+- [x] Steam.Core 积分商店/市场 action：definition_ids 值形状全谱（SQLite JSON 往返后的 JsonElement number/string、.NET List 的 int/long/double/uint/short/string/null/bool、单标量包装、全无效值跳过查询、Distinct 保序）、metadata 契约、lookup 失败前置短路、挂单创建参数校验（缺 app/contextId、amount<1、buyer 低于最低价、EmailConfirmation 域上报）与撤单（负价格区间、pacing 间隔、取消透传 "canceled"、传输异常、webHandler 缺失分支）。（✅ 2026-09-16）
+- [x] Steam.Core 客户端与批量动作：`SteamMarketClient` 非标准 JSON 值类型防御臂（字符串计数→null、bool currency→null、数字布尔归一）与空响应体；`GetGameInfoBatchAction` .NET List 混合数值解析、空列表 400、客户端工厂异常面。（✅ 2026-09-16）
+- [x] ControlPlane CrawlRunWorker：读取/派发路径取消传播（OCE 经 `throw;` 不被 generic catch 吞）、GetJob 故障吞咽后轮次保活、超时路径 CancelJob 故障仍记整片失败、CancelJob 取消传播、planner 告警不阻断派发、审计故障不阻断、无 games/errors 键输出零行落库、混合列表（JsonElement 与 .NET 对象混排）输出解析。（✅ 2026-09-16）
+- [x] ControlPlane 存储与 REST：`SqliteCrawlStore` 守卫（空路径/空 id/非正 keep/空 planId no-op）、planner 空池+overrides 告警、CrawlApi PUT merge 语义（省略 overrides 保留既有、显式空 appIds 400）、AccountApi cancel 四过滤器 payload 装载（trim/装键纪律）、五端点 202 pending/502 失败三态、claim 校验（账户 404/零 id 400）与重复 id 去重。（✅ 2026-09-16）
+
+> 2026-09-16：**覆盖率回填冲刺（+53 测试，2007→2060 全绿：Steam.Core 1092→1117 / ControlPlane 475→503；合计 98.5%→99.5% 回到仓库基线，Steam.Core 97.8%→99.4%、ControlPlane 98.8%→99.5%；test 提交）**。剩余 73 行未覆盖全部落在既有豁免三类（平台分支 8 / 集成壳反射 ~15 / 防御兜底 ~50）。**取舍记录**：①`CrawlRunWorker.ExecuteAsync` 的停机 break（L116-118）与坏 tick 兜底 catch（L120-126）放弃覆盖——前者需要停机竞态窗口、后者需要 sqlite 存储层异常注入，注入点代价高于 8 行防御代码的验证价值，归档说明；②其缺口行中 L105/106/387/389 为 coverlet 对异步状态机的行归属偏差（对应路径均有断言成立的测试实际走过：kill-switch 日志在 StartAsync 同步段执行、dispatch OCE rethrow 被 DispatchCanceled 测试命中），不再重复补测；③`MetricsHttpServer` 客户端断开 catch（2 行）本轮实测未命中（上轮 100% 系时序性覆盖），Monitoring 99.4% 属时序边沿非代码债；④202 测试模式统一为 `AccountTaskRunner.WaitWindow=400ms`/`PollInterval=25ms` + `removeHosted`（无人认领即 pending），try/finally 恢复默认值。**过程插曲**：整轮 `run-tests.sh -c` 首跑因系统内存不足被杀（swap 6.3/8Gi），重跑正常；覆盖率验证不可局部补报告（solution 级 filter 会让 0 测试项目写全零报告毒化合并），每批补测后整轮重跑。验证：全量 2060/2060；format 门禁过；CI 以本轮提交全绿为准。

@@ -242,30 +242,32 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。
 
-### 当前基线（2026-09-14，行覆盖 99.5%）
+### 当前基线（2026-09-16，行覆盖 99.5%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中）：
 
 | 程序集 | 行覆盖 |
 |--------|--------|
 | MobileAuthenticator | 100.0% |
-| Monitoring | 100.0% |
-| Protocol | 100.0% |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） |
-| ControlPlane | 99.7% |
+| Protocol | 100.0% |
 | Agent | 99.5% |
+| ControlPlane | 99.5% |
 | Plugins.Core | 99.4% |
-| Steam.Core | 99.2% |
+| Steam.Core | 99.4% |
+| Monitoring | 99.4% |
 | MarketWatch | 98.9% |
-| **合计** | **99.5%** (11003/11060) |
+| **合计** | **99.5%** (13354/13427) |
 
-> 历史基线：2026-09-12 首次真实全解决方案基线为 74.3%（此前 44.6% 的初版系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致，合并未归一化导致同一行被重复计入分母）。2026-09-13 覆盖率冲刺（逐文件提取未覆盖行并针对性补测）后达 95.9%。2026-09-14 第二轮冲刺后达 98.6%（Agent 91.9%→98.1%、ControlPlane 97.9%→99.5%、Plugins.Core 88.1%→99.1%、Monitoring 89.7%→97.2%）；同日第二轮半（fd1ae2e，+36 测试）删除第二轮归档的死代码（`VaporCryptoHelper` 防御 catch、`HttpCircuitBreaker` HalfOpen 存储态、`RecurringJobScheduler` missed 组合、`SteamTotp` 空 base64、`RedactingLoggerProvider.AppendPairs`）并新增 TracingTests/TestFixturesTests/SteamTimeSynchronizerTests，TestFixtures 故障 fixture 库亦获全覆盖，TestFixtures 68.3%→100%、Monitoring 97.2%→100%；回调泵同步 Sleep 改异步 Delay 后达 **99.5%**（57 行未覆盖，见下）。
+> 历史基线：2026-09-12 首次真实全解决方案基线为 74.3%（此前 44.6% 的初版系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致，合并未归一化导致同一行被重复计入分母）。2026-09-13 覆盖率冲刺（逐文件提取未覆盖行并针对性补测）后达 95.9%。2026-09-14 第二轮冲刺后达 98.6%（Agent 91.9%→98.1%、ControlPlane 97.9%→99.5%、Plugins.Core 88.1%→99.1%、Monitoring 89.7%→97.2%）；同日第二轮半（fd1ae2e，+36 测试）删除第二轮归档的死代码（`VaporCryptoHelper` 防御 catch、`HttpCircuitBreaker` HalfOpen 存储态、`RecurringJobScheduler` missed 组合、`SteamTotp` 空 base64、`RedactingLoggerProvider.AppendPairs`）并新增 TracingTests/TestFixturesTests/SteamTimeSynchronizerTests，TestFixtures 故障 fixture 库亦获全覆盖，TestFixtures 68.3%→100%、Monitoring 97.2%→100%；回调泵同步 Sleep 改异步 Delay 后达 **99.5%**（57 行未覆盖）。2026-09-15 P7/P8/P9 三个功能阶段落地后新代码覆盖率债使合计回落至 98.5%（Steam.Core 97.8%、ControlPlane 98.8%）。
 >
-> 剩余 57 行未覆盖，三类（非测试缺口，不计入门禁预期）：
+> 2026-09-16 覆盖率回填冲刺（+53 测试，2007→2060 全绿：Steam.Core 1092→1117 / ControlPlane 475→503）还清 P7-3/P8/P9 新代码债，合计回到 **99.5%**（Steam.Core 97.8%→99.4%、ControlPlane 98.8%→99.5%）。覆盖内容：积分商店两 action 的 metadata/definition_ids 值形状（SQLite JSON 往返后的 JsonElement、.NET List 全数值形状、单标量包装、全无效值跳过）；挂单创建/撤单 action 的参数校验、pacing、取消透传（OCE 经 `throw;` 不吞）、EmailDomain 上报与 webHandler 缺失分支；`SteamMarketClient` 非标准 JSON 值类型防御臂与空响应体；批量动作 .NET List 解析与工厂异常；`CrawlRunWorker` 的读取/派发取消传播、GetJob 故障吞咽、CancelJob 故障与取消、审计故障不阻断、无 games/errors 键输出与混合列表输出解析；`SqliteCrawlStore` 守卫；planner 空池告警；REST 侧 cancel 四过滤器 payload、五端点 202/502 三态与 claim 校验/去重。Monitoring 100%→99.4%：`MetricsHttpServer` 客户端断开防御 catch（2 行）本轮实测未命中，属时序边沿而非代码债。
+>
+> 剩余 73 行未覆盖，三类（非测试缺口，不计入门禁预期）：
 > - **平台分支**（8 行）：`FileCredentialStore` 的 Windows return 与 Unix 权限收紧 catch（本机 Linux 只能走单侧）。
-> - **集成壳/反射**（约 11 行）：`SteamClientManager` 的 SteamKit2 内部类型反射、`SteamStoreApiClient` 真实 HTTP 路径、`BotSession` SteamKit 回调深处。
-> - **防御分支与兜底 catch**（约 38 行）：后台循环/泵的取消竞态窗口与兜底 catch（`BotSession` 回调泵 OCE 与命令循环崩溃兜底、`SessionManager` 转发泵与刷新循环、`RedisVaporCache` SWR 锁边沿、`MarketWatchPlugin` 轮询边沿、`SqliteJobStore` 迁移边沿、`PluginManager`、`DesiredStateReconciler`、`NotificationService`、`AccountTaskRunner`），以及单点防御行（`VaporCryptoHelper`、`RedactingLoggerProvider`、`MaFileImportCli`、`Program`、`RecurringJobScheduler`、`TaskSchedulerService`、`Tracing`、`SteamTimeSynchronizer` 超时窗）。
+> - **集成壳/反射**（约 15 行）：`SteamClientManager` 的 SteamKit2 内部类型反射、`SteamStoreApiClient` 真实 HTTP 路径、`BotSession` SteamKit 回调深处。
+> - **防御分支与兜底 catch**（约 50 行）：后台循环/泵的取消竞态窗口与兜底 catch（`BotSession` 回调泵 OCE 与命令循环崩溃兜底、`SessionManager` 转发泵与刷新循环、`CrawlRunWorker` ExecuteAsync 停机 break 与坏 tick 兜底——前者需停机竞态窗口、后者需存储层注入异常，均已评估放弃；其缺口行中另有少量为 coverlet 对异步状态机的行归属偏差，对应路径已有断言成立的测试走过、`RedisVaporCache` SWR 锁边沿、`MarketWatchPlugin` 轮询边沿、`SqliteJobStore` 迁移边沿、`PluginManager`、`DesiredStateReconciler`、`NotificationService`、`AccountTaskRunner`、`MetricsHttpServer` 断连 catch），以及单点防御行（`VaporCryptoHelper`、`RedactingLoggerProvider`、`MaFileImportCli`、`Program`、`RecurringJobScheduler`、`TaskSchedulerService`、`Tracing`、`SteamTimeSynchronizer` 超时窗）。
 
 ### 排除项
 
@@ -387,7 +389,7 @@ dotnet test tests/Vapor.ControlPlane.Tests -c Release \
 ## 测试维护
 
 - 定期更新测试以匹配代码变更
-- 保持测试覆盖率稳步提升（当前 98.6%，CI/Codecov 门禁 70%，见上方基线表）
+- 保持测试覆盖率稳步提升（当前 99.5%，CI/Codecov 门禁 70%，见上方基线表）
 - 新功能必须包含测试
 - 修复 bug 时添加回归测试
 - 定期审查和重构测试代码

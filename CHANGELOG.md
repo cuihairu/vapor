@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Coverage backfill for the P7-3/P8/P9 feature waves (+53 tests, 2007→2060
+  green): full value-shape coverage for `definition_ids` payloads (JsonElement
+  round-trips, .NET lists of every numeric shape, scalar wrapping, invalid
+  skips, dedup), market listing create/cancel action validation with
+  cancellation and transport-failure passthrough, `SteamMarketClient`
+  defensive parsing arms, `CrawlRunWorker` cancellation/failure/audit paths
+  and mixed-shape batch output parsing, crawl store guards, planner
+  empty-pool warnings, crawl-plan PUT merge semantics, and the account market
+  / points-shop REST three-state contract (filter payload assembly, 202
+  pending, 502 failure, claim validation and dedup). Overall line coverage
+  restored to the repository baseline of 99.5% (Steam.Core 97.8%→99.4%,
+  ControlPlane 98.8%→99.5%).
 - Performance baselines (GA audit §14 #4): latency benchmarks for the read
   REST endpoints under concurrent load plus the job-creation write path for
   comparison (`ApiLatencyBenchmarks.cs`), per-operation managed-allocation
