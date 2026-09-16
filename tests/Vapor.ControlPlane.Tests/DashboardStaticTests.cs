@@ -107,6 +107,21 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_QrLoginButton_DispatchesLoginJobWithQrPayload()
+	{
+		// Guards the deferred feature-matrix item: the sessions-panel button must
+		// POST the same /v1/jobs body the docs describe, carrying the camelCase
+		// `qrLogin` flag AgentTaskExecutor reads (password-less QR credentials;
+		// the rotating challenge URL then lands in the auth-challenge panel).
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		Assert.Contains("id=\"qrLoginButton\"", html, StringComparison.Ordinal);
+		Assert.Contains("startQrLogin", html, StringComparison.Ordinal);
+		Assert.Contains("action: \"login\"", html, StringComparison.Ordinal);
+		Assert.Contains("payload: { qrLogin: true }", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task RootPath_RedirectsToAdminConsole()
 	{
 		await using var factory = CreateFactory();

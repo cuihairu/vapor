@@ -873,7 +873,10 @@
                             <h2 class="panel-title">活动会话</h2>
                             <div class="panel-subtitle">基于 `/v1/sessions` 与会话事件流实时更新。</div>
                         </div>
-                        <button class="btn btn-secondary btn-small" id="refreshSessionsButton">刷新</button>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-small" id="qrLoginButton">QR 扫码登录</button>
+                            <button class="btn btn-secondary btn-small" id="refreshSessionsButton">刷新</button>
+                        </div>
                     </div>
                     <div class="list" id="sessionList">
                         <div class="empty-state">正在加载会话数据...</div>
@@ -1013,6 +1016,7 @@
             document.getElementById("refreshJobsButton").addEventListener("click", () => refreshJobs());
             document.getElementById("refreshAgentsButton").addEventListener("click", () => refreshAgents());
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
+            document.getElementById("qrLoginButton").addEventListener("click", () => startQrLogin());
             document.getElementById("refreshChallengesButton").addEventListener("click", () => refreshAuthChallenges());
             document.getElementById("actionSelect").addEventListener("change", updatePayloadHint);
         }
@@ -1144,6 +1148,34 @@
             state.sessionMap = new Map(state.sessions.map((session) => [session.accountName, session]));
             renderSessions();
             updateStats();
+        }
+
+        async function startQrLogin() {
+            // Feature-matrix deferred item: trigger QR sign-in from the admin UI
+            // instead of hand-crafting POST /v1/jobs. The agent reads payload
+            // qrLogin=true and starts a password-less QR challenge; the rotating
+            // challenge URL then surfaces in the auth-challenge panel via SSE.
+            const rawName = window.prompt("请输入要扫码登录的账户名:");
+            if (!rawName || !rawName.trim()) {
+                return;
+            }
+
+            const accountName = rawName.trim();
+            try {
+                const result = await apiFetch("/v1/jobs", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        action: "login",
+                        targets: [accountName],
+                        payload: { qrLogin: true }
+                    })
+                });
+                const createdJob = result.job;
+                addEvent("auth", `已为 ${accountName} 创建扫码登录作业 ${shortId(createdJob.id)}，挑战链接将出现在认证挑战面板`);
+                await refreshJobs(createdJob.id);
+            } catch (error) {
+                alert(`创建扫码登录任务失败: ${error.message}`);
+            }
         }
 
         async function refreshAuthChallenges() {
