@@ -116,7 +116,25 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 var app = builder.Build();
 var auditLogger = app.Logger;
 
-app.UseStaticFiles();
+// Static pages must resolve next to the deployed binary, not the process
+// working directory — `dotnet /path/to/Vapor.ControlPlane.dll` run from any
+// cwd would otherwise 404 every page (the default WebRoot is ContentRoot,
+// which defaults to the cwd for a bare dll launch). Development (`dotnet
+// run`, wwwroot not copied next to the bin) falls back to the default
+// provider, which serves the project's wwwroot through StaticWebAssets.
+string deployedWwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+if (Directory.Exists(deployedWwwroot))
+{
+	app.UseStaticFiles(new StaticFileOptions
+	{
+		FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(deployedWwwroot)
+	});
+}
+else
+{
+	app.UseStaticFiles();
+}
+
 app.UseWebSockets();
 
 var cfg = app.Services.GetRequiredService<Config>();

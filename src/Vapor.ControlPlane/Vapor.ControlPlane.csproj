@@ -9,6 +9,13 @@
     <ProjectReference Include="..\Vapor.Steam.Core\Vapor.Steam.Core.csproj" />
   </ItemGroup>
 
+  <!-- The Web SDK only copies wwwroot on publish (StaticWebAssets); the build
+       output would ship without the admin pages, and running the dll from bin
+       would 404 every page. Mirror the pages into bin as well. -->
+  <ItemGroup>
+    <Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="Vapor.ControlPlane.Tests" />
   </ItemGroup>

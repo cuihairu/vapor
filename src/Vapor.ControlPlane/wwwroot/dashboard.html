@@ -1011,7 +1011,8 @@
                 "session.disconnected": (data) => handleSessionEvent(data, "已断开"),
                 "session.state_changed": (data) => handleSessionEvent(data, `状态 → ${data.state}`),
                 "session.auth_code_required": (data) => handleSessionEvent(data, "需要认证码"),
-                "session.2fa_required": (data) => handleSessionEvent(data, "需要 2FA")
+                "session.2fa_required": (data) => handleSessionEvent(data, "需要 2FA"),
+                "session.qr_required": (data) => handleSessionEvent(data, "需要扫码")
             });
 
             state.streams = [jobsStream, sessionsStream];

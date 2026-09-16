@@ -1260,6 +1260,28 @@
             }
 
             container.innerHTML = items.map((challenge) => {
+                if (challenge.challengeType === "qr_required") {
+                    // QR sign-in is scanned with the Steam mobile app, not typed:
+                    // show the rotating challenge URL instead of a code prompt.
+                    const url = challenge.message || "";
+                    return `
+                        <article class="challenge">
+                            <div class="challenge-head">
+                                <div class="title-group">
+                                    <div class="strong">${escapeHtml(challenge.accountName)}</div>
+                                    <div class="tiny mono">qr_required</div>
+                                </div>
+                                <span class="badge queued">${escapeHtml(formatRelative(challenge.timestamp))}</span>
+                            </div>
+                            <div class="helper">扫码登录挑战：用 Steam 手机 App 的扫码登录扫描此链接生成的二维码。挑战链接会自动轮转，以下方最新一条为准；会话连上后挑战自动消失。</div>
+                            <div class="tiny mono qr-url">${escapeHtml(url)}</div>
+                            <div class="challenge-actions">
+                                <button class="btn" data-copy-qr="1">复制挑战链接</button>
+                            </div>
+                        </article>
+                    `;
+                }
+
                 const inputId = `auth-code-${escapeDomId(challenge.accountName)}`;
                 const typeId = `auth-type-${escapeDomId(challenge.accountName)}`;
                 const defaultType = challenge.challengeType === "2fa_required" ? "totp" : "email";
@@ -1288,6 +1310,18 @@
 
             container.querySelectorAll("[data-submit-auth]").forEach((button) => {
                 button.addEventListener("click", () => submitAuthCode(button.dataset.submitAuth));
+            });
+
+            container.querySelectorAll("[data-copy-qr]").forEach((button) => {
+                button.addEventListener("click", async () => {
+                    const url = button.closest(".challenge")?.querySelector(".qr-url")?.textContent || "";
+                    try {
+                        await navigator.clipboard.writeText(url.trim());
+                        addEvent("auth", "已复制扫码登录挑战链接");
+                    } catch {
+                        window.prompt("复制以下挑战链接：", url.trim());
+                    }
+                });
             });
         }
 
@@ -1445,12 +1479,14 @@
                 "session.disconnected": (data) => updateSessionFromEvent(data),
                 "session.state_changed": (data) => updateSessionFromEvent(data),
                 "session.auth_code_required": (data) => updateSessionFromEvent(data),
-                "session.2fa_required": (data) => updateSessionFromEvent(data)
+                "session.2fa_required": (data) => updateSessionFromEvent(data),
+                "session.qr_required": (data) => updateSessionFromEvent(data)
             });
 
             const authStream = createStream(`/v1/auth/challenges/events?authorization=${auth}`, {
                 "auth.auth_code_required": (data) => updateChallenge(data),
                 "auth.2fa_required": (data) => updateChallenge(data),
+                "auth.qr_required": (data) => updateChallenge(data),
                 "auth.code_provided_email": (data) => clearChallengeFromEvent(data),
                 "auth.code_provided_totp": (data) => clearChallengeFromEvent(data),
                 "auth.code_provided_2fa": (data) => clearChallengeFromEvent(data)
