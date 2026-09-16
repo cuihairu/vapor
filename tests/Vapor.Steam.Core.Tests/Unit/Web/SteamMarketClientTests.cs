@@ -159,6 +159,31 @@ public sealed class SteamMarketClientTests
 		Assert.Null(page.Listings[1].TimeCreated);
 	}
 
+	[Fact]
+	public void Parse_NonStandardValueKinds_FallBackToNullsOrDefaults()
+	{
+		// Defensive arms: Steam variants that send a string where a count is
+		// expected, a bool where the currency id lives, or a string flag must not
+		// throw — they degrade to null/false while the usable fields survive.
+		const string json = """
+			{
+				"mylistings": [
+					{ "listingid": "1", "price": 10, "currencyid": 5, "cancel_requested": 1 },
+					{ "listingid": "2", "price": 10, "currencyid": true, "cancel_requested": "yes" }
+				],
+				"listing_on_hold": "2"
+			}
+			""";
+
+		var page = Parse(json);
+
+		Assert.Null(page.OnHoldCount);
+		Assert.Equal("5", page.Listings[0].CurrencyId);
+		Assert.True(page.Listings[0].CancelRequested);
+		Assert.Null(page.Listings[1].CurrencyId);
+		Assert.False(page.Listings[1].CancelRequested);
+	}
+
 	// --- Client behavior ---
 
 	private static string FixtureJson =>
@@ -373,6 +398,17 @@ public sealed class SteamMarketClientTests
 		{
 			Content = new StringContent("<html>Sign in</html>", System.Text.Encoding.UTF8, "text/html")
 		};
+
+		var result = await client.CreateListingAsync(730, "6", "35471234567", 1, 91);
+
+		Assert.Null(result);
+	}
+
+	[Fact]
+	public async Task CreateListing_EmptyBody_ReturnsNull()
+	{
+		var (client, fake) = CreateWithSession();
+		fake.Responder = _ => new HttpResponseMessage(HttpStatusCode.OK);
 
 		var result = await client.CreateListingAsync(730, "6", "35471234567", 1, 91);
 

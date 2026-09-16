@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vapor.Steam.Core.Actions;
@@ -14,6 +15,96 @@ public sealed class GetPointsShopSummaryActionTests
 	public void Name_MatchesActionName()
 	{
 		Assert.Equal("get_points_shop_summary", _action.Name);
+		Assert.True(_action.Metadata.RequiresLogin);
+		Assert.Equal(60, _action.Metadata.TimeoutSeconds);
+	}
+
+	// definition_ids arrive as JsonElements after the WS/SQLite JSON round-trip;
+	// every value shape the parser accepts must survive to the lookup call.
+	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_JsonElementArrayParsesMixedValuesAndDedupes()
+	{
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1500, 2000, 500));
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo>
+			{
+				new(91000, 753, 3, "free", 0, true, 0),
+				new(91001, 753, 3, "free", 0, true, 0)
+			});
+		BotSession session = CreateSession(clientMock.Object);
+
+		// "91000" string, 91001 number, 0 and "not-a-number" skipped, 91000 de-duped.
+		Dictionary<string, object?> payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "definition_ids": ["91000", 91001, 0, "not-a-number", 91000] }""")!;
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(new uint[] { 91000, 91001 }, captured.Single());
+		Assert.Equal(2, result.Output!["items_total"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_DotNetListAcceptsEveryNumericShape()
+	{
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1500, 2000, 500));
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo>
+			{
+				new(91003, 753, 3, "free", 0, true, 0),
+				new(91004, 753, 3, "free", 0, true, 0),
+				new(91005, 753, 3, "free", 0, true, 0),
+				new(91006, 753, 3, "free", 0, true, 0),
+				new(91007, 753, 3, "free", 0, true, 0)
+			});
+		BotSession session = CreateSession(clientMock.Object);
+
+		// int / long / double / uint / string parse; null and bool are skipped.
+		var payload = new Dictionary<string, object?>
+		{
+			["definition_ids"] = new List<object?> { 91003, 91004L, 91005.0, 91007u, "91006", null, true }
+		};
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(new uint[] { 91003, 91004, 91005, 91007, 91006 }, captured.Single());
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_SingleScalarWrapsAndAllInvalidValuesSkipLookup()
+	{
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1500, 2000, 500));
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo> { new(91000, 753, 3, "free", 0, true, 0) });
+		BotSession session = CreateSession(clientMock.Object);
+
+		ActionResult fromString = await _action.ExecuteAsync(
+			session, new Dictionary<string, object?> { ["definition_ids"] = "91000" }, CancellationToken.None);
+		// A list with no parseable ids behaves like no ids at all: balance-only output.
+		Dictionary<string, object?> allInvalid = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "definition_ids": ["not-a-number", 0] }""")!;
+		ActionResult fromInvalid = await _action.ExecuteAsync(session, allInvalid, CancellationToken.None);
+
+		Assert.True(fromString.Success, fromString.Error);
+		Assert.True(fromInvalid.Success, fromInvalid.Error);
+		Assert.Equal(new uint[] { 91000 }, captured.Single());
+		Assert.False(fromInvalid.Output!.ContainsKey("items"));
 	}
 
 	[Fact]

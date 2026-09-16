@@ -124,6 +124,45 @@ public sealed class GetGameInfoBatchActionTests : IDisposable
 		Assert.Contains("batch limit", error);
 	}
 
+	[Fact]
+	public void TryParseAppIds_WithDotNetList_ParsesMixedNumericTypes()
+	{
+		// In-memory dispatch payloads may carry a plain list with mixed numeric
+		// element types before any JSON round-trip normalizes them.
+		var raw = new List<object?> { 730, 570L, (short)400, (ushort)240 };
+
+		bool ok = GetGameInfoBatchAction.TryParseAppIds(raw, out var appIds, out string? error);
+
+		Assert.True(ok);
+		Assert.Null(error);
+		Assert.Equal(new List<uint> { 730, 570, 400, 240 }, appIds);
+	}
+
+	[Fact]
+	public void TryParseAppIds_WithEmptyList_FailsRequired()
+	{
+		bool ok = GetGameInfoBatchAction.TryParseAppIds(new List<object?>(), out _, out string? error);
+
+		Assert.False(ok);
+		Assert.Equal("app_ids is required", error);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_WhenClientFactoryThrows_SurfacesError()
+	{
+		var action = new GetGameInfoBatchAction(
+			NullLogger<GetGameInfoBatchAction>.Instance,
+			_ => throw new ArgumentException("factory broke"));
+
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_ids"] = "730" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("factory broke", result.Error);
+	}
+
 	// --- ExecuteAsync ---
 
 	[Fact]

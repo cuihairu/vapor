@@ -332,6 +332,210 @@ public sealed class CrawlRunWorkerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ReadJobCanceledWhileStopping_PropagatesCancellation()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		_jobs.GetJobExceptions.Enqueue(new OperationCanceledException());
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		// The poll path rethrows cancellation so the hosting loop can shut down.
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunTickAsync(cts.Token));
+	}
+
+	[Fact]
+	public async Task ReadJobFailure_IsSwallowedAndRunStaysInFlight()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		_jobs.GetJobExceptions.Enqueue(new IOException("store hiccup"));
+
+		await worker.RunTickAsync(CancellationToken.None); // poll → unreadable job stays in flight
+
+		Assert.Equal(0, worker.RunsCompleted);
+		Assert.Empty(await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1")));
+
+		// The run settles normally once the job store is readable again.
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+		_jobs.Outputs[jobId] = BatchOutput(new uint[] { 570 });
+		await worker.RunTickAsync(CancellationToken.None);
+		Assert.Equal(1, worker.RunsCompleted);
+	}
+
+	[Fact]
+	public async Task TimedOutRun_WhenCancelItselfFails_StillRecordsShardFailures()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570, 730 });
+
+		var worker = CreateWorker(runTimeoutSeconds: 0);
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		_jobs.CancelThrows = true;
+
+		await worker.RunTickAsync(CancellationToken.None); // poll → timeout path, CancelJob throws
+
+		// The cancel failure is logged and swallowed; the shard still records failures.
+		var rows = await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1"));
+		Assert.Equal(2, rows.Count);
+		Assert.All(rows, r => Assert.Equal("crawl run timed out", r.Error));
+		Assert.Equal(1, worker.RunsTimedOut);
+	}
+
+	[Fact]
+	public async Task TimedOutRun_WhenCancelIsCanceledWhileStopping_PropagatesCancellation()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker(runTimeoutSeconds: 0);
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		_jobs.CancelCanceledThrows = true;
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		// Cancellation escaping CancelJob must not be mistaken for a store
+		// failure (which would swallow it) — it rethrows so the loop can stop.
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunTickAsync(cts.Token));
+	}
+
+	[Fact]
+	public async Task DispatchCanceledWhileStopping_PropagatesCancellation()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+		_jobs.ThrowCanceledOnCreate = true;
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		var worker = CreateWorker();
+
+		// Dispatch cancellation must escape the generic dispatch-failure handler
+		// so the hosting loop breaks instead of bookkeeping a failed run.
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => worker.RunTickAsync(cts.Token));
+	}
+
+	[Fact]
+	public async Task PlannerWarnings_DoNotBlockDispatch()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		// The override points outside the pool: the planner warns and falls back
+		// to round-robin instead of dropping the app.
+		var plan = new CrawlPlan(
+			Id: "plan-1", Name: "warn", AppIds: new uint[] { 570, 730 },
+			Accounts: null, Overrides: new Dictionary<uint, string> { [570] = "ghost" },
+			ShardSize: 50, IntervalMs: 100, Cc: "us", Cron: null, IntervalSeconds: 0,
+			Enabled: true, CreatedAt: DateTimeOffset.UtcNow, UpdatedAt: DateTimeOffset.UtcNow,
+			NextRunAt: DateTimeOffset.UtcNow.AddMilliseconds(-10));
+		await _crawl.UpsertPlanAsync(plan);
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None);
+
+		Assert.Equal(1, worker.RunsTriggered);
+		Assert.Single(_jobs.Created); // both apps dispatched on alice despite the warning
+		Assert.Contains("570", _jobs.Created.Single().Payload!["app_ids"]!.ToString(), StringComparison.Ordinal);
+		Assert.Contains("730", _jobs.Created.Single().Payload!["app_ids"]!.ToString(), StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task AuditFailure_NeverBlocksTheRun()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+		_audit.ThrowOnRecord = true;
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None);
+
+		// Dispatch succeeded even though the audit write failed.
+		Assert.Equal(1, worker.RunsTriggered);
+		Assert.Single(_jobs.Created);
+	}
+
+	[Fact]
+	public async Task BatchOutputWithoutGamesOrErrorsKeys_SettlesWithZeroRows()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None);
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+		_jobs.Outputs[jobId] = JsonSerializer.SerializeToElement(new { fetched = 0 });
+
+		await worker.RunTickAsync(CancellationToken.None);
+
+		Assert.Equal(1, worker.RunsCompleted);
+		Assert.Empty(await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1")));
+	}
+
+	[Fact]
+	public async Task BatchOutputAsDotNetObjects_ParsesGamesList()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None);
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+		// In-memory output (no JSON round-trip): the games list stays a .NET list
+		// of plain objects and must parse the same as the JsonElement variant.
+		_jobs.RawOutputs[jobId] = new Dictionary<string, object?>
+		{
+			["games"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 570, ["name"] = "game-570" } }
+		};
+
+		await worker.RunTickAsync(CancellationToken.None);
+
+		var rows = await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1"));
+		var okRow = Assert.Single(rows);
+		Assert.True(okRow.Ok);
+		Assert.Equal(570U, okRow.AppId);
+		Assert.Equal("game-570", okRow.Data!.Value.GetProperty("name").GetString());
+		Assert.Equal(1, worker.AppsSucceeded);
+	}
+
+	[Fact]
+	public async Task BatchOutputMixedList_PassesJsonElementsThroughUntouched()
+	{
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+		// A mixed list — pre-serialized JsonElements next to plain .NET objects —
+		// must pass the elements through without a second serialization.
+		_jobs.RawOutputs[jobId] = new Dictionary<string, object?>
+		{
+			["games"] = new List<object?>
+			{
+				JsonSerializer.SerializeToElement(new { app_id = 570, name = "game-570" }),
+				new Dictionary<string, object?> { ["app_id"] = 730, ["name"] = "game-730" }
+			}
+		};
+
+		await worker.RunTickAsync(CancellationToken.None);
+
+		var rows = await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1"));
+		Assert.Equal(2, rows.Count);
+		Assert.Equal("game-570", rows.Single(r => r.AppId == 570).Data!.Value.GetProperty("name").GetString());
+		Assert.Equal("game-730", rows.Single(r => r.AppId == 730).Data!.Value.GetProperty("name").GetString());
+		Assert.Equal(2, worker.AppsSucceeded);
+	}
+
+	[Fact]
 	public async Task KeepRuns_PrunesOldRunsOnCompletion()
 	{
 		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
@@ -366,9 +570,15 @@ public sealed class CrawlRunWorkerTests : IDisposable
 internal sealed class FakeCrawlAuditStore : IAuditStore
 {
 	public List<AuditEntry> Entries { get; } = [];
+	public bool ThrowOnRecord { get; set; }
 
 	public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
 	{
+		if (ThrowOnRecord)
+		{
+			throw new IOException("audit store unavailable");
+		}
+
 		Entries.Add(entry);
 		return Task.CompletedTask;
 	}
@@ -388,14 +598,27 @@ internal sealed class FakeCrawlJobStore : IJobStore
 	public List<JobWithTasks> CreatedJobs { get; } = [];
 	public Dictionary<string, (JobTaskStatus Status, string? Error)> Outcomes { get; } = new();
 	public Dictionary<string, JsonElement> Outputs { get; } = new();
+	/// <summary>Task output handed through without a JSON round-trip (in-memory object shapes).</summary>
+	public Dictionary<string, IReadOnlyDictionary<string, object?>> RawOutputs { get; } = new();
 	public List<string> Cancelled { get; } = [];
 	public bool ThrowOnCreate { get; set; }
+	public bool ThrowCanceledOnCreate { get; set; }
+	public bool CancelThrows { get; set; }
+	/// <summary>CancelJob throws cancellation (the stopping-token rethrow path).</summary>
+	public bool CancelCanceledThrows { get; set; }
+	/// <summary>Exceptions thrown from GetJob once each (OCE → rethrow path, IOException → swallow path).</summary>
+	public Queue<Exception> GetJobExceptions { get; } = new();
 	public Func<CreateJobRequest, bool>? ThrowOnCreateWhen { get; set; }
 
 	public void Drop(string jobId) => _jobs.Remove(jobId);
 
 	public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
 	{
+		if (ThrowCanceledOnCreate)
+		{
+			throw new OperationCanceledException(cancellationToken);
+		}
+
 		if (ThrowOnCreate || ThrowOnCreateWhen?.Invoke(request) == true)
 		{
 			throw new IOException("store unavailable");
@@ -414,6 +637,11 @@ internal sealed class FakeCrawlJobStore : IJobStore
 
 	public Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken)
 	{
+		if (GetJobExceptions.Count > 0)
+		{
+			throw GetJobExceptions.Dequeue();
+		}
+
 		if (!_jobs.TryGetValue(jobId, out JobWithTasks? jobWithTasks))
 		{
 			throw new NotFoundException("job not found");
@@ -425,9 +653,11 @@ internal sealed class FakeCrawlJobStore : IJobStore
 			{
 				Status = outcome.Status,
 				Error = outcome.Error,
-				Output = Outputs.TryGetValue(jobId, out JsonElement output)
-					? JsonSerializer.Deserialize<IReadOnlyDictionary<string, object?>>(output.GetRawText(), JsonDefaults.Options)
-					: null
+				Output = RawOutputs.TryGetValue(jobId, out IReadOnlyDictionary<string, object?>? raw)
+					? raw
+					: Outputs.TryGetValue(jobId, out JsonElement output)
+						? JsonSerializer.Deserialize<IReadOnlyDictionary<string, object?>>(output.GetRawText(), JsonDefaults.Options)
+						: null
 			};
 			Job finishedJob = jobWithTasks.Job with
 			{
@@ -446,6 +676,16 @@ internal sealed class FakeCrawlJobStore : IJobStore
 
 	public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken)
 	{
+		if (CancelCanceledThrows)
+		{
+			throw new OperationCanceledException(cancellationToken);
+		}
+
+		if (CancelThrows)
+		{
+			throw new IOException("cancel unavailable");
+		}
+
 		Cancelled.Add(jobId);
 		return Task.FromResult<IReadOnlyList<TaskCancel>>([]);
 	}

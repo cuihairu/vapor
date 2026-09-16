@@ -193,6 +193,40 @@ public sealed class CrawlApiTests
 	}
 
 	[Fact]
+	public async Task UpdatePlan_OmittedOverrides_KeepsExistingOnes()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		SeedAccounts(factory);
+		string planId = await CreatePlanAsync(client, new
+		{
+			name = "with overrides",
+			appIds = new List<string> { "570", "730" },
+			overrides = new Dictionary<string, string> { ["730"] = "bob" }
+		});
+
+		HttpResponseMessage rename = await SendAsync(client, HttpMethod.Put, $"/v1/crawl/plans/{planId}", body: new { name = "Renamed" });
+
+		Assert.Equal(HttpStatusCode.OK, rename.StatusCode);
+		using var doc = JsonDocument.Parse(await rename.Content.ReadAsStringAsync());
+		Assert.Equal("bob", doc.RootElement.GetProperty("overrides").GetProperty("730").GetString());
+	}
+
+	[Fact]
+	public async Task UpdatePlan_InvalidMergedRequest_Returns400()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		string planId = await CreatePlanAsync(client, new { name = "valid", appIds = new List<string> { "570" } });
+
+		// An explicit empty app list does not merge — it fails validation.
+		HttpResponseMessage response = await SendAsync(
+			client, HttpMethod.Put, $"/v1/crawl/plans/{planId}", body: new { appIds = new List<string>() });
+
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+	}
+
+	[Fact]
 	public async Task UpdatePlan_Missing_Returns404()
 	{
 		await using var factory = CreateFactory();

@@ -212,6 +212,131 @@ public sealed class CreateMarketListingActionTests : IDisposable
 		Assert.Contains("Failed to create market listing", result.Error ?? string.Empty, StringComparison.Ordinal);
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_WithoutWebHandler_IsRefused()
+	{
+		var action = new CreateMarketListingAction(_loggerMock.Object);
+		var session = new BotSession(
+			"test_account",
+			new AccountCredentials("test_account", "password"),
+			new Mock<IActionRegistry>(MockBehavior.Loose).Object,
+			_sessionLoggerMock.Object,
+			steamClientManager: null,
+			steamWebHandler: null,
+			eventCallback: null);
+		_sessions.Add(session);
+
+		var result = await action.ExecuteAsync(session, DryRunPayload(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Steam web handler not available", result.Error ?? string.Empty, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_MissingAppId_IsRefused()
+	{
+		var payload = DryRunPayload();
+		payload.Remove("app_id");
+
+		var result = await RunAsync(payload);
+
+		Assert.False(result.Success);
+		Assert.Contains("app_id is required", result.Error ?? string.Empty, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_MissingContextId_IsRefused()
+	{
+		var payload = DryRunPayload();
+		payload.Remove("context_id");
+
+		var result = await RunAsync(payload);
+
+		Assert.False(result.Success);
+		Assert.Contains("context_id is required", result.Error ?? string.Empty, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_AmountBelowOne_IsRefused()
+	{
+		var payload = DryRunPayload();
+		payload["amount"] = 0;
+
+		var result = await RunAsync(payload);
+
+		Assert.False(result.Success);
+		Assert.Contains("amount must be at least 1", result.Error ?? string.Empty, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_BuyerPriceBelowMinimumListingPrice_IsRefused()
+	{
+		// Fees floor at 1 cent each, so a 2-cent buyer price is unreachable.
+		var payload = DryRunPayload();
+		payload.Remove("seller_proceeds_cents");
+		payload["buyer_price_cents"] = 2;
+
+		var result = await RunAsync(payload);
+
+		Assert.False(result.Success);
+		Assert.Contains("below the minimum listing price", result.Error ?? string.Empty, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_EmailConfirmationRequired_ReportsEmailDomain()
+	{
+		var fake = new MarketFakeHandler
+		{
+			PostResponder = () => new HttpResponseMessage(HttpStatusCode.OK)
+			{
+				Content = new StringContent(
+					"""{ "success": true, "needs_email_confirmation": true, "email_domain": "example.com" }""",
+					System.Text.Encoding.UTF8, "application/json")
+			}
+		};
+		var (action, _, session) = CreateAction(agentSwitchOn: true, fake);
+
+		var result = await action.ExecuteAsync(session, RealPayload(), CancellationToken.None);
+
+		Assert.True(result.Success, result.Error ?? "no error");
+		Assert.True(Assert.IsType<bool>(result.Output!["needs_email_confirmation"]));
+		Assert.Equal("example.com", result.Output["email_domain"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_CanceledDuringRealRun_ReportsCanceled()
+	{
+		// The web handler rethrows cancellation untouched, so the action's
+		// cancellation guard sees the caller's own canceled token.
+		var fake = new MarketFakeHandler
+		{
+			PostResponder = () => throw new OperationCanceledException("send aborted")
+		};
+		var (action, _, session) = CreateAction(agentSwitchOn: true, fake);
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		var result = await action.ExecuteAsync(session, RealPayload(), cts.Token);
+
+		Assert.False(result.Success);
+		Assert.Equal("canceled", result.Error);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_UnexpectedExceptionDuringRealRun_SurfacesMessage()
+	{
+		var fake = new MarketFakeHandler
+		{
+			PostResponder = () => throw new InvalidOperationException("market client blew up")
+		};
+		var (action, _, session) = CreateAction(agentSwitchOn: true, fake);
+
+		var result = await action.ExecuteAsync(session, RealPayload(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("market client blew up", result.Error);
+	}
+
 	// Helpers ---------------------------------------------------------------
 
 	private static Dictionary<string, object?> DryRunPayload() => new()

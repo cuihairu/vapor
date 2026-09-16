@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Vapor.Steam.Core.Actions;
@@ -14,6 +15,123 @@ public sealed class ClaimPointsShopItemsActionTests
 	public void Name_MatchesActionName()
 	{
 		Assert.Equal("claim_points_shop_items", _action.Name);
+		Assert.True(_action.Metadata.RequiresLogin);
+		Assert.Equal(120, _action.Metadata.TimeoutSeconds);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_DefinitionLookupFails_FailsBeforeRedeeming()
+	{
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(It.IsAny<IReadOnlyCollection<uint>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>?)null);
+
+		BotSession session = CreateSession(clientMock.Object);
+
+		ActionResult result = await _action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["definition_ids"] = new List<uint> { 91000 } },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("definition lookup", result.Error, StringComparison.Ordinal);
+		clientMock.Verify(m => m.RedeemPointsShopItemAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	// Payload values arrive as JsonElements after the WS/SQLite JSON round-trip;
+	// every value shape the parser accepts must survive to the lookup call.
+	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_JsonElementArrayParsesStringsNumbersAndSkipsInvalid()
+	{
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo>
+			{
+				new(91000, 753, 3, "free", 0, true, 0),
+				new(91001, 753, 3, "free", 0, true, 0)
+			});
+		clientMock
+			.Setup(m => m.RedeemPointsShopItemAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemPointsResult(SteamResult.OK, 1));
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1000, 1500, 500));
+		BotSession session = CreateSession(clientMock.Object);
+
+		// "91000" string, 91001 number, 0 and "not-a-number" skipped, 91000 de-duped.
+		Dictionary<string, object?> payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "definition_ids": ["91000", 91001, 0, "not-a-number", 91000] }""")!;
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(new uint[] { 91000, 91001 }, captured.Single());
+		Assert.Equal(2, result.Output!["requested"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_DotNetListAcceptsEveryNumericShape()
+	{
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo>
+			{
+				new(91003, 753, 3, "free", 0, true, 0),
+				new(91004, 753, 3, "free", 0, true, 0),
+				new(91005, 753, 3, "free", 0, true, 0),
+				new(91006, 753, 3, "free", 0, true, 0),
+				new(91007, 753, 3, "free", 0, true, 0)
+			});
+		clientMock
+			.Setup(m => m.RedeemPointsShopItemAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemPointsResult(SteamResult.OK, 1));
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1000, 1500, 500));
+		BotSession session = CreateSession(clientMock.Object);
+
+		// int / long / double / uint / string parse; null and bool are skipped.
+		var payload = new Dictionary<string, object?>
+		{
+			["definition_ids"] = new List<object?> { 91003, 91004L, 91005.0, 91007u, "91006", null, true }
+		};
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(new uint[] { 91003, 91004, 91005, 91007, 91006 }, captured.Single());
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_SingleScalarValueWrapsIntoOneId()
+	{
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo> { new(91000, 753, 3, "free", 0, true, 0) });
+		clientMock
+			.Setup(m => m.RedeemPointsShopItemAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemPointsResult(SteamResult.OK, 1));
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1000, 1500, 500));
+		BotSession session = CreateSession(clientMock.Object);
+
+		ActionResult fromString = await _action.ExecuteAsync(
+			session, new Dictionary<string, object?> { ["definition_ids"] = "91000" }, CancellationToken.None);
+		ActionResult fromInt = await _action.ExecuteAsync(
+			session, new Dictionary<string, object?> { ["definition_ids"] = 91000 }, CancellationToken.None);
+
+		Assert.True(fromString.Success, fromString.Error);
+		Assert.True(fromInt.Success, fromInt.Error);
+		Assert.All(captured, ids => Assert.Equal(new uint[] { 91000 }, ids));
+		Assert.Equal(2, captured.Count);
 	}
 
 	[Fact]

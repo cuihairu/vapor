@@ -206,6 +206,97 @@ public sealed class CancelMarketListingsActionTests : IDisposable
 		Assert.Contains("logged on", result.Error ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_WithoutWebHandler_IsRefused()
+	{
+		var action = new CancelMarketListingsAction(_loggerMock.Object);
+
+		var result = await action.ExecuteAsync(CreateNullSession(), new Dictionary<string, object?> { ["app_id"] = 730 }, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Steam web handler not available", result.Error ?? string.Empty, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_NegativePriceRange_IsRefused()
+	{
+		var (action, fake, session) = CreateAction();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["min_price_cents"] = -1 }, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("must not be negative", result.Error ?? string.Empty, StringComparison.Ordinal);
+		Assert.Empty(fake.PostedListingIds);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_RealRunWithPacing_DelayBetweenCancellations()
+	{
+		var (action, fake, session) = CreateAction();
+
+		// delay_ms=1 keeps the pacing path exercised without slowing the test:
+		// three matched listings → two 1ms pauses between the cancellations.
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["min_price_cents"] = 1, ["dry_run"] = false, ["delay_ms"] = 1 },
+			CancellationToken.None);
+
+		Assert.True(result.Success, result.Error ?? "no error");
+		Assert.Equal(3, result.Output!["succeeded"]);
+		Assert.Equal(3, fake.PostedListingIds.Count);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_CanceledDuringRun_ReportsCanceled()
+	{
+		var (action, fake, session) = CreateAction();
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["app_id"] = 730, ["dry_run"] = false, ["delay_ms"] = 0 },
+			cts.Token);
+
+		Assert.False(result.Success);
+		Assert.Equal("canceled", result.Error);
+		Assert.Empty(fake.PostedListingIds);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_TransportThrows_SurfacesExceptionMessage()
+	{
+		var webHandler = new SteamWebHandler(
+			new SteamWebHandlerConfig { RateLimitIntervalMs = 0, MaxRetries = 1, EnableCircuitBreaker = false },
+			NullLogger<SteamWebHandler>.Instance,
+			new ThrowingHandler());
+		var action = new CancelMarketListingsAction(
+			_loggerMock.Object,
+			_ => new SteamMarketClient(webHandler, NullLogger<SteamMarketClient>.Instance));
+		var session = CreateSession(webHandler);
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?> { ["app_id"] = 730 }, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("transport broke", result.Error);
+	}
+
+	// A session without a web handler for the webHandler-null guard; separate
+	// from CreateSession (which exists to hand the sessions to Dispose).
+	private BotSession CreateNullSession()
+	{
+		var session = new BotSession(
+			"test_account",
+			new AccountCredentials("test_account", "password"),
+			new Mock<IActionRegistry>(MockBehavior.Loose).Object,
+			_sessionLoggerMock.Object,
+			steamClientManager: null,
+			steamWebHandler: null,
+			eventCallback: null);
+		_sessions.Add(session);
+		return session;
+	}
+
 	private (CancelMarketListingsAction Action, MarketFakeHandler Fake, BotSession Session) CreateAction()
 	{
 		var fake = new MarketFakeHandler { FailIds = [] };
@@ -235,6 +326,12 @@ public sealed class CancelMarketListingsActionTests : IDisposable
 	{
 		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
 			Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+	}
+
+	private sealed class ThrowingHandler : HttpMessageHandler
+	{
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+			throw new InvalidOperationException("transport broke");
 	}
 
 	public void Dispose()

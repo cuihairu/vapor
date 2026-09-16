@@ -219,6 +219,43 @@ public sealed class SqliteCrawlStoreTests : IDisposable
 		Assert.Equal(0, await _store.PruneRunsAsync("plan-1", keepRuns: 2));
 	}
 
+	[Fact]
+	public void Constructor_WithEmptyDbPath_Throws()
+	{
+		Assert.Throws<ArgumentException>(() => new SqliteCrawlStore(""));
+	}
+
+	[Fact]
+	public async Task GetPlan_WithEmptyId_ReturnsNull()
+	{
+		Assert.Null(await _store.GetPlanAsync(""));
+		Assert.Null(await _store.GetPlanAsync("   "));
+	}
+
+	[Fact]
+	public async Task PruneRuns_WithNonPositiveKeep_ReturnsZeroWithoutDeleting()
+	{
+		await _store.UpsertPlanAsync(SamplePlan());
+		await _store.AddResultAsync(MakeResult("run-1"));
+		await _store.AddResultAsync(MakeResult("run-2"));
+
+		Assert.Equal(0, await _store.PruneRunsAsync("plan-1", keepRuns: 0));
+		Assert.Equal(0, await _store.PruneRunsAsync("plan-1", keepRuns: -3));
+
+		Assert.Equal(2, await _store.CountResultsAsync(new CrawlResultQuery(PlanId: "plan-1")));
+	}
+
+	[Fact]
+	public async Task SetNextRun_WithEmptyPlanId_IsANoOp()
+	{
+		DateTimeOffset due = DateTimeOffset.FromUnixTimeMilliseconds(5000);
+		await _store.UpsertPlanAsync(SamplePlan(nextRun: due));
+
+		await _store.SetNextRunAsync("", null);
+
+		Assert.Equal(due, (await _store.GetPlanAsync("plan-1"))!.NextRunAt);
+	}
+
 	private static CrawlResultRow MakeResult(
 		string runId,
 		uint appId = 570,

@@ -600,6 +600,72 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task PostMarketListingsCancel_EveryFilter_ReachesTheAgentPayload()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Dictionary<string, object?>? dispatchedPayload = null;
+		Task responder = Task.Run(async () =>
+		{
+			dispatchedPayload = await RespondToFirstMarketCancelTaskAsync(store, success: true, dryRun: false, cts.Token);
+		});
+
+		// All four filters at once: each must land in the payload as its own key.
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings/cancel", new
+		{
+			appId = 730,
+			marketHashName = "  AK-47 | Redline (Field-Tested)  ",
+			minPriceCents = 100,
+			maxPriceCents = 250,
+			olderThanSeconds = 3600,
+			dryRun = false
+		});
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		Assert.NotNull(dispatchedPayload);
+		Assert.Equal("730", Scalar(dispatchedPayload!["app_id"]));
+		// The name filter is trimmed before dispatch.
+		Assert.Equal("AK-47 | Redline (Field-Tested)", Scalar(dispatchedPayload["market_hash_name"]));
+		Assert.Equal("100", Scalar(dispatchedPayload["min_price_cents"]));
+		Assert.Equal("250", Scalar(dispatchedPayload["max_price_cents"]));
+		Assert.Equal("3600", Scalar(dispatchedPayload["older_than_seconds"]));
+		Assert.Equal("false", Scalar(dispatchedPayload["dry_run"]));
+	}
+
+	[Fact]
+	public async Task PostMarketListingsCancel_StillPending_Returns202WithJobId()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/market/listings/cancel", new { appId = 730 });
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+			Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("job_id").GetString()));
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
+	[Fact]
 	public async Task PostMarketListingCreate_RequireAuthorization()
 	{
 		await using var factory = CreateFactory();
@@ -707,6 +773,57 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task PostMarketListingCreate_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstMarketCreateTaskAsync(store, success: false, cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/market/listings",
+			new { appId = 730, contextId = "6", assetId = "3547...", sellerProceedsCents = 91 });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("agent refused", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task PostMarketListingCreate_StillPending_Returns202WithJobId()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.PostAsJsonAsync(
+				"/v1/accounts/alice/market/listings",
+				new { appId = 730, contextId = "6", assetId = "3547...", sellerProceedsCents = 91 });
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+			Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("job_id").GetString()));
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
+	[Fact]
 	public async Task PutAccount_MarketListingsEnabled_SurvivesPutWithoutField()
 	{
 		await using var factory = CreateFactory();
@@ -794,6 +911,53 @@ public sealed class AccountApiTests
 		Assert.Equal("91000", Scalar(ids.EnumerateArray().First()));
 		Assert.Equal("91001", Scalar(ids.EnumerateArray().Last()));
 		Assert.Equal("true", Scalar(dispatchedPayload["free_only"]));
+	}
+
+	[Fact]
+	public async Task PointsShopSummary_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(store, "get_points_shop_summary", success: false, null, "agent refused", cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/points-shop/summary?definitionIds=91000");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("agent refused", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task PointsShopSummary_StillPending_Returns202WithJobId()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/points-shop/summary?definitionIds=91000");
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+			Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("job_id").GetString()));
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
 	}
 
 	[Fact]
@@ -900,6 +1064,117 @@ public sealed class AccountApiTests
 		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 		Assert.NotNull(dispatchedPayload);
 		Assert.False(dispatchedPayload!.ContainsKey("force"));
+	}
+
+	[Fact]
+	public async Task PointsShopClaim_AccountMissing_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/ghost/points-shop/claim", new { definitionIds = new[] { 91000u } });
+
+		Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task PointsShopClaim_ZeroDefinitionId_Returns400()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/points-shop/claim",
+			new { definitionIds = new[] { 91000u, 0u } });
+
+		Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("definition_ids must be positive", body, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task PointsShopClaim_DuplicateIds_AgentReceivesDistinctList()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Dictionary<string, object?>? dispatchedPayload = null;
+		Task responder = Task.Run(async () =>
+		{
+			dispatchedPayload = await RespondToFirstPointsShopTaskAsync(
+				store, "claim_points_shop_items",
+				new Dictionary<string, object?> { ["succeeded"] = 1, ["failed"] = 0 },
+				cts.Token);
+		});
+
+		// Duplicates are the caller's typo, not two redemptions: dedupe on dispatch.
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/points-shop/claim",
+			new { definitionIds = new[] { 91000u, 91001u, 91000u } });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		Assert.NotNull(dispatchedPayload);
+		var ids = Assert.IsType<JsonElement>(dispatchedPayload!["definition_ids"]);
+		Assert.Equal(2, ids.GetArrayLength());
+	}
+
+	[Fact]
+	public async Task PointsShopClaim_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstTaskAsync(store, "claim_points_shop_items", success: false, null, "agent refused", cts.Token));
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync(
+			"/v1/accounts/alice/points-shop/claim",
+			new { definitionIds = new[] { 91000u } });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		Assert.Contains("agent refused", body, StringComparison.OrdinalIgnoreCase);
+	}
+
+	[Fact]
+	public async Task PointsShopClaim_StillPending_Returns202WithJobId()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.PostAsJsonAsync(
+				"/v1/accounts/alice/points-shop/claim",
+				new { definitionIds = new[] { 91000u } });
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+			Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("job_id").GetString()));
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
 	}
 
 	[Fact]
@@ -2037,8 +2312,9 @@ public sealed class AccountApiTests
 			ct);
 	}
 
-	/// <summary>Plays the agent side: claims the queued cancel_market_listings task and reports a result.</summary>
-	private static Task RespondToFirstMarketCancelTaskAsync(IJobStore store, bool success, bool dryRun, CancellationToken ct)
+	/// <summary>Plays the agent side: claims the queued cancel_market_listings task, reports a
+	/// result and returns the dispatched payload so tests can assert what the endpoint sent.</summary>
+	private static Task<Dictionary<string, object?>?> RespondToFirstMarketCancelTaskAsync(IJobStore store, bool success, bool dryRun, CancellationToken ct)
 	{
 		var output = new Dictionary<string, object?>
 		{
@@ -2153,8 +2429,9 @@ public sealed class AccountApiTests
 		return null;
 	}
 
-	/// <summary>Plays the agent side: claims the first queued task for <paramref name="action"/> and reports a result.</summary>
-	private static async Task RespondToFirstTaskAsync(
+	/// <summary>Plays the agent side: claims the first queued task for <paramref name="action"/>,
+	/// reports a result and returns the dispatched payload.</summary>
+	private static async Task<Dictionary<string, object?>?> RespondToFirstTaskAsync(
 		IJobStore store,
 		string action,
 		bool success,
@@ -2167,14 +2444,19 @@ public sealed class AccountApiTests
 			JobTask? claimed = await store.ClaimNextQueuedTask("us-east", ct);
 			if (claimed is not null && claimed.Action == action)
 			{
+				Dictionary<string, object?>? payload = claimed.Payload is null
+					? null
+					: new Dictionary<string, object?>(claimed.Payload);
 				await store.SetTaskResult(
 					new TaskResult(claimed.Id, success, success ? null : error, success ? output : null, DateTimeOffset.UtcNow),
 					ct);
-				return;
+				return payload;
 			}
 
 			await Task.Delay(25, ct);
 		}
+
+		return null;
 	}
 
 	private static TestFactory CreateFactory(bool removeHosted = false)

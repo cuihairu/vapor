@@ -75,6 +75,19 @@ public sealed class CrawlShardPlannerTests
 	}
 
 	[Fact]
+	public void Build_WithEmptyPoolAndOverrides_WarnsThatOverridesWereDropped()
+	{
+		var plan = CrawlShardPlanner.Build(
+			new uint[] { 1, 2 },
+			[],
+			new Dictionary<uint, string> { [1] = "alice" },
+			shardSize: 50);
+
+		Assert.Empty(plan.Assignments);
+		Assert.Contains("no accounts in the crawl pool", Assert.Single(plan.Warnings), StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void Build_WithSingleAccount_GivesEverythingToIt()
 	{
 		var plan = CrawlShardPlanner.Build(new uint[] { 1, 2, 3 }, new[] { Spec("solo") }, null, shardSize: 200);
