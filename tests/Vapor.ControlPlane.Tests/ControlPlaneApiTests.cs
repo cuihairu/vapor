@@ -265,6 +265,25 @@ public sealed class ControlPlaneApiTests
 		Assert.Contains("intervalSeconds", badBody);
 	}
 
+	[Theory]
+	[InlineData("/v1/jobs")]
+	[InlineData("/v1/accounts/alice/loot")]
+	[InlineData("/v1/auth/challenges/alice/code")]
+	public async Task WriteEndpoints_WithMalformedJsonBody_Return400Not500(string path)
+	{
+		// Syntactically broken JSON must be rejected by model binding as a 400
+		// before any handler logic runs — never surface as a 500. (Semantic
+		// validation 400s are covered elsewhere; this pins the parse layer.)
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using var content = new StringContent("{\"action\": ", Encoding.UTF8, "application/json");
+		using HttpResponseMessage response = await client.PostAsync(path, content);
+
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+	}
+
 	// Internal so the performance benchmarks can spin up the same API host.
 	internal sealed class TestFactory : WebApplicationFactory<Program>
 	{
