@@ -171,6 +171,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Admin/dashboard pages 404 in real deployments: the Web SDK only copies
+  wwwroot on publish (not into bin) and `UseStaticFiles()` resolved the web
+  root from the process working directory, so launching the dll from any
+  other cwd served no pages at all — while the test suite never requested a
+  page and stayed green. wwwroot now mirrors into the build output and the
+  static file provider anchors on `AppContext.BaseDirectory`; new E2E guard
+  tests exercise the pages through the bare-dll launch shape (verified red
+  without the fix, green with it).
+- QR sign-in challenges never reached the admin pages: the challenge SSE
+  streams did not listen for `qr_required` (so the rotating Steam QR URL
+  shown on the page went stale) and the challenge card rendered a
+  meaningless auth-code prompt. The admin UI now live-updates QR challenges
+  with a copyable challenge URL, and the read-only dashboard surfaces the
+  session state.
 - Flaky `SessionManagerTests.SubscribeAllEvents_ReceivesEventsFromSessions` timeout.
 - `TokenRefreshTests` async-without-await warnings breaking strict builds on .NET 8 SDK.
 - Market search render contract drift (new `results[]`/`total_count` shape

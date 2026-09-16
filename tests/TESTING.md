@@ -20,7 +20,7 @@ tests/
 ├── Vapor.Plugins.MarketWatch.Tests/      (56 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (35 tests)
 ├── Vapor.Protocol.Tests/                 (37 tests)
-├── Vapor.E2E.Tests/                      (6 tests,真实双进程)
+├── Vapor.E2E.Tests/                      (11 tests,真实双进程)
 ├── Vapor.Plugins.TestPlugin/             插件基础设施测试用示例插件
 └── Vapor.Plugins.TestFixtures/           故障 fixture 库(故意坏实现/多实现类,供失败路径测试)
 ```
@@ -37,7 +37,7 @@ tests/
 | Vapor.Plugins.MarketWatch.Tests | 56 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/轮询循环确定性停机/阈值 payload 值形状/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 35 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 37 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值) |
-| Vapor.E2E.Tests | 6 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡) |
+| Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | **合计** | **1792** | (2026-09-14 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式:`for p in Agent ControlPlane E2E Plugins.Core Plugins.MarketWatch Plugins.MobileAuthenticator Plugins.Monitoring Protocol Steam.Core; do dotnet test tests/Vapor.$p.Tests --no-build --list-tests | grep -c "^    "; done`
@@ -167,9 +167,9 @@ tests/
 
 重连退避策略(25)、任务执行器(15,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、maFile 离线导入 CLI(8)、WS URI 构造(4)、追踪注入(1)
 
-### E2E(6 个测试)
+### E2E(11 个测试)
 
-真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。覆盖:健康检查、job 全链路(创建→派发→执行→回报→REST 读取 output)、任务取消、SSE 事件流、2FA 挑战人工提交、账户声明→自动分配→kill agent→重平衡。
+真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。覆盖:健康检查、job 全链路(创建→派发→执行→回报→REST 读取 output)、任务取消、SSE 事件流、2FA 挑战人工提交、账户声明→自动分配→kill agent→重平衡、静态页守护(`StaticPagesE2ETests`:E2E 的 CP 进程是"bin dll + 测试器 cwd"的裸部署形态,守护 admin/dashboard/gamedata/favicon 匿名 200 与 `/`→admin UI 落地——曾因 Web SDK 只在 publish 复制 wwwroot + WebRoot 锚 cwd 导致部署态全 404 而全测试套件无一页面请求)。
 
 ## 运行测试
 
