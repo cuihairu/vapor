@@ -49,37 +49,9 @@ public sealed class GameModelsTests
 	}
 
 	[Fact]
-	public void ItemInfo_SerializesWithCamelCase_AndRoundTrips()
-	{
-		var item = new ItemInfo
-		{
-			AppId = 730,
-			MarketHashName = "AK-47 | Redline (Field-Tested)",
-			Name = "AK-47 | Redline",
-			Type = "★ Mil-Spec Rifle",
-			LowestPrice = 25.34m,
-			MedianPrice = 25.10m,
-			Currency = "USD",
-			Volume24h = 1234
-		};
-
-		string json = JsonSerializer.Serialize(item, Options);
-
-		Assert.Contains("\"marketHashName\":\"AK-47 | Redline (Field-Tested)\"", json, StringComparison.Ordinal);
-
-		var roundTripped = JsonSerializer.Deserialize<ItemInfo>(json, Options);
-
-		Assert.NotNull(roundTripped);
-		Assert.Equal(item.MarketHashName, roundTripped.MarketHashName);
-		Assert.Equal(item.LowestPrice, roundTripped.LowestPrice);
-		Assert.Equal(item.Volume24h, roundTripped.Volume24h);
-	}
-
-	[Fact]
 	public void CacheKeys_AreStable()
 	{
 		Assert.Equal("game:730", GameInfo.CacheKey(730));
-		Assert.Equal("item:730:AK-47 | Redline", ItemInfo.CacheKey(730, "AK-47 | Redline"));
 	}
 
 	[Fact]

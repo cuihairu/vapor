@@ -327,7 +327,7 @@
             </div>
             <p class="tiny" style="margin: 10px 0 0;">
                 载荷可用 <span class="mono">cache_ttl_seconds</span>（0 禁用缓存）与 <span class="mono">force_refresh</span> 覆盖默认层级；
-                自定义 fresh 的 stale 窗口为 4 倍。<span class="mono">ItemInfo</span>（市场单件检价）由交易与市场监控流程内部使用，不在公开 data action 里。
+                自定义 fresh 的 stale 窗口为 4 倍。
             </p>
         </section>
 
@@ -466,21 +466,6 @@
                     ["IsFree", "isFree", "bool", "是否免费"],
                     ["Price", "price", "PriceOverview?", "价格概览（搜索结果可能缺省）"],
                     ["HeaderImage", "headerImage", "string?", "页头图 URL"],
-                    ["FetchedAt", "fetchedAt", "datetime", "快照抓取时间"]
-                ]
-            },
-            ItemInfo: {
-                source: "市场单件检价（交易/市场监控内部使用）",
-                fields: [
-                    ["AppId", "appId", "uint", "物品所属应用"],
-                    ["MarketHashName", "marketHashName", "string", "市场哈希名（物品类唯一标识）"],
-                    ["Name", "name", "string?", "显示名"],
-                    ["Type", "type", "string?", "物品类型描述"],
-                    ["IconUrl", "iconUrl", "string?", "图标 URL"],
-                    ["LowestPrice", "lowestPrice", "decimal?", "市场当前最低挂单价"],
-                    ["MedianPrice", "medianPrice", "decimal?", "成交中位价"],
-                    ["Currency", "currency", "string", "上方价格的币种"],
-                    ["Volume24h", "volume24h", "int?", "24 小时成交量（可得时）"],
                     ["FetchedAt", "fetchedAt", "datetime", "快照抓取时间"]
                 ]
             },

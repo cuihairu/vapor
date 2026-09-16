@@ -87,45 +87,6 @@ public sealed record GameInfo
 }
 
 /// <summary>
-/// Market metadata for an inventory item (identified by market hash name).
-/// </summary>
-public sealed record ItemInfo
-{
-	/// <summary>The AppID the item belongs to.</summary>
-	public uint AppId { get; init; }
-
-	/// <summary>Market hash name (unique per item class).</summary>
-	public string MarketHashName { get; init; } = string.Empty;
-
-	/// <summary>Display name.</summary>
-	public string? Name { get; init; }
-
-	/// <summary>Item type description from Steam.</summary>
-	public string? Type { get; init; }
-
-	/// <summary>Icon URL.</summary>
-	public string? IconUrl { get; init; }
-
-	/// <summary>Lowest listed price observed, in major currency units.</summary>
-	public decimal? LowestPrice { get; init; }
-
-	/// <summary>Median sale price, in major currency units.</summary>
-	public decimal? MedianPrice { get; init; }
-
-	/// <summary>Currency code for the prices above.</summary>
-	public string Currency { get; init; } = "USD";
-
-	/// <summary>24h sold volume when available.</summary>
-	public int? Volume24h { get; init; }
-
-	/// <summary>When this snapshot was fetched (cache freshness marker).</summary>
-	[JsonPropertyName("fetchedAt")]
-	public DateTimeOffset FetchedAt { get; init; } = DateTimeOffset.UtcNow;
-
-	public static string CacheKey(uint appId, string marketHashName) => $"item:{appId}:{marketHashName}";
-}
-
-/// <summary>
 /// Search result entry for game queries (lighter than <see cref="GameInfo"/>).
 /// </summary>
 public sealed record GameSearchResult

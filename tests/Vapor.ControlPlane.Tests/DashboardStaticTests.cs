@@ -94,14 +94,18 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
-	public void GameDataHtml_DocumentsAllSixModels()
+	public void GameDataHtml_DocumentsAllFiveModels()
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/gamedata.html"));
 
-		foreach (string model in new[] { "GameInfo", "PriceOverview", "GameSearchResult", "ItemInfo", "MarketListing", "MarketListingsPage" })
+		foreach (string model in new[] { "GameInfo", "PriceOverview", "GameSearchResult", "MarketListing", "MarketListingsPage" })
 		{
 			Assert.Contains(model, html, StringComparison.Ordinal);
 		}
+
+		// The old six-model docs listed ItemInfo, a record with zero production
+		// references — removed 2026-09-16. Keep it from creeping back in.
+		Assert.DoesNotContain("ItemInfo", html, StringComparison.Ordinal);
 
 		Assert.Contains("get_game_info_batch", html, StringComparison.Ordinal);
 	}
