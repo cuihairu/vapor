@@ -293,7 +293,6 @@ public sealed class MarketWatchPluginEdgeTests
 	{
 		var client = new ScriptedStoreClient();
 		var parked = new TaskCompletionSource<PriceOverview?>(TaskCreationOptions.RunContinuationsAsynchronously);
-		client.PendingPrice = parked.Task;
 		var plugin = new MarketWatchPlugin(client, new HttpClient(new ThrowingHandler()));
 		await plugin.InitializeAsync(
 			new StubPluginContext(
@@ -304,14 +303,20 @@ public sealed class MarketWatchPluginEdgeTests
 					["market.check_interval_seconds"] = "10"
 				}),
 			CancellationToken.None);
-		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
 
-		// Script the fetch before any cycle can reach it, then restart with a fast
-		// interval and wait until the loop is deterministically parked inside the
-		// price fetch before shutting down.
+		// Script the parked fetch and register the watch only after the original
+		// loop is gone (the restart awaits its exit): a pre-restart cycle whose
+		// first snapshot lands after the add would park on a task that ignores the
+		// cancellation token and deadlock the restart's await — the CI-grade
+		// scheduling delay that intermittently stalled this assembly (2026-09-17).
 		client.PriceFetchStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		client.PendingPrice = parked.Task;
 		await plugin.RestartLoopForTestsAsync(TimeSpan.FromMilliseconds(30));
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+
+		// The fast loop parks deterministically inside the price fetch; begin
+		// shutdown while parked, then unwind the fetch.
+		await client.PriceFetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
 		// Begin shutdown while the loop is parked inside the fetch, then unwind the fetch.
 		await client.PriceFetchStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
