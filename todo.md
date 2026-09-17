@@ -621,3 +621,21 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] tests/TESTING.md 新增「CI 挂死守护」小节记录机制与案例;工具链备注：`gh run view --log` 读回偶发截断（首次计数 51,缓存后 56）——取证计数以缓存文件为准。（✅ 2026-09-17）
 
 > 2026-09-17：**第三族 flake 归档 + 守护落地（测试数不变;ci 提交 + docs 提交）**。三族 flake 图谱补齐：§23 进程全局状态并行耦合（断言红）、§25 等待信号与断言副作用错位（断言红）、§27 vstest 宿主收尾失速（无红、静默烧超时）。第三族无法靠测试代码预防（宿主行为在测试框架之下）,只能靠 CI 参数把「静默烧满」转化为「快速红 + 转储」;前两族的测试侧方法论不变（mock TCS 信号 / 等待=断言对象）。验证：守卫参数本地实跑确认 CLI 接受且 Blame collector 正常挂载;随本轮提交 CI 全绿。
+
+## 28. MarketWatch.Tests CI 间歇卡死根因：在飞失速族（park 舞蹈 × 循环重启竞态）修复 + 收尾失速族待转储定谳（🔧 2026-09-17 进行中）
+
+> 立项动机：§27 归档当日,守护首战即抓到第二次发作（276bf82 windows Debug,`--blame-hang` 12 分钟快速红 + 转储）,且历史取证推翻「一次性基础设施 flake」初判——自 09-14 起六次烧满/失速 job 全部落在 windows build-test,两次可取证的在飞清单都卡在本程序集。第三族一分为二:**在飞失速**（根因在测试代码,已修）与 **56/56 交付后收尾失速**（宿主层,待转储定谳）。
+
+### 28.1 取证与定性修正
+
+- [x] 发作清单（gh job 级审计,全部 45m 烧满 cancelled 除守护首战）:09-14 34898498429（win Release）、09-15 34918070742（win Debug）、09-15 34919945683（win Release + Debug 双烧满;在飞清单卡在本程序集:Edge 18 交付、Store 11/18 未完）、09-17 51bc76b run（win Release;MarketWatch 56/56 全部交付后收尾失速）、09-17 35253174090（win Debug;守护 12 分钟引爆,Edge 19/24 在飞,5 个未交付全为本类 Add/Remove/Shutdown 族）。macos/ubuntu 三天零发作。版本相关性排除（09-15 发作早于 Sqlite 10.0.12 升级;两天 SDK 同版本）。MarketWatchStore 实为纯内存字典（无 SQLite）,早期「共享 SQLite 基建」假设作废。（✅ 2026-09-17）
+- [x] 根因定位:`Shutdown_DuringParkedFetch_CancelsCleanly` 在 `InitializeAsync` 之前就把 fake fetch 的 `parked.Task` 挂上 `PendingPrice`,且 watch 注册在 `RestartLoopForTestsAsync` 之前——重启内部 `await _loop` 等原循环退出;若原循环首轮 `Snapshot()` 落在 add 之后（CI `Task.Run` 排队延迟下常态）,它带 entry 进 fetch,park 在**无视取消令牌**的 Task 上,主线程死等 `await _loop` → 确定性死锁:该测试不交付、同程序集后续全部排队（与 19/24 在飞签名精确吻合）。本地低负载原循环总在 add 前跑完空轮 → 多轮不复现。生产侧 `PollLoopAsync` 全部退出路径静态核验完备（含 `Task.Delay` 的 OCE catch→return）;fake 无视 CT 是唯一结构性条件。（✅ 2026-09-17）
+- [x] 同族筛查:三处 park 舞蹈中 `PollOnce_CanceledDuringParkedFreeFetch`（park 在 init 后挂,原循环若 park 上去其 OCE 被循环吞掉进 Delay,测试尾 DisposeAsync 的 Cancel 能收拾）与 `Shutdown_WhileLoopParkedInFetch`（add 在重启后,原循环存活期 store 必空不进 fetch）均安全;事发测试是唯一违例。（✅ 2026-09-17）
+- [x] 修复:排序对齐 `Shutdown_WhileLoopParkedInFetch`——park 脚本与 watch 注册全部挪到 `RestartLoopForTestsAsync` 之后（原循环必然先退出）,删除 init 前的预挂;窗口关闭:原循环存活期 store 必空,永不进 fetch。本地 56/56 + 限 2 核 3 轮 + 全仓 2089 全绿。（✅ 2026-09-17）
+
+### 28.2 尾速族与观察项（开放）
+
+- [ ] ci.yml 两个全量测试步在失败时上传 `TestResults/`（hangdump + Sequence.xml）——守护首战转储因无上传步骤丢失,下次发作必须留证;转储可定谳收尾失速族是 vstest 基础设施还是残留 park。（✅ 2026-09-17 上传已落地;⏳ 定谳待发作）
+- [ ] 在飞失速族已修,后续 CI 若再发作应只剩收尾失速族;windows 连续多轮无发作即可关闭本节。（⏳ 观察中）
+
+> 2026-09-17：**在飞失速族闭环（test + ci + docs 三提交）**。方法论沉淀:「无断言红、无测试卡住」不是测试代码无罪的证据——在飞清单（已交付/未交付 census）能把卡点定位到测试类;**让循环 park 在不可取消的 Task 上时,必须保证任何存活的前序循环都够不到它**（park 先挂或 watch 先注册皆死路,重启型测试的脚本一律放在重启之后）。收尾失速族（56/56 交付后宿主不退出）的「基础设施 flake」定性修正为「待转储定谳」,§27 图谱第三族据此两分。
