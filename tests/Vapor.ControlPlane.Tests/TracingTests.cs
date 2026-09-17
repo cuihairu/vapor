@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
+[Collection(ProcessGlobalTracingCollection.Name)]
 public sealed class TracingTests
 {
 	[Fact]

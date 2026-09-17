@@ -13,7 +13,10 @@ namespace Vapor.ControlPlane.Tests;
 // lambdas, the webhook sink registration, both branches of the notification
 // event filter, OpenTelemetry registration, and the Swagger pipeline toggle.
 // xUnit runs the tests of one class sequentially, which keeps the process-wide
-// environment variables of these tests from interleaving.
+// environment variables of these tests from interleaving; the shared
+// non-parallel collection additionally keeps them off the rest of the run
+// (see ProcessGlobalTracingCollection).
+[Collection(ProcessGlobalTracingCollection.Name)]
 public sealed class CompositionRootSmokeTests
 {
 	[Theory]
