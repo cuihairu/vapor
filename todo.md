@@ -555,3 +555,14 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] TESTING.md 计数联动：Steam.Core 1128→1127、合计 2090→2089、GameModelsTests 4→3、DashboardStaticTests 行"六模型文档"→"五模型文档(含不回流守卫)"。（✅ 2026-09-16）
 
 > 2026-09-16：**data-dictionary 对账收口（-1 测试,2089 全绿;refactor + docs 提交）**。此为 §21 审计②号处置的落地：公共 API 删除属契约决策,经对账确认零生产引用后执行;与 §21 维护轮"零 API 删除"不矛盾——那轮把决策时间留给本轮专项。教训延续：grep 结论不得被 `head` 截断（§21 曾因此误判 MarketListing,本轮复核确认其生产在用故只删 ItemInfo）。验证：GameModelsTests 3/3、DashboardStaticTests 9/9（含新反向守卫）、全解决方案 build 0 warning 0 error、format 门禁过;CI 以本轮提交全绿为准。
+
+## 23. 修复主分支 CI 失败：TracingTests 与 OTel 宿主 boot 的进程全局 listener 并发（✅ 2026-09-17 完成）
+
+> 立项动机：主分支 ci workflow 三挂一绿（830b404 windows Debug、5663482 windows Release、54d444d macos Release 均挂 `TracingTests.DispatchWithoutListener_DispatchesWithoutTraceparent`；2991552 同代码绿）——GA 出口条件 #1"主分支稳定通过"的现行缺口。§22 前后的两轮失败均为纯 docs 提交（代码未动）,失败模式为断言失败（1–4ms 内 `Assert.Null` 炸）而非超时,排除池饥饿家族。
+
+### 23.1 根因与修复
+
+- [x] 根因实证：`CompositionRootSmokeTests` 设 `OTEL_EXPORTER_OTLP_ENDPOINT` boot 真宿主 → `Program.cs` 的 `AddOpenTelemetry().WithTracing(… .AddSource("Vapor.ControlPlane") …)` 注册**进程级全局** OpenTelemetry listener；xunit 不同测试类 = 不同 collection = 并行运行,`DispatchWithoutListener` 的"无 listener 时派发不带 traceparent"断言落在宿主存活窗口（实测 ~2s:boot + 4 请求 + dispose）内时,`ActivitySource.StartActivity` 返回真 Activity → traceparent 注入 → 断言炸。与全部观测吻合：失败 Actual 是带 traceparent 的字典（唯一来源即全局 listener）、同代码间歇绿/挂（04:25 绿/14:08 挂/14:39 绿/连挂两轮）、Linux 三个 job 从未撞上窗口（并行调度时序不同）。非产品缺陷——产品"默认零开销惰性"语义（无 OTLP env 不注册 SDK）正确,是测试隔离缺口。（✅ 2026-09-17）
+- [x] 修复（零产品代码,纯测试隔离）：新建 `ProcessGlobalTracingCollection`（`[CollectionDefinition(DisableParallelization = true)]`）,`TracingTests` 与 `CompositionRootSmokeTests` 双双入列——两类触碰进程全局状态（OTel listener + 进程级 env）的测试与全部并行 collection 串行化；沿 `MaFileImportCliCollection` / `VaporCryptoHelperTestCollection` 同款先例。`CompositionRootSmokeTests` 类注释同步更正：原注释"xUnit 类内串行保证 env 不互踩"只说对一半——类内串行不保证与其它类不并行,该假设在 DisableParallelization 落地后才真正成立。（✅ 2026-09-17）
+
+> 2026-09-17：**修复主分支 CI 失败（测试总数不变,2089 全绿;test 提交）**。排查路径：gh run list 发现 9-16 当日三挂一绿 → `--log-failed` 提取失败断言（Actual 为带 traceparent 的 TraceHeaders）→ grep 全部 `AddActivityListener`/`AddOpenTelemetry`/`OTEL_EXPORTER` 注册点锁定唯一交汇。影响面核查：Agent.Tests 无宿主 boot 无同构风险；其余引用 TraceHeaders 的测试（WsProtocolReplayTests/ProtocolRecordsEdgeTests）为纯序列化测试不涉 ActivitySource。验证：定点（TracingTests 5 + CompositionRootSmoke 2）7/7、ControlPlane 全项目 515/515、build 0 警告 0 错误、format 门禁过；CI 以本轮提交全绿为准。
