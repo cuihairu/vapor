@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-09-17
+
+### Changed
+
+- `Microsoft.Data.Sqlite` 8.0.24 → 10.0.12 to match the net10.0 target
+  framework (the 8.0.x pin was a net8-era leftover); store schemas and
+  behavior unchanged.
+
 ### Added
 
 - Coverage backfill for the P7-3/P8/P9 feature waves (+53 tests, 2007→2060
@@ -207,11 +215,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command timeout against the healthy local server): the test connection
   string now sets `syncTimeout`/`asyncTimeout` to 15s.
 
-### Fixed
-
-- Flaky `SessionManagerTests.SubscribeAllEvents_ReceivesEventsFromSessions` timeout.
-- `TokenRefreshTests` async-without-await warnings breaking strict builds on .NET 8 SDK.
-
 ### Security
 
 - Audit log persistence: `SqliteAuditStore` + `IAuditStore` with `GET /v1/audit/logs`
@@ -238,8 +241,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Webhook notifications never carry verification codes (bool flag only) and
   are HMAC-signed with replay-resistant timestamps.
 
-- Ongoing development.
-
 ## [0.1.0-alpha.1] - 2025-12-28
 
 ### Added
@@ -259,5 +260,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Normalized session/auth event types and cleaned up stale auth prompts during session progress.
 
-[Unreleased]: https://github.com/cuihairu/vapor/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/cuihairu/vapor/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/cuihairu/vapor/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/cuihairu/vapor/releases/tag/v0.1.0-alpha.1

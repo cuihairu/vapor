@@ -588,3 +588,17 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 修复：两处等待信号对齐到被断言副作用本身（`RunEventsPublished()` 计数 `crawl.run_triggered` 已 publish 条数）——等待信号=断言对象,窗口消失;arming 精准命中 tick 2。顺手加固 fake broker：`Published` 从裸 List 改为锁内快照（`IReadOnlyList` + ToArray）,消除断言枚举与后台 tick Add 的并发读写窗口（Publish/读侧同锁）。（✅ 2026-09-17）
 
 > 2026-09-17：**CI flake 修复（测试数不变,515/515 全绿;test 提交）**。模式归档：等待条件必须是被断言副作用的前置完成信号,不能是它的前置动作的计数（job 创建 ≠ 事件发布）。§23/§25 已覆盖两类 flake 家族——进程全局状态隔离与等待信号错位;记忆 vapor-test-determinism 的 park 前置条件 TCS 信号法是同族正解。验证：CrawlRunWorkerTests 27/27（含双核压力 ×2）、ControlPlane 全项目 515/515、format 门禁过;CI 以本轮提交全绿为准。
+
+## 26. 剪版 v0.1.0-alpha.2：九个月 Unreleased 收口 + 依赖陈账清理（📋 2026-09-17 立项即执行）
+
+> 立项动机：todo.md P0–P25 全闭环、HEAD CI 全绿、feature-matrix 非后置缺口全收口——计划源已无未完成项（用户定向：剪版）。release 自 v0.1.0-alpha.1（2025-12-28）后近九个月未剪,全部工作积压在 CHANGELOG Unreleased;§9.8 建成的 release workflow（build×5 RID 打包 + GHCR 双镜像 + 自动建 Release,`-` 预发布 tag 不动 `:latest`）建成后从未端到端运行——本轮发布本身就是对该管道的首次真实验证。
+
+### 26.1 依赖陈账（dependabot 五连挂 3–5 个月）
+
+- [x] 盘点：#24（Test.Sdk 17.8→17.14.1）/ #25（xunit 2.6.2→2.9.3）/ #26（runner 2.5.4→2.8.2）/ #29（Mvc.Testing 8.0.24→8.0.27）四个 PR 的目标版本主分支**早已 ≥**（用户直提抢跑惯例所致）,关闭;#28（Microsoft.Data.Sqlite 8.0.24→8.0.27）方向不对——项目已 target net10.0,8.0.x 是 net8 时代遗留（同系 Mvc.Testing 已 10.0.12）。（✅ 2026-09-17）
+- [x] `Microsoft.Data.Sqlite` 8.0.24 → **10.0.12**（与 Mvc.Testing 同版对齐;SQLitePCLRaw 2.1.13 满足依赖区间不动;store schema/行为无变化）。全量测试门禁过（ControlPlane 515/515 直接受影响——Sqlite store 全家桶在其内）,format 门禁过。（✅ 2026-09-17）
+
+### 26.2 剪版
+
+- [x] CHANGELOG 定稿：`[Unreleased]` → `[0.1.0-alpha.2] - 2026-09-17`（保留空 Unreleased 节）;顺手修三处结构债——重复的 `### Fixed` 节（第二条与首条逐字重复,整节删除）、Security 节尾孤行 `- Ongoing development.`、尾部对比链接补 `[0.1.0-alpha.2]` compare 区间。（✅ 2026-09-17）
+- [ ] tag `v0.1.0-alpha.2` 推送 → release workflow 端到端验证（按 releasing.md 清单：CI 绿 → annotated tag → 5 RID zip + GHCR 双镜像 + GitHub Release 自动建页）。
