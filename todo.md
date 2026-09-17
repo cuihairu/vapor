@@ -577,3 +577,14 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 防再犯护栏沉淀（TESTING.md）：最佳实践新增第 9 条"进程全局状态必须入非并行 collection"，新开"进程全局状态与测试并行"节——三类全局状态 × 三个既有隔离 collection 的对照表、§23 案例与本地复现配方（OTEL env + taskset 双核 + MaxCpuCount=2）、审计口径（新测试触碰全局状态先查表入列）。（✅ 2026-09-17）
 
 > 2026-09-17：**同构 flake 审计（零代码改动，纯审计 + 文档;docs 提交）**。方法论延续 §21"负面结论同样有价值"：逐维度 grep 读写矩阵 → 交叉比对隔离归属 → 误报甄别（前缀子串、host 级 vs 进程级 env）。主分支稳定性是 GA 出口条件 #1，本轮把 flake 家族的"已爆 ×2"扩展为"已审 ×全仓"，新地雷只能在未审计的全局状态类型里出现（新代码引入时由 TESTING.md 护栏拦截）。验证：无代码改动，CI 以 §23 修复后的绿为准。
+
+## 25. 修复 CI flake：CrawlRunWorkerTests.BrokenTick 等待信号与被断言副作用错位（✅ 2026-09-17 完成）
+
+> 立项动机：dcacd31（纯 docs 提交）的 ci 在 macOS Debug 挂 `CrawlRunWorkerTests.BrokenTick_LogsErrorAndKeepsServing`——又是 §19 引入的真实时钟测试。与 §23 并行隔离家族不同,这次是"等待信号 ≠ 被断言副作用"的时序家族（记忆中 vapor-test-determinism 已归档的模式）。
+
+### 25.1 根因与修复
+
+- [x] 根因：测试用 `WaitUntilAsync(() => _jobs.Created.Count == 2)` 作同步点,但 job 在其 `crawl.run_triggered` 事件 publish **之前**就已创建——慢机上断言在 tick 3 的 publish 飞行中执行,Published 快照只有 tick 1 一条事件,`Assert.Contains(run_id == Created[1].run_id)` 滤不中（失败现场唯一事件 run_id=7b56… 即 tick 1 的）。副路径同理：tick 1 的等待（Created.Count==1）后立即设 `ThrowOnPublishRuns=1`,若 tick 1 的 publish 尚在飞行,炸的会是 tick 1 的事件而非 tick 2 的 completion publish——测试语义本就欠定。（✅ 2026-09-17）
+- [x] 修复：两处等待信号对齐到被断言副作用本身（`RunEventsPublished()` 计数 `crawl.run_triggered` 已 publish 条数）——等待信号=断言对象,窗口消失;arming 精准命中 tick 2。顺手加固 fake broker：`Published` 从裸 List 改为锁内快照（`IReadOnlyList` + ToArray）,消除断言枚举与后台 tick Add 的并发读写窗口（Publish/读侧同锁）。（✅ 2026-09-17）
+
+> 2026-09-17：**CI flake 修复（测试数不变,515/515 全绿;test 提交）**。模式归档：等待条件必须是被断言副作用的前置完成信号,不能是它的前置动作的计数（job 创建 ≠ 事件发布）。§23/§25 已覆盖两类 flake 家族——进程全局状态隔离与等待信号错位;记忆 vapor-test-determinism 的 park 前置条件 TCS 信号法是同族正解。验证：CrawlRunWorkerTests 27/27（含双核压力 ×2）、ControlPlane 全项目 515/515、format 门禁过;CI 以本轮提交全绿为准。
