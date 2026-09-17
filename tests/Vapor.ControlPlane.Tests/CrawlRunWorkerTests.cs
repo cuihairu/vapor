@@ -588,7 +588,10 @@ public sealed class CrawlRunWorkerTests : IDisposable
 		await worker.StartAsync(CancellationToken.None);
 		try
 		{
-			await WaitUntilAsync(() => _jobs.Created.Count == 1); // tick 1: dispatch
+			// Wait for the *published event*, not the created job: the job exists before
+			// its run event is published, and arming ThrowOnPublishRuns while tick 1's
+			// publish is still in flight would break the wrong tick's event instead.
+			await WaitUntilAsync(() => RunEventsPublished() == 1); // tick 1: dispatch
 
 			string jobId = _jobs.CreatedJobs[0].Job.Id;
 			_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
@@ -597,7 +600,11 @@ public sealed class CrawlRunWorkerTests : IDisposable
 
 			// Tick 2 fails inside CompleteRunAsync (publish throws); the cursor was never
 			// settled, so tick 3 claims the still-due plan again — proof the loop survived.
-			await WaitUntilAsync(() => _jobs.Created.Count == 2);
+			// Waiting on the second run event (not Created.Count) is what makes the
+			// Contains assertion below race-free: the job is created before its event
+			// is published, so Created.Count == 2 can fire mid-publish (CI flake,
+			// macos Debug 2026-09-17: the assertion ran against a one-event list).
+			await WaitUntilAsync(() => RunEventsPublished() == 2);
 
 			Assert.Equal(2, worker.RunsTriggered);
 			Assert.Contains(_events.Published, e => e.Type == "crawl.run_triggered"
@@ -665,6 +672,9 @@ public sealed class CrawlRunWorkerTests : IDisposable
 
 	private static string _latestRunId(FakeCrawlJobStore jobs) =>
 		jobs.Created.Select(j => j.Meta!["crawl_run_id"]).Last();
+
+	private int RunEventsPublished() =>
+		_events.Published.Count(e => e.Type == "crawl.run_triggered");
 }
 
 internal sealed class FakeCrawlAuditStore : IAuditStore
@@ -840,7 +850,18 @@ internal sealed class FakeCrawlJobStore : IJobStore
 
 internal sealed class FakeCrawlEventBroker : IEventBroker
 {
-	public List<(string? JobId, string Type, IReadOnlyDictionary<string, object?>? Payload)> Published { get; } = [];
+	private readonly object _lock = new();
+	private readonly List<(string? JobId, string Type, IReadOnlyDictionary<string, object?>? Payload)> _published = [];
+
+	/// <summary>
+	/// Snapshot on read: Publish runs on the worker's background loop while
+	/// assertions and WaitUntilAsync predicates enumerate concurrently.
+	/// </summary>
+	public IReadOnlyList<(string? JobId, string Type, IReadOnlyDictionary<string, object?>? Payload)> Published
+	{
+		get { lock (_lock) return _published.ToArray(); }
+	}
+
 	/// <summary>Publish throws InvalidOperationException this many times before behaving again.</summary>
 	public int ThrowOnPublishRuns { get; set; }
 
@@ -852,7 +873,10 @@ internal sealed class FakeCrawlEventBroker : IEventBroker
 			throw new InvalidOperationException("event broker unavailable");
 		}
 
-		Published.Add((jobId, type, payload));
+		lock (_lock)
+		{
+			_published.Add((jobId, type, payload));
+		}
 	}
 
 	public void PublishSession(string accountName, string eventType, string state, string? message = null)
