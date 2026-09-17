@@ -604,3 +604,20 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] tag `v0.1.0-alpha.2` 推送 → release workflow 端到端验证（按 releasing.md 清单：CI 绿 → annotated tag → 5 RID zip + GHCR 双镜像 + GitHub Release 自动建页）。（✅ 2026-09-17）
 
 > 2026-09-17：**剪版完成（首次端到端发布,chore(deps) + docs 两次提交）**。release workflow 首跑：build ×5 RID 与 docker 双镜像（`controlplane:0.1.0-alpha.2` / `agent:0.1.0-alpha.2`,预发布 tag 未动 `:latest`）全绿;release job 建 Release 后上传资产时遇 GitHub 5xx（错误体为 unicorn HTML 页,6/10 上传后中断）——`gh run rerun --failed` 重跑,`overwrite_files: true` 覆盖已有 + 补缺,终态 10/10 资产 + prerelease 标记正确（GHCR 版本列表 API 需 `read:packages` scope,本地 token 无,以 docker job 绿为镜像发布凭据）。管道验证结论：机制无缺陷,唯一脆弱点是资产上传的瞬时 5xx,重跑即恢复,无需改 workflow。发布地址 https://github.com/cuihairu/vapor/releases/tag/v0.1.0-alpha.2 。
+
+## 27. CI 首见第三族 flake：vstest 会话收尾失速（结果全部交付后宿主不退出）+ --blame-hang 守护（✅ 2026-09-17 完成）
+
+> 立项动机：§26 剪版收口后的纯 docs 提交 51bc76b,ci 的 windows Release job 在 Test 步骤卡死 40+ 分钟。与 §23（进程全局状态并行耦合,断言红）和 §25（等待信号错位,断言红）不同——这次**无任何断言失败、无测试卡住,是宿主不退出的基础设施级失速**。
+
+### 27.1 取证链
+
+- [x] 现场还原（`--log` 读回）：16:35:52 最后一条输出为 MarketWatch **56/56 结果流式打印完毕**（同节点 Agent/Plugins.Core 16:35:49 前已正常收尾）→ 之后 40 分 20 秒零输出 → 17:16 job 级 45 分钟超时强制终止（run 结论 cancelled,非 failure）。唯一未完成的 VSTest target 是 MarketWatch.Tests,但被杀时其全部测试结果均已交付——卡的是会话收尾,不是测试。（✅ 2026-09-17）
+- [x] 代码面排除：MarketWatch 生产代码轮询循环为 `Task.Run` 后台任务（不拽进程退出）;全测试项目无前台线程;该程序集内全部等待有界（`WaitUntilAsync` 30s 预算、门控 TCS 测试 5s 超时、release 必然 SetResult）;fixture 仅 1 个 IDisposable 且无循环等待。56/56 完成的静态+动态双重证据使"测试内挂死"不成立。（✅ 2026-09-17）
+- [x] flake 判别：同提交的前一轮（唯一差异为 todo.md 文本）25 分钟前 10/10 全绿（windows Release 4m26s）;被杀后 `gh run rerun --failed` 即时重跑全绿。同代码两种结局 → 定性 vstest 会话收尾失速（windows hosted runner 基础设施 flake）,非确定性回归。（✅ 2026-09-17）
+
+### 27.2 加固
+
+- [x] ci.yml 两个全量测试步（build-test 矩阵、coverage）挂 `--blame-hang --blame-hang-timeout 12m`：testhost 无进展 12 分钟即转储 + 终止 + 未完成测试标失败快速红,最坏燃烧时间从 45/60 分钟压到 ≤12 分钟。integration-redis 不挂：SE.Redis 内部 15s 超时兜底 + 仅 11 个门控测试,无静默燃烧面;本地 run-tests.sh 不挂：交互跑挂住即 Ctrl+C。（✅ 2026-09-17）
+- [x] tests/TESTING.md 新增「CI 挂死守护」小节记录机制与案例;工具链备注：`gh run view --log` 读回偶发截断（首次计数 51,缓存后 56）——取证计数以缓存文件为准。（✅ 2026-09-17）
+
+> 2026-09-17：**第三族 flake 归档 + 守护落地（测试数不变;ci 提交 + docs 提交）**。三族 flake 图谱补齐：§23 进程全局状态并行耦合（断言红）、§25 等待信号与断言副作用错位（断言红）、§27 vstest 宿主收尾失速（无红、静默烧超时）。第三族无法靠测试代码预防（宿主行为在测试框架之下）,只能靠 CI 参数把「静默烧满」转化为「快速红 + 转储」;前两族的测试侧方法论不变（mock TCS 信号 / 等待=断言对象）。验证：守卫参数本地实跑确认 CLI 接受且 Blame collector 正常挂载;随本轮提交 CI 全绿。
