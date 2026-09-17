@@ -54,6 +54,25 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task GetOrCreateSessionAsync_ConcurrentCreation_RaceLoserReturnsWinner()
+	{
+		// Both callers can miss the TryGetValue fast path and race into TryAdd; the
+		// loser must dispose its own session and return the winner. The race window
+		// is the synchronous stretch between the two dictionary probes, so loop
+		// concurrent attempts (each round recreated after removal) until the slow
+		// path is exercised; every result must still be the same winning session.
+		var credentials = new AccountCredentials("race_account", "password");
+		for (int round = 0; round < 40; round++)
+		{
+			var sessions = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ =>
+				_manager.GetOrCreateSessionAsync("race_account", credentials, CancellationToken.None)));
+
+			Assert.All(sessions, session => Assert.Same(sessions[0], session));
+			await _manager.RemoveSessionAsync("race_account", CancellationToken.None);
+		}
+	}
+
+	[Fact]
 	public async Task GetOrCreateSessionAsync_WithDifferentAccounts_CreatesDifferentSessions()
 	{
 		// Arrange

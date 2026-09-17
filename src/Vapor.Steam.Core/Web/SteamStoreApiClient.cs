@@ -44,12 +44,6 @@ public sealed record StorePurchaseResult(bool Success, int PurchaseResultDetail)
 /// </summary>
 public sealed class SteamStoreApiClient : ISteamStoreApiClient
 {
-	private static readonly JsonSerializerOptions JsonOptions = new()
-	{
-		PropertyNameCaseInsensitive = true,
-		NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
-	};
-
 	private readonly SteamWebHandler _webHandler;
 	private readonly ILogger<SteamStoreApiClient> _logger;
 

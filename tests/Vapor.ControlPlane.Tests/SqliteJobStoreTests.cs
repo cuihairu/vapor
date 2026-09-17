@@ -28,6 +28,24 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task SetTaskResult_OnQueuedNeverClaimedTask_ThrowsNotFound()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+		var task = Assert.Single(created.Tasks);
+
+		// The result transition only applies to Running tasks; reporting against a
+		// task that was never claimed must fail loudly instead of silently updating.
+		await Assert.ThrowsAsync<NotFoundException>(() => store.SetTaskResult(
+			new TaskResult(task.Id, Success: true, Error: null, Output: null, DateTimeOffset.UtcNow),
+			cts.Token));
+	}
+
+	[Fact]
 	public async Task SetTaskResultMarksSuccessfulSingleTaskJobAsFinished()
 	{
 		using var store = new SqliteJobStore(":memory:");

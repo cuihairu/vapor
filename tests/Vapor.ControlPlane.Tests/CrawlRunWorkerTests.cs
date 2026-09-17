@@ -40,6 +40,23 @@ public sealed class CrawlRunWorkerTests : IDisposable
 				CrawlMaxAppsPerTask: maxAppsPerTask),
 			NullLogger<CrawlRunWorker>.Instance);
 
+	[Fact]
+	public async Task Worker_WithTickKillSwitch_CompletesWithoutScheduling()
+	{
+		// 0 or below is the documented kill switch: ExecuteAsync returns instead
+		// of entering the tick loop, so the hosted task settles almost instantly.
+		CrawlRunWorker worker = CreateWorker(tickSeconds: 0);
+
+		await worker.StartAsync(CancellationToken.None);
+		if (worker.ExecuteTask is not null)
+		{
+			await worker.ExecuteTask.WaitAsync(TimeSpan.FromSeconds(5));
+		}
+
+		Assert.Equal(0, worker.RunsTriggered);
+		Assert.Equal(0, worker.TasksDispatched);
+	}
+
 	private async Task<CrawlPlan> SeedOneShotPlanAsync(
 		string id = "plan-1",
 		uint[]? appIds = null,

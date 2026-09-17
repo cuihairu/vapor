@@ -73,6 +73,24 @@ public sealed class NotificationTests
 	}
 
 	[Fact]
+	public async Task Webhook_TransportThrowsOnEveryAttempt_RetriesThenFailsWithLastError()
+	{
+		var handler = new ThrowingWebHandler();
+		using var sink = new WebhookNotificationSink(
+			new Uri("http://localhost/hook"), secret: null, maxRetries: 2,
+			TimeSpan.Zero, NullLogger<WebhookNotificationSink>.Instance,
+			new HttpClient(handler));
+
+		HttpRequestException ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+			sink.HandleAsync(NewEvent("job", "job.created"), CancellationToken.None));
+
+		Assert.Equal(3, handler.Calls); // initial attempt + 2 retries
+		Assert.Equal(0, sink.Sent);
+		Assert.Equal(1, sink.Failed);
+		Assert.Contains("network down", ex.Message);
+	}
+
+	[Fact]
 	public async Task Webhook_WithoutSecret_SendsNoSignatureHeaders()
 	{
 		var handler = new StubHandler();
@@ -550,6 +568,18 @@ public sealed class NotificationTests
 			Bodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
 			Requests.Add(request);
 			return _responses.Count > 0 ? _responses.Dequeue() : new HttpResponseMessage(HttpStatusCode.OK);
+		}
+	}
+
+	/// <summary>Throws a transport exception on every send, simulating a dead network.</summary>
+	private sealed class ThrowingWebHandler : HttpMessageHandler
+	{
+		public int Calls;
+
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+		{
+			Interlocked.Increment(ref Calls);
+			return Task.FromException<HttpResponseMessage>(new HttpRequestException("network down"));
 		}
 	}
 
