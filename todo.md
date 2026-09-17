@@ -566,3 +566,14 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 修复（零产品代码,纯测试隔离）：新建 `ProcessGlobalTracingCollection`（`[CollectionDefinition(DisableParallelization = true)]`）,`TracingTests` 与 `CompositionRootSmokeTests` 双双入列——两类触碰进程全局状态（OTel listener + 进程级 env）的测试与全部并行 collection 串行化；沿 `MaFileImportCliCollection` / `VaporCryptoHelperTestCollection` 同款先例。`CompositionRootSmokeTests` 类注释同步更正：原注释"xUnit 类内串行保证 env 不互踩"只说对一半——类内串行不保证与其它类不并行,该假设在 DisableParallelization 落地后才真正成立。（✅ 2026-09-17）
 
 > 2026-09-17：**修复主分支 CI 失败（测试总数不变,2089 全绿;test 提交）**。排查路径：gh run list 发现 9-16 当日三挂一绿 → `--log-failed` 提取失败断言（Actual 为带 traceparent 的 TraceHeaders）→ grep 全部 `AddActivityListener`/`AddOpenTelemetry`/`OTEL_EXPORTER` 注册点锁定唯一交汇。影响面核查：Agent.Tests 无宿主 boot 无同构风险；其余引用 TraceHeaders 的测试（WsProtocolReplayTests/ProtocolRecordsEdgeTests）为纯序列化测试不涉 ActivitySource。验证：定点（TracingTests 5 + CompositionRootSmoke 2）7/7、ControlPlane 全项目 515/515、build 0 警告 0 错误、format 门禁过；**复现场景前后对照**——testhost 设 `OTEL_EXPORTER_OTLP_ENDPOINT` + `taskset 0,1` + `MaxCpuCount=2` 模拟 CI 慢机,修复前 3 轮挂 1（复现失败断言）,修复后同场景 3 轮全绿；CI 以本轮提交全绿为准。
+
+## 24. 进程全局状态 × 类间并行：同构 flake 全仓审计（✅ 2026-09-17 完成）
+
+> 立项动机：§23 修复了已发作的一对（OTel 宿主 boot vs 无 listener 断言），但"进程全局状态 + xUnit 类间并行"是 flake 家族——同构地雷可能还有未爆的。对全部测试项目做一次系统排查，把家族一次清零或确认清零。
+
+### 24.1 审计矩阵与结论
+
+- [x] 审计维度与结果（全仓 grep 交叉比对，负面结果为主）：①进程环境变量——写方仅 CompositionRootSmokeTests（已入 ProcessGlobalTracingCollection）与 Plugins.Core 的 PluginConfigurationExtensionsTests（私有命名空间 `VAPOR_TEST_PLUGIN_*`，无他类读者，类内串行足够）；读方均为门控只读（`VAPOR_TEST_REDIS`/`STEAM_TEST_*`）。ProgramBranchCoverageTests 的"环境变量回退"走 host 级 UseEnvironment/configuration 注入，不碰进程 env。②ActivityListener/OTel——注册点仅 Program.cs（门控）+ TracingTests（using）+ OTel 宿主 boot（§23 已隔离）。③`Activity.Current` 赋值——TracingTests 内 save/restore 配对且已入非并行 collection。④`VaporCryptoHelper` 静态加密 key——全部触碰者（三个 crypto 测试类 + FileCredentialStoreTests）已在 VaporCryptoHelperTestCollection；Agent.Tests 侧仅 MaFileImportCliTests 一个使用者且有专属 collection；CredentialStoreRotatorTests 用显式 key 的 EncryptWithKey/DecryptWithKey 不碰静态（grep "VaporCryptoHelper.Encrypt" 匹配它属前缀子串误报）。⑤Culture/TimeZone/AppDomain.SetData——零测试触碰。跨项目互不影响（每项目独立 testhost 进程）。**结论：无第二颗已知地雷，§23 修复覆盖整个已知家族。**（✅ 2026-09-17）
+- [x] 防再犯护栏沉淀（TESTING.md）：最佳实践新增第 9 条"进程全局状态必须入非并行 collection"，新开"进程全局状态与测试并行"节——三类全局状态 × 三个既有隔离 collection 的对照表、§23 案例与本地复现配方（OTEL env + taskset 双核 + MaxCpuCount=2）、审计口径（新测试触碰全局状态先查表入列）。（✅ 2026-09-17）
+
+> 2026-09-17：**同构 flake 审计（零代码改动，纯审计 + 文档;docs 提交）**。方法论延续 §21"负面结论同样有价值"：逐维度 grep 读写矩阵 → 交叉比对隔离归属 → 误报甄别（前缀子串、host 级 vs 进程级 env）。主分支稳定性是 GA 出口条件 #1，本轮把 flake 家族的"已爆 ×2"扩展为"已审 ×全仓"，新地雷只能在未审计的全局状态类型里出现（新代码引入时由 TESTING.md 护栏拦截）。验证：无代码改动，CI 以 §23 修复后的绿为准。

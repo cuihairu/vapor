@@ -412,6 +412,23 @@ dotnet test tests/Vapor.ControlPlane.Tests -c Release \
 6. **适当的隔离**: 使用 Mock 隔离外部依赖
 7. **边界条件**: 测试边界值和异常情况
 8. **文档化**: 测试作为代码行为的文档
+9. **进程全局状态必须入非并行 collection**: 见下节
+
+## 进程全局状态与测试并行
+
+xUnit 默认**类间并行**（每个测试类一个 collection，不同 collection 并行、同 collection 串行）。类内串行只保护同类方法之间——它**不**保证与其他类不并行。任何触碰进程级全局状态的测试都必须与全部并行 collection 互斥：给相关测试类挂同一个 `[CollectionDefinition(... DisableParallelization = true)]` collection。
+
+仓内三类进程全局状态与既有隔离（2026-09-17 全仓审计，无遗漏）：
+
+| 全局状态 | 触碰者 | 隔离 collection |
+|---|---|---|
+| `VaporCryptoHelper` 静态加密 key（`Encrypt`/`Decrypt`/`SetEncryptionKey`/`ResetForTests`） | VaporCryptoHelper{Tests,MethodTests,Encryption}Tests、FileCredentialStoreTests | `VaporCryptoHelperTestCollection`（Steam.Core）|
+| `VaporCryptoHelper` 静态 key（Agent 侧 CLI 导入） | MaFileImportCliTests | `MaFileImportCliCollection`（Agent）|
+| 进程环境变量 + OTel 宿主 boot 的进程级 ActivityListener | CompositionRootSmokeTests、TracingTests | `ProcessGlobalTracingCollection`（ControlPlane）|
+
+> 案例（§23，CI 间歇红三挂一绿后定位）：`CompositionRootSmokeTests` 设 `OTEL_EXPORTER_OTLP_ENDPOINT` boot 真宿主,OTel SDK 注册**进程级** listener（宿主存活 ~2s）;并行的 `TracingTests.DispatchWithoutListener` 断言"无 listener 时派发不带 traceparent",撞上宿主存活窗口即炸。本地复现配方：testhost 设该 env + `taskset -c 0,1` + `MaxCpuCount=2` 模拟 CI 慢机（修复前 3 轮挂 1,入非并行 collection 后 3/3 绿）。
+>
+> 审计口径：其余 `Environment.Get/SetEnvironmentVariable` 使用均为只读门控（`VAPOR_TEST_REDIS`/`STEAM_TEST_*`）或私有命名空间（Plugins.Core 的 `VAPOR_TEST_PLUGIN_*`，无他类读者）；`ProgramBranchCoverageTests` 走 host 级 `UseEnvironment`/configuration 注入不碰进程 env;`Activity.Current` 赋值处已 save/restore 配对且所在类已入非并行 collection。新测试触碰上述任何全局状态时，先查此表入列或建新列。
 
 ## 测试维护
 
