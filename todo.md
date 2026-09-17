@@ -601,4 +601,6 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 ### 26.2 剪版
 
 - [x] CHANGELOG 定稿：`[Unreleased]` → `[0.1.0-alpha.2] - 2026-09-17`（保留空 Unreleased 节）;顺手修三处结构债——重复的 `### Fixed` 节（第二条与首条逐字重复,整节删除）、Security 节尾孤行 `- Ongoing development.`、尾部对比链接补 `[0.1.0-alpha.2]` compare 区间。（✅ 2026-09-17）
-- [ ] tag `v0.1.0-alpha.2` 推送 → release workflow 端到端验证（按 releasing.md 清单：CI 绿 → annotated tag → 5 RID zip + GHCR 双镜像 + GitHub Release 自动建页）。
+- [x] tag `v0.1.0-alpha.2` 推送 → release workflow 端到端验证（按 releasing.md 清单：CI 绿 → annotated tag → 5 RID zip + GHCR 双镜像 + GitHub Release 自动建页）。（✅ 2026-09-17）
+
+> 2026-09-17：**剪版完成（首次端到端发布,chore(deps) + docs 两次提交）**。release workflow 首跑：build ×5 RID 与 docker 双镜像（`controlplane:0.1.0-alpha.2` / `agent:0.1.0-alpha.2`,预发布 tag 未动 `:latest`）全绿;release job 建 Release 后上传资产时遇 GitHub 5xx（错误体为 unicorn HTML 页,6/10 上传后中断）——`gh run rerun --failed` 重跑,`overwrite_files: true` 覆盖已有 + 补缺,终态 10/10 资产 + prerelease 标记正确（GHCR 版本列表 API 需 `read:packages` scope,本地 token 无,以 docker job 绿为镜像发布凭据）。管道验证结论：机制无缺陷,唯一脆弱点是资产上传的瞬时 5xx,重跑即恢复,无需改 workflow。发布地址 https://github.com/cuihairu/vapor/releases/tag/v0.1.0-alpha.2 。
