@@ -378,6 +378,10 @@ CI（`.github/workflows/ci.yml`）在 Ubuntu Release 上跑全解决方案测试
     files: "**/TestResults/*/coverage.cobertura.xml"
 ```
 
+### CI 挂死守护（`--blame-hang`，2026-09-17 起）
+
+CI 两个全量测试步（build-test 矩阵、coverage）挂 `--blame-hang --blame-hang-timeout 12m`：testhost 无进展 12 分钟即采集转储、终止宿主并把未完成测试标失败快速红，防止"全部结果已交付但 vstest 会话收尾失速"把 job 静默烧满 job 级超时。案例（2026-09-17，todo §27）：windows Release 在 MarketWatch 56/56 结果流式打印完毕后宿主不退出，40 分钟零输出直至 45 分钟 job 超时被杀；同提交即时重跑全绿，代码面无可拽住进程的候选（无前台线程、全部等待有界），定性为 vstest 层基础设施 flake——第三族 flake（§23 进程全局状态耦合、§25 等待信号错位之外，本族无断言红、纯静默燃烧），只能在框架之下的 CI 参数层转化。integration-redis 不挂（SE.Redis 内部 15s 超时兜底）；本地 run-tests.sh 不挂（交互跑挂住即 Ctrl+C）。取证备注：`gh run view --log` 读回偶发截断（首次计数 51，缓存后 56），取证计数以缓存文件为准。
+
 ## 性能基准
 
 ### 基线数字（唯一权威源：`docs/performance.md`）

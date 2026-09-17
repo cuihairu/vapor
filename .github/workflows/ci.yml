@@ -46,9 +46,12 @@ jobs:
 
     # 限制 testhost 并行度（与 scripts/run-tests.sh 一致）：E2E 真实子进程与
     # CP 调度器等真实时钟测试在满核并行下偶发超时，限流后稳定。
+    # --blame-hang：testhost 无进展 12 分钟即转储并快速失败——防 vstest 会话收尾
+    # 失速（结果全部交付后宿主不退出）把 job 静默烧满 45 分钟（2026-09-17 实测，
+    # 见 tests/TESTING.md「CI 挂死守护」与 todo §27）。
     # 注意 `--` 之后的 token 全部作为 runsettings 内联参数解析，必须放在最后。
     - name: Test ${{ matrix.configuration }}
-      run: dotnet test -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo --verbosity normal -- RunConfiguration.MaxCpuCount=2
+      run: dotnet test -c "${{ matrix.configuration }}" -p:ContinuousIntegrationBuild=true --nologo --verbosity normal --blame-hang --blame-hang-timeout 12m -- RunConfiguration.MaxCpuCount=2
 
   coverage:
     # Full-solution test run with coverlet, uploading to Codecov. Split from the
@@ -87,8 +90,9 @@ jobs:
     - name: Build Release
       run: dotnet build -c Release -p:ContinuousIntegrationBuild=true --nologo
 
+    # --blame-hang 同 build-test：coverage 的 job 级上限是 60 分钟，失速燃烧代价更高。
     - name: Test with coverage
-      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage" --settings tests/coverlet.runsettings -- RunConfiguration.MaxCpuCount=2
+      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage" --settings tests/coverlet.runsettings --blame-hang --blame-hang-timeout 12m -- RunConfiguration.MaxCpuCount=2
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
