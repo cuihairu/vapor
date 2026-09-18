@@ -589,7 +589,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 > 2026-09-17：**CI flake 修复（测试数不变,515/515 全绿;test 提交）**。模式归档：等待条件必须是被断言副作用的前置完成信号,不能是它的前置动作的计数（job 创建 ≠ 事件发布）。§23/§25 已覆盖两类 flake 家族——进程全局状态隔离与等待信号错位;记忆 vapor-test-determinism 的 park 前置条件 TCS 信号法是同族正解。验证：CrawlRunWorkerTests 27/27（含双核压力 ×2）、ControlPlane 全项目 515/515、format 门禁过;CI 以本轮提交全绿为准。
 
-## 26. 剪版 v0.1.0-alpha.2：九个月 Unreleased 收口 + 依赖陈账清理（📋 2026-09-17 立项即执行）
+## 26. 剪版 v0.1.0-alpha.2：九个月 Unreleased 收口 + 依赖陈账清理（✅ 2026-09-17 完成）
 
 > 立项动机：todo.md P0–P25 全闭环、HEAD CI 全绿、feature-matrix 非后置缺口全收口——计划源已无未完成项（用户定向：剪版）。release 自 v0.1.0-alpha.1（2025-12-28）后近九个月未剪,全部工作积压在 CHANGELOG Unreleased;§9.8 建成的 release workflow（build×5 RID 打包 + GHCR 双镜像 + 自动建 Release,`-` 预发布 tag 不动 `:latest`）建成后从未端到端运行——本轮发布本身就是对该管道的首次真实验证。
 
@@ -640,7 +640,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 > 2026-09-17：**在飞失速族闭环（test + ci + docs 三提交）**。方法论沉淀:「无断言红、无测试卡住」不是测试代码无罪的证据——在飞清单（已交付/未交付 census）能把卡点定位到测试类;**让循环 park 在不可取消的 Task 上时,必须保证任何存活的前序循环都够不到它**（park 先挂或 watch 先注册皆死路,重启型测试的脚本一律放在重启之后）。收尾失速族（56/56 交付后宿主不退出）的「基础设施 flake」定性修正为「待转储定谳」,§27 图谱第三族据此两分。
 
-## 29. boost 策略化：时长目标调度（📋 2026-09-18 立项，用户选定方向）
+## 29. boost 策略化：时长目标调度（✅ 2026-09-18 完成）
 
 > 立项动机：功能矩阵 3.2 节「游戏时长 boost」行为 ⚠️（对标 ASF ✅ / SGI ✅）。现状 `play_games` 是裸动作——收到 appid 列表就挂、没人叫停就一直挂；无时长查询、无目标配置、无达标切换。目标：把 boost 从「手动 play」升级为期望状态编排，与 farm 同域同构（复用 `AccountDesiredState` + `DesiredStateReconciler` 模式）。
 
