@@ -122,6 +122,9 @@ public sealed class MarketWatchPluginTests
 		};
 		await using var plugin = new MarketWatchPlugin(client, new HttpClient(handler));
 		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+		// The loop InitializeAsync starts races the manual polls below for the store;
+		// stop it while the store is still empty so this test drives every poll.
+		await plugin.StopLoopForTestsAsync();
 
 		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
 
@@ -160,6 +163,7 @@ public sealed class MarketWatchPluginTests
 		};
 		await using var plugin = new MarketWatchPlugin(client, new HttpClient(handler));
 		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+		await plugin.StopLoopForTestsAsync();
 
 		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
 		await plugin.PollOnceAsync(CancellationToken.None);
@@ -240,6 +244,7 @@ public sealed class MarketWatchPluginTests
 		};
 		await using var plugin = new MarketWatchPlugin(client, new HttpClient(handler));
 		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+		await plugin.StopLoopForTestsAsync();
 
 		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570", ["kind"] = "free" });
 
@@ -308,6 +313,8 @@ public sealed class MarketWatchPluginTests
 					["market.check_interval_seconds"] = "10"
 				}),
 			CancellationToken.None);
+		// The caller drives PollOnceAsync by hand; stop the automatic loop first.
+		await plugin.StopLoopForTestsAsync();
 		return plugin;
 	}
 

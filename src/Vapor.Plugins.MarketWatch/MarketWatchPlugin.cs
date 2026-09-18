@@ -149,6 +149,26 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 		_loop = Task.Run(() => PollLoopAsync(_loopCts.Token), CancellationToken.None);
 	}
 
+	/// <summary>
+	/// Test hook: drains and stops the poll loop started by InitializeAsync without a
+	/// replacement. The loop's first tick runs immediately on the thread pool, so a
+	/// manually driven test would race it for the store; stopping it while the store
+	/// is still empty makes the manual PollOnceAsync calls fully deterministic.
+	/// </summary>
+	internal async Task StopLoopForTestsAsync()
+	{
+		_loopCts?.Cancel();
+		if (_loop is not null)
+		{
+			// The loop swallows its own errors, so this await never throws.
+			await _loop.ConfigureAwait(false);
+		}
+
+		_loopCts?.Dispose();
+		_loopCts = null;
+		_loop = null;
+	}
+
 	private ISteamStoreApiClient CreateDefaultStoreClient()
 	{
 		// The price overview endpoint is public; an anonymous web handler suffices and no
