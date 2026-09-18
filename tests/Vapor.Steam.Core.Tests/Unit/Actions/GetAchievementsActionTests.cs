@@ -119,6 +119,50 @@ public sealed class GetAchievementsActionTests : IDisposable
 		Assert.Contains("Failed to get achievements", result.Error);
 	}
 
+	[Fact]
+	public void Metadata_DescribesTheReadAction()
+	{
+		// The factory constructor is the test seam — exercising it here also
+		// keeps the metadata honest without ever touching the factory.
+		var action = new GetAchievementsAction(
+			NullLogger<GetAchievementsAction>.Instance,
+			_ => throw new InvalidOperationException("the achievement client factory must not be touched by metadata"));
+
+		Assert.Equal("get_achievements", action.Name);
+		Assert.True(action.Metadata.RequiresLogin);
+		Assert.Equal(120, action.Metadata.TimeoutSeconds);
+	}
+
+	[Fact]
+	public async Task MissingWebHandler_Fails()
+	{
+		var action = new GetAchievementsAction(NullLogger<GetAchievementsAction>.Instance);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(webHandler: null),
+			new Dictionary<string, object?> { ["app_id"] = "400" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Steam web handler not available", result.Error);
+	}
+
+	[Fact]
+	public async Task NonNumericSteamId_Fails()
+	{
+		var (webHandler, fake) = CreateWebHandler();
+		fake.Responder = _ => throw new InvalidOperationException("a malformed steam_id must not reach the page fetch");
+		var action = new GetAchievementsAction(NullLogger<GetAchievementsAction>.Instance);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(webHandler),
+			new Dictionary<string, object?> { ["app_id"] = "400", ["steam_id"] = "not-a-steam-id" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Invalid steam_id", result.Error);
+	}
+
 	public void Dispose()
 	{
 		foreach (var session in _sessions)
