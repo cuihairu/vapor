@@ -694,7 +694,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 ### 31.2 实施阶段（按风险递增；方向定案：扩展 admin.html，dashboard 只读契约不动）
 
-- [ ] **P1 账户生命周期面板**：期望状态查看/编辑（state/farm 排除/boost 目标/idle 名单表单化，PUT 透传）、enable/disable 按钮、删除账户（显式输入账户名确认）；账户列表复用 dashboard 同源 GET。
+- [x] **P1 账户生命周期面板**：期望状态查看/编辑（state/farm 排除/boost 目标/idle 名单表单化，PUT 透传）、enable/disable 按钮、删除账户（显式输入账户名确认）；账户列表复用 dashboard 同源 GET。（✅ 2026-09-18 admin.html「账户管理」面板）
 - [ ] **P2 交易与确认面板**：报价列表（GET 既有）内联 accept/decline、批量确认（type/operation 过滤器）、loot 表单、换卡（duplicates 查看 + dry_run 方案展示 + send 确认）。
 - [ ] **P3 市场与认领面板**：挂单列表 + 过滤撤单（dry_run 默认）、挂单创建（费用感知定价预览 + send 双确认；账户市场开关未开启时 UI 禁用而非报错）、points-shop 认领（summary 展示 + 免费默认/付费 force 分离）、add_license 表单。
 - [ ] **P4 爬虫计划管理**：plans 列表/创建/编辑/删除/手动 trigger（cron 校验错误内联展示，复用 REST 语义）。
@@ -702,3 +702,5 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [ ] **P6 收尾**：production.md 三页分工说明更新、feature-matrix Web UI 行措辞刷新、DashboardStaticTests 扩展（admin 页写操作二次确认模式抽查 + 敏感值不回显契约）、CHANGELOG。
 
 > 红线与风险备注：①**dashboard.html 零写动词契约不变**——全功能管理台收敛在 admin.html（写契约既有页），三页分工不破坏；②破坏性操作（删账户、真实挂单、接受报价、force 付费认领）一律二次确认且确认文案含不可逆提示；③UI 是 REST 薄封装，无业务逻辑下沉，服务端校验是唯一真源（UI 禁用态只是引导，不能替代 4xx 呈现）；④认证沿用 admin 现行 authorization 模式，新面板零新增鉴权面；⑤灰区操作（市场挂单）UI 需读取并展示账户开关状态，开关关闭时按钮禁用 + 指引文案，而非点击后才报错；⑥单文件静态页模式沿用（无构建链），admin.html 体积增长可控性靠面板折叠分区维持。
+
+> 2026-09-18：**§31 P1 账户生命周期面板落地（feat 提交，admin.html 单文件改动）**。①「账户管理」面板（认证挑战与事件日志之间）：账户卡片列表（启用徽章 / state chip / 市场开关 chip / idle·boost·note 汇总行）+ 编辑表单（期望状态五选一下拉、Idle 白名单与 Farm 排除名单复用同一字段——标签随 state 语义、Boost 目标 `appid:小时` CSV、region/agentId/note、enabled 与市场挂单 checkbox）。②写操作三通道：编辑保存走 `PUT /v1/accounts/{name}` 全量语义（AccountStore.Upsert 是替换式更新，前端所有字段显式提交，`updatedBy: "admin-console"` 落审计）；启用/禁用走 `POST enable|disable`（禁用弹 confirm 说明「不停删数据」）；删除走 `DELETE`（prompt 输入账户名精确匹配才执行——比 confirm 强一档，防误点）。③Boost 目标前端预校验镜像服务端规则（appid 正整数、小时有限正数），格式错本地 alert 而非等 400；与 §29.2 P2 校验矩阵同源。④枚举序列化确认：CP 全局 `JsonStringEnumConverter(CamelCase)` → GET 返回 `"farm"` 小写字符串，编辑表单 PascalCase option 值反序列化兼容（转换器忽略大小写）。⑤dashboard/gamedata 零写动词契约不动，DashboardStaticTests 9/9 绿（新增断言留给 P6 统一补）。验证：全量 1158+ 全绿、format 门禁过、JS 脚本块 node --check 语法过。

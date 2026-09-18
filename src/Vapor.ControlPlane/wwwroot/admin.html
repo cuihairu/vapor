@@ -899,6 +899,72 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">账户管理</h2>
+                            <div class="panel-subtitle">期望状态、Boost 目标与账户生命周期（全量 PUT 语义：保存提交所有字段）。</div>
+                        </div>
+                        <button class="btn btn-secondary btn-small" id="refreshAccountsButton">刷新</button>
+                    </div>
+                    <div class="list" id="accountList">
+                        <div class="empty-state">正在加载账户列表...</div>
+                    </div>
+                    <div class="action-row" id="accountEditor" hidden>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label for="editAccountName">账户</label>
+                                <input id="editAccountName" type="text" readonly>
+                            </div>
+                            <div class="field">
+                                <label for="editDesiredState">期望状态</label>
+                                <select id="editDesiredState">
+                                    <option value="Offline">offline（离线）</option>
+                                    <option value="Online">online（在线）</option>
+                                    <option value="Idle">idle（挂机指定 app）</option>
+                                    <option value="Farm">farm（按掉落自动挂机）</option>
+                                    <option value="Boost">boost（时长目标挂机）</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="editIdleApps">Idle 白名单 / Farm 排除名单（app 名 CSV）</label>
+                            <input id="editIdleApps" type="text" placeholder="730, 570">
+                        </div>
+                        <div class="field">
+                            <label for="editBoostTargets">Boost 目标（appid:目标小时 CSV）</label>
+                            <input id="editBoostTargets" type="text" placeholder="730:100, 570:50">
+                        </div>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label for="editRegion">区域（留空为任意）</label>
+                                <input id="editRegion" type="text">
+                            </div>
+                            <div class="field">
+                                <label for="editAgentId">指定 Agent（留空为自动调度）</label>
+                                <input id="editAgentId" type="text">
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="editNote">备注</label>
+                            <input id="editNote" type="text">
+                        </div>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label><input id="editEnabled" type="checkbox"> 启用账户</label>
+                            </div>
+                            <div class="field">
+                                <label><input id="editMarketListings" type="checkbox"> 允许市场挂单（灰区操作）</label>
+                            </div>
+                        </div>
+                        <div class="button-row">
+                            <button class="btn btn-primary" id="saveAccountButton">保存变更</button>
+                            <button class="btn btn-secondary" id="cancelEditButton">取消编辑</button>
+                        </div>
+                        <div class="helper">保存走 PUT 全量语义：所有字段按表单当前值提交。市场挂单开关是灰区操作门控，开启后市场类操作才会被服务端接受。</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">事件日志</h2>
                             <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
                         </div>
@@ -922,6 +988,8 @@
             sessionMap: new Map(),
             challenges: new Map(),
             selectedJobId: null,
+            accounts: [],
+            editingAccountName: null,
             streams: []
         };
 
@@ -1018,6 +1086,9 @@
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
             document.getElementById("qrLoginButton").addEventListener("click", () => startQrLogin());
             document.getElementById("refreshChallengesButton").addEventListener("click", () => refreshAuthChallenges());
+            document.getElementById("refreshAccountsButton").addEventListener("click", () => refreshAccounts());
+            document.getElementById("saveAccountButton").addEventListener("click", () => saveAccountEdits());
+            document.getElementById("cancelEditButton").addEventListener("click", () => closeAccountEditor());
             document.getElementById("actionSelect").addEventListener("change", updatePayloadHint);
         }
 
@@ -1030,7 +1101,8 @@
                     refreshJobs(),
                     refreshAgents(),
                     refreshSessions(),
-                    refreshAuthChallenges()
+                    refreshAuthChallenges(),
+                    refreshAccounts()
                 ]);
                 restartStreams();
             } catch (error) {
@@ -1429,6 +1501,214 @@
                     }
                 });
             });
+        }
+
+        async function refreshAccounts() {
+            const data = await apiFetch("/v1/accounts");
+            state.accounts = data.accounts || [];
+            renderAccounts();
+        }
+
+        function renderAccounts() {
+            const container = document.getElementById("accountList");
+            if (!state.accounts.length) {
+                container.innerHTML = '<div class="empty-state">暂无账户。用 `POST /v1/accounts` 或配置文件声明账户后刷新。</div>';
+                return;
+            }
+
+            container.innerHTML = state.accounts.map((account) => {
+                const idleApps = account.idleApps || [];
+                const boostTargets = account.boostTargets || [];
+                const notes = [];
+                if (idleApps.length) {
+                    notes.push(`${account.desiredState === "farm" ? "排除" : "Idle"}: ${idleApps.join(", ")}`);
+                }
+                if (boostTargets.length) {
+                    notes.push(`Boost: ${boostTargets.map((target) => `${target.appId}→${target.targetHours}h`).join(", ")}`);
+                }
+                if (account.note) {
+                    notes.push(account.note);
+                }
+                return `
+                    <article class="card-row">
+                        <div class="row-head">
+                            <div class="title-group">
+                                <div class="strong">${escapeHtml(account.accountName)}</div>
+                                <div class="tiny mono">${escapeHtml(account.region || "任意区域")} · ${escapeHtml(account.agentId || "自动调度")}</div>
+                            </div>
+                            <span class="badge ${account.enabled ? "finished" : "failed"}">${account.enabled ? "已启用" : "已禁用"}</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="agent-chip">state: ${escapeHtml(account.desiredState)}</span>
+                            ${account.marketListingsEnabled ? '<span class="agent-chip">市场挂单 ✓</span>' : ""}
+                        </div>
+                        ${notes.length ? `<div class="helper">${escapeHtml(notes.join(" · "))}</div>` : ""}
+                        <div class="button-row">
+                            <button class="btn btn-secondary btn-small" data-edit-account="${escapeHtml(account.accountName)}">编辑</button>
+                            <button class="btn btn-secondary btn-small" data-toggle-account="${escapeHtml(account.accountName)}" data-next-enabled="${account.enabled ? "false" : "true"}">${account.enabled ? "禁用" : "启用"}</button>
+                            <button class="btn btn-danger btn-small" data-delete-account="${escapeHtml(account.accountName)}">删除</button>
+                        </div>
+                    </article>
+                `;
+            }).join("");
+
+            container.querySelectorAll("[data-edit-account]").forEach((button) => {
+                button.addEventListener("click", () => editAccount(button.dataset.editAccount));
+            });
+
+            container.querySelectorAll("[data-toggle-account]").forEach((button) => {
+                button.addEventListener("click", () => {
+                    toggleAccountEnabled(button.dataset.toggleAccount, button.dataset.nextEnabled === "true");
+                });
+            });
+
+            container.querySelectorAll("[data-delete-account]").forEach((button) => {
+                button.addEventListener("click", () => deleteAccount(button.dataset.deleteAccount));
+            });
+        }
+
+        function editAccount(accountName) {
+            const account = state.accounts.find((item) => item.accountName === accountName);
+            if (!account) {
+                return;
+            }
+
+            state.editingAccountName = accountName;
+            document.getElementById("editAccountName").value = account.accountName;
+            const stateSelect = document.getElementById("editDesiredState");
+            const stateValue = String(account.desiredState || "offline");
+            stateSelect.value = stateValue.charAt(0).toUpperCase() + stateValue.slice(1);
+            document.getElementById("editIdleApps").value = (account.idleApps || []).join(", ");
+            document.getElementById("editBoostTargets").value = (account.boostTargets || [])
+                .map((target) => `${target.appId}:${target.targetHours}`)
+                .join(", ");
+            document.getElementById("editRegion").value = account.region || "";
+            document.getElementById("editAgentId").value = account.agentId || "";
+            document.getElementById("editNote").value = account.note || "";
+            document.getElementById("editEnabled").checked = Boolean(account.enabled);
+            document.getElementById("editMarketListings").checked = Boolean(account.marketListingsEnabled);
+
+            const editor = document.getElementById("accountEditor");
+            editor.hidden = false;
+            editor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+
+        function closeAccountEditor() {
+            state.editingAccountName = null;
+            document.getElementById("accountEditor").hidden = true;
+        }
+
+        function parseCsvInput(text) {
+            return String(text || "")
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean);
+        }
+
+        // "730:100, 570:50" -> [{appId: 730, targetHours: 100}, ...]. Mirrors the
+        // server-side validation (finite positive hours, positive integer app id)
+        // so typos surface locally instead of as a 400 after submit.
+        function parseBoostTargetsInput(text) {
+            const entries = parseCsvInput(text);
+            if (!entries.length) {
+                return null;
+            }
+
+            return entries.map((entry) => {
+                const separator = entry.indexOf(":");
+                if (separator <= 0) {
+                    throw new Error(`Boost 目标格式无效: "${entry}"（应为 appid:小时，如 730:100）`);
+                }
+
+                const appId = Number(entry.slice(0, separator));
+                const targetHours = Number(entry.slice(separator + 1));
+                if (!Number.isInteger(appId) || appId <= 0) {
+                    throw new Error(`Boost appid 无效: "${entry}"（须为正整数）`);
+                }
+                if (!Number.isFinite(targetHours) || targetHours <= 0) {
+                    throw new Error(`Boost 目标小时无效: "${entry}"（须为正数）`);
+                }
+                return { appId, targetHours };
+            });
+        }
+
+        async function saveAccountEdits() {
+            const accountName = state.editingAccountName;
+            if (!accountName) {
+                return;
+            }
+
+            let boostTargets;
+            try {
+                boostTargets = parseBoostTargetsInput(document.getElementById("editBoostTargets").value);
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+
+            const body = {
+                enabled: document.getElementById("editEnabled").checked,
+                desiredState: document.getElementById("editDesiredState").value,
+                idleApps: parseCsvInput(document.getElementById("editIdleApps").value),
+                region: document.getElementById("editRegion").value.trim() || null,
+                agentId: document.getElementById("editAgentId").value.trim() || null,
+                note: document.getElementById("editNote").value.trim() || null,
+                updatedBy: "admin-console",
+                marketListingsEnabled: document.getElementById("editMarketListings").checked,
+                boostTargets
+            };
+
+            try {
+                await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}`, {
+                    method: "PUT",
+                    body: JSON.stringify(body)
+                });
+                addEvent("task", `已更新账户 ${accountName} 的期望状态（${body.desiredState}）`);
+                closeAccountEditor();
+                await refreshAccounts();
+            } catch (error) {
+                alert(`保存账户失败: ${error.message}`);
+            }
+        }
+
+        async function toggleAccountEnabled(accountName, nextEnabled) {
+            if (!nextEnabled) {
+                const confirmed = window.confirm(`禁用后该账户不再接受任何调度（不删除数据）。确认禁用 ${accountName}？`);
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            try {
+                await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/${nextEnabled ? "enable" : "disable"}`, {
+                    method: "POST"
+                });
+                addEvent("task", `已${nextEnabled ? "启用" : "禁用"}账户 ${accountName}`);
+                await refreshAccounts();
+            } catch (error) {
+                alert(`操作失败: ${error.message}`);
+            }
+        }
+
+        async function deleteAccount(accountName) {
+            const confirmed = window.prompt(`此操作不可逆：将删除账户 ${accountName} 的期望状态声明（会话与凭证不受影响）。输入账户名以确认：`);
+            if (confirmed !== accountName) {
+                if (confirmed !== null) {
+                    alert("账户名不匹配，未删除。");
+                }
+                return;
+            }
+
+            try {
+                await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}`, { method: "DELETE" });
+                addEvent("task", `已删除账户声明 ${accountName}`);
+                if (state.editingAccountName === accountName) {
+                    closeAccountEditor();
+                }
+                await refreshAccounts();
+            } catch (error) {
+                alert(`删除失败: ${error.message}`);
+            }
         }
 
         function renderJobDetail(detail, errorMessage) {
