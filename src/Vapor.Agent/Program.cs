@@ -72,6 +72,9 @@ var serviceCollection = new ServiceCollection()
 	.AddSingleton<GetCardDropsAction>(p => new GetCardDropsAction(
 		p.GetRequiredService<ILogger<GetCardDropsAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
+	.AddSingleton<GetPlaytimeAction>(p => new GetPlaytimeAction(
+		p.GetRequiredService<ILogger<GetPlaytimeAction>>(),
+		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
 	.AddSingleton<SendTradeOfferAction>(p => new SendTradeOfferAction(
 		p.GetRequiredService<ILogger<SendTradeOfferAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
@@ -188,6 +191,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<PlayGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<RedeemKeyAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetInventoryAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetCardDropsAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetPlaytimeAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SendTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetTradeOffersAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetMyMarketListingsAction>());

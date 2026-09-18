@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!--
+  Profile games tab fixture (tab=all) replayed by SteamProfileGames*Tests.
+
+  The live page is login-gated (anonymous requests redirect to the login
+  form), so this fixture is a *constructed* skeleton — not a verbatim
+  recording. Its embedded-data contract is cross-confirmed (2026-09-18)
+  against four independent consumers of the live page:
+    - johnnysparks' games/hours extractor (gist 5376855): locates the payload
+      by "var rgGames = ", parses appid/name/hours_forever fields
+    - icue/SteamTreemap steam_treemap.py: hours_forever comma-stripped then
+      float(); entries without the field skipped
+    - the "Steam 好友管理器" userscript (greasyfork 583222): regex
+      var\s+rgGames\s*=\s*(\[[\s\S]*?\])\s*;
+    - bendodson.com RSS extractor: matches "rgGames = " on the live page
+
+  hours_forever is a display-formatted string ("1,234.5") and is null (or
+  absent) for never-played games. A failing test here means the upstream
+  structure drifted — re-record a real page and update this fixture.
+-->
+<html>
+<head>
+	<script>
+		// Content before the payload: the parser must locate rgGames, not
+		// assume it is the first script.
+		var rgSupportedLanguages = {"english": 1};
+	</script>
+</head>
+<body class="profile_page">
+	<div class="profile_games">
+		<div class="gameListRow" id="game_220"><h5>Half-Life 2</h5></div>
+		<div class="gameListRow" id="game_620"><h5>Portal 2</h5></div>
+	</div>
+	<script type="text/javascript">
+		var rgGames = [
+			{"appid":220,"name":"Half-Life 2","logo":"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/220/capsule_184x69.jpg","friendly_name":"gordon","hours":"0.1","hours_forever":"1,234.5","store_link":"https://store.steampowered.com/app/220/","global_stats":false},
+			{"appid":620,"name":"Portal 2","hours_forever":"36.7","store_link":"https://store.steampowered.com/app/620/"},
+			{"appid":440,"name":"Team Fortress 2","hours_forever":null,"store_link":"https://store.steampowered.com/app/440/"},
+			{"appid":730,"name":"Counter-Strike 2","store_link":"https://store.steampowered.com/app/730/"},
+			{"appid":1250,"name":"Killing Floor \"Gold\"; rev [1]","hours_forever":"0.2"}
+		];
+		// Trailing statements: prove the scanner balances brackets and string
+		// literals instead of slicing at the first ';' or ']' in the payload.
+		$J(document).ready( function() { InitAutoEnlarge( [220, 620] ); } );
+	</script>
+</body>
+</html>
