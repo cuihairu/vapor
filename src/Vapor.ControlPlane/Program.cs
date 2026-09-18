@@ -622,6 +622,58 @@ app.MapGet("/v1/accounts/{name}/trade-offers", async (HttpContext ctx, Config cf
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
+app.MapGet("/v1/accounts/{name}/achievements", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, string appId) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name.Trim());
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	if (string.IsNullOrWhiteSpace(appId) || !uint.TryParse(appId.Trim(), out uint appIdValue) || appIdValue == 0)
+	{
+		return Results.BadRequest(new ErrorResponse("appId must be a positive app id"));
+	}
+
+	TaskRunResult read = await AccountTaskRunner.ReadAchievementsAsync(store, spec.AccountName, appIdValue, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"achievement.read",
+		accountName: spec.AccountName,
+		jobId: read.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["appId"] = appIdValue,
+			["outcome"] = read.Status.ToString()
+		});
+
+	if (read.Status == JobTaskStatus.Finished)
+	{
+		return Results.Ok(new { job_id = read.JobId, account = spec.AccountName, app_id = appIdValue, achievements = read.Output });
+	}
+
+	if (read.Status != JobTaskStatus.Queued)
+	{
+		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
+	}
+
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+})
+	.WithTags("Accounts")
+	.WithSummary("List an account's achievements for one game (dispatches get_achievements and waits for the agent; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
 app.MapGet("/v1/accounts/{name}/inventory", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, string? appIds, string? appId, string? contextId, string? steamId, bool? tradableOnly, bool? marketableOnly) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))

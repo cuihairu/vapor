@@ -1,3 +1,4 @@
+using System.Globalization;
 using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
@@ -28,6 +29,7 @@ internal static class AccountTaskRunner
 	internal const string CreateMarketListingAction = "create_market_listing";
 	internal const string GetPointsShopSummaryAction = "get_points_shop_summary";
 	internal const string ClaimPointsShopItemsAction = "claim_points_shop_items";
+	internal const string GetAchievementsAction = "get_achievements";
 
 	/// <summary>Lists an account's own market listings via the get_my_market_listings action.</summary>
 	public static Task<TaskRunResult> ReadMarketListingsAsync(
@@ -117,6 +119,21 @@ internal static class AccountTaskRunner
 			TradeOffersAction,
 			accountName,
 			new Dictionary<string, object?> { ["active_only"] = activeOnly },
+			cancellationToken);
+	}
+
+	/// <summary>Lists one game's achievements for the account via the get_achievements action.</summary>
+	public static Task<TaskRunResult> ReadAchievementsAsync(
+		IJobStore store,
+		string accountName,
+		uint appId,
+		CancellationToken cancellationToken)
+	{
+		return DispatchAsync(
+			store,
+			GetAchievementsAction,
+			accountName,
+			new Dictionary<string, object?> { ["app_id"] = appId.ToString(CultureInfo.InvariantCulture) },
 			cancellationToken);
 	}
 

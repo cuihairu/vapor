@@ -520,6 +520,118 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task GetAchievements_RequireAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/achievements?appId=400");
+
+		Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task GetAchievements_AccountMissing_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/ghost/achievements?appId=400");
+
+		Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+	}
+
+	[Theory]
+	[InlineData("")]
+	[InlineData("abc")]
+	[InlineData("0")]
+	[InlineData("%20")]
+	public async Task GetAchievements_InvalidAppId_Returns400(string appId)
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.GetAsync($"/v1/accounts/alice/achievements?appId={appId}");
+
+		Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task GetAchievements_AgentReportsFinished_ReturnsAchievements()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstAchievementsTaskAsync(store, success: true, cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/achievements?appId=400");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.NotEmpty(doc.RootElement.GetProperty("job_id").GetString()!);
+		Assert.Equal(400, doc.RootElement.GetProperty("app_id").GetInt32());
+		JsonElement output = doc.RootElement.GetProperty("achievements");
+		Assert.Equal(1, output.GetProperty("total_count").GetInt32());
+		JsonElement achievements = output.GetProperty("achievements");
+		Assert.Equal(1, achievements.GetArrayLength());
+		Assert.Equal("ACH_NAME_ONE", achievements[0].GetProperty("api_name").GetString());
+		Assert.True(achievements[0].GetProperty("unlocked").GetBoolean());
+	}
+
+	[Fact]
+	public async Task GetAchievements_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstAchievementsTaskAsync(store, success: false, cts.Token));
+
+		using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/achievements?appId=400");
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task GetAchievements_StillPending_Returns202WithJobId()
+	{
+		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
+		try
+		{
+			await using var factory = CreateFactory(removeHosted: true);
+			using var client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+			await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+			using HttpResponseMessage resp = await client.GetAsync("/v1/accounts/alice/achievements?appId=400");
+
+			Assert.Equal(HttpStatusCode.Accepted, resp.StatusCode);
+			string body = await resp.Content.ReadAsStringAsync();
+			using var doc = JsonDocument.Parse(body);
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(30);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(200);
+		}
+	}
+
+	[Fact]
 	public async Task AcceptTradeOffer_RequireAuthorization()
 	{
 		await using var factory = CreateFactory();
@@ -2390,6 +2502,28 @@ public sealed class AccountApiTests
 				["received_offers"] = new List<Dictionary<string, object?>>
 				{
 					new() { ["trade_offer_id"] = "43591234567890", ["state"] = "Active" }
+				}
+			},
+			"agent refused",
+			ct);
+	}
+
+	/// <summary>Plays the agent side: claims the queued get_achievements task and reports a result.</summary>
+	private static Task RespondToFirstAchievementsTaskAsync(IJobStore store, bool success, CancellationToken ct)
+	{
+		return RespondToFirstTaskAsync(
+			store,
+			"get_achievements",
+			success,
+			new Dictionary<string, object?>
+			{
+				["steam_id"] = "76561198000000000",
+				["app_id"] = 400u,
+				["unlocked_count"] = 1,
+				["total_count"] = 1,
+				["achievements"] = new List<Dictionary<string, object?>>
+				{
+					new() { ["api_name"] = "ACH_NAME_ONE", ["display_name"] = "One", ["description"] = "The first.", ["unlocked"] = true, ["icon_url"] = "https://example/one.jpg" }
 				}
 			},
 			"agent refused",

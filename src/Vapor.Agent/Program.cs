@@ -69,6 +69,7 @@ var serviceCollection = new ServiceCollection()
 	.AddSingleton<PlayGamesAction>()
 	.AddSingleton<RedeemKeyAction>()
 	.AddSingleton<GetInventoryAction>()
+	.AddSingleton<GetAchievementsAction>()
 	.AddSingleton<GetCardDropsAction>(p => new GetCardDropsAction(
 		p.GetRequiredService<ILogger<GetCardDropsAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
@@ -190,6 +191,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<LoginAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<PlayGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<RedeemKeyAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetInventoryAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<GetAchievementsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetCardDropsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetPlaytimeAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SendTradeOfferAction>());
