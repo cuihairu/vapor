@@ -126,6 +126,38 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_DestructiveWrites_RequireExplicitConfirmation()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		// todo §31 red line ②: every irreversible write gates on a native
+		// confirm/prompt whose text names the consequence. Spot-check one anchor
+		// phrase per destructive channel so an edit that drops the gate fails
+		// here instead of silently shipping a one-click write.
+		Assert.Contains("此操作不可逆：将删除账户", html, StringComparison.Ordinal); // delete account (prompt with exact name)
+		Assert.Contains("资产转移不可逆", html, StringComparison.Ordinal); // trade offer accept
+		Assert.Contains("不可逆。确认发送", html, StringComparison.Ordinal); // loot
+		Assert.Contains("发送 1:1 换卡报价", html, StringComparison.Ordinal); // swap offers send
+		Assert.Contains("真实撤单将取消所有匹配的挂单", html, StringComparison.Ordinal); // market cancel
+		Assert.Contains("ToS 灰区操作", html, StringComparison.Ordinal); // market listing create
+		Assert.Contains("积分消费不可逆", html, StringComparison.Ordinal); // points shop force claim
+		Assert.Contains("已沉淀的采集结果会保留", html, StringComparison.Ordinal); // crawl plan delete
+	}
+
+	[Fact]
+	public void AdminHtml_ConfigPanel_NeverDisplaysSensitiveSettingValues()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		// todo §31 P5 contract: password-class settings keys render masked; the
+		// input stays empty and an untouched empty input submits the stored
+		// value, so secrets never round-trip through the DOM.
+		Assert.Contains("const SENSITIVE_KEY_PATTERN = /password|secret|token|key|credential/i;", html, StringComparison.Ordinal);
+		Assert.Contains("••• 已设（输入新值覆盖，留空保留）", html, StringComparison.Ordinal);
+		Assert.Contains("updatedBy: \"admin-console\"", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task RootPath_RedirectsToAdminConsole()
 	{
 		await using var factory = CreateFactory();
