@@ -222,6 +222,25 @@ production and roll back by pinning the previous one.
    restrict `:8080` / `:9700` to trusted networks. All sensitive endpoints
    require the admin key; `/healthz` is intentionally public.
 
+## Web consoles
+
+Three static pages ship with the control plane (no build step, no external
+assets). The pages themselves are served without authentication — they embed
+no sensitive data — while every data call goes through the authenticated
+`/v1` API with the operator's bearer token:
+
+| Page | Role | Writes |
+|------|------|--------|
+| `/admin.html` (default landing page) | Full operations console: account lifecycle, trades & confirmations, market & claiming, crawl plans, configuration | Yes — mirrors the admin REST surface; irreversible actions gate on explicit confirmation dialogs |
+| `/dashboard.html` | Read-only fleet monitoring (stats, sessions, jobs, audit, SSE live feed) | None — locked by contract test |
+| `/gamedata.html` | Game data dictionary & crawl results browser | None — locked by contract test |
+
+The admin console is a thin client over the REST API: the server remains the
+single source of truth, and its configuration panel never displays
+password-class settings values — masked inputs left untouched resubmit the
+stored value. The admin API key is the only line of defense for every write
+the console can perform; treat it accordingly (see the checklist below).
+
 ## Security checklist
 
 - [ ] Random `Vapor_ADMIN_API_KEY` / `Vapor_AGENT_API_KEYS` (32+ hex chars)

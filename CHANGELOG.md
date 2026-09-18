@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Full-featured admin console (todo §31): `admin.html` grows five panels
+  over the admin REST surface — account lifecycle (desired-state editing,
+  enable/disable, delete with name-match confirmation), trades &
+  confirmations (offer accept/decline, confirmation batches, loot, 1:1
+  duplicate-card swap plans), market & claiming (listing create with pricing
+  preview, filtered cancellation with dry-run default, points-shop claiming
+  with separate free/force paths, license additions), crawl plan management
+  (create/edit/trigger/delete with inline validation), and configuration
+  (global + per-account settings with whole-dictionary replace semantics).
+  Password-class settings keys render masked and never round-trip through
+  the DOM; every irreversible write gates on an explicit confirmation, both
+  locked by contract tests. The read-only dashboard keeps its zero-write-verb
+  contract untouched.
+
 - Playtime boosting as a managed desired state (todo §29): the new `boost`
   account state carries `boostTargets` (appid → target hours, validated at
   PUT time — at least one target required, finite positive hours, conflicting
