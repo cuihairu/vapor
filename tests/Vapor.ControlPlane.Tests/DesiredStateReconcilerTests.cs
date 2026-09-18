@@ -1505,7 +1505,8 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		bool dryRun = false,
 		int farmRefreshSeconds = 300,
 		int intervalSeconds = 15,
-		int tradeRefreshSeconds = 600)
+		int tradeRefreshSeconds = 600,
+		IEventBroker? broker = null)
 	{
 		var cfg = new Config(
 			"admin",
@@ -1530,7 +1531,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			sessions ?? new SessionTracker(),
 			agents,
 			jobs,
-			new EventBroker(),
+			broker ?? new EventBroker(),
 			auditStore ?? new FakeAuditStore(),
 			cfg,
 			NullLogger<DesiredStateReconciler>.Instance);
@@ -1652,6 +1653,92 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ScanResult_EvaluationAudit_RecordsEveryOfferDecision()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit);
+
+		// Pass 1: dispatch the scan. Pass 2: settle it against five offers —
+		// every decision (the accept and every skip reason) must reach the
+		// audit trail, not just the offers that qualify.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(
+			("111", "456", 0, IsOurs: false),              // whitelisted, pure gift → accept
+			("222", "456", 2, IsOurs: false),              // asks items → has_give_items
+			("333", "999", 0, IsOurs: false),              // unknown partner → partner_not_whitelisted
+			("444", "456", 0, IsOurs: true),               // our own (counter) offer → our_offer
+			("555", "456", int.MaxValue, IsOurs: false));  // unreadable give count → safe-side skip
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AuditEntry entry = Assert.Single(audit.Entries, e => e.Action == "trade.policy_evaluated");
+		Assert.Equal("alice", entry.AccountName);
+		Assert.Equal("orchestrator", entry.Actor);
+		Assert.Equal(true, entry.Details!["policyEnabled"]);
+		Assert.Equal(1, entry.Details!["eligibleCount"]);
+		var decisions = Assert.IsType<List<Dictionary<string, object?>>>(entry.Details!["decisions"]);
+		Assert.Equal(5, decisions.Count);
+		Assert.Equal("accept", decisions.First(d => (string)d["offerId"]! == "111")["decision"]);
+		Assert.Null(decisions.First(d => (string)d["offerId"]! == "111")["reason"]);
+		Assert.Equal("has_give_items", decisions.First(d => (string)d["offerId"]! == "222")["reason"]);
+		Assert.Equal("partner_not_whitelisted", decisions.First(d => (string)d["offerId"]! == "333")["reason"]);
+		Assert.Equal("our_offer", decisions.First(d => (string)d["offerId"]! == "444")["reason"]);
+		Assert.Equal("give_count_unreadable", decisions.First(d => (string)d["offerId"]! == "555")["reason"]);
+		// Partner ids are strings (JS-precision-safe) in the 64-bit domain.
+		Assert.Equal(Partner64.ToString(), decisions.First(d => (string)d["offerId"]! == "111")["partnerSteamId64"]);
+	}
+
+	[Fact]
+	public async Task AcceptFinished_RecordsAutoAcceptedAuditAndWebhookEvent()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var broker = new RecordingBroker();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit, broker: broker);
+
+		// Scan → accept dispatch → the accept settles WITHOUT a mobile
+		// confirmation requirement: the auto-accept is final, so the audit
+		// entry and the trade.auto_accepted webhook event fire and no confirm
+		// job follows.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = new Dictionary<string, object?> { ["requires_mobile_confirmation"] = false };
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AuditEntry entry = Assert.Single(audit.Entries, e => e.Action == "trade.auto_accepted");
+		Assert.Equal("alice", entry.AccountName);
+		Assert.Equal("orchestrator", entry.Actor);
+		Assert.Equal("111", entry.Details!["offerId"]);
+		Assert.Equal(Partner64.ToString(), entry.Details!["partnerSteamId64"]);
+		Assert.Equal(false, entry.Details!["requiresMobileConfirmation"]);
+
+		// The webhook pipeline forwards broker events verbatim (sink rules
+		// filter by type), so publishing the typed event IS the integration.
+		(string? JobId, string Type, IReadOnlyDictionary<string, object?>? Payload) published =
+			Assert.Single(broker.Published, p => p.Type == "trade.auto_accepted");
+		Assert.NotNull(published.JobId);
+		Assert.Equal("alice", published.Payload!["accountName"]);
+		Assert.Equal("111", published.Payload!["offerId"]);
+		Assert.Equal(2, jobs.Created.Count); // scan + accept only — no confirm job
+	}
+
+	[Fact]
 	public async Task ScanFailed_MarksDeviationWithoutLoginBudgetAndWaitsInterval()
 	{
 		AccountStore accounts = new();
@@ -1733,6 +1820,52 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		await reconciler.StopAsync(CancellationToken.None);
 
 		// Reaching a clean stop after a broken pass is the assertion.
+	}
+
+	/// <summary>
+	/// Records every Publish call so tests can assert the reconciler's broker
+	/// events (the webhook pipeline forwards them verbatim as sink-filtered
+	/// notification types). Subscription streams stay empty — the reconciler
+	/// only publishes.
+	/// </summary>
+	internal sealed class RecordingBroker : IEventBroker
+	{
+		public List<(string? JobId, string Type, IReadOnlyDictionary<string, object?>? Payload)> Published { get; } = [];
+
+		public void Publish(string? jobId, string type, IReadOnlyDictionary<string, object?>? payload)
+			=> Published.Add((jobId, type, payload));
+
+		public void PublishSession(string accountName, string eventType, string state, string? message = null)
+		{
+		}
+
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+		{
+		}
+
+		public async IAsyncEnumerable<Event> Subscribe(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+			string jobId)
+		{
+			await Task.Yield();
+			yield break;
+		}
+
+		public async IAsyncEnumerable<SessionEvent> SubscribeSessions(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+			string? accountName = null)
+		{
+			await Task.Yield();
+			yield break;
+		}
+
+		public async IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken,
+			string? accountName = null)
+		{
+			await Task.Yield();
+			yield break;
+		}
 	}
 
 	internal sealed class FakeAuditStore : IAuditStore

@@ -785,23 +785,146 @@ public sealed class DesiredStateReconciler : BackgroundService
 	}
 
 	/// <summary>
-	/// Filters a get_trade_offers task output down to the offers that qualify
-	/// for auto-accept: an incoming offer (not ours) from a whitelisted partner
-	/// that gives nothing back. Both checks are red lines — a partner outside
-	/// the whitelist is skipped even for an empty offer, and any offer with
-	/// items_to_give is skipped even for a whitelisted partner. Accepts both
-	/// in-memory dictionaries and JsonElement objects (SQLite round-trip); a
-	/// missing/invalid output yields an empty list, never a query failure.
+	/// Persists the per-offer decisions of one policy scan as a
+	/// trade.policy_evaluated audit entry — including the skips with their
+	/// disqualifying reason — so the audit trail explains every offer a scan
+	/// saw, not just the ones auto-accepted. Like RecordActionAsync, audit
+	/// persistence must never break orchestration. The offer id and partner id
+	/// are strings (JS-precision-safe for API consumers).
+	/// </summary>
+	private async Task RecordTradeEvaluationAsync(
+		AccountSpec spec,
+		string jobId,
+		List<PendingGiftOffer> accepted,
+		List<TradeOfferDecision> decisions,
+		CancellationToken cancellationToken)
+	{
+		const int MaxAuditedDecisions = 200;
+		bool truncated = decisions.Count > MaxAuditedDecisions;
+		var details = new Dictionary<string, object?>
+		{
+			["policyEnabled"] = true,
+			["evaluatedCount"] = decisions.Count,
+			["eligibleCount"] = accepted.Count,
+			["decisions"] = decisions
+				.Take(MaxAuditedDecisions)
+				.Select(d => new Dictionary<string, object?>
+				{
+					["offerId"] = d.OfferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+					["partnerSteamId64"] = d.PartnerSteamId64.ToString(System.Globalization.CultureInfo.InvariantCulture),
+					["decision"] = d.Decision,
+					["reason"] = d.Reason
+				})
+				.ToList()
+		};
+		if (truncated)
+		{
+			details["decisionsTruncated"] = true;
+		}
+
+		_logger.LogInformation("Trade policy for {AccountName} evaluated {Evaluated} offer(s): {Eligible} eligible for auto-accept",
+			spec.AccountName, decisions.Count, accepted.Count);
+
+		try
+		{
+			await _audit.RecordAsync(AuditStoreExtensions.CreateEntry(
+				"trade.policy_evaluated",
+				"orchestrator",
+				accountName: spec.AccountName,
+				jobId: jobId,
+				details: details), cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception ex)
+		{
+			// Audit persistence must never break orchestration.
+			_logger.LogError(ex, "Failed to persist trade policy audit entry for {AccountName}", spec.AccountName);
+		}
+	}
+
+	/// <summary>
+	/// Audits and announces a completed gift-offer auto-accept: a
+	/// trade.auto_accepted audit entry plus a trade.auto_accepted broker event
+	/// that the webhook pipeline forwards like any other job event (sinks filter
+	/// by type). Payload carries no secret — the offer id, partner and whether a
+	/// mobile confirmation is still pending.
+	/// </summary>
+	private async Task RecordAutoAcceptedAsync(
+		AccountSpec spec,
+		string jobId,
+		PendingGiftOffer offer,
+		bool requiresMobileConfirmation,
+		CancellationToken cancellationToken)
+	{
+		string offerId = offer.OfferId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+		string partner = offer.PartnerSteamId64.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+		_events.Publish(jobId, "trade.auto_accepted", new Dictionary<string, object?>
+		{
+			["accountName"] = spec.AccountName,
+			["offerId"] = offerId,
+			["partnerSteamId64"] = partner,
+			["requiresMobileConfirmation"] = requiresMobileConfirmation
+		});
+
+		try
+		{
+			await _audit.RecordAsync(AuditStoreExtensions.CreateEntry(
+				"trade.auto_accepted",
+				"orchestrator",
+				accountName: spec.AccountName,
+				jobId: jobId,
+				details: new Dictionary<string, object?>
+				{
+					["offerId"] = offerId,
+					["partnerSteamId64"] = partner,
+					["requiresMobileConfirmation"] = requiresMobileConfirmation
+				}), cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception ex)
+		{
+			// Audit persistence must never break orchestration.
+			_logger.LogError(ex, "Failed to persist trade auto-accept audit entry for {AccountName}", spec.AccountName);
+		}
+	}
+
+	/// <summary>
+	/// The accept-queue projection of a policy evaluation (the decisions that
+	/// said "accept"); see <see cref="EvaluateTradeOffers"/> for the full rules.
 	/// </summary>
 	internal static List<PendingGiftOffer> ExtractPendingGiftOffers(IReadOnlyDictionary<string, object?>? output, AccountSpec spec)
+		=> EvaluateTradeOffers(output, spec).Accepted;
+
+	/// <summary>
+	/// Evaluates a get_trade_offers task output against the account's policy,
+	/// producing a decision for every received offer — not just the accepted
+	/// ones — so the audit trail shows why each skip happened. An offer
+	/// qualifies only if it is incoming (not ours), from a whitelisted partner,
+	/// and gives nothing back. All three are red lines: a partner outside the
+	/// whitelist is skipped even for an empty offer, and any offer with
+	/// items_to_give is skipped even for a whitelisted partner. Accepts both
+	/// in-memory dictionaries and JsonElement objects (SQLite round-trip); a
+	/// missing/invalid output or an absent whitelist yields empty results, never
+	/// a query failure. Entries with no usable offer id are not auditable and
+	/// produce no decision.
+	/// </summary>
+	internal static (List<PendingGiftOffer> Accepted, List<TradeOfferDecision> Decisions) EvaluateTradeOffers(IReadOnlyDictionary<string, object?>? output, AccountSpec spec)
 	{
-		var offers = new List<PendingGiftOffer>();
+		var accepted = new List<PendingGiftOffer>();
+		var decisions = new List<TradeOfferDecision>();
 		if (output is null
 			|| !output.TryGetValue("received_offers", out object? raw)
 			|| raw is null
 			|| spec.TradePolicy?.PartnerWhitelist is not { Count: > 0 } whitelist)
 		{
-			return offers;
+			return (accepted, decisions);
 		}
 
 		var whitelistAccounts = whitelist
@@ -812,20 +935,35 @@ public sealed class DesiredStateReconciler : BackgroundService
 		void Collect(object? entry)
 		{
 			(ulong OfferId, ulong PartnerAccount, int GiveCount, bool IsOurs)? parsed = TryReadOfferEntry(entry);
-			if (parsed is not { } offer || offer.OfferId == 0 || offer.PartnerAccount == 0)
+			if (parsed is not { } offer || offer.OfferId == 0)
 			{
+				return;
+			}
+
+			ulong partner64 = SteamId64Base + offer.PartnerAccount;
+			if (offer.PartnerAccount == 0)
+			{
+				decisions.Add(new TradeOfferDecision(offer.OfferId, partner64, "skip", "unreadable"));
 				return;
 			}
 
 			// Never act on our own offers (a counter-offer can surface here),
 			// and gifts-only: anything the partner asks in return disqualifies
-			// the offer, regardless of the whitelist.
-			if (offer.IsOurs || offer.GiveCount != 0 || !whitelistAccounts.Contains(offer.PartnerAccount))
+			// the offer, regardless of the whitelist. A give count that cannot
+			// be read is treated as non-zero (safe side).
+			string? skipReason = offer.IsOurs ? "our_offer"
+				: offer.GiveCount == int.MaxValue ? "give_count_unreadable"
+				: offer.GiveCount != 0 ? "has_give_items"
+				: !whitelistAccounts.Contains(offer.PartnerAccount) ? "partner_not_whitelisted"
+				: null;
+			if (skipReason is not null)
 			{
+				decisions.Add(new TradeOfferDecision(offer.OfferId, partner64, "skip", skipReason));
 				return;
 			}
 
-			offers.Add(new PendingGiftOffer(offer.OfferId, SteamId64Base + offer.PartnerAccount));
+			decisions.Add(new TradeOfferDecision(offer.OfferId, partner64, "accept", null));
+			accepted.Add(new PendingGiftOffer(offer.OfferId, partner64));
 		}
 
 		if (raw is System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Array } jsonArray)
@@ -843,7 +981,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			}
 		}
 
-		return offers;
+		return (accepted, decisions);
 	}
 
 	/// <summary>Reads one received-offer entry (dictionary or JsonElement) as (offerId, partnerAccount, giveCount, isOurs).</summary>
@@ -1363,9 +1501,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 			if (tradeTask.Status == JobTaskStatus.Finished)
 			{
-				runtime.TradeOffersToAccept = ExtractPendingGiftOffers(tradeTask.Output, spec);
+				(List<PendingGiftOffer> accepted, List<TradeOfferDecision> decisions) = EvaluateTradeOffers(tradeTask.Output, spec);
+				runtime.TradeOffersToAccept = accepted;
 				_logger.LogInformation("Trade-offer scan for {AccountName}: {Count} gift offer(s) eligible for auto-accept",
-					spec.AccountName, runtime.TradeOffersToAccept.Count);
+					spec.AccountName, accepted.Count);
+				await RecordTradeEvaluationAsync(spec, jobId, accepted, decisions, cancellationToken).ConfigureAwait(false);
 			}
 			else
 			{
@@ -1398,7 +1538,13 @@ public sealed class DesiredStateReconciler : BackgroundService
 			if (acceptTask.Status == JobTaskStatus.Finished)
 			{
 				_logger.LogInformation("Gift offer {OfferId} for {AccountName} accepted", accepted?.OfferId, spec.AccountName);
-				if (OutputFlagIsTrue(acceptTask.Output, "requires_mobile_confirmation"))
+				bool requiresConfirmation = OutputFlagIsTrue(acceptTask.Output, "requires_mobile_confirmation");
+				if (accepted is not null)
+				{
+					await RecordAutoAcceptedAsync(spec, jobId, accepted, requiresConfirmation, cancellationToken).ConfigureAwait(false);
+				}
+
+				if (requiresConfirmation)
 				{
 					// Steam wants a mobile confirmation to finish the accept —
 					// chain confirm_trade_offer now (the identity secret never
@@ -1694,6 +1840,13 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 	/// <summary>An incoming gifts-only offer from a whitelisted partner, awaiting its accept dispatch.</summary>
 	internal sealed record PendingGiftOffer(ulong OfferId, ulong PartnerSteamId64);
+
+	/// <summary>
+	/// One evaluated received offer from a policy scan: "accept" (queued for the
+	/// auto-accept dispatch) or "skip" with the red line that disqualified it
+	/// (partner_not_whitelisted / has_give_items / our_offer / give_count_unreadable).
+	/// </summary>
+	internal sealed record TradeOfferDecision(ulong OfferId, ulong PartnerSteamId64, string Decision, string? Reason);
 }
 
 /// <summary>Read-only orchestration state for one account (aggregate view payload).</summary>
