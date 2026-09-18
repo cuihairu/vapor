@@ -50,6 +50,9 @@ obj/
 *.nupkg
 TestResults/
 **/TestResults/
+# coverlet.collector can drop <guid>/coverage.cobertura.xml directly under
+# tests/ depending on how dotnet test is invoked; these are always artifacts.
+tests/*/coverage.cobertura.xml
 
 # Runtime data
 data/
