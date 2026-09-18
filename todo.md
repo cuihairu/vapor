@@ -622,7 +622,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 > 2026-09-17：**第三族 flake 归档 + 守护落地（测试数不变;ci 提交 + docs 提交）**。三族 flake 图谱补齐：§23 进程全局状态并行耦合（断言红）、§25 等待信号与断言副作用错位（断言红）、§27 vstest 宿主收尾失速（无红、静默烧超时）。第三族无法靠测试代码预防（宿主行为在测试框架之下）,只能靠 CI 参数把「静默烧满」转化为「快速红 + 转储」;前两族的测试侧方法论不变（mock TCS 信号 / 等待=断言对象）。验证：守卫参数本地实跑确认 CLI 接受且 Blame collector 正常挂载;随本轮提交 CI 全绿。
 
-## 28. MarketWatch.Tests CI 间歇卡死根因：在飞失速族（park 舞蹈 × 循环重启竞态）修复 + 收尾失速族待转储定谳（🔧 2026-09-17 进行中）
+## 28. MarketWatch.Tests CI 间歇卡死根因：在飞失速族（park 舞蹈 × 循环重启竞态）修复 + 收尾失速族观察定谳（✅ 2026-09-18 完成）
 
 > 立项动机：§27 归档当日,守护首战即抓到第二次发作（276bf82 windows Debug,`--blame-hang` 12 分钟快速红 + 转储）,且历史取证推翻「一次性基础设施 flake」初判——自 09-14 起六次烧满/失速 job 全部落在 windows build-test,两次可取证的在飞清单都卡在本程序集。第三族一分为二:**在飞失速**（根因在测试代码,已修）与 **56/56 交付后收尾失速**（宿主层,待转储定谳）。
 
@@ -633,10 +633,10 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 同族筛查:三处 park 舞蹈中 `PollOnce_CanceledDuringParkedFreeFetch`（park 在 init 后挂,原循环若 park 上去其 OCE 被循环吞掉进 Delay,测试尾 DisposeAsync 的 Cancel 能收拾）与 `Shutdown_WhileLoopParkedInFetch`（add 在重启后,原循环存活期 store 必空不进 fetch）均安全;事发测试是唯一违例。（✅ 2026-09-17）
 - [x] 修复:排序对齐 `Shutdown_WhileLoopParkedInFetch`——park 脚本与 watch 注册全部挪到 `RestartLoopForTestsAsync` 之后（原循环必然先退出）,删除 init 前的预挂;窗口关闭:原循环存活期 store 必空,永不进 fetch。本地 56/56 + 限 2 核 3 轮 + 全仓 2089 全绿。（✅ 2026-09-17）
 
-### 28.2 尾速族与观察项（开放）
+### 28.2 尾速族与观察项（✅ 2026-09-18 定谳关闭）
 
-- [ ] ci.yml 两个全量测试步在失败时上传 `TestResults/`（hangdump + Sequence.xml）——守护首战转储因无上传步骤丢失,下次发作必须留证;转储可定谳收尾失速族是 vstest 基础设施还是残留 park。（✅ 2026-09-17 上传已落地;⏳ 定谳待发作）
-- [ ] 在飞失速族已修,后续 CI 若再发作应只剩收尾失速族;windows 连续多轮无发作即可关闭本节。（⏳ 观察中;2026-09-18 起持续观察:自 §28 修复窗口 09-17 18:00Z 起**连续 12 轮已完成 run 全绿零发作**,已超历史发作间隔(09-14→09-17 六发作≈每 6-8 轮);关闭阈值定为**连续 20 轮全绿或 72h 无发作**,期间每次 main 上 ci run 完成后由会话自动核账,发作则按 §28.1 取证流程处理——hangdump 上传已就位,转储可定谳）
+- [x] ci.yml 两个全量测试步在失败时上传 `TestResults/`（hangdump + Sequence.xml）——守护首战转储因无上传步骤丢失,下次发作必须留证。（✅ 2026-09-17 上传落地;观察期内未再需要,机制留作复发预案）
+- [x] 在飞失速族已修,后续 CI 若再发作应只剩收尾失速族;windows 连续多轮无发作即可关闭本节。（✅ 2026-09-18 定谳关闭,见下方收口块）
 
 > 2026-09-17：**在飞失速族闭环（test + ci + docs 三提交）**。方法论沉淀:「无断言红、无测试卡住」不是测试代码无罪的证据——在飞清单（已交付/未交付 census）能把卡点定位到测试类;**让循环 park 在不可取消的 Task 上时,必须保证任何存活的前序循环都够不到它**（park 先挂或 watch 先注册皆死路,重启型测试的脚本一律放在重启之后）。收尾失速族（56/56 交付后宿主不退出）的「基础设施 flake」定性修正为「待转储定谳」,§27 图谱第三族据此两分。
 
@@ -678,3 +678,5 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 > 2026-09-18：**两题一并收口（test + docs 两提交）**。方法论再沉淀：①「任务已完成的 task，`WaitAsync` 直接返回结果」是 .NET 的真实语义（先查完成再看取消）——依赖 `WaitAsync` 抛 OCE 的测试必须保证**调用时** token 尚未取消、或被等待 task 尚未完成，二者其一否则断言不可靠；②覆盖率缺口的六类定性里，③④⑤是防御性/并发代码的自然残留，不追净——把「行数」当目标会逼出赌时序的坏测试，§27 家族方法论（等待=断言对象、mock TCS 信号）在这里的反面教材就是被替换的 100ms 竞态版。
 
 > 2026-09-18：**§29 遗留观察兑现——farm `refreshDue` 对齐（fix 提交 `db63bed`）**。farm 循环的 `FarmQueue is null` 短路撤除,改 `FarmQueueCheckedAt` 判定（MinValue=首查,盖章后等 `ReconcileFarmRefreshSeconds`）,失败/丢失的 get_card_drops 不再每 15s 重拉徽章页;派发 reason 与 null 队列守卫同步对齐 boost。行为变化:①`Farm_CardDropsTaskFailed_MarksDeviationOnly` 原断言「失败后同 pass 立即重试」改为「单查询 + deviation + 等间隔」;②`SettleActiveJob_CardDropsOutcomeWithoutTasks` 原断言「空队列永远 refresh-due 同 pass 重查」改为「安静结算不重查」——「task 行消失」与「查询失败」同等待遇,不再有「空队列=立即重查」的隐式通道。spec 变更/agent 消失/离开状态的重置段仍清 `FarmQueueCheckedAt=MinValue`,operator 想立即刷新依旧走 spec 更新。Reconciler 65 全绿 + 全量绿 + format 过,CI 以本轮提交为准。
+
+> 2026-09-18：**§28.2 收尾失速族定谳关闭（用户裁定提前关闭,docs 提交）**。观察数据:自 §28 修复窗口 09-17 18:00Z 起,**连续 13 轮已完成 ci run 全绿、windows 零发作**（09-17 四轮 + 09-18 九轮,含 §29 boost 八提交 + §30 两题 + farm 对齐的混合负载),为历史发作间隔（09-14→09-17 六发作 ≈ 每 6-8 轮一次）的约 1.6 倍;期间唯一异常 run `549575b` cancelled 经甄别为**调度层取消（零 job,4 分钟排队即被基础设施杀掉,非测试失速）**,不计发作。**定谳:收尾失速族 = vstest 宿主层基础设施 flake（§27 原始定性成立,「残留 park」假设撤销）**——依据:①在飞族修复已排除三处 park 舞蹈的全部违例路径（§28.1）;②混合负载高强度推送期零复发;③即便残留,`--blame-hang` 12 分钟快速红 + TestResults/hangdump 上传已把最坏代价从 45/60 分钟烧满压到 ≤12 分钟且有转储可取证,复发即按 §28.1 流程重开取证。三族 flake 图谱终版:§23 进程全局状态并行耦合（断言红,已修）、§25 等待信号错位（断言红,已修）、§27/§28 收尾失速（宿主层,守卫兜底 + 观察关闭)、§28 在飞失速（测试代码,已修）;§30 补第四支——Task.WaitAsync 完成-优先语义竞态（测试侧确定性化）。
