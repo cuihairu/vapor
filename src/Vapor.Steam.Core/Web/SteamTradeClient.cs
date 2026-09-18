@@ -90,7 +90,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 		}
 		catch (Exception ex)
 		{
-			_logger.LogError(ex, "Failed to get inventory for {SteamId}", steamId); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
+			_logger.LogError(ex, "Failed to get inventory for {SteamId}", steamId);
 			return new InventoryResponse
 			{
 				Success = false,
@@ -311,7 +311,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 		}
 		catch (Exception ex)
 		{
-			_logger.LogError(ex, "Failed to send trade offer to {PartnerSteamId}", partnerSteamId); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
+			_logger.LogError(ex, "Failed to send trade offer to {PartnerSteamId}", partnerSteamId);
 			return new TradeOfferResult
 			{
 				Success = false,

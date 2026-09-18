@@ -192,7 +192,7 @@ public sealed class LootInventoryAction : IAction
 
 			_logger.LogInformation(
 				"Looted {ItemCount} items to {PartnerSteamId} for {AccountName}",
-				assets.Count, partnerSteamId, session.AccountName); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
+				assets.Count, partnerSteamId, session.AccountName);
 
 			return new ActionResult(true, null, new Dictionary<string, object?>
 			{
@@ -209,7 +209,7 @@ public sealed class LootInventoryAction : IAction
 		}
 		catch (Exception ex)
 		{
-			_logger.LogError(ex, "Failed to loot inventory to {PartnerSteamId}", partnerSteamId); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
+			_logger.LogError(ex, "Failed to loot inventory to {PartnerSteamId}", partnerSteamId);
 			return new ActionResult(false, ex.Message, null);
 		}
 	}
