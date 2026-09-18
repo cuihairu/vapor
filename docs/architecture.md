@@ -236,16 +236,22 @@ login session transitions (`session.login`), and sensitive task results
 ### Account Orchestration
 
 Accounts are managed declaratively: operators publish a desired state
-(`offline` / `online` / `idle` with idle app ids, optional region/agent
-pinning, note) through the accounts API and the `DesiredStateReconciler`
-runs a periodic reconcile loop (default 15s) that converges actual session
-state onto it:
+(`offline` / `online` / `idle` with idle app ids / `farm` / `boost` with
+playtime targets, optional region/agent pinning, note) through the
+accounts API and the `DesiredStateReconciler` runs a periodic reconcile
+loop (default 15s) that converges actual session state onto it:
 
 - deviating accounts get a login job dispatched to a capable agent —
   region constraints, capability check and per-agent capacity caps apply,
   selection is least-loaded then agent-id order (deterministic);
 - `idle` accounts additionally get a `play_games` job, and a stop job when
   switched back to `online`;
+- `farm` accounts periodically re-query remaining card drops and play the
+  next drop-bearing app, stopping when the queue is empty;
+- `boost` accounts periodically re-query total playtime and idle every app
+  below its target hours in one multi-app `play_games` job (IdleApps still
+  act as an exclusion list), stopping once every target is met; query
+  failures only mark a deviation and wait out the refresh interval;
 - observed login failures back off exponentially (cooldown
   `base × 2^(n-1)`, capped at 15 min) and throttle the account after
   `MaxLoginAttempts` consecutive failures — updating the spec resets the

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Playtime boosting as a managed desired state (todo §29): the new `boost`
+  account state carries `boostTargets` (appid → target hours, validated at
+  PUT time — at least one target required, finite positive hours, conflicting
+  per-app targets rejected). The reconciler periodically refreshes total
+  playtime via the new `get_playtime` action (parses the embedded `rgGames`
+  JSON on the profile games tab, stale-while-revalidate cached 30 min), idles
+  every app below its target in a single multi-app `play_games` job (the
+  IdleApps list still acts as an exclusion list), and stops idling — keeping
+  the session online — once every target is met. Query failures mark a
+  deviation without consuming the login failure budget, and an unusable
+  report keeps the schedule idle instead of reading as "all targets met".
+  Refresh cadence configurable via `Vapor_RECONCILE_BOOST_REFRESH_SECONDS`
+  (default 1800s).
+
 ## [0.1.0-alpha.2] - 2026-09-17
 
 ### Changed
