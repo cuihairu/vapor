@@ -170,7 +170,7 @@ Modern web-based admin interface (`/admin.html`):
 ### API Endpoints
 
 #### Accounts
-- `PUT /v1/accounts/{name}` - Create or replace an account spec (desired state, idle apps, region/agent pinning, note)
+- `PUT /v1/accounts/{name}` - Create or replace an account spec (desired state, idle apps, region/agent pinning, note, boost targets)
 - `GET /v1/accounts` - List accounts (filters: `state`, `region`, `agent`)
 - `GET /v1/accounts/{name}` - Aggregate view (spec + live session + orchestration state + pending challenge + recent tasks)
 - `POST /v1/accounts/{name}/enable` - Enable the account
