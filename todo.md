@@ -704,3 +704,18 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 > 红线与风险备注：①**dashboard.html 零写动词契约不变**——全功能管理台收敛在 admin.html（写契约既有页），三页分工不破坏；②破坏性操作（删账户、真实挂单、接受报价、force 付费认领）一律二次确认且确认文案含不可逆提示；③UI 是 REST 薄封装，无业务逻辑下沉，服务端校验是唯一真源（UI 禁用态只是引导，不能替代 4xx 呈现）；④认证沿用 admin 现行 authorization 模式，新面板零新增鉴权面；⑤灰区操作（市场挂单）UI 需读取并展示账户开关状态，开关关闭时按钮禁用 + 指引文案，而非点击后才报错；⑥单文件静态页模式沿用（无构建链），admin.html 体积增长可控性靠面板折叠分区维持。
 
 > 2026-09-18：**§31 P1 账户生命周期面板落地（feat 提交，admin.html 单文件改动）**。①「账户管理」面板（认证挑战与事件日志之间）：账户卡片列表（启用徽章 / state chip / 市场开关 chip / idle·boost·note 汇总行）+ 编辑表单（期望状态五选一下拉、Idle 白名单与 Farm 排除名单复用同一字段——标签随 state 语义、Boost 目标 `appid:小时` CSV、region/agentId/note、enabled 与市场挂单 checkbox）。②写操作三通道：编辑保存走 `PUT /v1/accounts/{name}` 全量语义（AccountStore.Upsert 是替换式更新，前端所有字段显式提交，`updatedBy: "admin-console"` 落审计）；启用/禁用走 `POST enable|disable`（禁用弹 confirm 说明「不停删数据」）；删除走 `DELETE`（prompt 输入账户名精确匹配才执行——比 confirm 强一档，防误点）。③Boost 目标前端预校验镜像服务端规则（appid 正整数、小时有限正数），格式错本地 alert 而非等 400；与 §29.2 P2 校验矩阵同源。④枚举序列化确认：CP 全局 `JsonStringEnumConverter(CamelCase)` → GET 返回 `"farm"` 小写字符串，编辑表单 PascalCase option 值反序列化兼容（转换器忽略大小写）。⑤dashboard/gamedata 零写动词契约不动，DashboardStaticTests 9/9 绿（新增断言留给 P6 统一补）。验证：全量 1158+ 全绿、format 门禁过、JS 脚本块 node --check 语法过。
+
+---
+
+## 32. 白名单自动接受报价：保守 Gifts 语义（📋 2026-09-18 立项，用户裁定）
+
+> 立项动机：推翻 §11.2「不实现自动接受」的 2026-09-13 评估——用户裁定立项。**保守白名单版**定案（四个候选中选一）：AccountSpec 显式策略 + partner 白名单 + **仅自动接受「纯收」报价**（items_to_give 为空、只收不给，零资产让渡风险，对齐 ASF AcceptGifts 语义；ASF 对任意报价的白名单自动接受同样不做，其 wiki 明确警告等价性不可自动判断）+ 全量审计。默认关闭；白名单为空时不动作；交换类（有让渡）报价一律不自动接受（人工走 §31 P2 面板）。
+
+### 32.1 实施阶段
+
+- [ ] **P1 配置面**：`AccountSpec.TradePolicy`（新 record：`AutoAcceptGifts bool` 默认 false + `PartnerWhitelist IReadOnlyList<ulong>`；fail-fast 校验：steamId 正 64 位、去重排序、AutoAcceptGifts=true 须白名单非空）+ `PUT /v1/accounts` 透传 + 审计。
+- [ ] **P2 评估循环**：Reconciler 增 `TradeOfferCheckedAt` 节流（与 farm/boost 同构，`ReconcileTradeRefreshSeconds` 默认 600s）→ `GET trade-offers`（activeOnly）→ 逐条判定：非白名单 partner → 跳过；有 items_to_give → 跳过；纯收 + 白名单 → 走 accept 通道（auto mobile confirm）→ 无条件盖章 CheckedAt；查询失败仅记 deviation 等满间隔。
+- [ ] **P3 审计与可观测**：每次评估落审计（含「跳过」决策与原因：partner 不在白名单 / 非纯收 / 策略未开启）；自动接受事件接入 webhook 管道（`trade.auto_accepted`）。
+- [ ] **P4 收尾**：feature-matrix 交易行措辞、production.md 配置矩阵（env 开关）、CHANGELOG、全量测试 + CI。
+
+> 红线：①策略 per-account 显式开启，**默认关闭**，全局无「一键全开」；②白名单为空时策略等于未开启（双保险）；③非纯收报价即使白名单内也**永不**自动接受——等价性判断不做（ASF 同款取舍）；④评估循环失败容错与 farm/boost 同款（deviation 不吃登录预算）；⑤identity secret 不出 agent（复用既有 confirm 通道约束）。
