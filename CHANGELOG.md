@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Achievement listing, unlock and reset (todo §33): achievements are listed
+  via the community per-game stats page (`get_achievements` +
+  `GET /v1/accounts/{name}/achievements?appId=`) — API names are inferred
+  from icon file names, and unlock state comes from the "Unlocked <date>"
+  blocks rather than icon color (progress-type achievements keep colored
+  icons while locked). Writes go through the client stats protocol by hand
+  (SteamKit2 has never shipped achievement wrappers): load user stats, map
+  names to achievement ids via the unified GetGameAchievements listing
+  (list index == id, cross-guarded by the unlock-block id range), patch the
+  community-established bitmap encoding, store the merged blob, then read
+  back and verify every bit — an unavailable read-back is reported as such
+  (`verified: false`) instead of claimed success. Both writes are explicit
+  single-shot REST actions (`POST /v1/accounts/{name}/achievements/unlock`
+  and `/reset`): an explicit non-empty name list is required everywhere (no
+  implicit full-batch path exists), reset additionally requires
+  `confirm: true` at both the action and API layers, single-item failures
+  never abort the batch and are reported per item, and every read/unlock/
+  reset lands an audit entry carrying the full name list. The admin
+  console's account panel gains an achievements block (pull list by appId,
+  per-item and select-all checkboxes, confirm dialog for unlock, double
+  confirmation for reset). Stat/achievement numeric editing stays
+  out of scope (§11.5).
+
 - Conservative whitelist auto-accept for trade offers (todo §32): per-account
   `TradePolicy` (`autoAcceptGifts` + partner whitelist, validated at PUT time —
   enabling requires a non-empty whitelist, and omitting the field clears the
