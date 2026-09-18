@@ -249,33 +249,52 @@ public class BotSessionTests : IDisposable
 		var session = CreateSession();
 		session.Start();
 
-		// Park the action on the caller token, but only cancel once the action is
-		// provably parked (mock TCS signal, not a timed race): a 100ms CancelAfter
-		// can fire before the command loop even picks the command up, and on CI a
-		// preempted caller thread can then reach its WaitAsync after the loop has
-		// already settled the completion source — WaitAsync returns the completed
-		// result and no exception ever surfaces. With the park-then-cancel ordering,
-		// the caller's WaitAsync holds the earliest registration on the token, so
-		// cancellation deterministically surfaces as OperationCanceledException.
+		// Park the action on a token the caller never cancels, and only cancel the
+		// caller token once the action is provably parked (mock TCS signal, not a
+		// timed race). Parking on the caller token itself is NOT deterministic:
+		// the caller's WaitAsync registers on that token only after TryWrite, so a
+		// preempted caller lets the command loop register the session's linked CTS
+		// first — and once the link settles the completion source before the
+		// caller's WaitAsync arbitration runs, .NET's completed-before-cancelled
+		// check returns the result and no exception ever surfaces (observed as a
+		// 5 ms red on windows CI, 2026-09-18; a minimal repro reproduced the
+		// registration inversion but not the exact settling path, so the mechanism
+		// is asserted at registration-order level, not continuation-level). With
+		// the action parked on a decoupled token, cancelling the caller token can
+		// only complete the caller's WaitAsync cancellation path: the original
+		// completion source cannot settle, TrySetException wins, and the OCE is
+		// guaranteed regardless of registration order.
 		var started = new TaskCompletionSource();
+		var parkedCts = new CancellationTokenSource();
 		var mockAction = new Mock<IAction>();
 		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", RequiresLogin: false, 30));
 		mockAction.Setup(a => a.ExecuteAsync(It.IsAny<Vapor.Steam.Core.BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
 			.Returns(async (Vapor.Steam.Core.BotSession s, IReadOnlyDictionary<string, object?> p, CancellationToken ct) =>
 			{
 				started.SetResult();
-				await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+				await Task.Delay(Timeout.InfiniteTimeSpan, parkedCts.Token);
 				return new ActionResult(true, null, new Dictionary<string, object?>());
 			});
 		_actionRegistryMock.Setup(r => r.Get("test")).Returns(mockAction.Object);
 
 		var cts = new CancellationTokenSource();
-		var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
-		await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+		try
+		{
+			var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
+			await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-		// Act & Assert
-		cts.Cancel();
-		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call);
+			// Act & Assert
+			cts.Cancel();
+			await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call);
+		}
+		finally
+		{
+			// The parked action no longer observes the caller token: release it and
+			// the command loop explicitly, or the session outlives the test parked
+			// on an infinite delay.
+			parkedCts.Cancel();
+			session.Dispose();
+		}
 	}
 
 	[Fact]
