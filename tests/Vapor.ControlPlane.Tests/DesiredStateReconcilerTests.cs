@@ -1023,11 +1023,13 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Failed, "badges page unreachable");
 		await reconciler.ReconcileOnce(CancellationToken.None);
 
-		// The failed query is settled, then immediately retried (empty queue keeps
-		// refreshDue true); the login budget is never consumed either way.
-		Assert.Equal(2, jobs.Created.Count);
-		Assert.Equal("get_card_drops", jobs.Created[1].Action);
+		// The failed query is settled into a deviation and the stamped
+		// FarmQueueCheckedAt gates the retry until the refresh interval —
+		// a flapping badges page is not re-polled every pass. The login
+		// budget is never consumed either way.
+		Assert.Single(jobs.Created);
 		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.NotNull(view.LastDeviation);
 		Assert.Equal(0, view.LoginAttempts);
 		Assert.Null(view.NextAttemptAt);
 	}
@@ -1292,12 +1294,12 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	}
 
 	[Fact]
-	public async Task SettleActiveJob_CardDropsOutcomeWithoutTasks_SettlesQuietlyAndRequeries()
+	public async Task SettleActiveJob_CardDropsOutcomeWithoutTasks_SettlesQuietly()
 	{
 		// A card-drops outcome whose task rows vanished is not a failure: the settle
-		// stamps the refresh check without a deviation, and since the farm queue is
-		// still empty the very same pass re-dispatches the query (an empty queue
-		// always counts as refresh-due). No login budget is consumed either way.
+		// stamps the refresh check without a deviation, and the stamped check gates
+		// the retry until the refresh interval — the vanished outcome neither
+		// re-queries immediately nor touches the login budget.
 		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
 		var agents = NewRegistry(("agent-1", "us-east", null));
 		var jobs = new FakeReconcileJobStore();
@@ -1310,15 +1312,13 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		await reconciler.ReconcileOnce(CancellationToken.None);
 
 		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
-		Assert.Equal("job-2", view.ActiveJobId); // settled job-1, re-dispatched in the same pass
-		Assert.Equal("get_card_drops", view.ActiveJobAction);
+		Assert.Null(view.ActiveJobId); // settled job-1 quietly
 		Assert.Null(view.FarmQueue);
 		Assert.Equal(0, view.LoginAttempts); // Never consumes the login budget.
 		Assert.NotNull(view.FarmQueueCheckedAt); // The settle stamped the refresh check.
 		Assert.Null(view.LastDeviation); // The vanished outcome stays quiet.
 
-		Assert.Equal(2, jobs.Created.Count);
-		Assert.Equal("get_card_drops", jobs.Created[1].Action);
+		Assert.Single(jobs.Created); // no immediate re-query
 	}
 
 	[Fact]

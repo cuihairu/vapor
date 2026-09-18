@@ -426,7 +426,10 @@ public sealed class DesiredStateReconciler : BackgroundService
 			return;
 		}
 
-		bool refreshDue = runtime.FarmQueue is null
+		// A failed or unusable report stamps FarmQueueCheckedAt without setting the
+		// queue, so the interval — not "queue is null" — gates the retry; this
+		// keeps a flapping badges page from being re-polled every reconcile pass.
+		bool refreshDue = runtime.FarmQueueCheckedAt == DateTimeOffset.MinValue
 			|| now - runtime.FarmQueueCheckedAt >= TimeSpan.FromSeconds(_cfg.ReconcileFarmRefreshSeconds);
 		if (refreshDue)
 		{
@@ -463,13 +466,17 @@ public sealed class DesiredStateReconciler : BackgroundService
 			Interlocked.Increment(ref _cardDropsDispatched);
 
 			await RecordActionAsync(spec, job.Job.Id, "card_drops_dispatched",
-				reason: runtime.FarmQueue is null ? "initial farm queue" : "farm queue refresh",
+				reason: runtime.FarmQueueCheckedAt == DateTimeOffset.MinValue ? "initial farm queue" : "farm queue refresh",
 				agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
 			return;
 		}
 
-		// The queue is fresh — act on it.
-		List<uint> queue = runtime.FarmQueue!;
+		// The queue is fresh — act on it. No queue means the last report was
+		// unusable: change nothing and wait for the next refresh.
+		if (runtime.FarmQueue is not { } queue)
+		{
+			return;
+		}
 		if (runtime.FarmingAppId is uint farming && queue.Contains(farming))
 		{
 			return; // current game still has drops
