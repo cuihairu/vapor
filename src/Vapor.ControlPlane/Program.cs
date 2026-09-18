@@ -186,6 +186,7 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 	sb.Append("# TYPE vapor_controlplane_reconcile_actions_total counter\n");
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"login_dispatched\"} ").Append(reconciler.LoginsDispatched).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"idle_dispatched\"} ").Append(reconciler.PlaysDispatched).Append('\n');
+	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"trade_accept_dispatched\"} ").Append(reconciler.TradeAcceptsDispatched).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"rebalanced\"} ").Append(reconciler.Rebalances).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"unassigned\"} ").Append(reconciler.Unassignments).Append('\n');
 	sb.Append("vapor_controlplane_reconcile_actions_total{action=\"throttled_skip\"} ").Append(reconciler.ThrottledSkips).Append('\n');

@@ -30,6 +30,13 @@ public sealed class DesiredStateReconciler : BackgroundService
 	private const string PlayGamesAction = "play_games";
 	private const string CardDropsAction = "get_card_drops";
 	private const string PlaytimeAction = "get_playtime";
+	// Values mirror the AccountTaskRunner action constants; the reconciler
+	// dispatches the same jobs through IJobStore directly.
+	private const string TradeOffersAction = "get_trade_offers";
+	private const string AcceptTradeOfferAction = "accept_trade_offer";
+	private const string ConfirmTradeOfferAction = "confirm_trade_offer";
+	/// <summary>SteamId64 base for converting the 32-bit partner account ids in trade-offer payloads.</summary>
+	internal const ulong SteamId64Base = 76561197960265728;
 
 	/// <summary>A dispatched login job normally finishes well inside its 60s timeout; past this window the outcome is queried.</summary>
 	internal static TimeSpan LoginInFlightWindow = TimeSpan.FromSeconds(150);
@@ -39,6 +46,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 	internal static TimeSpan CardDropsInFlightWindow = TimeSpan.FromSeconds(150);
 	/// <summary>Same idea for get_playtime jobs (120s timeout, heavy games-tab page).</summary>
 	internal static TimeSpan PlaytimeInFlightWindow = TimeSpan.FromSeconds(150);
+	/// <summary>Same idea for the trade-loop jobs (30s timeouts).</summary>
+	internal static TimeSpan TradeInFlightWindow = TimeSpan.FromSeconds(60);
 	/// <summary>Backoff ceiling for consecutive login failures.</summary>
 	private static readonly TimeSpan MaxCooldown = TimeSpan.FromMinutes(15);
 	private static readonly HashSet<string> TransitionalStates = new(StringComparer.Ordinal)
@@ -64,6 +73,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 	private long _playsDispatched;
 	private long _cardDropsDispatched;
 	private long _playtimeDispatched;
+	private long _tradeAcceptsDispatched;
 	private long _rebalances;
 	private long _unassignments;
 	private long _throttledSkips;
@@ -78,6 +88,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 	public long CardDropsDispatched => Interlocked.Read(ref _cardDropsDispatched);
 	/// <summary>get_playtime jobs dispatched since startup (boost schedule refreshes).</summary>
 	public long PlaytimesDispatched => Interlocked.Read(ref _playtimeDispatched);
+	/// <summary>accept_trade_offer jobs dispatched since startup (gift auto-accept loop).</summary>
+	public long TradeAcceptsDispatched => Interlocked.Read(ref _tradeAcceptsDispatched);
 	/// <summary>Accounts moved to a different agent after their assigned agent disappeared.</summary>
 	public long Rebalances => Interlocked.Read(ref _rebalances);
 	/// <summary>Assignments dropped because the desired state became offline or the account was disabled.</summary>
@@ -196,7 +208,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 		CancellationToken cancellationToken)
 	{
 		// A spec update resets the failure budget, giving operators a lever to un-throttle.
-		// It also invalidates the farm queue — the exclusion list may have changed.
+		// It also invalidates the farm queue — the exclusion list may have changed — and
+		// the trade loop: the whitelist may have changed, so pending decisions are
+		// dropped and the next pass re-queries instead of acting on stale data.
 		if (runtime.SpecVersion != spec.Version?.Version)
 		{
 			runtime.SpecVersion = spec.Version?.Version;
@@ -207,6 +221,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 			runtime.BoostUnmetApps = null;
 			runtime.BoostPlayingApps = null;
 			runtime.BoostCheckedAt = DateTimeOffset.MinValue;
+			runtime.TradeOffersToAccept = null;
+			runtime.TradeOfferCheckedAt = DateTimeOffset.MinValue;
 		}
 
 		// 1. Assigned agent disappeared → drop the assignment and rebalance below.
@@ -253,7 +269,20 @@ public sealed class DesiredStateReconciler : BackgroundService
 			else if (runtime.ActiveJobId is not null && now - runtime.ActiveJobDispatchedAt >= InFlightWindow(runtime.ActiveJobAction))
 			{
 				// Settle a finished play_games job (cancelled/failed) before deciding to re-dispatch.
-				await SettleActiveJobAsync(spec, runtime, cancellationToken).ConfigureAwait(false);
+				await SettleActiveJobAsync(spec, runtime, connected, load, cancellationToken).ConfigureAwait(false);
+			}
+
+			// Trade-policy evaluation runs for any connected account with the
+			// policy enabled, before the desired-state loop claims the single
+			// per-account slot; when the trade loop holds the slot this pass,
+			// the desired-state work simply happens on the next pass.
+			if (spec.TradePolicy is { AutoAcceptGifts: true })
+			{
+				await ReconcileTradeAsync(spec, runtime, connected, load, now, cancellationToken).ConfigureAwait(false);
+				if (runtime.ActiveJobId is not null)
+				{
+					return;
+				}
 			}
 
 			if (spec.DesiredState == AccountDesiredState.Farm)
@@ -297,7 +326,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 		// 4. In-flight orchestration job whose outcome is now queryable.
 		if (runtime.ActiveJobId is not null && now - runtime.ActiveJobDispatchedAt >= InFlightWindow(runtime.ActiveJobAction))
 		{
-			await SettleActiveJobAsync(spec, runtime, cancellationToken).ConfigureAwait(false);
+			await SettleActiveJobAsync(spec, runtime, connected, load, cancellationToken).ConfigureAwait(false);
 		}
 
 		// 5. A play_games job is still being processed — wait for it before deciding again.
@@ -588,6 +617,287 @@ public sealed class DesiredStateReconciler : BackgroundService
 			await DispatchPlayAsync(spec, runtime, connected, load, stop: true, cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 	}
+
+	/// <summary>
+	/// Gift auto-accept loop for a connected account with
+	/// <see cref="TradePolicy.AutoAcceptGifts"/> enabled (todo §32). Mirrors the
+	/// farm/boost pattern: periodically dispatches get_trade_offers (throttled
+	/// by <see cref="Config.ReconcileTradeRefreshSeconds"/>), then accepts the
+	/// filtered result one offer per pass — an offer only qualifies when its
+	/// partner is on the whitelist AND it gives nothing back (gifts-only
+	/// semantics; value equivalence is never judged). Query failures only mark
+	/// a deviation and wait for the next refresh interval — they never consume
+	/// the login failure budget.
+	/// </summary>
+	private async Task ReconcileTradeAsync(
+		AccountSpec spec,
+		AccountRuntime runtime,
+		Dictionary<string, ConnectedAgent> connected,
+		Dictionary<string, int> load,
+		DateTimeOffset now,
+		CancellationToken cancellationToken)
+	{
+		// A trade job (query / accept / confirm) is still in flight — wait for it.
+		if (runtime.ActiveJobId is not null)
+		{
+			return;
+		}
+
+		// Dispatch the next queued accept before refreshing the list: draining
+		// stale decisions has priority over querying again.
+		if (runtime.TradeOffersToAccept is { Count: > 0 } pending)
+		{
+			PendingGiftOffer offer = pending[0];
+			ConnectedAgent? acceptAgent = PickAgent(spec, connected, load, AcceptTradeOfferAction);
+			if (acceptAgent is null)
+			{
+				Interlocked.Increment(ref _noAgentSkips);
+				runtime.LastDeviation = "no capable agent available";
+				return;
+			}
+
+			if (!await GuardDryRunAsync(spec, runtime, $"would accept gift offer {offer.OfferId} from {offer.PartnerSteamId64}", cancellationToken).ConfigureAwait(false))
+			{
+				return;
+			}
+
+			JobWithTasks job = await _jobs.CreateJob(
+				new CreateJobRequest(
+					Action: AcceptTradeOfferAction,
+					Region: spec.Region,
+					Targets: [spec.AccountName],
+					Payload: new Dictionary<string, object?>
+					{
+						// Same payload shape the REST accept endpoint builds: the
+						// agent-side state machine re-validates the partner from
+						// this id before acting.
+						["trade_offer_id"] = offer.OfferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+						["partner_steam_id"] = offer.PartnerSteamId64.ToString(System.Globalization.CultureInfo.InvariantCulture),
+						["verify_state"] = true
+					},
+					Meta: new Dictionary<string, string> { ["orchestrator"] = OrchestratorMeta }),
+				cancellationToken).ConfigureAwait(false);
+
+			runtime.AssignedAgent = acceptAgent.Hello.AgentId;
+			runtime.ActiveJobId = job.Job.Id;
+			runtime.ActiveJobAction = AcceptTradeOfferAction;
+			runtime.ActiveJobDispatchedAt = now;
+			runtime.AcceptingOffer = offer;
+			runtime.LastAction = "trade_accept_dispatched";
+			runtime.LastActionAt = now;
+			runtime.LastDeviation = null;
+			load[acceptAgent.Hello.AgentId] = load.GetValueOrDefault(acceptAgent.Hello.AgentId) + 1;
+			Interlocked.Increment(ref _tradeAcceptsDispatched);
+
+			await RecordActionAsync(spec, job.Job.Id, "trade_accept_dispatched",
+				reason: $"gift offer {offer.OfferId} from whitelisted partner {offer.PartnerSteamId64} (auto-accept policy)",
+				agentId: acceptAgent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
+			return;
+		}
+
+		bool refreshDue = runtime.TradeOfferCheckedAt == DateTimeOffset.MinValue
+			|| now - runtime.TradeOfferCheckedAt >= TimeSpan.FromSeconds(_cfg.ReconcileTradeRefreshSeconds);
+		if (!refreshDue)
+		{
+			return;
+		}
+
+		ConnectedAgent? agent = PickAgent(spec, connected, load, TradeOffersAction);
+		if (agent is null)
+		{
+			Interlocked.Increment(ref _noAgentSkips);
+			runtime.LastDeviation = "no capable agent available";
+			return;
+		}
+
+		if (!await GuardDryRunAsync(spec, runtime, $"would dispatch get_trade_offers to agent '{agent.Hello.AgentId}'", cancellationToken).ConfigureAwait(false))
+		{
+			return;
+		}
+
+		JobWithTasks scanJob = await _jobs.CreateJob(
+			new CreateJobRequest(
+				Action: TradeOffersAction,
+				Region: spec.Region,
+				Targets: [spec.AccountName],
+				Payload: new Dictionary<string, object?> { ["active_only"] = true },
+				Meta: new Dictionary<string, string> { ["orchestrator"] = OrchestratorMeta }),
+			cancellationToken).ConfigureAwait(false);
+
+		runtime.AssignedAgent = agent.Hello.AgentId;
+		runtime.ActiveJobId = scanJob.Job.Id;
+		runtime.ActiveJobAction = TradeOffersAction;
+		runtime.ActiveJobDispatchedAt = now;
+		runtime.LastAction = "trade_offers_dispatched";
+		runtime.LastActionAt = now;
+		runtime.LastDeviation = null;
+		load[agent.Hello.AgentId] = load.GetValueOrDefault(agent.Hello.AgentId) + 1;
+
+		await RecordActionAsync(spec, scanJob.Job.Id, "trade_offers_dispatched",
+			reason: runtime.TradeOfferCheckedAt == DateTimeOffset.MinValue ? "initial trade-offer scan" : "trade-offer refresh",
+			agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Chains the mobile confirmation after a successful gift-offer accept. The
+	/// assigned agent is reused (it just ran the accept); a dry-run pass never
+	/// reaches this because the accept itself is gated. The identity secret
+	/// never leaves the agent — the confirm action reads it from the
+	/// agent-side credential store.
+	/// </summary>
+	private async Task DispatchTradeConfirmAsync(
+		AccountSpec spec,
+		AccountRuntime runtime,
+		Dictionary<string, ConnectedAgent> connected,
+		Dictionary<string, int> load,
+		ulong offerId,
+		CancellationToken cancellationToken)
+	{
+		string? agentId = runtime.AssignedAgent;
+		if (agentId is null || !connected.ContainsKey(agentId))
+		{
+			runtime.LastDeviation = $"gift offer {offerId} accepted but its agent is gone for the mobile confirmation";
+			return;
+		}
+
+		JobWithTasks confirmJob = await _jobs.CreateJob(
+			new CreateJobRequest(
+				Action: ConfirmTradeOfferAction,
+				Region: spec.Region,
+				Targets: [spec.AccountName],
+				Payload: new Dictionary<string, object?>
+				{
+					["trade_offer_id"] = offerId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+				},
+				Meta: new Dictionary<string, string> { ["orchestrator"] = OrchestratorMeta }),
+			cancellationToken).ConfigureAwait(false);
+
+		runtime.ActiveJobId = confirmJob.Job.Id;
+		runtime.ActiveJobAction = ConfirmTradeOfferAction;
+		runtime.ActiveJobDispatchedAt = DateTimeOffset.UtcNow;
+		runtime.LastAction = "trade_confirm_dispatched";
+		runtime.LastActionAt = DateTimeOffset.UtcNow;
+		load[agentId] = load.GetValueOrDefault(agentId) + 1;
+
+		await RecordActionAsync(spec, confirmJob.Job.Id, "trade_confirm_dispatched",
+			reason: $"mobile confirmation for auto-accepted gift offer {offerId}",
+			agentId: agentId, cancellationToken: cancellationToken).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Filters a get_trade_offers task output down to the offers that qualify
+	/// for auto-accept: an incoming offer (not ours) from a whitelisted partner
+	/// that gives nothing back. Both checks are red lines — a partner outside
+	/// the whitelist is skipped even for an empty offer, and any offer with
+	/// items_to_give is skipped even for a whitelisted partner. Accepts both
+	/// in-memory dictionaries and JsonElement objects (SQLite round-trip); a
+	/// missing/invalid output yields an empty list, never a query failure.
+	/// </summary>
+	internal static List<PendingGiftOffer> ExtractPendingGiftOffers(IReadOnlyDictionary<string, object?>? output, AccountSpec spec)
+	{
+		var offers = new List<PendingGiftOffer>();
+		if (output is null
+			|| !output.TryGetValue("received_offers", out object? raw)
+			|| raw is null
+			|| spec.TradePolicy?.PartnerWhitelist is not { Count: > 0 } whitelist)
+		{
+			return offers;
+		}
+
+		var whitelistAccounts = whitelist
+			.Select(id => id >= SteamId64Base ? (ulong)(id - SteamId64Base) : 0ul)
+			.Where(id => id != 0ul)
+			.ToHashSet();
+
+		void Collect(object? entry)
+		{
+			(ulong OfferId, ulong PartnerAccount, int GiveCount, bool IsOurs)? parsed = TryReadOfferEntry(entry);
+			if (parsed is not { } offer || offer.OfferId == 0 || offer.PartnerAccount == 0)
+			{
+				return;
+			}
+
+			// Never act on our own offers (a counter-offer can surface here),
+			// and gifts-only: anything the partner asks in return disqualifies
+			// the offer, regardless of the whitelist.
+			if (offer.IsOurs || offer.GiveCount != 0 || !whitelistAccounts.Contains(offer.PartnerAccount))
+			{
+				return;
+			}
+
+			offers.Add(new PendingGiftOffer(offer.OfferId, SteamId64Base + offer.PartnerAccount));
+		}
+
+		if (raw is System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Array } jsonArray)
+		{
+			foreach (System.Text.Json.JsonElement entry in jsonArray.EnumerateArray())
+			{
+				Collect(entry);
+			}
+		}
+		else if (raw is System.Collections.IEnumerable entries and not string)
+		{
+			foreach (object? entry in entries)
+			{
+				Collect(entry);
+			}
+		}
+
+		return offers;
+	}
+
+	/// <summary>Reads one received-offer entry (dictionary or JsonElement) as (offerId, partnerAccount, giveCount, isOurs).</summary>
+	private static (ulong OfferId, ulong PartnerAccount, int GiveCount, bool IsOurs)? TryReadOfferEntry(object? entry)
+	{
+		if (entry is System.Text.Json.JsonElement json)
+		{
+			if (json.ValueKind != System.Text.Json.JsonValueKind.Object)
+			{
+				return null;
+			}
+
+			ulong offerId = json.TryGetProperty("trade_offer_id", out System.Text.Json.JsonElement idElem)
+				&& ulong.TryParse(idElem.GetString(), out ulong parsedId) ? parsedId : 0;
+			ulong partnerAccount = json.TryGetProperty("partner_steam_id", out System.Text.Json.JsonElement partnerElem)
+				&& ulong.TryParse(partnerElem.GetString(), out ulong parsedPartner) ? parsedPartner : 0;
+			int giveCount = json.TryGetProperty("items_to_give_count", out System.Text.Json.JsonElement giveElem)
+				&& giveElem.TryGetInt32(out int parsedGive) ? parsedGive : int.MaxValue;
+			bool isOurs = json.TryGetProperty("is_our_offer", out System.Text.Json.JsonElement oursElem)
+				&& oursElem.ValueKind == System.Text.Json.JsonValueKind.True;
+			return (offerId, partnerAccount, giveCount, isOurs);
+		}
+
+		if (entry is IReadOnlyDictionary<string, object?> dict)
+		{
+			ulong offerId = dict.TryGetValue("trade_offer_id", out object? idValue)
+				&& ulong.TryParse(idValue?.ToString(), out ulong parsedId) ? parsedId : 0;
+			ulong partnerAccount = dict.TryGetValue("partner_steam_id", out object? partnerValue)
+				&& ulong.TryParse(partnerValue?.ToString(), out ulong parsedPartner) ? parsedPartner : 0;
+			int giveCount = dict.TryGetValue("items_to_give_count", out object? giveValue)
+				&& int.TryParse(giveValue?.ToString(), out int parsedGive) ? parsedGive : int.MaxValue;
+			bool isOurs = dict.TryGetValue("is_our_offer", out object? oursValue) && oursValue is true;
+			return (offerId, partnerAccount, giveCount, isOurs);
+		}
+
+		return null;
+	}
+
+	/// <summary>Reads a boolean output flag; a missing or unreadable flag is false (never chains a confirmation).</summary>
+	private static bool OutputFlagIsTrue(IReadOnlyDictionary<string, object?>? output, string key)
+	{
+		if (output is null || !output.TryGetValue(key, out object? value) || value is null)
+		{
+			return false;
+		}
+
+		if (value is System.Text.Json.JsonElement json)
+		{
+			return json.ValueKind == System.Text.Json.JsonValueKind.True;
+		}
+
+		return string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase) || value is true;
+	}
+
 
 	/// <summary>
 	/// Rebuilds the farm queue from a get_card_drops task output. Entries are
@@ -949,7 +1259,12 @@ public sealed class DesiredStateReconciler : BackgroundService
 	/// Queries the outcome of a long-outstanding orchestration job and accounts for it
 	/// (failure counting, idle flag). The job is cleared afterwards so the next pass can decide freely.
 	/// </summary>
-	private async Task SettleActiveJobAsync(AccountSpec spec, AccountRuntime runtime, CancellationToken cancellationToken)
+	private async Task SettleActiveJobAsync(
+		AccountSpec spec,
+		AccountRuntime runtime,
+		Dictionary<string, ConnectedAgent> connected,
+		Dictionary<string, int> load,
+		CancellationToken cancellationToken)
 	{
 		string jobId = runtime.ActiveJobId!;
 		string action = runtime.ActiveJobAction ?? LoginAction;
@@ -1027,6 +1342,85 @@ public sealed class DesiredStateReconciler : BackgroundService
 			else
 			{
 				runtime.LastDeviation = $"job {action} outcome: {playtimeTask.Status} {playtimeTask.Error}".TrimEnd();
+			}
+
+			return;
+		}
+
+		// Trade-loop outcomes follow the same tolerance rules (stamped CheckedAt,
+		// deviation instead of login-failure accounting). The query refreshes the
+		// pending gift list; the accept dispatches drain it one offer per pass,
+		// chaining a mobile confirmation when Steam demands one.
+		if (string.Equals(action, TradeOffersAction, StringComparison.Ordinal))
+		{
+			runtime.TradeOfferCheckedAt = DateTimeOffset.UtcNow;
+			JobTask? tradeTask = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
+				?? outcome.Tasks.FirstOrDefault();
+			if (tradeTask is null)
+			{
+				return;
+			}
+
+			if (tradeTask.Status == JobTaskStatus.Finished)
+			{
+				runtime.TradeOffersToAccept = ExtractPendingGiftOffers(tradeTask.Output, spec);
+				_logger.LogInformation("Trade-offer scan for {AccountName}: {Count} gift offer(s) eligible for auto-accept",
+					spec.AccountName, runtime.TradeOffersToAccept.Count);
+			}
+			else
+			{
+				runtime.LastDeviation = $"job {action} outcome: {tradeTask.Status} {tradeTask.Error}".TrimEnd();
+			}
+
+			return;
+		}
+
+		if (string.Equals(action, AcceptTradeOfferAction, StringComparison.Ordinal))
+		{
+			PendingGiftOffer? accepted = runtime.AcceptingOffer;
+			runtime.AcceptingOffer = null;
+			if (accepted is not null && runtime.TradeOffersToAccept is { Count: > 0 } queue
+				&& queue[0].OfferId == accepted.OfferId)
+			{
+				// Drain the decision whatever the outcome: a failed accept is
+				// recorded and retried only after the next refresh re-detects
+				// the offer, never spun on within this cycle.
+				queue.RemoveAt(0);
+			}
+
+			JobTask? acceptTask = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
+				?? outcome.Tasks.FirstOrDefault();
+			if (acceptTask is null)
+			{
+				return;
+			}
+
+			if (acceptTask.Status == JobTaskStatus.Finished)
+			{
+				_logger.LogInformation("Gift offer {OfferId} for {AccountName} accepted", accepted?.OfferId, spec.AccountName);
+				if (OutputFlagIsTrue(acceptTask.Output, "requires_mobile_confirmation"))
+				{
+					// Steam wants a mobile confirmation to finish the accept —
+					// chain confirm_trade_offer now (the identity secret never
+					// leaves the agent; the confirm action reads it there).
+					await DispatchTradeConfirmAsync(spec, runtime, connected, load, accepted?.OfferId ?? 0, cancellationToken).ConfigureAwait(false);
+				}
+			}
+			else
+			{
+				runtime.LastDeviation = $"gift offer {accepted?.OfferId} accept outcome: {acceptTask.Status} {acceptTask.Error}".TrimEnd();
+			}
+
+			return;
+		}
+
+		if (string.Equals(action, ConfirmTradeOfferAction, StringComparison.Ordinal))
+		{
+			JobTask? confirmTask = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
+				?? outcome.Tasks.FirstOrDefault();
+			if (confirmTask is not null && confirmTask.Status != JobTaskStatus.Finished)
+			{
+				runtime.LastDeviation = $"trade mobile confirmation outcome: {confirmTask.Status} {confirmTask.Error}".TrimEnd();
 			}
 
 			return;
@@ -1174,7 +1568,19 @@ public sealed class DesiredStateReconciler : BackgroundService
 			return PlaytimeInFlightWindow;
 		}
 
-		return string.Equals(action, CardDropsAction, StringComparison.Ordinal) ? CardDropsInFlightWindow : LoginInFlightWindow;
+		if (string.Equals(action, CardDropsAction, StringComparison.Ordinal))
+		{
+			return CardDropsInFlightWindow;
+		}
+
+		if (string.Equals(action, TradeOffersAction, StringComparison.Ordinal)
+			|| string.Equals(action, AcceptTradeOfferAction, StringComparison.Ordinal)
+			|| string.Equals(action, ConfirmTradeOfferAction, StringComparison.Ordinal))
+		{
+			return TradeInFlightWindow;
+		}
+
+		return LoginInFlightWindow;
 	}
 
 	/// <summary>Exponential backoff: base, 2x, 4x … capped at 15 minutes. Zero base disables cooldowns.</summary>
@@ -1253,6 +1659,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 			FarmQueueCheckedAt: runtime.FarmQueueCheckedAt == DateTimeOffset.MinValue ? null : runtime.FarmQueueCheckedAt,
 			BoostUnmetApps: runtime.BoostUnmetApps,
 			BoostCheckedAt: runtime.BoostCheckedAt == DateTimeOffset.MinValue ? null : runtime.BoostCheckedAt,
+			TradeOffersToAccept: runtime.TradeOffersToAccept?.Select(o => o.OfferId).ToList(),
+			TradeOfferCheckedAt: runtime.TradeOfferCheckedAt == DateTimeOffset.MinValue ? null : runtime.TradeOfferCheckedAt,
 			LastAction: runtime.LastAction,
 			LastActionAt: runtime.LastActionAt == DateTimeOffset.MinValue ? null : runtime.LastActionAt,
 			LastDeviation: runtime.LastDeviation
@@ -1274,12 +1682,18 @@ public sealed class DesiredStateReconciler : BackgroundService
 		public List<uint>? BoostUnmetApps;
 		public List<uint>? BoostPlayingApps;
 		public DateTimeOffset BoostCheckedAt = DateTimeOffset.MinValue;
+		public List<PendingGiftOffer>? TradeOffersToAccept;
+		public DateTimeOffset TradeOfferCheckedAt = DateTimeOffset.MinValue;
+		public PendingGiftOffer? AcceptingOffer;
 		public string? LastCountedFailureKey;
 		public int? SpecVersion;
 		public DateTimeOffset LastActionAt = DateTimeOffset.MinValue;
 		public string? LastAction;
 		public string? LastDeviation;
 	}
+
+	/// <summary>An incoming gifts-only offer from a whitelisted partner, awaiting its accept dispatch.</summary>
+	internal sealed record PendingGiftOffer(ulong OfferId, ulong PartnerSteamId64);
 }
 
 /// <summary>Read-only orchestration state for one account (aggregate view payload).</summary>
@@ -1295,6 +1709,8 @@ public sealed record AccountOrchestrationView(
 	DateTimeOffset? FarmQueueCheckedAt = null,
 	IReadOnlyList<uint>? BoostUnmetApps = null,
 	DateTimeOffset? BoostCheckedAt = null,
+	IReadOnlyList<ulong>? TradeOffersToAccept = null,
+	DateTimeOffset? TradeOfferCheckedAt = null,
 	string? LastAction = null,
 	DateTimeOffset? LastActionAt = null,
 	string? LastDeviation = null

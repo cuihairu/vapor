@@ -16,6 +16,7 @@ public sealed record Config(
 	int ReconcileSessionStalenessSeconds = 120,
 	int ReconcileFarmRefreshSeconds = 300,
 	int ReconcileBoostRefreshSeconds = 1800,
+	int ReconcileTradeRefreshSeconds = 600,
 	bool ReconcileDryRun = false,
 	string? WebhookNotificationsUrl = null,
 	string? WebhookNotificationsSecret = null,
@@ -51,6 +52,7 @@ public sealed record Config(
 		int reconcileSessionStalenessSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_SESSION_STALENESS_SECONDS"), out int staleness) && staleness > 0 ? staleness : 120;
 		int reconcileFarmRefreshSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_FARM_REFRESH_SECONDS"), out int farmRefresh) && farmRefresh > 0 ? farmRefresh : 300;
 		int reconcileBoostRefreshSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_BOOST_REFRESH_SECONDS"), out int boostRefresh) && boostRefresh > 0 ? boostRefresh : 1800;
+		int reconcileTradeRefreshSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_RECONCILE_TRADE_REFRESH_SECONDS"), out int tradeRefresh) && tradeRefresh > 0 ? tradeRefresh : 600;
 		bool reconcileDryRun = string.Equals(Environment.GetEnvironmentVariable("Vapor_RECONCILE_DRY_RUN"), "true", StringComparison.OrdinalIgnoreCase);
 		string? webhookUrl = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_URL");
 		string? webhookSecret = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_NOTIFICATIONS_SECRET");
@@ -75,7 +77,7 @@ public sealed record Config(
 			agentApiKeys.Add(key);
 		}
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs);
 	}
 }
 

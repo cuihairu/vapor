@@ -14,6 +14,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		DesiredStateReconciler.LoginInFlightWindow = TimeSpan.Zero;
 		DesiredStateReconciler.CardDropsInFlightWindow = TimeSpan.Zero;
 		DesiredStateReconciler.PlaytimeInFlightWindow = TimeSpan.Zero;
+		DesiredStateReconciler.TradeInFlightWindow = TimeSpan.Zero;
 	}
 
 	public void Dispose()
@@ -22,6 +23,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		DesiredStateReconciler.PlayInFlightWindow = TimeSpan.FromSeconds(120);
 		DesiredStateReconciler.CardDropsInFlightWindow = TimeSpan.FromSeconds(150);
 		DesiredStateReconciler.PlaytimeInFlightWindow = TimeSpan.FromSeconds(150);
+		DesiredStateReconciler.TradeInFlightWindow = TimeSpan.FromSeconds(60);
 	}
 
 	[Fact]
@@ -1502,7 +1504,8 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		int maxLoginAttempts = 3,
 		bool dryRun = false,
 		int farmRefreshSeconds = 300,
-		int intervalSeconds = 15)
+		int intervalSeconds = 15,
+		int tradeRefreshSeconds = 600)
 	{
 		var cfg = new Config(
 			"admin",
@@ -1519,6 +1522,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			ReconcileLoginCooldownSeconds: cooldownSeconds,
 			ReconcileSessionStalenessSeconds: 120,
 			ReconcileFarmRefreshSeconds: farmRefreshSeconds,
+			ReconcileTradeRefreshSeconds: tradeRefreshSeconds,
 			ReconcileDryRun: dryRun);
 
 		return new DesiredStateReconciler(
@@ -1530,6 +1534,188 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			auditStore ?? new FakeAuditStore(),
 			cfg,
 			NullLogger<DesiredStateReconciler>.Instance);
+	}
+
+	// ── §32 gift auto-accept loop ──
+
+	private const ulong Partner64 = 76561197960265728 + 456; // whitelist entry (steamId64)
+
+	private static IReadOnlyDictionary<string, object?> TradeOutput(params (string OfferId, string PartnerAccount, int GiveCount, bool IsOurs)[] offers)
+	{
+		return new Dictionary<string, object?>
+		{
+			["received_offers"] = offers.Select(o => new Dictionary<string, object?>
+			{
+				["trade_offer_id"] = o.OfferId,
+				["partner_steam_id"] = o.PartnerAccount,
+				["items_to_give_count"] = o.GiveCount,
+				["is_our_offer"] = o.IsOurs
+			}).ToList()
+		};
+	}
+
+	[Fact]
+	public async Task TradePolicyDisabled_ConnectedAccount_NeverScansTrades()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+	}
+
+	[Fact]
+	public async Task TradePolicyEnabled_ConnectedAccount_DispatchesActiveOnlyScan()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created);
+		Assert.Equal("get_trade_offers", jobs.Created[0].Action);
+		Assert.Equal(true, jobs.Created[0].Payload!["active_only"]);
+		Assert.Equal("desired-state", jobs.Created[0].Meta!["orchestrator"]);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.TradeOfferCheckedAt);
+	}
+
+	[Fact]
+	public async Task ScanResult_AcceptsOnlyWhitelistedGiftsOnlyOffers()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Pass 1: dispatch the scan. Pass 2: settle it — three offers where only
+		// the whitelisted, gifts-only one qualifies (give>0 skipped, partner
+		// outside the whitelist skipped) — and dispatch its accept.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(
+			("111", "456", 0, IsOurs: false),   // whitelisted partner, pure gift → accept
+			("222", "456", 2, IsOurs: false),   // whitelisted partner but asks items → skip (red line ③)
+			("333", "999", 0, IsOurs: false));  // pure gift but outside the whitelist → skip (red line ②)
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(2, jobs.Created.Count);
+		Assert.Equal("accept_trade_offer", jobs.Created[1].Action);
+		Assert.Equal("111", jobs.Created[1].Payload!["trade_offer_id"]);
+		Assert.Equal(Partner64.ToString(), jobs.Created[1].Payload!["partner_steam_id"]);
+		Assert.Equal(true, jobs.Created[1].Payload!["verify_state"]);
+		Assert.Equal([111UL], reconciler.GetOrchestrationView("alice")!.TradeOffersToAccept);
+	}
+
+	[Fact]
+	public async Task AcceptFinished_WithMobileConfirmationRequired_ChainsConfirmJob()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Scan → accept dispatch.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// Accept completes and Steam wants a mobile confirmation: the settle
+		// pass chains confirm_trade_offer immediately.
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = new Dictionary<string, object?> { ["requires_mobile_confirmation"] = true };
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(3, jobs.Created.Count);
+		Assert.Equal("confirm_trade_offer", jobs.Created[2].Action);
+		Assert.Equal("111", jobs.Created[2].Payload!["trade_offer_id"]);
+		Assert.Empty(reconciler.GetOrchestrationView("alice")!.TradeOffersToAccept!);
+	}
+
+	[Fact]
+	public async Task ScanFailed_MarksDeviationWithoutLoginBudgetAndWaitsInterval()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, tradeRefreshSeconds: 3600);
+
+		// Pass 1 dispatches the scan; pass 2 settles it as failed — a deviation,
+		// never a login failure; CheckedAt is stamped so the throttle (1h) holds.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Failed, "steam down");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// The deviation is visible right after the failing settle (a later
+		// healthy pass clears LastDeviation — same semantics as farm/boost).
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Contains("get_trade_offers", view.LastDeviation);
+		Assert.Equal(0, view.LoginAttempts);
+		Assert.Null(view.NextAttemptAt);
+
+		// Still inside the throttle window: no re-scan.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Single(jobs.Created);
+	}
+
+	[Fact]
+	public void ExtractPendingGiftOffers_HandlesJsonElementAndDictionaryForms()
+	{
+		AccountStore accounts = new();
+		AccountSpec spec = accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+
+		// SQLite round-trip shape: everything is a JsonElement. Missing give
+		// count reads as "unusable" (never auto-accepted); our own offers and
+		// unusable zero partner ids are skipped.
+		using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(
+			"""
+			[
+				{"trade_offer_id":"111","partner_steam_id":"456","items_to_give_count":0,"is_our_offer":false},
+				{"trade_offer_id":"444","partner_steam_id":"456","is_our_offer":false},
+				{"trade_offer_id":"555","partner_steam_id":"456","items_to_give_count":0,"is_our_offer":true},
+				{"trade_offer_id":"666","partner_steam_id":"0","items_to_give_count":0,"is_our_offer":false}
+			]
+			"""))
+		{
+			var jsonOutput = new Dictionary<string, object?> { ["received_offers"] = doc.RootElement.Clone() };
+			System.Collections.Generic.List<DesiredStateReconciler.PendingGiftOffer> offers =
+				DesiredStateReconciler.ExtractPendingGiftOffers(jsonOutput, spec);
+			Assert.Single(offers);
+			Assert.Equal(111UL, offers[0].OfferId);
+			Assert.Equal(Partner64, offers[0].PartnerSteamId64);
+		}
+
+		// Fresh dispatch shape: in-memory dictionaries.
+		var dictOutput = TradeOutput(("111", "456", 0, IsOurs: false));
+		Assert.Single(DesiredStateReconciler.ExtractPendingGiftOffers(dictOutput, spec));
+
+		// No policy / empty whitelist → nothing qualifies, ever.
+		AccountSpec bare = accounts.Upsert("bob", true, AccountDesiredState.Online, null, null, null, null);
+		Assert.Empty(DesiredStateReconciler.ExtractPendingGiftOffers(dictOutput, bare));
 	}
 
 	[Fact]
