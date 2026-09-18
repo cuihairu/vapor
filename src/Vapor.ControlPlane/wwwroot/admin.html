@@ -1056,6 +1056,130 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">市场与认领</h2>
+                            <div class="panel-subtitle">挂单管理与撤单、真实挂单（灰区，需账户开关）、积分商店与免费 license 认领。</div>
+                        </div>
+                    </div>
+
+                    <div class="row-head">
+                        <div class="strong">我的挂单</div>
+                        <div class="button-row">
+                            <input id="listingsStartInput" type="text" placeholder="start" style="width: 70px;">
+                            <input id="listingsCountInput" type="text" placeholder="count" style="width: 70px;">
+                            <button class="btn btn-secondary btn-small" id="refreshListingsButton">拉取挂单</button>
+                        </div>
+                    </div>
+                    <div class="list" id="marketListingsBox">
+                        <div class="empty-state">选择交易面板中的账户后拉取挂单。</div>
+                    </div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">按过滤撤单（dry_run 默认只预览）</div>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="cancelAppIdInput">app id</label>
+                            <input id="cancelAppIdInput" type="text" placeholder="753">
+                        </div>
+                        <div class="field">
+                            <label for="cancelHashInput">hash 名称（精确）</label>
+                            <input id="cancelHashInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label for="cancelMinPriceInput">最低价（分）</label>
+                            <input id="cancelMinPriceInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label for="cancelMaxPriceInput">最高价（分）</label>
+                            <input id="cancelMaxPriceInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label for="cancelOlderInput">挂龄超过（秒）</label>
+                            <input id="cancelOlderInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label><input id="cancelDryRunCheckbox" type="checkbox" checked> 仅预览（dry_run）</label>
+                        </div>
+                    </div>
+                    <div class="button-row">
+                        <button class="btn btn-danger btn-small" id="cancelListingsButton">执行撤单</button>
+                    </div>
+                    <div class="helper">真实撤单（不勾 dry_run）至少需要一个过滤条件，服务端拒绝无条件全撤。</div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">创建挂单（费用感知定价；默认 dry_run 预览）</div>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="createAppIdInput">app id</label>
+                            <input id="createAppIdInput" type="text" placeholder="753">
+                        </div>
+                        <div class="field">
+                            <label for="createContextInput">context id</label>
+                            <input id="createContextInput" type="text" placeholder="6">
+                        </div>
+                        <div class="field">
+                            <label for="createAssetInput">asset id</label>
+                            <input id="createAssetInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label for="createAmountInput">数量（默认 1）</label>
+                            <input id="createAmountInput" type="text" value="1">
+                        </div>
+                        <div class="field">
+                            <label for="createProceedsInput">卖方所得（分，二选一）</label>
+                            <input id="createProceedsInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label for="createBuyerInput">买方支付（分，二选一）</label>
+                            <input id="createBuyerInput" type="text">
+                        </div>
+                    </div>
+                    <div class="button-row">
+                        <button class="btn btn-secondary btn-small" id="previewListingButton">定价预览（dry_run）</button>
+                        <button class="btn btn-danger btn-small" id="sendListingButton">真实挂单（send）</button>
+                    </div>
+                    <div class="helper" id="marketSwitchHint">真实挂单要求账户开启市场开关（账户管理面板勾选「允许市场挂单」）且 agent 侧开关打开。</div>
+                    <div class="list" id="listingResultBox" hidden></div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">积分商店</div>
+                        <div class="button-row">
+                            <input id="pointsDefsInput" type="text" placeholder="definition ids CSV">
+                            <label><input id="pointsFreeOnlyCheckbox" type="checkbox"> 仅免费</label>
+                            <button class="btn btn-secondary btn-small" id="queryPointsButton">查余额与定义</button>
+                        </div>
+                    </div>
+                    <div class="list" id="pointsShopBox">
+                        <div class="empty-state">查询后展示余额与奖励定义。</div>
+                    </div>
+                    <div class="button-row" style="margin-top: 8px;">
+                        <label><input id="pointsForceCheckbox" type="checkbox"> force（付费定义，消耗积分）</label>
+                        <button class="btn btn-danger btn-small" id="claimPointsButton">认领上述 definition</button>
+                    </div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">免费 license 认领</div>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="licenseAppsInput">app ids（CSV，走客户端协议）</label>
+                            <input id="licenseAppsInput" type="text" placeholder="730, 570">
+                        </div>
+                        <div class="field">
+                            <label for="licenseSubsInput">sub ids（CSV，走商店 checkout）</label>
+                            <input id="licenseSubsInput" type="text">
+                        </div>
+                    </div>
+                    <div class="button-row">
+                        <button class="btn btn-primary btn-small" id="claimLicenseButton">认领免费内容</button>
+                    </div>
+                    <div class="helper">只加不减：认领免费游戏/ DLC；detail 15（已拥有）视为成功。</div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">事件日志</h2>
                             <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
                         </div>
@@ -1083,6 +1207,7 @@
             editingAccountName: null,
             tradeOffers: null,
             lastSwapPlan: null,
+            lastPointsDefinitions: null,
             streams: []
         };
 
@@ -1186,11 +1311,19 @@
             document.getElementById("tradeAccountSelect").addEventListener("change", () => {
                 state.tradeOffers = null;
                 renderTradeOffers();
+                updateMarketSwitchHint();
             });
             document.getElementById("runConfirmationsButton").addEventListener("click", () => runConfirmationsBatch());
             document.getElementById("sendLootButton").addEventListener("click", () => sendLoot());
             document.getElementById("findDuplicatesButton").addEventListener("click", () => findDuplicates());
             document.getElementById("sendSwapButton").addEventListener("click", () => sendSwapOffers());
+            document.getElementById("refreshListingsButton").addEventListener("click", () => refreshMarketListings());
+            document.getElementById("cancelListingsButton").addEventListener("click", () => cancelMarketListings());
+            document.getElementById("previewListingButton").addEventListener("click", () => createMarketListing(false));
+            document.getElementById("sendListingButton").addEventListener("click", () => createMarketListing(true));
+            document.getElementById("queryPointsButton").addEventListener("click", () => queryPointsShop());
+            document.getElementById("claimPointsButton").addEventListener("click", () => claimPointsShop());
+            document.getElementById("claimLicenseButton").addEventListener("click", () => claimLicense());
             document.getElementById("actionSelect").addEventListener("change", updatePayloadHint);
         }
 
@@ -1622,6 +1755,7 @@
             if (current && accounts.some((account) => account.accountName === current)) {
                 select.value = current;
             }
+            updateMarketSwitchHint();
         }
 
         function selectedTradeAccount() {
@@ -2061,6 +2195,307 @@
                 addEvent("trade", `换卡报价已发送（${result?.status === "pending" ? `作业 ${shortId(result.job_id)} 排队中` : "完成"}）`);
             } catch (error) {
                 alert(`换卡报价发送失败: ${error.message}`);
+            }
+        }
+
+        function updateMarketSwitchHint() {
+            const accountName = selectedTradeAccount();
+            const account = state.accounts.find((item) => item.accountName === accountName);
+            const sendButton = document.getElementById("sendListingButton");
+            const hint = document.getElementById("marketSwitchHint");
+            const enabled = Boolean(account?.marketListingsEnabled);
+            sendButton.disabled = !enabled;
+            hint.textContent = enabled
+                ? "账户已开启市场开关；真实挂单还要求 agent 侧 AGENT_MARKET_LISTINGS_ENABLED 打开。"
+                : "该账户未开启市场挂单开关——真实挂单按钮已禁用。到「账户管理」面板勾选「允许市场挂单」后再试（灰区操作，谨慎开启）。";
+        }
+
+        async function refreshMarketListings() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先在交易面板选择账户");
+                return;
+            }
+
+            const params = new URLSearchParams();
+            const start = parseInt(document.getElementById("listingsStartInput").value, 10);
+            const count = parseInt(document.getElementById("listingsCountInput").value, 10);
+            if (Number.isInteger(start) && start >= 0) {
+                params.set("start", String(start));
+            }
+            if (Number.isInteger(count) && count > 0) {
+                params.set("count", String(count));
+            }
+
+            try {
+                const data = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/market/listings?${params.toString()}`);
+                renderListingsBox(data.market_listings || {});
+            } catch (error) {
+                alert(`拉取挂单失败: ${error.message}`);
+            }
+        }
+
+        function renderListingsBox(payload) {
+            const container = document.getElementById("marketListingsBox");
+            const listings = payload.listings || payload.market_listings || [];
+            const total = payload.total_count ?? listings.length;
+            if (!listings.length) {
+                container.innerHTML = '<div class="empty-state">无挂单（或响应无列表字段，见折叠 JSON）。</div>';
+            } else {
+                container.innerHTML = listings.map((listing) => {
+                    const name = listing.market_hash_name || listing.hash_name || listing.name || "";
+                    const price = listing.buyer_pay ?? listing.price ?? listing.listing_price ?? "";
+                    return `
+                        <article class="card-row">
+                            <div class="row-head">
+                                <div class="title-group">
+                                    <div class="strong">${escapeHtml(String(name))}</div>
+                                    <div class="tiny mono">${escapeHtml(String(listing.listingid || listing.listing_id || listing.id || ""))}</div>
+                                </div>
+                                <span class="badge queued">${escapeHtml(String(price))}</span>
+                            </div>
+                        </article>
+                    `;
+                }).join("");
+            }
+
+            const details = document.createElement("details");
+            details.innerHTML = `
+                <summary class="tiny">共 ${escapeHtml(String(total))} 条 · 原始响应</summary>
+                <pre class="tiny mono" style="white-space: pre-wrap; overflow-x: auto;">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>
+            `;
+            container.appendChild(details);
+        }
+
+        async function cancelMarketListings() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先在交易面板选择账户");
+                return;
+            }
+
+            const dryRun = document.getElementById("cancelDryRunCheckbox").checked;
+            const appId = parseInt(document.getElementById("cancelAppIdInput").value, 10);
+            const minPrice = parseInt(document.getElementById("cancelMinPriceInput").value, 10);
+            const maxPrice = parseInt(document.getElementById("cancelMaxPriceInput").value, 10);
+            const olderThan = parseInt(document.getElementById("cancelOlderInput").value, 10);
+            const hashName = document.getElementById("cancelHashInput").value.trim();
+            const hasFilter = Number.isInteger(appId) && appId > 0 || hashName || Number.isInteger(minPrice) || Number.isInteger(maxPrice) || Number.isInteger(olderThan);
+
+            if (!dryRun && !hasFilter) {
+                alert("真实撤单至少需要一个过滤条件（或保留 dry_run 预览）");
+                return;
+            }
+            if (!dryRun) {
+                const confirmed = window.confirm("真实撤单将取消所有匹配的挂单。确认执行？");
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            const body = { dryRun };
+            if (Number.isInteger(appId) && appId > 0) {
+                body.appId = appId;
+            }
+            if (hashName) {
+                body.marketHashName = hashName;
+            }
+            if (Number.isInteger(minPrice)) {
+                body.minPriceCents = minPrice;
+            }
+            if (Number.isInteger(maxPrice)) {
+                body.maxPriceCents = maxPrice;
+            }
+            if (Number.isInteger(olderThan) && olderThan > 0) {
+                body.olderThanSeconds = olderThan;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/market/listings/cancel`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                addEvent("market", `撤单${dryRun ? "预览" : "已执行"}（${result?.status === "pending" ? `作业 ${shortId(result.job_id)} 排队中` : "完成"}）`);
+                renderOperationResult(document.getElementById("marketListingsBox"), result?.result ?? result, `撤单${dryRun ? "预览" : "结果"}`);
+            } catch (error) {
+                alert(`撤单失败: ${error.message}`);
+            }
+        }
+
+        // Shared renderer for one-shot operation outputs: compact result box with
+        // the raw JSON collapsed by default (agent outputs have no stable schema
+        // for the UI to promise).
+        function renderOperationResult(container, payload, label) {
+            container.hidden = false;
+            container.innerHTML = "";
+            const details = document.createElement("details");
+            details.innerHTML = `
+                <summary class="strong">${escapeHtml(label)}：<span class="tiny mono">${escapeHtml(JSON.stringify(payload?.success ?? payload?.confirmed ?? payload) || "无输出")}</span></summary>
+                <pre class="tiny mono" style="white-space: pre-wrap; overflow-x: auto;">${escapeHtml(JSON.stringify(payload, null, 2))}</pre>
+            `;
+            container.appendChild(details);
+        }
+
+        async function createMarketListing(send) {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先在交易面板选择账户");
+                return;
+            }
+
+            const account = state.accounts.find((item) => item.accountName === accountName);
+            if (send && !account?.marketListingsEnabled) {
+                alert("该账户未开启市场挂单开关——先到「账户管理」面板开启。");
+                return;
+            }
+
+            const appId = parseInt(document.getElementById("createAppIdInput").value, 10);
+            const amount = parseInt(document.getElementById("createAmountInput").value, 10);
+            const proceeds = parseInt(document.getElementById("createProceedsInput").value, 10);
+            const buyer = parseInt(document.getElementById("createBuyerInput").value, 10);
+            const contextId = document.getElementById("createContextInput").value.trim();
+            const assetId = document.getElementById("createAssetInput").value.trim();
+            if (!(Number.isInteger(appId) && appId > 0) || !assetId) {
+                alert("app id 与 asset id 为必填");
+                return;
+            }
+            if (Number.isInteger(proceeds) === Number.isInteger(buyer)) {
+                alert("卖方所得与买方支付恰好填一个");
+                return;
+            }
+
+            if (send) {
+                const confirmed = window.confirm("真实挂单是对外发布的市场报价（ToS 灰区操作）。确认发布？");
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            const body = { appId };
+            if (contextId) {
+                body.contextId = contextId;
+            }
+            body.assetId = assetId;
+            if (Number.isInteger(amount) && amount > 0) {
+                body.amount = amount;
+            }
+            if (Number.isInteger(proceeds)) {
+                body.sellerProceedsCents = proceeds;
+            }
+            if (Number.isInteger(buyer)) {
+                body.buyerPriceCents = buyer;
+            }
+            if (send) {
+                body.send = true;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/market/listings`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                addEvent("market", send ? "挂单已发布" : "挂单定价预览完成");
+                renderOperationResult(document.getElementById("listingResultBox"), result?.result ?? result, send ? "挂单结果" : "定价预览");
+            } catch (error) {
+                alert(`挂单失败: ${error.message}`);
+            }
+        }
+
+        async function queryPointsShop() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先在交易面板选择账户");
+                return;
+            }
+
+            const params = new URLSearchParams();
+            const defs = parseCsvInput(document.getElementById("pointsDefsInput").value);
+            if (defs.length) {
+                params.set("definitionIds", defs.join(","));
+            }
+            if (document.getElementById("pointsFreeOnlyCheckbox").checked) {
+                params.set("freeOnly", "true");
+            }
+
+            try {
+                const data = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/points-shop/summary?${params.toString()}`);
+                state.lastPointsDefinitions = defs.length ? defs : null;
+                const shop = data.points_shop || {};
+                renderOperationResult(document.getElementById("pointsShopBox"), shop, `积分商店（余额 ${JSON.stringify(shop.balance ?? "未知")}）`);
+            } catch (error) {
+                alert(`积分商店查询失败: ${error.message}`);
+            }
+        }
+
+        async function claimPointsShop() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先在交易面板选择账户");
+                return;
+            }
+
+            const definitions = parseCsvInput(document.getElementById("pointsDefsInput").value).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+            if (!definitions.length) {
+                alert("请填写要认领的 definition ids（CSV）");
+                return;
+            }
+
+            const force = document.getElementById("pointsForceCheckbox").checked;
+            if (force) {
+                const confirmed = window.confirm("force 将消耗积分认领付费定义——积分消费不可逆。确认执行？");
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            const body = { definitionIds: definitions };
+            if (force) {
+                body.force = true;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/points-shop/claim`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                addEvent("market", `积分商店认领已提交（${force ? "含付费" : "仅免费"}）`);
+                renderOperationResult(document.getElementById("pointsShopBox"), result?.result ?? result, "认领结果");
+            } catch (error) {
+                alert(`认领失败: ${error.message}`);
+            }
+        }
+
+        async function claimLicense() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先在交易面板选择账户");
+                return;
+            }
+
+            const appIds = parseCsvInput(document.getElementById("licenseAppsInput").value).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+            const subIds = parseCsvInput(document.getElementById("licenseSubsInput").value).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+            if (!appIds.length && !subIds.length) {
+                alert("app ids 与 sub ids 至少填一组");
+                return;
+            }
+
+            const body = {};
+            if (appIds.length) {
+                body.appIds = appIds;
+            }
+            if (subIds.length) {
+                body.subIds = subIds;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/licenses`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                addEvent("market", "免费 license 认领已提交");
+                renderOperationResult(document.getElementById("pointsShopBox"), result?.result ?? result, "认领结果");
+            } catch (error) {
+                alert(`认领失败: ${error.message}`);
             }
         }
 
