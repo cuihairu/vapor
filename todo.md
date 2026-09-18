@@ -680,3 +680,25 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 > 2026-09-18：**§29 遗留观察兑现——farm `refreshDue` 对齐（fix 提交 `db63bed`）**。farm 循环的 `FarmQueue is null` 短路撤除,改 `FarmQueueCheckedAt` 判定（MinValue=首查,盖章后等 `ReconcileFarmRefreshSeconds`）,失败/丢失的 get_card_drops 不再每 15s 重拉徽章页;派发 reason 与 null 队列守卫同步对齐 boost。行为变化:①`Farm_CardDropsTaskFailed_MarksDeviationOnly` 原断言「失败后同 pass 立即重试」改为「单查询 + deviation + 等间隔」;②`SettleActiveJob_CardDropsOutcomeWithoutTasks` 原断言「空队列永远 refresh-due 同 pass 重查」改为「安静结算不重查」——「task 行消失」与「查询失败」同等待遇,不再有「空队列=立即重查」的隐式通道。spec 变更/agent 消失/离开状态的重置段仍清 `FarmQueueCheckedAt=MinValue`,operator 想立即刷新依旧走 spec 更新。Reconciler 65 全绿 + 全量绿 + format 过,CI 以本轮提交为准。
 
 > 2026-09-18：**§28.2 收尾失速族定谳关闭（用户裁定提前关闭,docs 提交）**。观察数据:自 §28 修复窗口 09-17 18:00Z 起,**连续 13 轮已完成 ci run 全绿、windows 零发作**（09-17 四轮 + 09-18 九轮,含 §29 boost 八提交 + §30 两题 + farm 对齐的混合负载),为历史发作间隔（09-14→09-17 六发作 ≈ 每 6-8 轮一次）的约 1.6 倍;期间唯一异常 run `549575b` cancelled 经甄别为**调度层取消（零 job,4 分钟排队即被基础设施杀掉,非测试失速）**,不计发作。**定谳:收尾失速族 = vstest 宿主层基础设施 flake（§27 原始定性成立,「残留 park」假设撤销）**——依据:①在飞族修复已排除三处 park 舞蹈的全部违例路径（§28.1）;②混合负载高强度推送期零复发;③即便残留,`--blame-hang` 12 分钟快速红 + TestResults/hangdump 上传已把最坏代价从 45/60 分钟烧满压到 ≤12 分钟且有转储可取证,复发即按 §28.1 流程重开取证。三族 flake 图谱终版:§23 进程全局状态并行耦合（断言红,已修）、§25 等待信号错位（断言红,已修）、§27/§28 收尾失速（宿主层,守卫兜底 + 观察关闭)、§28 在飞失速（测试代码,已修）;§30 补第四支——Task.WaitAsync 完成-优先语义竞态（测试侧确定性化）。
+
+---
+
+## 31. Dashboard 全功能管理台扩展（📋 2026-09-18 立项，用户定向）
+
+> 立项动机：REST 能力面与 UI 覆盖严重失衡——CP 已有 **23 个写端点**（账户 PUT/DELETE、enable/disable、交易 accept/decline、批量确认、loot、swap、市场挂单/撤单、积分认领、license、爬虫计划 CRUD+trigger、作业创建/取消、账户+全局配置），而 admin.html UI 仅覆盖 4 类（挑战提交、作业创建/取消），其余 19 个全靠 curl。三页分工（dashboard 只读监控 / admin 管理 / gamedata 数据）中，admin 的管理面远落后于 API 面。
+
+### 31.1 现状盘点（2026-09-18）
+
+- [x] 三页现状：dashboard.html 1144 行（只读，双 SSE+轮询，DashboardStaticTests 锁 no-write-verb）；admin.html 1818 行（挑战/作业管理 + QR 登录，写契约允许）；gamedata.html 719 行（字典+结果浏览，只读契约同 dashboard）。
+- [x] UI 缺口清单（19 个无入口写端点）：`PUT /v1/accounts/{name}`（期望状态编辑）、`DELETE /v1/accounts/{name}`、`enable`/`disable`、`trade-offers accept/decline`、`confirmations/accept-all`、`loot`、`swap-offers`、`market/listings`（创建）+ `/cancel`、`points-shop/claim`、`licenses`、`crawl/plans` CRUD + trigger、`PUT /v1/config/account/{name}` + `/v1/config/global`。
+
+### 31.2 实施阶段（按风险递增；方向定案：扩展 admin.html，dashboard 只读契约不动）
+
+- [ ] **P1 账户生命周期面板**：期望状态查看/编辑（state/farm 排除/boost 目标/idle 名单表单化，PUT 透传）、enable/disable 按钮、删除账户（显式输入账户名确认）；账户列表复用 dashboard 同源 GET。
+- [ ] **P2 交易与确认面板**：报价列表（GET 既有）内联 accept/decline、批量确认（type/operation 过滤器）、loot 表单、换卡（duplicates 查看 + dry_run 方案展示 + send 确认）。
+- [ ] **P3 市场与认领面板**：挂单列表 + 过滤撤单（dry_run 默认）、挂单创建（费用感知定价预览 + send 双确认；账户市场开关未开启时 UI 禁用而非报错）、points-shop 认领（summary 展示 + 免费默认/付费 force 分离）、add_license 表单。
+- [ ] **P4 爬虫计划管理**：plans 列表/创建/编辑/删除/手动 trigger（cron 校验错误内联展示，复用 REST 语义）。
+- [ ] **P5 配置面板**：全局 config + 账户 config 表单化（env 覆盖提示，敏感项只显示是否已设不回显值）。
+- [ ] **P6 收尾**：production.md 三页分工说明更新、feature-matrix Web UI 行措辞刷新、DashboardStaticTests 扩展（admin 页写操作二次确认模式抽查 + 敏感值不回显契约）、CHANGELOG。
+
+> 红线与风险备注：①**dashboard.html 零写动词契约不变**——全功能管理台收敛在 admin.html（写契约既有页），三页分工不破坏；②破坏性操作（删账户、真实挂单、接受报价、force 付费认领）一律二次确认且确认文案含不可逆提示；③UI 是 REST 薄封装，无业务逻辑下沉，服务端校验是唯一真源（UI 禁用态只是引导，不能替代 4xx 呈现）；④认证沿用 admin 现行 authorization 模式，新面板零新增鉴权面；⑤灰区操作（市场挂单）UI 需读取并展示账户开关状态，开关关闭时按钮禁用 + 指引文案，而非点击后才报错；⑥单文件静态页模式沿用（无构建链），admin.html 体积增长可控性靠面板折叠分区维持。
