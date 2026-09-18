@@ -21,8 +21,23 @@ public enum AccountDesiredState
 	/// <see cref="AccountSpec.IdleApps"/> is interpreted as an exclusion list
 	/// (apps that must never be farmed) instead of the Idle whitelist.
 	/// </summary>
-	Farm = 3
+	Farm = 3,
+
+	/// <summary>
+	/// Playtime boosting: the orchestrator polls the account's total playtime
+	/// per game (profile games tab), idles apps that have not reached their
+	/// target hours and stops idling once every target is met. In this state
+	/// <see cref="AccountSpec.BoostTargets"/> drives the schedule.
+	/// </summary>
+	Boost = 4
 }
+
+/// <summary>
+/// One app's playtime-boost target: keep the app idling until its total
+/// lifetime playtime reaches <paramref name="TargetHours"/> (measured via the
+/// profile games tab, so the count includes playtime earned outside Vapor).
+/// </summary>
+public sealed record BoostTarget(uint AppId, double TargetHours);
 
 /// <summary>
 /// Desired-state specification for a farm account. This is metadata and intent only —
@@ -39,5 +54,6 @@ public sealed record AccountSpec(
 	string? AgentId = null,
 	string? Note = null,
 	ConfigVersion? Version = null,
-	bool MarketListingsEnabled = false
+	bool MarketListingsEnabled = false,
+	IReadOnlyList<BoostTarget>? BoostTargets = null
 );

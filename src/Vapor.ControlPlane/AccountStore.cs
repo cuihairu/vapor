@@ -44,9 +44,10 @@ public sealed class AccountStore
 		string? agentId,
 		string? note,
 		string? updatedBy = null,
-		bool? marketListingsEnabled = null)
+		bool? marketListingsEnabled = null,
+		IReadOnlyList<BoostTarget>? boostTargets = null)
 	{
-		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, out var normalizedAccountName);
+		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, boostTargets, out var normalizedAccountName);
 
 		lock (_gate)
 		{
@@ -122,6 +123,7 @@ public sealed class AccountStore
 		string? agentId,
 		string? note,
 		string? updatedBy,
+		IReadOnlyList<BoostTarget>? boostTargets,
 		out string normalizedAccountName)
 	{
 		if (string.IsNullOrWhiteSpace(accountName))
@@ -132,6 +134,13 @@ public sealed class AccountStore
 		normalizedAccountName = accountName.Trim();
 
 		var normalizedApps = NormalizeIdleApps(idleApps);
+		var normalizedTargets = NormalizeBoostTargets(boostTargets);
+		if (desiredState == AccountDesiredState.Boost && normalizedTargets is null)
+		{
+			throw new ArgumentException(
+				$"the {nameof(AccountDesiredState.Boost)} state requires at least one boost target",
+				nameof(boostTargets));
+		}
 
 		return new AccountSpec(
 			AccountName: normalizedAccountName,
@@ -141,8 +150,56 @@ public sealed class AccountStore
 			Region: NormalizeOptional(region),
 			AgentId: NormalizeOptional(agentId),
 			Note: NormalizeOptional(note),
-			Version: new ConfigVersion(1, DateTimeOffset.UtcNow, string.IsNullOrWhiteSpace(updatedBy) ? null : updatedBy)
+			Version: new ConfigVersion(1, DateTimeOffset.UtcNow, string.IsNullOrWhiteSpace(updatedBy) ? null : updatedBy),
+			BoostTargets: normalizedTargets
 		);
+	}
+
+	/// <summary>
+	/// Trims nothing (typed payload), drops empty entries, and validates that
+	/// every target is usable: a positive numeric app id and a finite positive
+	/// hour goal. The same app declared twice with different goals is a
+	/// contradictory configuration and is rejected; exact duplicates
+	/// collapse. Null when nothing remains.
+	/// </summary>
+	private static IReadOnlyList<BoostTarget>? NormalizeBoostTargets(IReadOnlyList<BoostTarget>? boostTargets)
+	{
+		if (boostTargets is not { Count: > 0 })
+		{
+			return null;
+		}
+
+		var byApp = new Dictionary<uint, BoostTarget>();
+		foreach (BoostTarget target in boostTargets)
+		{
+			if (target.AppId == 0)
+			{
+				continue;
+			}
+
+			if (!double.IsFinite(target.TargetHours) || target.TargetHours <= 0)
+			{
+				throw new ArgumentException(
+					$"boost target hours must be a finite positive number, got {target.TargetHours} for app {target.AppId}",
+					nameof(boostTargets));
+			}
+
+			if (byApp.TryGetValue(target.AppId, out BoostTarget? existing))
+			{
+				if (existing.TargetHours != target.TargetHours)
+				{
+					throw new ArgumentException(
+						$"app {target.AppId} declared twice with different boost targets ({existing.TargetHours} vs {target.TargetHours})",
+						nameof(boostTargets));
+				}
+
+				continue;
+			}
+
+			byApp[target.AppId] = target;
+		}
+
+		return byApp.Count > 0 ? [.. byApp.Values.OrderBy(t => t.AppId)] : null;
 	}
 
 	/// <summary>Trims, drops empties and duplicates, and validates that every app id is numeric; null when nothing remains.</summary>

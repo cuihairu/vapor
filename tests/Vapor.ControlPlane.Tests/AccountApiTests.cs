@@ -98,6 +98,75 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task PutAccount_BoostState_WithTargets_ReturnsThemSorted()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage put = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			enabled = true,
+			desiredState = "boost",
+			boostTargets = new[]
+			{
+				new { appId = 620u, targetHours = 36.7 },
+				new { appId = 220u, targetHours = 1234.5 }
+			}
+		});
+
+		Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+		string body = await put.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement spec = doc.RootElement.GetProperty("spec");
+
+		Assert.Equal("boost", spec.GetProperty("desiredState").GetString());
+		JsonElement targets = spec.GetProperty("boostTargets");
+		var enumerated = targets.EnumerateArray().ToList();
+		Assert.Equal(2, enumerated.Count);
+		Assert.Equal(220u, enumerated[0].GetProperty("appId").GetUInt32());
+		Assert.Equal(1234.5, enumerated[0].GetProperty("targetHours").GetDouble());
+		Assert.Equal(620u, enumerated[1].GetProperty("appId").GetUInt32());
+	}
+
+	[Fact]
+	public async Task PutAccount_BoostState_WithoutTargets_ReturnsBadRequest()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage put = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			enabled = true,
+			desiredState = "boost"
+		});
+
+		Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+	}
+
+	[Fact]
+	public async Task PutAccount_ConflictingBoostTargets_ReturnsBadRequest()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage put = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			enabled = true,
+			desiredState = "boost",
+			boostTargets = new[]
+			{
+				new { appId = 220u, targetHours = 10.0 },
+				new { appId = 220u, targetHours = 20.0 }
+			}
+		});
+
+		Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+	}
+
+	[Fact]
 	public async Task PutAccount_ReplacesExistingSpec()
 	{
 		await using var factory = CreateFactory();

@@ -181,6 +181,116 @@ public sealed class AccountStoreTests
 	}
 
 	[Fact]
+	public void Upsert_BoostState_WithoutTargets_Throws()
+	{
+		var store = new AccountStore();
+
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert("alice", enabled: true, AccountDesiredState.Boost, null, null, null, null));
+	}
+
+	[Fact]
+	public void Upsert_BoostTargets_NormalizesSortsAndKeepsUsableEntries()
+	{
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(620u, 36.7), new BoostTarget(0u, 5), new BoostTarget(220u, 1234.5)]);
+
+		// Zero app ids carry no playable identity; survivors sort by app id
+		// so the spec is independent of input order.
+		Assert.Equal(
+			new[] { new BoostTarget(220u, 1234.5), new BoostTarget(620u, 36.7) },
+			spec.BoostTargets);
+	}
+
+	[Fact]
+	public void Upsert_DuplicateIdenticalBoostTargets_Collapse()
+	{
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(220u, 10), new BoostTarget(220u, 10)]);
+
+		var only = Assert.Single(spec.BoostTargets!);
+		Assert.Equal(new BoostTarget(220u, 10), only);
+	}
+
+	[Fact]
+	public void Upsert_ConflictingBoostTargets_Throws()
+	{
+		var store = new AccountStore();
+
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert(
+				"alice", enabled: true, AccountDesiredState.Boost, null, null, null, null,
+				boostTargets: [new BoostTarget(220u, 10), new BoostTarget(220u, 20)]));
+	}
+
+	[Theory]
+	[InlineData(0)]
+	[InlineData(-5)]
+	public void Upsert_NonPositiveBoostTargetHours_Throws(double hours)
+	{
+		var store = new AccountStore();
+
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert(
+				"alice", enabled: true, AccountDesiredState.Boost, null, null, null, null,
+				boostTargets: [new BoostTarget(220u, hours)]));
+	}
+
+	[Fact]
+	public void Upsert_NonFiniteBoostTargetHours_Throws()
+	{
+		var store = new AccountStore();
+
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert(
+				"alice", enabled: true, AccountDesiredState.Boost, null, null, null, null,
+				boostTargets: [new BoostTarget(220u, double.NaN)]));
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert(
+				"alice", enabled: true, AccountDesiredState.Boost, null, null, null, null,
+				boostTargets: [new BoostTarget(220u, double.PositiveInfinity)]));
+	}
+
+	[Fact]
+	public void Upsert_AllTargetsFilteredOut_BecomesNull()
+	{
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Online, null, null, null, null,
+			boostTargets: [new BoostTarget(0u, 5)]);
+
+		Assert.Null(spec.BoostTargets);
+	}
+
+	[Fact]
+	public void Upsert_BoostTargets_PreservedAcrossOtherStates()
+	{
+		// Targets may be pre-configured before switching to the Boost state.
+		var store = new AccountStore();
+
+		AccountSpec online = store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Online, null, null, null, null,
+			boostTargets: [new BoostTarget(220u, 10)]);
+
+		AccountSpec updated = store.Upsert(
+			"ALICE", enabled: true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(220u, 10)]);
+
+		Assert.NotNull(online.BoostTargets);
+		Assert.Equal(2, updated.Version!.Version);
+		Assert.Equal(
+			new[] { new BoostTarget(220u, 10) },
+			updated.BoostTargets);
+	}
+
+	[Fact]
 	public void List_IsOrderedByAccountName()
 	{
 		var store = new AccountStore();
