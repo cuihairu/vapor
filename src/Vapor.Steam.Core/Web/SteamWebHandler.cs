@@ -325,7 +325,7 @@ public sealed class SteamWebHandler : IDisposable
 						_pendingRetryDelayMs = retryAfterMs;
 						_logger.LogWarning(
 							"Rate limited (429) on attempt {Attempt}/{MaxRetries} for {Url}; retrying in {DelayMs}ms",
-							attempt + 1, _config.MaxRetries, url, retryAfterMs);
+							attempt + 1, _config.MaxRetries, url, retryAfterMs); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
 						continue;
 					}
 				}
@@ -340,7 +340,7 @@ public sealed class SteamWebHandler : IDisposable
 						_pendingRetryDelayMs = ComputeExponentialBackoffMs(attempt);
 						_logger.LogWarning(
 							"Server error ({StatusCode}) on attempt {Attempt}/{MaxRetries} for {Url}; retrying in {DelayMs}ms",
-							statusCode, attempt + 1, _config.MaxRetries, url, _pendingRetryDelayMs);
+							statusCode, attempt + 1, _config.MaxRetries, url, _pendingRetryDelayMs); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
 						continue;
 					}
 				}

@@ -132,7 +132,7 @@ public sealed class SendTradeOfferAction : IAction
 			}
 
 			_logger.LogInformation("Sent trade offer {TradeOfferId} to {PartnerSteamId}",
-				result.TradeOfferId, partnerSteamId);
+				result.TradeOfferId, partnerSteamId); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
 
 			var output = new Dictionary<string, object?>
 			{
@@ -150,7 +150,7 @@ public sealed class SendTradeOfferAction : IAction
 		}
 		catch (Exception ex)
 		{
-			_logger.LogError(ex, "Failed to send trade offer to {PartnerSteamId}", partnerSteamId);
+			_logger.LogError(ex, "Failed to send trade offer to {PartnerSteamId}", partnerSteamId); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
 			return new ActionResult(false, ex.Message, null);
 		}
 	}

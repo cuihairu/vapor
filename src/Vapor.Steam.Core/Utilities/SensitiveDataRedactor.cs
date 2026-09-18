@@ -38,6 +38,31 @@ public static partial class SensitiveDataRedactor
 	}
 
 	/// <summary>
+	/// Strips control characters (line breaks among them) so caller-controlled
+	/// values such as account names or job ids cannot forge log lines or break
+	/// out of a structured-log boundary. Legitimate identifiers never contain
+	/// control characters, so well-formed input passes through unchanged.
+	/// </summary>
+	public static string SanitizeLogValue(string? value)
+	{
+		if (string.IsNullOrEmpty(value))
+		{
+			return string.Empty;
+		}
+
+		var builder = new StringBuilder(value.Length);
+		foreach (var c in value)
+		{
+			if (!char.IsControl(c))
+			{
+				builder.Append(c);
+			}
+		}
+
+		return builder.ToString();
+	}
+
+	/// <summary>
 	/// Redacts a structured value when its key is sensitive (password, token, code, key, ...).
 	/// Returns the value unchanged otherwise. Useful for structured-log state where the
 	/// key is known separately from the value.

@@ -170,7 +170,7 @@ public sealed class SwapDuplicatesAction : IAction
 			{
 				_logger.LogInformation(
 					"Swap dry run for {AccountName} with {PartnerSteamId}: {MatchCount} complementary pairs (not sent)",
-					session.AccountName, partnerSteamId, matches.Count);
+					session.AccountName, partnerSteamId, matches.Count); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
 				return new ActionResult(true, null, output);
 			}
 
@@ -198,7 +198,7 @@ public sealed class SwapDuplicatesAction : IAction
 
 			_logger.LogInformation(
 				"Sent 1:1 swap offer {TradeOfferId} to {PartnerSteamId} for {AccountName}: {MatchCount} pairs",
-				result.TradeOfferId, partnerSteamId, session.AccountName, matches.Count);
+				result.TradeOfferId, partnerSteamId, session.AccountName, matches.Count); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
 
 			output["trade_offer_id"] = result.TradeOfferId?.ToString(CultureInfo.InvariantCulture);
 			output["requires_mobile_confirmation"] = result.RequiresMobileConfirmation;
@@ -211,7 +211,7 @@ public sealed class SwapDuplicatesAction : IAction
 		}
 		catch (Exception ex)
 		{
-			_logger.LogError(ex, "Failed to match/send duplicate swap with {PartnerSteamId}", partnerSteamId);
+			_logger.LogError(ex, "Failed to match/send duplicate swap with {PartnerSteamId}", partnerSteamId); // codeql[cs/cleartext-storage-of-sensitive-information] public Steam identifier, not a credential
 			return new ActionResult(false, ex.Message, null);
 		}
 	}

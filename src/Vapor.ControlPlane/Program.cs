@@ -2792,8 +2792,8 @@ static async Task WriteAuditLog(
 		action,
 		GetAuditActor(ctx),
 		ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-		accountName ?? string.Empty,
-		jobId ?? string.Empty,
+		SensitiveDataRedactor.SanitizeLogValue(accountName),
+		SensitiveDataRedactor.SanitizeLogValue(jobId),
 		SensitiveDataRedactor.Redact(payload));
 
 	// Persist with the same redaction guarantees as the structured log.
