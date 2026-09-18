@@ -695,7 +695,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 ### 31.2 实施阶段（按风险递增；方向定案：扩展 admin.html，dashboard 只读契约不动）
 
 - [x] **P1 账户生命周期面板**：期望状态查看/编辑（state/farm 排除/boost 目标/idle 名单表单化，PUT 透传）、enable/disable 按钮、删除账户（显式输入账户名确认）；账户列表复用 dashboard 同源 GET。（✅ 2026-09-18 admin.html「账户管理」面板）
-- [ ] **P2 交易与确认面板**：报价列表（GET 既有）内联 accept/decline、批量确认（type/operation 过滤器）、loot 表单、换卡（duplicates 查看 + dry_run 方案展示 + send 确认）。
+- [x] **P2 交易与确认面板**：报价列表（GET 既有）内联 accept/decline、批量确认（type/operation 过滤器）、loot 表单、换卡（duplicates 查看 + dry_run 方案展示 + send 确认）。（✅ 2026-09-18 admin.html「交易与确认」面板）
 - [ ] **P3 市场与认领面板**：挂单列表 + 过滤撤单（dry_run 默认）、挂单创建（费用感知定价预览 + send 双确认；账户市场开关未开启时 UI 禁用而非报错）、points-shop 认领（summary 展示 + 免费默认/付费 force 分离）、add_license 表单。
 - [ ] **P4 爬虫计划管理**：plans 列表/创建/编辑/删除/手动 trigger（cron 校验错误内联展示，复用 REST 语义）。
 - [ ] **P5 配置面板**：全局 config + 账户 config 表单化（env 覆盖提示，敏感项只显示是否已设不回显值）。
@@ -719,3 +719,5 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [ ] **P4 收尾**：feature-matrix 交易行措辞、production.md 配置矩阵（env 开关）、CHANGELOG、全量测试 + CI。
 
 > 红线：①策略 per-account 显式开启，**默认关闭**，全局无「一键全开」；②白名单为空时策略等于未开启（双保险）；③非纯收报价即使白名单内也**永不**自动接受——等价性判断不做（ASF 同款取舍）；④评估循环失败容错与 farm/boost 同款（deviation 不吃登录预算）；⑤identity secret 不出 agent（复用既有 confirm 通道约束）。
+
+> 2026-09-18：**§31 P2 交易与确认面板落地（feat 提交，admin.html 单文件改动）**。①「交易与确认」面板（账户管理之后，右上账户下拉复用 §31 P1 拉取的 `state.accounts`）。②四子区：**报价**（`GET /v1/accounts/{name}/trade-offers?activeOnly=true` → 收入/发出合并渲染，收入侧内联「接受/拒绝」——accept 强制 confirm 弹窗且 body 携带列表输出的 partner_steam_id，verifyState 显式 true）；**mobile 确认批量**（type all/trade/market × operation allow/cancel 两下拉 + confirm 后 POST accept-all，helper 注明 identity secret 不出 agent）；**loot**（partnerSteamId 与 tradeUrl 二选一校验 + appIds 可选限定 + btn-danger + confirm 说明不可逆，响应里 mobile_confirmation 状态进事件日志）；**换卡**（查重复卡方案 → `<details>` 折叠 JSON 全文审阅 + 配对数摘要 → 「按方案发送报价」要求 lastSwapPlan 已存在且 partner 非空 → confirm 后 POST swap-offers `{send: true, keep, maxSwaps}`）。③202 pending 语义统一处理：响应 `{status:"pending"}` 时事件日志显示作业短 id 排队提示。④红线落实：全部写操作 confirm 前置、accept/loot/swap 三处弹窗均含「资产转移不可逆/核实对方身份」文案、UI 零业务逻辑（服务端校验是唯一真源）。验证：契约测试 9/9、全量 2185 全绿、format 门禁过、JS node --check 过。

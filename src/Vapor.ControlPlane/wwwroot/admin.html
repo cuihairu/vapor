@@ -965,6 +965,97 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">交易与确认</h2>
+                            <div class="panel-subtitle">报价处理、mobile 确认批量、loot 与换卡。接受与发送均为资产转移操作，请核实对方身份。</div>
+                        </div>
+                        <div class="field">
+                            <label for="tradeAccountSelect">账户</label>
+                            <select id="tradeAccountSelect">
+                                <option value="">正在加载账户...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row-head">
+                        <div class="strong">收到与发出的报价</div>
+                        <button class="btn btn-secondary btn-small" id="refreshOffersButton">拉取报价</button>
+                    </div>
+                    <div class="list" id="tradeOfferList">
+                        <div class="empty-state">选择账户后拉取报价列表。</div>
+                    </div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">Mobile 确认批量</div>
+                        <div class="button-row">
+                            <select id="confirmTypeSelect">
+                                <option value="all">全部类型</option>
+                                <option value="trade">交易</option>
+                                <option value="market">市场</option>
+                            </select>
+                            <select id="confirmOperationSelect">
+                                <option value="allow">同意</option>
+                                <option value="cancel">取消</option>
+                            </select>
+                            <button class="btn btn-primary btn-small" id="runConfirmationsButton">执行批量确认</button>
+                        </div>
+                    </div>
+                    <div class="helper">批量处理该账户的全部待确认项（identity secret 只存在 agent 侧，不经过控制面）。</div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">Loot（转出全部可交易物品）</div>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="lootPartnerInput">对方 SteamID64（与好友交易）</label>
+                            <input id="lootPartnerInput" type="text" placeholder="7656119...">
+                        </div>
+                        <div class="field">
+                            <label for="lootTradeUrlInput">或带 token 的交易链接（可达非好友）</label>
+                            <input id="lootTradeUrlInput" type="text" placeholder="https://steamcommunity.com/tradeoffer/new/?partner=...&token=...">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="lootAppIdsInput">限定 app（CSV，留空为全部可交易物品）</label>
+                        <input id="lootAppIdsInput" type="text" placeholder="753, 730">
+                    </div>
+                    <div class="button-row">
+                        <button class="btn btn-danger btn-small" id="sendLootButton">发送 Loot</button>
+                    </div>
+                    <div class="helper">Loot 会把库存可交易物品全部转给对方且不可逆；发送后 mobile 确认自动续派。</div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">1:1 换卡（等价交换）</div>
+                        <div class="button-row">
+                            <button class="btn btn-secondary btn-small" id="findDuplicatesButton">查重复卡方案</button>
+                            <button class="btn btn-danger btn-small" id="sendSwapButton">按方案发送报价</button>
+                        </div>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="swapAppIdsInput">app（CSV，默认 753 Steam 卡牌）</label>
+                            <input id="swapAppIdsInput" type="text" placeholder="753">
+                        </div>
+                        <div class="field">
+                            <label for="swapKeepInput">每张保留份数</label>
+                            <input id="swapKeepInput" type="text" value="1">
+                        </div>
+                        <div class="field">
+                            <label for="swapPartnerInput">对方 SteamID64</label>
+                            <input id="swapPartnerInput" type="text" placeholder="7656119...">
+                        </div>
+                        <div class="field">
+                            <label for="swapMaxPairsInput">最大配对数</label>
+                            <input id="swapMaxPairsInput" type="text" value="25">
+                        </div>
+                    </div>
+                    <div class="list" id="swapResultBox">
+                        <div class="empty-state">先「查重复卡方案」审阅配对，再「按方案发送报价」。</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">事件日志</h2>
                             <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
                         </div>
@@ -990,6 +1081,8 @@
             selectedJobId: null,
             accounts: [],
             editingAccountName: null,
+            tradeOffers: null,
+            lastSwapPlan: null,
             streams: []
         };
 
@@ -1089,6 +1182,15 @@
             document.getElementById("refreshAccountsButton").addEventListener("click", () => refreshAccounts());
             document.getElementById("saveAccountButton").addEventListener("click", () => saveAccountEdits());
             document.getElementById("cancelEditButton").addEventListener("click", () => closeAccountEditor());
+            document.getElementById("refreshOffersButton").addEventListener("click", () => refreshTradeOffers());
+            document.getElementById("tradeAccountSelect").addEventListener("change", () => {
+                state.tradeOffers = null;
+                renderTradeOffers();
+            });
+            document.getElementById("runConfirmationsButton").addEventListener("click", () => runConfirmationsBatch());
+            document.getElementById("sendLootButton").addEventListener("click", () => sendLoot());
+            document.getElementById("findDuplicatesButton").addEventListener("click", () => findDuplicates());
+            document.getElementById("sendSwapButton").addEventListener("click", () => sendSwapOffers());
             document.getElementById("actionSelect").addEventListener("change", updatePayloadHint);
         }
 
@@ -1507,6 +1609,23 @@
             const data = await apiFetch("/v1/accounts");
             state.accounts = data.accounts || [];
             renderAccounts();
+            populateTradeAccountSelect();
+        }
+
+        function populateTradeAccountSelect() {
+            const select = document.getElementById("tradeAccountSelect");
+            const current = select.value;
+            const accounts = [...state.accounts].sort((a, b) => String(a.accountName).localeCompare(String(b.accountName), "zh-CN"));
+            select.innerHTML = accounts.length
+                ? accounts.map((account) => `<option value="${escapeHtml(account.accountName)}">${escapeHtml(account.accountName)}${account.enabled ? "" : "（已禁用）"}</option>`).join("")
+                : '<option value="">暂无账户</option>';
+            if (current && accounts.some((account) => account.accountName === current)) {
+                select.value = current;
+            }
+        }
+
+        function selectedTradeAccount() {
+            return document.getElementById("tradeAccountSelect").value || null;
         }
 
         function renderAccounts() {
@@ -1708,6 +1827,240 @@
                 await refreshAccounts();
             } catch (error) {
                 alert(`删除失败: ${error.message}`);
+            }
+        }
+
+        async function refreshTradeOffers() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先选择账户");
+                return;
+            }
+
+            try {
+                const data = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/trade-offers?activeOnly=true`);
+                state.tradeOffers = data.offers || {};
+                renderTradeOffers();
+            } catch (error) {
+                alert(`拉取报价失败: ${error.message}`);
+            }
+        }
+
+        function renderTradeOffers() {
+            const container = document.getElementById("tradeOfferList");
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                container.innerHTML = '<div class="empty-state">选择账户后拉取报价列表。</div>';
+                return;
+            }
+            if (!state.tradeOffers) {
+                container.innerHTML = '<div class="empty-state">尚未拉取，点击上方「拉取报价」。</div>';
+                return;
+            }
+
+            const offers = [
+                ...(state.tradeOffers.received_offers || []).map((offer) => ({ ...offer, incoming: true })),
+                ...(state.tradeOffers.sent_offers || []).map((offer) => ({ ...offer, incoming: false }))
+            ];
+            if (!offers.length) {
+                container.innerHTML = '<div class="empty-state">无活跃报价。</div>';
+                return;
+            }
+
+            container.innerHTML = offers.map((offer) => {
+                const direction = offer.incoming ? "收入" : "发出";
+                const summary = `给 ${offer.items_to_give_count || 0} 件 · 收 ${offer.items_to_receive_count || 0} 件`;
+                const actions = offer.incoming
+                    ? `<button class="btn btn-danger btn-small" data-accept-offer="${escapeHtml(offer.trade_offer_id)}" data-partner="${escapeHtml(offer.partner_steam_id)}">接受</button>
+                       <button class="btn btn-secondary btn-small" data-decline-offer="${escapeHtml(offer.trade_offer_id)}">拒绝</button>`
+                    : "";
+                return `
+                    <article class="card-row">
+                        <div class="row-head">
+                            <div class="title-group">
+                                <div class="strong">#${escapeHtml(offer.trade_offer_id)} <span class="tiny">（${direction}）</span></div>
+                                <div class="tiny mono">partner: ${escapeHtml(offer.partner_steam_id)} · ${escapeHtml(offer.state || "")}</div>
+                            </div>
+                            <span class="badge ${offer.incoming ? "queued" : "canceled"}">${summary}</span>
+                        </div>
+                        ${offer.message ? `<div class="helper">附言: ${escapeHtml(offer.message)}</div>` : ""}
+                        ${actions ? `<div class="button-row">${actions}</div>` : ""}
+                    </article>
+                `;
+            }).join("");
+
+            container.querySelectorAll("[data-accept-offer]").forEach((button) => {
+                button.addEventListener("click", () => decideOffer(button.dataset.acceptOffer, button.dataset.partner, "accept"));
+            });
+            container.querySelectorAll("[data-decline-offer]").forEach((button) => {
+                button.addEventListener("click", () => decideOffer(button.dataset.declineOffer, button.dataset.partner, "decline"));
+            });
+        }
+
+        async function decideOffer(offerId, partnerSteamId, decision) {
+            if (decision === "accept") {
+                const confirmed = window.confirm(`接受报价 #${offerId} 会把对方给出的物品转入库存并付出我方物品（若有）。资产转移不可逆，确认对方身份？`);
+                if (!confirmed) {
+                    return;
+                }
+            }
+
+            try {
+                const body = decision === "accept"
+                    ? { partnerSteamId, verifyState: true }
+                    : { verifyState: true };
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(selectedTradeAccount())}/trade-offers/${encodeURIComponent(offerId)}/${decision}`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                addEvent("trade", `报价 #${offerId} 已${decision === "accept" ? "接受" : "拒绝"}（${result?.status === "pending" ? `作业 ${shortId(result.job_id)} 排队中` : "完成"}）`);
+                await refreshTradeOffers();
+            } catch (error) {
+                alert(`${decision === "accept" ? "接受" : "拒绝"}报价失败: ${error.message}`);
+            }
+        }
+
+        async function runConfirmationsBatch() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先选择账户");
+                return;
+            }
+
+            const operation = document.getElementById("confirmOperationSelect").value;
+            const type = document.getElementById("confirmTypeSelect").value;
+            const confirmed = window.confirm(`批量${operation === "allow" ? "同意" : "取消"}该账户全部「${type === "all" ? "所有类型" : type === "trade" ? "交易" : "市场"}」待确认项？`);
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/confirmations/accept-all`, {
+                    method: "POST",
+                    body: JSON.stringify({ operation, type })
+                });
+                addEvent("trade", `批量确认已提交（${result?.status === "pending" ? `作业 ${shortId(result.job_id)} 排队中` : "完成"}）`);
+            } catch (error) {
+                alert(`批量确认失败: ${error.message}`);
+            }
+        }
+
+        async function sendLoot() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先选择账户");
+                return;
+            }
+
+            const partnerSteamId = document.getElementById("lootPartnerInput").value.trim();
+            const tradeUrl = document.getElementById("lootTradeUrlInput").value.trim();
+            const appIds = parseCsvInput(document.getElementById("lootAppIdsInput").value).map(Number);
+            if (!partnerSteamId && !tradeUrl) {
+                alert("对方 SteamID64 与交易链接至少填一个");
+                return;
+            }
+
+            const confirmed = window.confirm(`Loot 会把账户 ${accountName} 的${appIds.length ? `指定 app（${appIds.join(", ")}）` : "全部"}可交易物品转给对方且不可逆。确认发送？`);
+            if (!confirmed) {
+                return;
+            }
+
+            const body = partnerSteamId ? { partnerSteamId } : { tradeUrl };
+            if (appIds.length) {
+                body.appIds = appIds;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/loot`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                const mobileNote = result?.mobile_confirmation ? "，mobile 确认已续派" : "";
+                addEvent("trade", `Loot 已发送（${result?.status === "pending" ? `作业 ${shortId(result.job_id)} 排队中` : `完成${mobileNote}`}）`);
+            } catch (error) {
+                alert(`Loot 发送失败: ${error.message}`);
+            }
+        }
+
+        async function findDuplicates() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先选择账户");
+                return;
+            }
+
+            const appIds = parseCsvInput(document.getElementById("swapAppIdsInput").value).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+            const keep = Number(document.getElementById("swapKeepInput").value) || 1;
+
+            try {
+                const params = new URLSearchParams({ keep: String(keep) });
+                if (appIds.length) {
+                    params.set("appIds", appIds.join(","));
+                }
+                const data = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/duplicates?${params.toString()}`);
+                state.lastSwapPlan = data.duplicates || {};
+                renderSwapPlan();
+            } catch (error) {
+                alert(`查询重复卡失败: ${error.message}`);
+            }
+        }
+
+        function renderSwapPlan() {
+            const container = document.getElementById("swapResultBox");
+            const plan = state.lastSwapPlan;
+            if (!plan) {
+                container.innerHTML = '<div class="empty-state">先「查重复卡方案」审阅配对，再「按方案发送报价」。</div>';
+                return;
+            }
+
+            const swaps = plan.swaps || plan.pairs || [];
+            const details = document.createElement("details");
+            details.innerHTML = `
+                <summary class="strong">重复卡方案：${swaps.length ? `${swaps.length} 对可交换` : "无可交换的重复卡"}</summary>
+                <pre class="tiny mono" style="white-space: pre-wrap; overflow-x: auto;">${escapeHtml(JSON.stringify(plan, null, 2))}</pre>
+            `;
+            container.innerHTML = "";
+            container.appendChild(details);
+        }
+
+        async function sendSwapOffers() {
+            const accountName = selectedTradeAccount();
+            if (!accountName) {
+                alert("请先选择账户");
+                return;
+            }
+
+            const partnerSteamId = document.getElementById("swapPartnerInput").value.trim();
+            if (!partnerSteamId) {
+                alert("请填写对方 SteamID64");
+                return;
+            }
+            if (!state.lastSwapPlan) {
+                alert("请先「查重复卡方案」审阅配对");
+                return;
+            }
+
+            const appIds = parseCsvInput(document.getElementById("swapAppIdsInput").value).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+            const keep = Number(document.getElementById("swapKeepInput").value) || 1;
+            const maxSwaps = Number(document.getElementById("swapMaxPairsInput").value) || 25;
+            const confirmed = window.confirm(`按已审阅的方案向 ${partnerSteamId} 发送 1:1 换卡报价？确认后我方多余卡将进入交易。`);
+            if (!confirmed) {
+                return;
+            }
+
+            const body = { partnerSteamId, keep, maxSwaps, send: true };
+            if (appIds.length) {
+                body.appIds = appIds;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/swap-offers`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                addEvent("trade", `换卡报价已发送（${result?.status === "pending" ? `作业 ${shortId(result.job_id)} 排队中` : "完成"}）`);
+            } catch (error) {
+                alert(`换卡报价发送失败: ${error.message}`);
             }
         }
 
