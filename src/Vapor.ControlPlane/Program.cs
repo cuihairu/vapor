@@ -674,6 +674,30 @@ app.MapGet("/v1/accounts/{name}/achievements", async (HttpContext ctx, Config cf
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
+app.MapPost("/v1/accounts/{name}/achievements/unlock", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, AchievementWriteRequest? req) =>
+{
+	return await DispatchAchievementWrite(ctx, cfg, audit, auditLogger, accounts, store, name, req, unlock: true);
+})
+	.WithTags("Accounts")
+	.WithSummary("Unlock the named achievements of one game (explicit name list required; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPost("/v1/accounts/{name}/achievements/reset", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, AchievementWriteRequest? req) =>
+{
+	return await DispatchAchievementWrite(ctx, cfg, audit, auditLogger, accounts, store, name, req, unlock: false);
+})
+	.WithTags("Accounts")
+	.WithSummary("Reset (clear) the named achievements of one game (explicit names + confirm:true required; 202 + job id when still pending, 502 when the task fails)")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
 app.MapGet("/v1/accounts/{name}/inventory", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, string? appIds, string? appId, string? contextId, string? steamId, bool? tradableOnly, bool? marketableOnly) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
@@ -2972,6 +2996,85 @@ static async Task<IResult> RunOfferDecisionAsync(
 }
 
 /// <summary>
+/// Shared body of the achievement unlock/reset endpoints: the control-plane
+/// side of the §33 double gate — names must be an explicit non-empty list
+/// (no implicit full-batch path exists) and reset additionally demands
+/// confirm: true. The action layer enforces the same two gates independently.
+/// </summary>
+static async Task<IResult> DispatchAchievementWrite(
+	HttpContext ctx,
+	Config cfg,
+	IAuditStore audit,
+	ILogger auditLogger,
+	AccountStore accounts,
+	IJobStore store,
+	string name,
+	AchievementWriteRequest? req,
+	bool unlock)
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name.Trim());
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	if (req is null || req.AppId is not { } appId || appId == 0)
+	{
+		return Results.BadRequest(new ErrorResponse("appId is required (positive app id)"));
+	}
+
+	List<string> names = (req.Names ?? [])
+		.Where(n => !string.IsNullOrWhiteSpace(n))
+		.Select(n => n.Trim())
+		.Distinct(StringComparer.OrdinalIgnoreCase)
+		.ToList();
+	if (names.Count == 0)
+	{
+		return Results.BadRequest(new ErrorResponse("names is required: an explicit non-empty list of achievement API names (no implicit full-batch path exists)"));
+	}
+
+	if (!unlock && req.Confirm != true)
+	{
+		return Results.BadRequest(new ErrorResponse("confirm must be explicitly true for a reset (destructive operation)"));
+	}
+
+	TaskRunResult run = unlock
+		? await AccountTaskRunner.UnlockAchievementsAsync(store, spec.AccountName, appId, names, ctx.RequestAborted)
+		: await AccountTaskRunner.ResetAchievementsAsync(store, spec.AccountName, appId, names, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		unlock ? "achievement.unlock" : "achievement.reset",
+		accountName: spec.AccountName,
+		jobId: run.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["appId"] = appId,
+			["names"] = names.ToList(),
+			["outcome"] = run.Status.ToString()
+		});
+
+	if (run.Status == JobTaskStatus.Finished)
+	{
+		return Results.Ok(new { job_id = run.JobId, account = spec.AccountName, app_id = appId, result = run.Output });
+	}
+
+	if (run.Status != JobTaskStatus.Queued)
+	{
+		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
+	}
+
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+}
+
+/// <summary>
 /// Reads a boolean flag from a task output dictionary, tolerating both in-memory
 /// values and the JsonElement shapes a SQLite JSON round-trip produces.
 /// </summary>
@@ -3140,6 +3243,16 @@ public sealed record SwapOfferRequest(
 public sealed record LicenseRequest(
 	int[]? AppIds = null,
 	int[]? SubIds = null
+);
+
+// Request body for the achievement unlock/reset endpoints. The name list is the
+// whole contract: there is no "all achievements" path — names must be explicit
+// and non-empty; reset additionally requires confirm: true (both enforced here
+// and again at the action layer).
+public sealed record AchievementWriteRequest(
+	uint? AppId = null,
+	List<string>? Names = null,
+	bool? Confirm = null
 );
 
 // Request body for creating a crawl plan (game-data harvesting). One-shot unless

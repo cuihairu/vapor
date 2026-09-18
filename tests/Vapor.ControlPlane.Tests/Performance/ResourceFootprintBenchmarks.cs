@@ -15,6 +15,7 @@ namespace Vapor.ControlPlane.Tests.Performance;
 ///
 /// Assertions use generous bounds so GC/runtime differences never flake.
 /// </summary>
+[Collection(AllocationBenchmarkCollection.Name)]
 public class ResourceFootprintBenchmarks
 {
 	private const int OperationCount = 200;

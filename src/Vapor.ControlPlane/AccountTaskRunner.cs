@@ -30,6 +30,8 @@ internal static class AccountTaskRunner
 	internal const string GetPointsShopSummaryAction = "get_points_shop_summary";
 	internal const string ClaimPointsShopItemsAction = "claim_points_shop_items";
 	internal const string GetAchievementsAction = "get_achievements";
+	internal const string UnlockAchievementsAction = "unlock_achievements";
+	internal const string ResetAchievementsAction = "reset_achievements";
 
 	/// <summary>Lists an account's own market listings via the get_my_market_listings action.</summary>
 	public static Task<TaskRunResult> ReadMarketListingsAsync(
@@ -136,6 +138,46 @@ internal static class AccountTaskRunner
 			new Dictionary<string, object?> { ["app_id"] = appId.ToString(CultureInfo.InvariantCulture) },
 			cancellationToken);
 	}
+
+	/// <summary>Unlocks the named achievements via the unlock_achievements action (names must be explicit and non-empty).</summary>
+	public static Task<TaskRunResult> UnlockAchievementsAsync(
+		IJobStore store,
+		string accountName,
+		uint appId,
+		IReadOnlyList<string> names,
+		CancellationToken cancellationToken)
+	{
+		return DispatchAsync(
+			store,
+			UnlockAchievementsAction,
+			accountName,
+			BuildAchievementWritePayload(appId, names),
+			cancellationToken);
+	}
+
+	/// <summary>Resets the named achievements via the reset_achievements action (names explicit + confirm).</summary>
+	public static Task<TaskRunResult> ResetAchievementsAsync(
+		IJobStore store,
+		string accountName,
+		uint appId,
+		IReadOnlyList<string> names,
+		CancellationToken cancellationToken)
+	{
+		var payload = BuildAchievementWritePayload(appId, names);
+		payload["confirm"] = true;
+		return DispatchAsync(
+			store,
+			ResetAchievementsAction,
+			accountName,
+			payload,
+			cancellationToken);
+	}
+
+	private static Dictionary<string, object?> BuildAchievementWritePayload(uint appId, IReadOnlyList<string> names) => new()
+	{
+		["app_id"] = appId.ToString(CultureInfo.InvariantCulture),
+		["names"] = names.ToList()
+	};
 
 	/// <summary>
 	/// Creates a one-target job for the account and polls it to a terminal state.

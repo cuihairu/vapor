@@ -63,6 +63,36 @@ public interface ISteamTransport
 	/// <summary>Redeems one points shop reward definition on the logged-on account. Returns null only when not connected; a Steam-side rejection comes back as the result code.</summary>
 	Task<RedeemPointsResult?> RedeemPointsShopItemAsync(uint definitionId, CancellationToken cancellationToken = default);
 
+	/// <summary>
+	/// Loads the logged-on account's stats blob for one game — the protocol
+	/// precondition for any achievement write (stats must be loaded before the
+	/// server accepts a store). Null when not connected or Steam did not answer.
+	/// </summary>
+	Task<UserStatsLoadResult?> LoadUserStatsAsync(uint appId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Stores a full stats blob back (achievement bits ride in these entries).
+	/// Null when not connected or Steam did not answer; a Steam-side rejection
+	/// comes back as the result code.
+	/// </summary>
+	Task<UserStatsStoreResult?> StoreUserStatsAsync(uint appId, uint crcStats, IReadOnlyList<UserStatsEntry> stats, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Lists a game's achievement API names in schema order (the list index is
+	/// the achievement id the stats bitmap addresses). Null when not connected
+	/// or Steam did not answer.
+	/// </summary>
+	Task<AchievementNamesResult?> GetGameAchievementNamesAsync(uint appId, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Sets the named achievements to unlocked or reset for the logged-on
+	/// account: loads stats first (protocol precondition — a load failure fails
+	/// the batch, never skips it), maps the names via the game schema, patches
+	/// the stats bitmap, stores, then reads back and verifies every claim.
+	/// Null when not connected or Steam did not answer at the load step.
+	/// </summary>
+	Task<AchievementWriteResult?> SetAchievementStatesAsync(uint appId, IReadOnlyList<string> names, bool unlock, CancellationToken cancellationToken = default);
+
 	/// <summary>Plays the specified games on Steam. Pass an empty set to stop playing all games.</summary>
 	void PlayGames(HashSet<uint> appIds);
 
@@ -172,3 +202,41 @@ public sealed record QrLoginResult(
 	string? Error = null,
 	string? RefreshToken = null
 );
+
+/// <summary>One numeric stats entry of a game's stats blob; achievement bits live in these too.</summary>
+public sealed record UserStatsEntry(uint StatId, uint StatValue);
+
+/// <summary>Steam's own record of when achievements were unlocked (an independent view of the bitmap).</summary>
+public sealed record AchievementUnlockBlock(uint AchievementId, IReadOnlyList<uint> UnlockTimes);
+
+/// <summary>A successfully loaded user stats blob (crc + entries + unlock blocks).</summary>
+public sealed record UserStatsLoad(
+	uint CrcStats,
+	IReadOnlyList<UserStatsEntry> Stats,
+	IReadOnlyList<AchievementUnlockBlock> AchievementBlocks);
+
+/// <summary>Outcome of a stats load request; <see cref="Load"/> is non-null only when the result is OK.</summary>
+public sealed record UserStatsLoadResult(SteamResult Result, UserStatsLoad? Load);
+
+/// <summary>Outcome of a stats store request.</summary>
+public sealed record UserStatsStoreResult(
+	SteamResult Result,
+	bool StatsOutOfDate,
+	IReadOnlyList<uint> FailedValidationStatIds);
+
+/// <summary>Schema query result: the game's achievement API names in schema order.</summary>
+public sealed record AchievementNamesResult(SteamResult Result, IReadOnlyList<string> InternalNames);
+
+/// <summary>Per-achievement write outcome — entries reflect reality, failures included.</summary>
+public sealed record AchievementWriteEntry(string Name, bool Success, string? Detail);
+
+/// <summary>
+/// Aggregate outcome of one unlock/reset batch. <see cref="Verified"/> records
+/// whether a post-store read-back confirmed the bitmap; entries are adjusted
+/// when verification shows a claim did not stick.
+/// </summary>
+public sealed record AchievementWriteResult(
+	bool Success,
+	SteamResult Result,
+	IReadOnlyList<AchievementWriteEntry> Entries,
+	bool Verified);

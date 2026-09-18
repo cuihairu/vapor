@@ -93,6 +93,61 @@ public sealed class MockSteamClientManager : ISteamClientManager
 		return Task.FromResult<RedeemPointsResult?>(_redeemPointsResult ?? new RedeemPointsResult(SteamResult.OK, definitionId));
 	}
 
+	public Task<UserStatsLoadResult?> LoadUserStatsAsync(uint appId, CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult<UserStatsLoadResult?>(_userStatsLoad ?? new UserStatsLoadResult(SteamResult.OK, new UserStatsLoad(0, [], [])));
+	}
+
+	public Task<UserStatsStoreResult?> StoreUserStatsAsync(uint appId, uint crcStats, IReadOnlyList<UserStatsEntry> stats, CancellationToken cancellationToken = default)
+	{
+		StoreCalls.Add((appId, crcStats, stats.ToList()));
+		return Task.FromResult<UserStatsStoreResult?>(_userStatsStore ?? new UserStatsStoreResult(SteamResult.OK, false, []));
+	}
+
+	public Task<AchievementNamesResult?> GetGameAchievementNamesAsync(uint appId, CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult<AchievementNamesResult?>(_achievementNames ?? new AchievementNamesResult(SteamResult.OK, []));
+	}
+
+	public Task<AchievementWriteResult?> SetAchievementStatesAsync(uint appId, IReadOnlyList<string> names, bool unlock, CancellationToken cancellationToken = default)
+	{
+		SetAchievementStatesCalls.Add((appId, names.ToList(), unlock));
+		return Task.FromResult(_achievementWriteResult);
+	}
+
+	internal List<(uint AppId, uint CrcStats, List<UserStatsEntry> Stats)> StoreCalls { get; } = [];
+
+	internal List<(uint AppId, List<string> Names, bool Unlock)> SetAchievementStatesCalls { get; } = [];
+
+	private UserStatsLoadResult? _userStatsLoad;
+	private UserStatsStoreResult? _userStatsStore;
+	private AchievementNamesResult? _achievementNames;
+	private AchievementWriteResult? _achievementWriteResult;
+
+	/// <summary>Sets the result to return from LoadUserStatsAsync.</summary>
+	public void SetUserStatsLoad(UserStatsLoadResult result)
+	{
+		_userStatsLoad = result;
+	}
+
+	/// <summary>Sets the result to return from StoreUserStatsAsync.</summary>
+	public void SetUserStatsStore(UserStatsStoreResult result)
+	{
+		_userStatsStore = result;
+	}
+
+	/// <summary>Sets the result to return from GetGameAchievementNamesAsync.</summary>
+	public void SetAchievementNames(AchievementNamesResult result)
+	{
+		_achievementNames = result;
+	}
+
+	/// <summary>Sets the result to return from SetAchievementStatesAsync.</summary>
+	public void SetAchievementWriteResult(AchievementWriteResult? result)
+	{
+		_achievementWriteResult = result;
+	}
+
 	public void PlayGames(HashSet<uint> appIds) { }
 
 	public IReadOnlySet<uint> GetPlayingGames()
