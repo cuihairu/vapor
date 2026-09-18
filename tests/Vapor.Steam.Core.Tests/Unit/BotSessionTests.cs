@@ -243,27 +243,39 @@ public class BotSessionTests : IDisposable
 	}
 
 	[Fact]
-	public async Task ExecuteActionAsync_WithTimeout_ThrowsTimeoutException()
+	public async Task ExecuteActionAsync_CancelWhileActionRunning_ThrowsOperationCanceledException()
 	{
 		// Arrange
 		var session = CreateSession();
 		session.Start();
 
+		// Park the action on the caller token, but only cancel once the action is
+		// provably parked (mock TCS signal, not a timed race): a 100ms CancelAfter
+		// can fire before the command loop even picks the command up, and on CI a
+		// preempted caller thread can then reach its WaitAsync after the loop has
+		// already settled the completion source — WaitAsync returns the completed
+		// result and no exception ever surfaces. With the park-then-cancel ordering,
+		// the caller's WaitAsync holds the earliest registration on the token, so
+		// cancellation deterministically surfaces as OperationCanceledException.
+		var started = new TaskCompletionSource();
 		var mockAction = new Mock<IAction>();
 		mockAction.Setup(a => a.Metadata).Returns(new ActionMetadata("test", "Test", RequiresLogin: false, 30));
 		mockAction.Setup(a => a.ExecuteAsync(It.IsAny<Vapor.Steam.Core.BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
 			.Returns(async (Vapor.Steam.Core.BotSession s, IReadOnlyDictionary<string, object?> p, CancellationToken ct) =>
 			{
-				await Task.Delay(TimeSpan.FromMinutes(1), ct);
+				started.SetResult();
+				await Task.Delay(Timeout.InfiniteTimeSpan, ct);
 				return new ActionResult(true, null, new Dictionary<string, object?>());
 			});
 		_actionRegistryMock.Setup(r => r.Get("test")).Returns(mockAction.Object);
 
+		var cts = new CancellationTokenSource();
+		var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
+		await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
 		// Act & Assert
-		var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-		await Assert.ThrowsAnyAsync<OperationCanceledException>(
-			() => session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token)
-		);
+		cts.Cancel();
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => call);
 	}
 
 	[Fact]

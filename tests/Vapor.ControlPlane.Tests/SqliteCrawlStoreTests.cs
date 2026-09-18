@@ -233,6 +233,13 @@ public sealed class SqliteCrawlStoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task GetPlan_WithUnknownId_ReturnsNull()
+	{
+		await _store.UpsertPlanAsync(SamplePlan());
+		Assert.Null(await _store.GetPlanAsync("no-such-plan"));
+	}
+
+	[Fact]
 	public async Task PruneRuns_WithNonPositiveKeep_ReturnsZeroWithoutDeleting()
 	{
 		await _store.UpsertPlanAsync(SamplePlan());
