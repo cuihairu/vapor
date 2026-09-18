@@ -29,6 +29,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 	private const string LoginAction = "login";
 	private const string PlayGamesAction = "play_games";
 	private const string CardDropsAction = "get_card_drops";
+	private const string PlaytimeAction = "get_playtime";
 
 	/// <summary>A dispatched login job normally finishes well inside its 60s timeout; past this window the outcome is queried.</summary>
 	internal static TimeSpan LoginInFlightWindow = TimeSpan.FromSeconds(150);
@@ -36,6 +37,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 	internal static TimeSpan PlayInFlightWindow = TimeSpan.FromSeconds(120);
 	/// <summary>Same idea for get_card_drops jobs (120s timeout).</summary>
 	internal static TimeSpan CardDropsInFlightWindow = TimeSpan.FromSeconds(150);
+	/// <summary>Same idea for get_playtime jobs (120s timeout, heavy games-tab page).</summary>
+	internal static TimeSpan PlaytimeInFlightWindow = TimeSpan.FromSeconds(150);
 	/// <summary>Backoff ceiling for consecutive login failures.</summary>
 	private static readonly TimeSpan MaxCooldown = TimeSpan.FromMinutes(15);
 	private static readonly HashSet<string> TransitionalStates = new(StringComparer.Ordinal)
@@ -60,6 +63,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 	private long _loginsDispatched;
 	private long _playsDispatched;
 	private long _cardDropsDispatched;
+	private long _playtimeDispatched;
 	private long _rebalances;
 	private long _unassignments;
 	private long _throttledSkips;
@@ -72,6 +76,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 	public long PlaysDispatched => Interlocked.Read(ref _playsDispatched);
 	/// <summary>get_card_drops jobs dispatched since startup (smart farming queue refreshes).</summary>
 	public long CardDropsDispatched => Interlocked.Read(ref _cardDropsDispatched);
+	/// <summary>get_playtime jobs dispatched since startup (boost schedule refreshes).</summary>
+	public long PlaytimesDispatched => Interlocked.Read(ref _playtimeDispatched);
 	/// <summary>Accounts moved to a different agent after their assigned agent disappeared.</summary>
 	public long Rebalances => Interlocked.Read(ref _rebalances);
 	/// <summary>Assignments dropped because the desired state became offline or the account was disabled.</summary>
@@ -198,6 +204,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 			runtime.NextAttemptAt = DateTimeOffset.MinValue;
 			runtime.FarmQueue = null;
 			runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
+			runtime.BoostUnmetApps = null;
+			runtime.BoostPlayingApps = null;
+			runtime.BoostCheckedAt = DateTimeOffset.MinValue;
 		}
 
 		// 1. Assigned agent disappeared → drop the assignment and rebalance below.
@@ -215,6 +224,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			runtime.ActiveJobAction = null;
 			runtime.Idling = false;
 			runtime.FarmingAppId = null;
+			runtime.BoostPlayingApps = null;
 			Interlocked.Increment(ref _rebalances);
 			await RecordActionAsync(spec, null, "rebalanced", $"agent '{lost}' disconnected", cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
@@ -252,10 +262,19 @@ public sealed class DesiredStateReconciler : BackgroundService
 				return;
 			}
 
-			// Leaving the farm state drops its queue bookkeeping.
+			if (spec.DesiredState == AccountDesiredState.Boost)
+			{
+				await ReconcileBoostAsync(spec, runtime, connected, load, now, cancellationToken).ConfigureAwait(false);
+				return;
+			}
+
+			// Leaving the farm/boost state drops its bookkeeping.
 			runtime.FarmQueue = null;
 			runtime.FarmingAppId = null;
 			runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
+			runtime.BoostUnmetApps = null;
+			runtime.BoostPlayingApps = null;
+			runtime.BoostCheckedAt = DateTimeOffset.MinValue;
 
 			if (spec.DesiredState == AccountDesiredState.Idle && spec.IdleApps is { Count: > 0 } && !runtime.Idling && now >= runtime.NextAttemptAt)
 			{
@@ -375,6 +394,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 		runtime.FarmQueue = null;
 		runtime.FarmingAppId = null;
 		runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
+		runtime.BoostUnmetApps = null;
+		runtime.BoostPlayingApps = null;
+		runtime.BoostCheckedAt = DateTimeOffset.MinValue;
 		runtime.LastAction = "unassigned";
 		runtime.LastActionAt = DateTimeOffset.UtcNow;
 		Interlocked.Increment(ref _unassignments);
@@ -455,11 +477,107 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 		if (queue.Count > 0)
 		{
-			await DispatchPlayAsync(spec, runtime, connected, load, stop: false, farmAppId: queue[0], cancellationToken).ConfigureAwait(false);
+			await DispatchPlayAsync(spec, runtime, connected, load, stop: false, farmAppId: queue[0], cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 		else if (runtime.Idling || runtime.FarmingAppId is not null)
 		{
 			// Everything is farmed out: stop idling, keep the session online.
+			await DispatchPlayAsync(spec, runtime, connected, load, stop: true, cancellationToken: cancellationToken).ConfigureAwait(false);
+		}
+	}
+
+	/// <summary>
+	/// Playtime-boosting loop for a connected account in the <see cref="AccountDesiredState.Boost"/>
+	/// state: periodically refreshes total playtime per game by dispatching a
+	/// get_playtime job, then idles every app that has not reached its target
+	/// hours (the account's IdleApps list still acts as an exclusion list, so
+	/// an app can be kept out of both farming and boosting). When every target
+	/// is met it stops idling but keeps the session online. Playtime query
+	/// failures only mark a deviation and wait for the next refresh interval —
+	/// they never consume the login failure budget.
+	/// </summary>
+	private async Task ReconcileBoostAsync(
+		AccountSpec spec,
+		AccountRuntime runtime,
+		Dictionary<string, ConnectedAgent> connected,
+		Dictionary<string, int> load,
+		DateTimeOffset now,
+		CancellationToken cancellationToken)
+	{
+		// A playtime query (or play job) is still in flight — wait for it.
+		if (runtime.ActiveJobId is not null)
+		{
+			return;
+		}
+
+		// A failed or unusable report stamps BoostCheckedAt without setting the
+		// unmet set, so the interval — not "set is null" — gates the retry; this
+		// keeps a flapping games-tab page from being re-polled every pass.
+		bool refreshDue = runtime.BoostCheckedAt == DateTimeOffset.MinValue
+			|| now - runtime.BoostCheckedAt >= TimeSpan.FromSeconds(_cfg.ReconcileBoostRefreshSeconds);
+		if (refreshDue)
+		{
+			ConnectedAgent? agent = PickAgent(spec, connected, load, PlaytimeAction);
+			if (agent is null)
+			{
+				Interlocked.Increment(ref _noAgentSkips);
+				runtime.LastDeviation = "no capable agent available";
+				return;
+			}
+
+			if (!await GuardDryRunAsync(spec, runtime, $"would dispatch get_playtime to agent '{agent.Hello.AgentId}'", cancellationToken).ConfigureAwait(false))
+			{
+				return;
+			}
+
+			JobWithTasks job = await _jobs.CreateJob(
+				new CreateJobRequest(
+					Action: PlaytimeAction,
+					Region: spec.Region,
+					Targets: [spec.AccountName],
+					Payload: new Dictionary<string, object?>(),
+					Meta: new Dictionary<string, string> { ["orchestrator"] = OrchestratorMeta }),
+				cancellationToken).ConfigureAwait(false);
+
+			runtime.AssignedAgent = agent.Hello.AgentId;
+			runtime.ActiveJobId = job.Job.Id;
+			runtime.ActiveJobAction = PlaytimeAction;
+			runtime.ActiveJobDispatchedAt = now;
+			runtime.LastAction = "playtime_dispatched";
+			runtime.LastActionAt = now;
+			runtime.LastDeviation = null;
+			load[agent.Hello.AgentId] = load.GetValueOrDefault(agent.Hello.AgentId) + 1;
+			Interlocked.Increment(ref _playtimeDispatched);
+
+			await RecordActionAsync(spec, job.Job.Id, "playtime_dispatched",
+				reason: runtime.BoostCheckedAt == DateTimeOffset.MinValue ? "initial playtime query" : "playtime refresh",
+				agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
+			return;
+		}
+
+		// The report is fresh — keep the playing set aligned with the unmet targets.
+		// No set means the last report was unusable: change nothing and wait for
+		// the next refresh (treating it as "all met" would stop idling).
+		if (runtime.BoostUnmetApps is not { } unmet)
+		{
+			return;
+		}
+		bool playingTargets = runtime.BoostPlayingApps is not null
+			&& runtime.BoostPlayingApps.Count == unmet.Count
+			&& runtime.BoostPlayingApps.All(unmet.Contains);
+		if (unmet.Count > 0)
+		{
+			if (playingTargets)
+			{
+				return; // already idling exactly the unmet apps
+			}
+
+			await DispatchPlayAsync(spec, runtime, connected, load, stop: false,
+				boostGames: string.Join(",", unmet), cancellationToken: cancellationToken).ConfigureAwait(false);
+		}
+		else if (runtime.Idling || runtime.BoostPlayingApps is { Count: > 0 })
+		{
+			// Every target met: stop idling, keep the session online.
 			await DispatchPlayAsync(spec, runtime, connected, load, stop: true, cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 	}
@@ -517,6 +635,160 @@ public sealed class DesiredStateReconciler : BackgroundService
 		}
 
 		return queue;
+	}
+
+	/// <summary>
+	/// Computes the unmet boost targets from a get_playtime task output: target
+	/// apps whose reported total hours are below their goal — or that are
+	/// missing from the report entirely (conservative: an absent app keeps
+	/// idling until it shows up with enough hours; mistaking missing data for
+	/// "reached the target" would stop boosting early). The account's IdleApps
+	/// list acts as an exclusion list, mirroring farming. Returns null when the
+	/// output is unusable (missing/malformed report) — the caller keeps its
+	/// previous state, because an empty unmet set would otherwise read as "all
+	/// targets met". Accepts both in-memory dictionaries and JsonElement
+	/// objects (SQLite round-trip).
+	/// </summary>
+	internal static List<uint>? ExtractBoostUnmet(IReadOnlyDictionary<string, object?>? output, AccountSpec spec)
+	{
+		if (output is null || !output.TryGetValue("playtimes", out object? raw) || raw is null)
+		{
+			return null;
+		}
+
+		var targets = spec.BoostTargets;
+		if (targets is not { Count: > 0 })
+		{
+			return [];
+		}
+
+		var reported = new Dictionary<uint, double>();
+		bool valid = true;
+		void Collect(object? entry)
+		{
+			if (!valid || !TryReadPlaytimeEntry(entry, out uint appId, out double hours))
+			{
+				valid = false;
+				return;
+			}
+
+			reported[appId] = hours;
+		}
+
+		// After the SQLite JSON round-trip the array (and its entries) are
+		// JsonElements; freshly dispatched outputs carry in-memory dictionaries.
+		if (raw is System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Array } jsonArray)
+		{
+			foreach (System.Text.Json.JsonElement entry in jsonArray.EnumerateArray())
+			{
+				Collect(entry);
+			}
+		}
+		else if (raw is System.Collections.IEnumerable entries and not string)
+		{
+			foreach (object? entry in entries)
+			{
+				Collect(entry);
+			}
+		}
+		else
+		{
+			valid = false;
+		}
+
+		if (!valid)
+		{
+			return null;
+		}
+
+		var excluded = new HashSet<string>(StringComparer.Ordinal);
+		foreach (string app in spec.IdleApps ?? [])
+		{
+			excluded.Add(app.Trim());
+		}
+
+		// Targets are stored app-id ascending, so the unmet list is too.
+		var unmet = new List<uint>();
+		foreach (BoostTarget target in targets)
+		{
+			if (excluded.Contains(target.AppId.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+			{
+				continue;
+			}
+
+			if (!reported.TryGetValue(target.AppId, out double hours) || hours < target.TargetHours)
+			{
+				unmet.Add(target.AppId);
+			}
+		}
+
+		return unmet;
+	}
+
+	private static bool TryReadPlaytimeEntry(object? entry, out uint appId, out double hours)
+	{
+		appId = 0;
+		hours = 0;
+
+		if (entry is Dictionary<string, object?> dict)
+		{
+			return TryGetNumber(dict, "app_id", out long id)
+				&& NormalizeAppId(id, out appId)
+				&& TryGetDouble(dict, "hours", out hours)
+				&& hours >= 0;
+		}
+
+		if (entry is System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Object } element)
+		{
+			return TryGetNumberFromElement(element, "app_id", out long jsonId)
+				&& NormalizeAppId(jsonId, out appId)
+				&& TryGetDoubleFromElement(element, "hours", out hours)
+				&& hours >= 0;
+		}
+
+		return false;
+	}
+
+	private static bool NormalizeAppId(long id, out uint appId)
+	{
+		appId = id is > 0 and <= uint.MaxValue ? (uint)id : 0;
+		return appId != 0;
+	}
+
+	private static bool TryGetDouble(Dictionary<string, object?> dict, string key, out double value)
+	{
+		value = 0;
+		if (!dict.TryGetValue(key, out object? raw) || raw is null)
+		{
+			return false;
+		}
+
+		switch (raw)
+		{
+			case double d:
+				value = d;
+				return true;
+			case long l:
+				value = l;
+				return true;
+			case int i:
+				value = i;
+				return true;
+			case System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } element:
+				return element.TryGetDouble(out value);
+			case string s:
+				return double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
+			default:
+				return false;
+		}
+	}
+
+	private static bool TryGetDoubleFromElement(System.Text.Json.JsonElement element, string name, out double value)
+	{
+		value = 0;
+		return element.TryGetProperty(name, out System.Text.Json.JsonElement property)
+			&& property.ValueKind == System.Text.Json.JsonValueKind.Number
+			&& property.TryGetDouble(out value);
 	}
 
 	private static bool TryReadDropEntry(object? entry, out uint appId, out int remaining)
@@ -598,6 +870,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 		Dictionary<string, int> load,
 		bool stop,
 		uint? farmAppId = null,
+		string? boostGames = null,
 		CancellationToken cancellationToken = default)
 	{
 		ConnectedAgent? agent = PickAgent(spec, connected, load, PlayGamesAction);
@@ -614,7 +887,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 		}
 
 		var payload = new Dictionary<string, object?>();
-		if (!stop && spec.DesiredState == AccountDesiredState.Farm && farmAppId is uint app)
+		if (!stop && boostGames is { Length: > 0 })
+		{
+			payload["games"] = boostGames;
+		}
+		else if (!stop && spec.DesiredState == AccountDesiredState.Farm && farmAppId is uint app)
 		{
 			payload["games"] = app.ToString(System.Globalization.CultureInfo.InvariantCulture);
 		}
@@ -642,6 +919,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 		runtime.ActiveJobDispatchedAt = DateTimeOffset.UtcNow;
 		runtime.Idling = !stop;
 		runtime.FarmingAppId = stop ? null : farmAppId;
+		runtime.BoostPlayingApps = stop ? null : (boostGames is { Length: > 0 }
+			? boostGames.Split(',').Select(a => uint.TryParse(a, System.Globalization.CultureInfo.InvariantCulture, out uint id) ? id : 0).Where(id => id != 0).ToList()
+			: runtime.BoostPlayingApps);
 		runtime.NextAttemptAt = runtime.ActiveJobDispatchedAt + Cooldown(1);
 		runtime.LastAction = stop ? "stop_dispatched" : "idle_dispatched";
 		runtime.LastActionAt = runtime.ActiveJobDispatchedAt;
@@ -650,8 +930,10 @@ public sealed class DesiredStateReconciler : BackgroundService
 		Interlocked.Increment(ref _playsDispatched);
 
 		string reason = stop
-			? (spec.DesiredState == AccountDesiredState.Farm ? "farm queue empty" : "desired online")
-			: (farmAppId is not null ? $"farm app {farmAppId}" : "desired idle");
+			? (spec.DesiredState == AccountDesiredState.Boost ? "all boost targets met"
+				: spec.DesiredState == AccountDesiredState.Farm ? "farm queue empty" : "desired online")
+			: (boostGames is { Length: > 0 } ? $"boost apps {boostGames}"
+				: farmAppId is not null ? $"farm app {farmAppId}" : "desired idle");
 		await RecordActionAsync(spec, job.Job.Id, stop ? "stop_dispatched" : "idle_dispatched",
 			reason: reason, agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
 	}
@@ -702,6 +984,42 @@ public sealed class DesiredStateReconciler : BackgroundService
 			else
 			{
 				runtime.LastDeviation = $"job {action} outcome: {dropsTask.Status} {dropsTask.Error}".TrimEnd();
+			}
+
+			return;
+		}
+
+		// Playtime query outcomes feed the boost schedule with the same rules:
+		// no login-failure accounting, stamped refresh time, deviations instead
+		// of retries. An invalid report leaves the previous unmet set untouched
+		// — an empty set would read as "all targets met" and stop idling.
+		if (string.Equals(action, PlaytimeAction, StringComparison.Ordinal))
+		{
+			runtime.BoostCheckedAt = DateTimeOffset.UtcNow;
+			JobTask? playtimeTask = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
+				?? outcome.Tasks.FirstOrDefault();
+			if (playtimeTask is null)
+			{
+				return;
+			}
+
+			if (playtimeTask.Status == JobTaskStatus.Finished)
+			{
+				List<uint>? unmet = ExtractBoostUnmet(playtimeTask.Output, spec);
+				if (unmet is not null)
+				{
+					runtime.BoostUnmetApps = unmet;
+					_logger.LogInformation("Boost schedule for {AccountName} refreshed: {Count} app(s) below target",
+						spec.AccountName, unmet.Count);
+				}
+				else
+				{
+					runtime.LastDeviation = $"job {action} returned no usable playtime report";
+				}
+			}
+			else
+			{
+				runtime.LastDeviation = $"job {action} outcome: {playtimeTask.Status} {playtimeTask.Error}".TrimEnd();
 			}
 
 			return;
@@ -844,6 +1162,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 			return PlayInFlightWindow;
 		}
 
+		if (string.Equals(action, PlaytimeAction, StringComparison.Ordinal))
+		{
+			return PlaytimeInFlightWindow;
+		}
+
 		return string.Equals(action, CardDropsAction, StringComparison.Ordinal) ? CardDropsInFlightWindow : LoginInFlightWindow;
 	}
 
@@ -921,6 +1244,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 			FarmingAppId: runtime.FarmingAppId,
 			FarmQueue: runtime.FarmQueue,
 			FarmQueueCheckedAt: runtime.FarmQueueCheckedAt == DateTimeOffset.MinValue ? null : runtime.FarmQueueCheckedAt,
+			BoostUnmetApps: runtime.BoostUnmetApps,
+			BoostCheckedAt: runtime.BoostCheckedAt == DateTimeOffset.MinValue ? null : runtime.BoostCheckedAt,
 			LastAction: runtime.LastAction,
 			LastActionAt: runtime.LastActionAt == DateTimeOffset.MinValue ? null : runtime.LastActionAt,
 			LastDeviation: runtime.LastDeviation
@@ -939,6 +1264,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 		public List<uint>? FarmQueue;
 		public uint? FarmingAppId;
 		public DateTimeOffset FarmQueueCheckedAt = DateTimeOffset.MinValue;
+		public List<uint>? BoostUnmetApps;
+		public List<uint>? BoostPlayingApps;
+		public DateTimeOffset BoostCheckedAt = DateTimeOffset.MinValue;
 		public string? LastCountedFailureKey;
 		public int? SpecVersion;
 		public DateTimeOffset LastActionAt = DateTimeOffset.MinValue;
@@ -958,6 +1286,8 @@ public sealed record AccountOrchestrationView(
 	uint? FarmingAppId = null,
 	IReadOnlyList<uint>? FarmQueue = null,
 	DateTimeOffset? FarmQueueCheckedAt = null,
+	IReadOnlyList<uint>? BoostUnmetApps = null,
+	DateTimeOffset? BoostCheckedAt = null,
 	string? LastAction = null,
 	DateTimeOffset? LastActionAt = null,
 	string? LastDeviation = null

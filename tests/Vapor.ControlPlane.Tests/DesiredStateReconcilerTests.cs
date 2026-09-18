@@ -13,6 +13,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	{
 		DesiredStateReconciler.LoginInFlightWindow = TimeSpan.Zero;
 		DesiredStateReconciler.CardDropsInFlightWindow = TimeSpan.Zero;
+		DesiredStateReconciler.PlaytimeInFlightWindow = TimeSpan.Zero;
 	}
 
 	public void Dispose()
@@ -20,6 +21,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		DesiredStateReconciler.LoginInFlightWindow = TimeSpan.FromSeconds(150);
 		DesiredStateReconciler.PlayInFlightWindow = TimeSpan.FromSeconds(120);
 		DesiredStateReconciler.CardDropsInFlightWindow = TimeSpan.FromSeconds(150);
+		DesiredStateReconciler.PlaytimeInFlightWindow = TimeSpan.FromSeconds(150);
 	}
 
 	[Fact]
@@ -572,6 +574,261 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.False(view.Idling);
 		Assert.Null(view.FarmingAppId);
 		Assert.Null(view.FarmQueue);
+	}
+
+	// ── playtime boosting (DesiredState.Boost) ──
+
+	/// <summary>Builds a get_playtime task output payload (in-memory dictionary form).</summary>
+	private static IReadOnlyDictionary<string, object?> PlaytimeOutput(params (uint AppId, double Hours)[] games) =>
+		new Dictionary<string, object?>
+		{
+			["playtimes"] = games.Select(g => (object)new Dictionary<string, object?>
+			{
+				["app_id"] = (long)g.AppId,
+				["hours"] = g.Hours
+			}).ToList()
+		};
+
+	private static AccountStore NewBoostStore(string name, (uint AppId, double TargetHours)[] targets, string[]? excluded = null)
+	{
+		var store = new AccountStore();
+		store.Upsert(name, true, AccountDesiredState.Boost, excluded, null, null, null,
+			boostTargets: targets.Select(t => new BoostTarget(t.AppId, t.TargetHours)).ToList());
+		return store;
+	}
+
+	[Fact]
+	public async Task BoostAccount_DispatchesPlaytimeThenIdlesUnmetApps()
+	{
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100), (620u, 10)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Pass 1: no report yet → refresh via a get_playtime job.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Single(jobs.Created);
+		Assert.Equal("get_playtime", jobs.Created[0].Action);
+		Assert.Equal(1, reconciler.PlaytimesDispatched);
+
+		// Pass 2: report shows 220 below target, 620 at target → idle 220 only.
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 36.5), (620, 12.0), (440, 999));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(2, jobs.Created.Count);
+		Assert.Equal("play_games", jobs.Created[1].Action);
+		Assert.Equal("220", jobs.Created[1].Payload!["games"]);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.True(view.Idling);
+		Assert.Equal([220U], view.BoostUnmetApps);
+		Assert.NotNull(view.BoostCheckedAt);
+	}
+
+	[Fact]
+	public async Task BoostSchedule_MultipleUnmetApps_IdleTogether()
+	{
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100), (620u, 100), (730u, 5)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 10), (620, 20), (730, 9));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// Both unmet apps idle in one play job; 730 is above target.
+		Assert.Equal("220,620", jobs.Created[1].Payload!["games"]);
+		Assert.Equal([220U, 620U], reconciler.GetOrchestrationView("alice")!.BoostUnmetApps);
+	}
+
+	[Fact]
+	public async Task BoostSchedule_IdleAppsActAsExclusionList()
+	{
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100), (620u, 100)], excluded: ["220"]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 1), (620, 2));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal("620", jobs.Created[1].Payload!["games"]);
+		Assert.Equal([620U], reconciler.GetOrchestrationView("alice")!.BoostUnmetApps);
+	}
+
+	[Fact]
+	public async Task BoostComplete_WhenAllTargetsMet_StopsIdling()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 36.5));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.True(reconciler.GetOrchestrationView("alice")!.Idling);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+
+		// Refresh reports 220 has reached its target → stop idling, keep online.
+		accounts.Upsert("alice", true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(220u, 100)]);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-3-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-3-0"] = PlaytimeOutput((220, 150.25));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// job 1 = playtime query, job 2 = play 220, job 3 = playtime refresh, job 4 = stop.
+		Assert.Equal(4, jobs.Created.Count);
+		Assert.Equal("play_games", jobs.Created[3].Action);
+		Assert.Equal("stop", jobs.Created[3].Payload!["action"]);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.False(view.Idling);
+		Assert.Empty(view.BoostUnmetApps!);
+	}
+
+	[Fact]
+	public async Task BoostRefresh_RespectsInterval()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 36.5));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// Only the initial playtime query ran; the interval gates further queries.
+		Assert.Single(jobs.Created.Where(j => j.Action == "get_playtime"));
+	}
+
+	[Fact]
+	public async Task BoostQueryFailure_MarksDeviationWithoutTouchingLoginBudget()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Failed, "games tab unavailable");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// The failure is a deviation, never a login failure; the set stays unset
+		// so the next pass retries only after the refresh interval.
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.NotNull(view.LastDeviation);
+		Assert.Equal(0, view.LoginAttempts);
+		Assert.Null(view.BoostUnmetApps);
+		Assert.NotNull(view.BoostCheckedAt);
+	}
+
+	[Fact]
+	public async Task BoostInvalidOutput_MarksDeviationWithoutStopOrRetryStorm()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// First report establishes a known unmet set.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 10));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		Assert.Equal([220U], reconciler.GetOrchestrationView("alice")!.BoostUnmetApps);
+
+		// A spec update forces a refresh (the reset also drops the old set); the
+		// malformed report must not be read as "all targets met" — no stop goes
+		// out, the deviation is kept, and the retry waits for the refresh interval.
+		accounts.Upsert("alice", true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(220u, 100)]);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal("get_playtime", jobs.Created[2].Action);
+		jobs.Outcomes["task-3-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-3-0"] = new Dictionary<string, object?> { ["games_count"] = 1 };
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		// Still only 3 jobs: the unusable report dispatched neither a stop nor an
+		// immediate re-query (the stamped BoostCheckedAt gates the retry).
+		Assert.Equal(3, jobs.Created.Count);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Null(view.BoostUnmetApps);
+		Assert.NotNull(view.LastDeviation);
+		Assert.True(view.Idling);
+	}
+
+	[Fact]
+	public void ExtractBoostUnmet_SurvivesJsonRoundTripAndFilters()
+	{
+		var spec = new AccountSpec("alice", true, AccountDesiredState.Boost,
+			new[] { "620" }, null, null, null, null, false,
+			[new BoostTarget(220u, 100), new BoostTarget(620u, 50), new BoostTarget(730u, 10)]);
+
+		// Simulate the SQLite JSON round-trip: numbers become JsonElement objects.
+		var raw = PlaytimeOutput((220, 36.5), (620, 99), (730, 12));
+		string json = System.Text.Json.JsonSerializer.Serialize(raw);
+		var roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(json);
+
+		List<uint>? unmet = DesiredStateReconciler.ExtractBoostUnmet(roundTripped, spec);
+
+		// 220 below target (unmet), 620 excluded via IdleApps, 730 above target.
+		Assert.Equal([220U], unmet);
+		// Missing/invalid outputs are unusable, never "all targets met".
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(null, spec));
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>(), spec));
+	}
+
+	[Fact]
+	public void ExtractBoostUnmet_MissingAppOrBadEntry_IsConservative()
+	{
+		var spec = new AccountSpec("alice", true, AccountDesiredState.Boost,
+			null, null, null, null, null, false,
+			[new BoostTarget(220u, 100), new BoostTarget(620u, 10)]);
+
+		// An app absent from the report stays unmet — never read as met.
+		Assert.Equal(
+			[220U, 620U],
+			DesiredStateReconciler.ExtractBoostUnmet(PlaytimeOutput((220, 36.5)), spec));
+
+		// A malformed entry invalidates the whole report.
+		var bad = new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?>
+			{
+				new Dictionary<string, object?> { ["app_id"] = 220L, ["hours"] = 36.5 },
+				new Dictionary<string, object?> { ["app_id"] = "not-a-number", ["hours"] = 1.0 }
+			}
+		};
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(bad, spec));
 	}
 
 	// ── execution-path hardening (loops, isolation, no-agent, shape quirks) ──
