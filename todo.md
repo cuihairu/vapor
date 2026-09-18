@@ -321,7 +321,7 @@
 - [x] Web Dashboard 只读面板（对标 ASF-ui 只读部分）：`wwwroot/dashboard.html`——统计卡/账户/Agent/会话/作业（点击展开任务明细）/审计日志 + jobs/sessions 双 SSE 流 + 30s 轮询兜底，纯 GET + EventSource 零写操作；无写动词契约测试守护（DashboardStaticTests 4 个）；与 admin.html 互链，`/` 重定向不变。（管理功能继续走 admin.html；功能扩展待后续评估）
 - [x] 市场挂单创建/批量撤单（对标 SGI）：ToS 灰区 + 需库存/定价前置。（2026-09-14：前置条件经 P6 补齐，立项为 P7 市场闭环，见 §12）
 - [x] QR 扫码登录（对标 SGI/steamguard-cli）：SteamKit2 BeginAuthSessionViaQR + 轮询，login 任务 payload `qr_login:true` 触发；挑战 URL 经 session 事件 `qr_required` 上浮（CP 归类为挑战类型 `qr_required`，轮转自动重发，批准/超时自动清挑战），request_key 不出 transport，refresh token 走既有加密落盘 + token 登录路径；3 分钟等待窗。
-- [ ] 成就解锁/管理（对标 SGI）：需求弱，后置。（2026-09-18：用户裁定立项为 §33，显式单发 + 布尔置位划线，见 §33）
+- [x] 成就解锁/管理（对标 SGI）：需求弱，后置。（2026-09-18 立项为 §33 并落地：显式单发 REST + 布尔置位划线——数值编辑维持不采用，✅ 见 §33）
 
 ### 11.5 明确不采用（定位外）
 
@@ -684,7 +684,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 ---
 
-## 31. Dashboard 全功能管理台扩展（📋 2026-09-18 立项，用户定向）
+## 31. Dashboard 全功能管理台扩展（✅ 2026-09-18 完成，P1–P6 全落地；用户定向立项）
 
 > 立项动机：REST 能力面与 UI 覆盖严重失衡——CP 已有 **23 个写端点**（账户 PUT/DELETE、enable/disable、交易 accept/decline、批量确认、loot、swap、市场挂单/撤单、积分认领、license、爬虫计划 CRUD+trigger、作业创建/取消、账户+全局配置），而 admin.html UI 仅覆盖 4 类（挑战提交、作业创建/取消），其余 19 个全靠 curl。三页分工（dashboard 只读监控 / admin 管理 / gamedata 数据）中，admin 的管理面远落后于 API 面。
 
@@ -712,7 +712,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 ---
 
-## 32. 白名单自动接受报价：保守 Gifts 语义（📋 2026-09-18 立项，用户裁定）
+## 32. 白名单自动接受报价：保守 Gifts 语义（✅ 2026-09-18 完成，P1–P4 全落地；用户裁定立项）
 
 > 立项动机：推翻 §11.2「不实现自动接受」的 2026-09-13 评估——用户裁定立项。**保守白名单版**定案（四个候选中选一）：AccountSpec 显式策略 + partner 白名单 + **仅自动接受「纯收」报价**（items_to_give 为空、只收不给，零资产让渡风险，对齐 ASF AcceptGifts 语义；ASF 对任意报价的白名单自动接受同样不做，其 wiki 明确警告等价性不可自动判断）+ 全量审计。默认关闭；白名单为空时不动作；交换类（有让渡）报价一律不自动接受（人工走 §31 P2 面板）。
 
