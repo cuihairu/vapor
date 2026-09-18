@@ -653,7 +653,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 ### 29.2 实施阶段（按依赖排序）
 
-- [ ] **P1 时长数据源**：`SteamProfileGamesClient`（Web/,仿 SteamBadgesClient：拉 HTML + partial Regex 解析 appid→hours）+ `GetPlaytimeAction`（payload `games` 可选过滤,输出 `{appid: hours}`）；HTML 样本 fixture 单测（真实页面结构校准）。
+- [x] **P1 时长数据源**：`SteamProfileGamesClient`（Web/,仿 SteamBadgesClient）+ `GetPlaytimeAction`（payload `games` 可选过滤,输出按 hours 降序列表 + total_hours,SWR 缓存默认 30 分钟）。数据源定案：games tab 内嵌 `var rgGames = [...]` JSON(非 HTML Regex)——`appid`/`name`/`hours_forever`(带逗号字符串,缺失/null=0)三方交叉确认(johnnysparks gist 5376855、SteamTreemap steam_treemap.py、greasyfork 583222 用户脚本 + bendodson 提取器),fixture 走构造骨架模式。两处实现层强化:①marker 候选扫描(fixture 头注引用 marker 字面量即触发错位——只有后随 `[` 的候选胜出);②括号/字符串平衡扫描器(游戏名含 `;`/`[`/`"` 不截断,优于三方通用的「首个 `;` 切片」)。fail-loudly 落实:找不到 payload 抛异常而非空表(风险备注①)。（✅ 2026-09-18 10a9a77,25 新测试）
 - [ ] **P2 配置与 API 链**：AccountSpec 增加 Boost 目标映射（JSON 配置 + ControlPlane API 透传 + 校验：目标小时 >0、appid 合法）；文档同步。
 - [ ] **P3 Reconciler boost 策略**：期望状态或 Farm 扩展模式二选一（立项倾向独立 `Boost` 状态,farm 与 boost 互斥时 boost 让位,同 farm 现行排除语义）；周期查时长 → 未达标入队 play（多 app 可并行) → 达标移出 → 全达标停挂回落 Idle；查询失败仅记 deviation 等下轮（farm 同款容错）。
 - [ ] **P4 收尾**：feature-matrix.md 3.2 行 ⚠️→✅；todo 回填；全量测试 + CI 绿。
