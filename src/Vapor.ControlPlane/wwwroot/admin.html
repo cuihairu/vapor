@@ -1180,6 +1180,70 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">爬虫计划管理</h2>
+                            <div class="panel-subtitle">游戏数据采集计划的创建/编辑/触发/删除；结果浏览在 <a href="/gamedata.html">gamedata.html</a>。</div>
+                        </div>
+                        <button class="btn btn-secondary btn-small" id="refreshCrawlPlansButton">刷新</button>
+                    </div>
+                    <div class="list" id="crawlPlanList">
+                        <div class="empty-state">正在加载爬虫计划...</div>
+                    </div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong" id="crawlFormTitle">新建计划</div>
+                        <button class="btn btn-secondary btn-small" id="resetCrawlFormButton">清空表单（新建模式）</button>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="crawlNameInput">计划名称</label>
+                            <input id="crawlNameInput" type="text" placeholder="popular-games-daily">
+                        </div>
+                        <div class="field">
+                            <label for="crawlAppsInput">app ids（CSV，必填）</label>
+                            <input id="crawlAppsInput" type="text" placeholder="730, 570, 440">
+                        </div>
+                        <div class="field">
+                            <label for="crawlAccountsInput">账号池（CSV，留空用全部采集账号）</label>
+                            <input id="crawlAccountsInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label for="crawlOverridesInput">app 指定账号（appId=account CSV）</label>
+                            <input id="crawlOverridesInput" type="text" placeholder="730=acct-a, 570=acct-b">
+                        </div>
+                        <div class="field">
+                            <label for="crawlShardSizeInput">分片大小（默认 200）</label>
+                            <input id="crawlShardSizeInput" type="text" placeholder="200">
+                        </div>
+                        <div class="field">
+                            <label for="crawlIntervalMsInput">节流 interval_ms（同 app 缓存未命中间）</label>
+                            <input id="crawlIntervalMsInput" type="text">
+                        </div>
+                        <div class="field">
+                            <label for="crawlCcInput">国家码（默认 us）</label>
+                            <input id="crawlCcInput" type="text" placeholder="us">
+                        </div>
+                        <div class="field">
+                            <label for="crawlCronInput">cron（与周期秒数二选一）</label>
+                            <input id="crawlCronInput" type="text" placeholder="0 3 * * *">
+                        </div>
+                        <div class="field">
+                            <label for="crawlIntervalSecondsInput">周期秒数</label>
+                            <input id="crawlIntervalSecondsInput" type="text" placeholder="86400">
+                        </div>
+                    </div>
+                    <div class="button-row">
+                        <label><input id="crawlStartNowCheckbox" type="checkbox" checked> 立即执行首轮（周期计划适用）</label>
+                        <label><input id="crawlEnabledCheckbox" type="checkbox" checked> 启用计划</label>
+                    </div>
+                    <div class="button-row">
+                        <button class="btn btn-primary" id="saveCrawlPlanButton">创建计划</button>
+                    </div>
+                    <div class="helper" id="crawlFormError" style="color: var(--danger, #e5484d);"></div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">事件日志</h2>
                             <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
                         </div>
@@ -1208,6 +1272,8 @@
             tradeOffers: null,
             lastSwapPlan: null,
             lastPointsDefinitions: null,
+            crawlPlans: [],
+            editingCrawlPlanId: null,
             streams: []
         };
 
@@ -1324,6 +1390,9 @@
             document.getElementById("queryPointsButton").addEventListener("click", () => queryPointsShop());
             document.getElementById("claimPointsButton").addEventListener("click", () => claimPointsShop());
             document.getElementById("claimLicenseButton").addEventListener("click", () => claimLicense());
+            document.getElementById("refreshCrawlPlansButton").addEventListener("click", () => refreshCrawlPlans());
+            document.getElementById("resetCrawlFormButton").addEventListener("click", () => resetCrawlForm());
+            document.getElementById("saveCrawlPlanButton").addEventListener("click", () => saveCrawlPlan());
             document.getElementById("actionSelect").addEventListener("change", updatePayloadHint);
         }
 
@@ -1337,7 +1406,8 @@
                     refreshAgents(),
                     refreshSessions(),
                     refreshAuthChallenges(),
-                    refreshAccounts()
+                    refreshAccounts(),
+                    refreshCrawlPlans()
                 ]);
                 restartStreams();
             } catch (error) {
@@ -2496,6 +2566,209 @@
                 renderOperationResult(document.getElementById("pointsShopBox"), result?.result ?? result, "认领结果");
             } catch (error) {
                 alert(`认领失败: ${error.message}`);
+            }
+        }
+
+        async function refreshCrawlPlans() {
+            try {
+                const data = await apiFetch("/v1/crawl/plans");
+                state.crawlPlans = data.plans || [];
+                renderCrawlPlans();
+            } catch (error) {
+                document.getElementById("crawlPlanList").innerHTML = `<div class="empty-state">加载爬虫计划失败: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        function renderCrawlPlans() {
+            const container = document.getElementById("crawlPlanList");
+            if (!state.crawlPlans.length) {
+                container.innerHTML = '<div class="empty-state">暂无爬虫计划，用下方表单创建。</div>';
+                return;
+            }
+
+            container.innerHTML = state.crawlPlans.map((plan) => {
+                const schedule = plan.cron
+                    ? `cron: ${plan.cron}`
+                    : plan.intervalSeconds
+                        ? `每 ${plan.intervalSeconds}s`
+                        : "one-shot";
+                const lastRun = plan.lastRunAt ? formatDate(plan.lastRunAt) : "从未";
+                const nextRun = plan.nextRunAt ? formatDate(plan.nextRunAt) : "未排程";
+                return `
+                    <article class="card-row">
+                        <div class="row-head">
+                            <div class="title-group">
+                                <div class="strong">${escapeHtml(plan.name || plan.id)}</div>
+                                <div class="tiny mono">${escapeHtml(plan.id)} · ${(plan.appIds || []).length} apps</div>
+                            </div>
+                            <span class="badge ${plan.enabled ? "finished" : "canceled"}">${plan.enabled ? "启用" : "停用"}</span>
+                        </div>
+                        <div class="summary-row">
+                            <span class="agent-chip">${escapeHtml(schedule)}</span>
+                            <span class="agent-chip">已跑 ${plan.runCount || 0} 轮</span>
+                        </div>
+                        <div class="helper">accounts: ${escapeHtml((plan.accounts || ["自动分片"]).join(", "))} · 上轮 ${escapeHtml(lastRun)} · 下轮 ${escapeHtml(nextRun)}</div>
+                        <div class="button-row">
+                            ${plan.enabled ? `<button class="btn btn-secondary btn-small" data-trigger-crawl="${escapeHtml(plan.id)}">立即触发</button>` : ""}
+                            <button class="btn btn-secondary btn-small" data-edit-crawl="${escapeHtml(plan.id)}">编辑</button>
+                            <button class="btn btn-danger btn-small" data-delete-crawl="${escapeHtml(plan.id)}">删除</button>
+                        </div>
+                    </article>
+                `;
+            }).join("");
+
+            container.querySelectorAll("[data-trigger-crawl]").forEach((button) => {
+                button.addEventListener("click", () => triggerCrawlPlan(button.dataset.triggerCrawl));
+            });
+            container.querySelectorAll("[data-edit-crawl]").forEach((button) => {
+                button.addEventListener("click", () => editCrawlPlan(button.dataset.editCrawl));
+            });
+            container.querySelectorAll("[data-delete-crawl]").forEach((button) => {
+                button.addEventListener("click", () => deleteCrawlPlan(button.dataset.deleteCrawl));
+            });
+        }
+
+        function crawlFormOverridesToText(overrides) {
+            return Object.entries(overrides || {}).map(([appId, account]) => `${appId}=${account}`).join(", ");
+        }
+
+        function crawlFormTextToOverrides(text) {
+            const entries = parseCsvInput(text);
+            if (!entries.length) {
+                return null;
+            }
+            const overrides = {};
+            for (const entry of entries) {
+                const separator = entry.indexOf("=");
+                if (separator <= 0) {
+                    throw new Error(`指定账号格式无效: "${entry}"（应为 appId=account）`);
+                }
+                overrides[entry.slice(0, separator).trim()] = entry.slice(separator + 1).trim();
+            }
+            return overrides;
+        }
+
+        function resetCrawlForm() {
+            state.editingCrawlPlanId = null;
+            document.getElementById("crawlFormTitle").textContent = "新建计划";
+            document.getElementById("saveCrawlPlanButton").textContent = "创建计划";
+            for (const id of ["crawlNameInput", "crawlAppsInput", "crawlAccountsInput", "crawlOverridesInput", "crawlShardSizeInput", "crawlIntervalMsInput", "crawlCcInput", "crawlCronInput", "crawlIntervalSecondsInput"]) {
+                document.getElementById(id).value = "";
+            }
+            document.getElementById("crawlStartNowCheckbox").checked = true;
+            document.getElementById("crawlEnabledCheckbox").checked = true;
+            document.getElementById("crawlFormError").textContent = "";
+        }
+
+        function editCrawlPlan(planId) {
+            const plan = state.crawlPlans.find((item) => item.id === planId);
+            if (!plan) {
+                return;
+            }
+
+            state.editingCrawlPlanId = planId;
+            document.getElementById("crawlFormTitle").textContent = `编辑计划：${plan.name || plan.id}`;
+            document.getElementById("saveCrawlPlanButton").textContent = "保存变更";
+            document.getElementById("crawlNameInput").value = plan.name || "";
+            document.getElementById("crawlAppsInput").value = (plan.appIds || []).join(", ");
+            document.getElementById("crawlAccountsInput").value = (plan.accounts || []).join(", ");
+            document.getElementById("crawlOverridesInput").value = crawlFormOverridesToText(plan.overrides);
+            document.getElementById("crawlShardSizeInput").value = plan.shardSize || "";
+            document.getElementById("crawlIntervalMsInput").value = plan.intervalMs || "";
+            document.getElementById("crawlCcInput").value = plan.cc || "";
+            document.getElementById("crawlCronInput").value = plan.cron || "";
+            document.getElementById("crawlIntervalSecondsInput").value = plan.intervalSeconds || "";
+            document.getElementById("crawlEnabledCheckbox").checked = Boolean(plan.enabled);
+            document.getElementById("crawlFormError").textContent = "";
+            document.getElementById("crawlFormTitle").scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+
+        function showCrawlFormError(message) {
+            document.getElementById("crawlFormError").textContent = message;
+        }
+
+        async function saveCrawlPlan() {
+            let overrides;
+            try {
+                overrides = crawlFormTextToOverrides(document.getElementById("crawlOverridesInput").value);
+            } catch (error) {
+                showCrawlFormError(error.message);
+                return;
+            }
+
+            const appIds = parseCsvInput(document.getElementById("crawlAppsInput").value);
+            if (!appIds.length) {
+                showCrawlFormError("app ids 为必填（CSV）");
+                return;
+            }
+
+            const body = {
+                name: document.getElementById("crawlNameInput").value.trim() || null,
+                appIds,
+                accounts: parseCsvInput(document.getElementById("crawlAccountsInput").value),
+                overrides,
+                shardSize: parseInt(document.getElementById("crawlShardSizeInput").value, 10) || null,
+                intervalMs: parseInt(document.getElementById("crawlIntervalMsInput").value, 10) || null,
+                cc: document.getElementById("crawlCcInput").value.trim() || null,
+                cron: document.getElementById("crawlCronInput").value.trim() || null,
+                intervalSeconds: parseInt(document.getElementById("crawlIntervalSecondsInput").value, 10) || null,
+                startNow: document.getElementById("crawlStartNowCheckbox").checked,
+                enabled: document.getElementById("crawlEnabledCheckbox").checked
+            };
+            if (!body.accounts.length) {
+                body.accounts = null;
+            }
+
+            const editing = state.editingCrawlPlanId;
+            try {
+                if (editing) {
+                    await apiFetch(`/v1/crawl/plans/${encodeURIComponent(editing)}`, {
+                        method: "PUT",
+                        body: JSON.stringify(body)
+                    });
+                    addEvent("task", `爬虫计划 ${body.name || editing} 已更新`);
+                } else {
+                    const created = await apiFetch("/v1/crawl/plans", {
+                        method: "POST",
+                        body: JSON.stringify(body)
+                    });
+                    addEvent("task", `爬虫计划 ${created?.name || created?.id} 已创建`);
+                }
+                resetCrawlForm();
+                await refreshCrawlPlans();
+            } catch (error) {
+                // Cron/interval validation errors surface inline, not as a dialog —
+                // the form stays filled so the fix is a small edit.
+                showCrawlFormError(`保存失败: ${error.message}`);
+            }
+        }
+
+        async function triggerCrawlPlan(planId) {
+            try {
+                await apiFetch(`/v1/crawl/plans/${encodeURIComponent(planId)}/trigger`, { method: "POST" });
+                addEvent("task", "爬虫计划已触发（轮次由 worker 认领执行）");
+                await refreshCrawlPlans();
+            } catch (error) {
+                alert(`触发失败: ${error.message}`);
+            }
+        }
+
+        async function deleteCrawlPlan(planId) {
+            const plan = state.crawlPlans.find((item) => item.id === planId);
+            const confirmed = window.confirm(`删除爬虫计划「${plan?.name || planId}」？已沉淀的采集结果会保留。`);
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                await apiFetch(`/v1/crawl/plans/${encodeURIComponent(planId)}`, { method: "DELETE" });
+                if (state.editingCrawlPlanId === planId) {
+                    resetCrawlForm();
+                }
+                addEvent("task", `爬虫计划 ${plan?.name || planId} 已删除`);
+                await refreshCrawlPlans();
+            } catch (error) {
+                alert(`删除失败: ${error.message}`);
             }
         }
 
