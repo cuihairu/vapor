@@ -639,3 +639,23 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [ ] 在飞失速族已修,后续 CI 若再发作应只剩收尾失速族;windows 连续多轮无发作即可关闭本节。（⏳ 观察中）
 
 > 2026-09-17：**在飞失速族闭环（test + ci + docs 三提交）**。方法论沉淀:「无断言红、无测试卡住」不是测试代码无罪的证据——在飞清单（已交付/未交付 census）能把卡点定位到测试类;**让循环 park 在不可取消的 Task 上时,必须保证任何存活的前序循环都够不到它**（park 先挂或 watch 先注册皆死路,重启型测试的脚本一律放在重启之后）。收尾失速族（56/56 交付后宿主不退出）的「基础设施 flake」定性修正为「待转储定谳」,§27 图谱第三族据此两分。
+
+## 29. boost 策略化：时长目标调度（📋 2026-09-18 立项，用户选定方向）
+
+> 立项动机：功能矩阵 3.2 节「游戏时长 boost」行为 ⚠️（对标 ASF ✅ / SGI ✅）。现状 `play_games` 是裸动作——收到 appid 列表就挂、没人叫停就一直挂；无时长查询、无目标配置、无达标切换。目标：把 boost 从「手动 play」升级为期望状态编排，与 farm 同域同构（复用 `AccountDesiredState` + `DesiredStateReconciler` 模式）。
+
+### 29.1 现状盘点（2026-09-18 调研）
+
+- [x] `PlayGamesAction`（src/Vapor.Steam.Core/Actions/PlayGamesAction.cs）：action=play/stop/idle，payload `games` 支持 `12345, id/67890` 多格式（PlayGamesPayloadParser），HashSet<uint> 交 SteamClientManager.PlayGames——**多 app 并行挂机已支持**，缺的是上层的「挂多久」。
+- [x] farm 编排模板（DesiredStateReconciler.ReconcileFarmAsync）：期望状态 Farm → 周期刷新队列（FarmQueueCheckedAt + FarmRefreshSeconds 节流）→ queue[0] 派 play → 掉完/队列空停挂保持在线。boost 完全可循此骨架：队列换成「未达标 app」，刷新换成「时长查询」。
+- [x] **时长数据源缺口**：全仓无 playtime/hours 查询（IPlayerService/GetOwnedGames 未接）。SteamBadgesClient 徽章页 HTML 解析是现成模式——个人资料 games tab（`/my/profile/games?tab=all`）HTML 含每游戏 `xxx.x hrs` 同款可解析，用已登录 web session 访问自己 profile 无公开性依赖，无需 API key。
+- [x] 配置面：AccountSpec 现有 IdleApps（idle 白名单）/Farm 排除名单先例，Boost 目标清单（appid → 目标小时）走同一条 spec → Agent → payload 链。（✅ 2026-09-18）
+
+### 29.2 实施阶段（按依赖排序）
+
+- [ ] **P1 时长数据源**：`SteamProfileGamesClient`（Web/,仿 SteamBadgesClient：拉 HTML + partial Regex 解析 appid→hours）+ `GetPlaytimeAction`（payload `games` 可选过滤,输出 `{appid: hours}`）；HTML 样本 fixture 单测（真实页面结构校准）。
+- [ ] **P2 配置与 API 链**：AccountSpec 增加 Boost 目标映射（JSON 配置 + ControlPlane API 透传 + 校验：目标小时 >0、appid 合法）；文档同步。
+- [ ] **P3 Reconciler boost 策略**：期望状态或 Farm 扩展模式二选一（立项倾向独立 `Boost` 状态,farm 与 boost 互斥时 boost 让位,同 farm 现行排除语义）；周期查时长 → 未达标入队 play（多 app 可并行) → 达标移出 → 全达标停挂回落 Idle；查询失败仅记 deviation 等下轮（farm 同款容错）。
+- [ ] **P4 收尾**：feature-matrix.md 3.2 行 ⚠️→✅；todo 回填；全量测试 + CI 绿。
+
+> 风险备注:①profile games tab HTML 结构无官方契约,Regex 解析需真实样本 fixture 护航,页面改版时 fail loudly（解析零命中要报警而非静默空表,否则 boost 会误判全部达标直接停挂）;②时长查询节流（games tab 页面重,别按 reconcile 周期裸拉,参照 FarmQueueCheckedAt 节流字段先例）;③play 多 app 并行时 Steam 只显示首个,但时长全部累计——目标语义按「累计时长」写清楚。
