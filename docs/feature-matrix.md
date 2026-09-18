@@ -50,7 +50,7 @@
 | 能力 | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
 | 交易报价读取 | ✅ | ✅ | ✅ | ✅ | ✅(`get_trade_offers` + `GET /v1/accounts/{name}/trade-offers`) |
-| 报价接受 / 拒绝 | ✅ | ✅ | ✅ | ✅ | ✅(REST accept/decline,mobile 确认自动续派;默认人工,无编排器自动接受) |
+| 报价接受 / 拒绝 | ✅ | ✅ | ✅ | ✅ | ✅(REST accept/decline,mobile 确认自动续派;默认人工;编排器侧保守白名单自动接受——账户显式开启 + partner 白名单 + 仅纯收,gifts-only,见 §32) |
 | 报价发送(loot / 转移) | ✅ | ➖ | ➖ | ➖ | ✅(`loot_inventory` + `POST /v1/accounts/{name}/loot`) |
 | 1:1 自动换卡(STM / TradeMatcher) | ✅ | ➖ | ➖ | ➖ | ✅(2026-09-13 `swap_duplicates`,严格双向互补配对 + dry_run 默认) |
 | 批量确认 | ✅ | ✅ | ✅ | ✅ | ✅(`confirm_all_confirmations`,类型过滤 + allow/cancel) |
@@ -114,7 +114,7 @@
 ### P6-2 交易与确认闭环(GA 出口条件,安全底座已备)✅ 全部完成
 
 - [x] **交易报价读取**:拉取 incoming/outgoing 报价列表入 CP(REST 化),复用既有脱敏与审计(✅ 2026-09-12 `get_trade_offers` + `GET /v1/accounts/{name}/trade-offers` 同步端点,三态 200/202/502)。
-- [x] **报价接受/拒绝**:基于 MobileAuthenticator 既有确认哈希/响应能力;**自动接受必须按账户显式策略开启**(✅ 2026-09-12/13 人工路径 REST accept/decline + accept 后 mobile 确认自动续派;编排器侧自动接受经评估不实现,决策记录见 todo §11.2)。
+- [x] **报价接受/拒绝**:基于 MobileAuthenticator 既有确认哈希/响应能力;**自动接受必须按账户显式策略开启**(✅ 2026-09-12/13 人工路径 REST accept/decline + accept 后 mobile 确认自动续派;编排器侧自动接受 2026-09-13 曾评估不实现——该结论已被 2026-09-18 §32 保守白名单版推翻落地:账户显式开启、partner 白名单、仅纯收 gifts-only、全量决策审计,决策记录见 todo §11.2 与 §32)。
 - [x] **批量确认 action**:交易/市场确认批量处理(对标 Watt 批量确认)(✅ 2026-09-13 `confirm_all_confirmations` + CP `/confirmations/accept-all`,类型过滤 + allow/cancel)。
 - [x] **报价发送(loot)**:向指定好友转移库存(✅ 2026-09-13 `loot_inventory` + CP `/loot`,库存扫描→可交易过滤→限流发送→mobile 确认续派)。
 - [x] **1:1 换卡(STM/TradeMatcher 等价)**:已落地(2026-09-13,`find_duplicates` + `swap_duplicates` + CP duplicates/swap-offers 端点,详见 todo §11.2)。

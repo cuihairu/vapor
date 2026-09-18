@@ -46,6 +46,7 @@ are in [docker.md](docker.md).
 | `Vapor_RECONCILE_SESSION_STALENESS_SECONDS` | no | `120` | Session snapshots older than this are treated as stale by the orchestrator |
 | `Vapor_RECONCILE_FARM_REFRESH_SECONDS` | no | `300` | How often `farm` accounts re-query remaining card drops and rebuild the play queue |
 | `Vapor_RECONCILE_BOOST_REFRESH_SECONDS` | no | `1800` | How often `boost` accounts re-query total playtime and rebuild the below-target schedule |
+| `Vapor_RECONCILE_TRADE_REFRESH_SECONDS` | no | `600` | How often connected accounts with an auto-accept trade policy re-query active trade offers |
 | `Vapor_RECONCILE_DRY_RUN` | no | off | Report orchestration deviations (audit + metric) without dispatching jobs |
 | `Vapor_WEBHOOK_NOTIFICATIONS_URL` | no | off | Webhook endpoint that receives job/session/auth events as JSON; empty disables notifications |
 | `Vapor_WEBHOOK_NOTIFICATIONS_SECRET` | no | — | HMAC-SHA256 secret; when set, requests carry `X-Vapor-Timestamp` + `X-Vapor-Signature: sha256=<hex>` over `"{timestamp}.{body}"` |

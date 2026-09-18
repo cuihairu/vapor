@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Conservative whitelist auto-accept for trade offers (todo §32): per-account
+  `TradePolicy` (`autoAcceptGifts` + partner whitelist, validated at PUT time —
+  enabling requires a non-empty whitelist, and omitting the field clears the
+  policy toward the safe side). Connected accounts with the policy on run a
+  throttled evaluation loop (default every 600s, `Vapor_RECONCILE_TRADE_REFRESH_SECONDS`)
+  that auto-accepts only incoming offers which are both from a whitelisted
+  partner and gifts-only — offers asking anything in return are never accepted
+  automatically, nor are our own counter-offers; unreadable give counts are
+  treated as unusable. A required mobile confirmation chains automatically
+  without the identity secret ever leaving the agent. Every scan persists a
+  `trade.policy_evaluated` audit entry with a per-offer decision (including
+  skip reasons), and a completed accept records `trade.auto_accepted` in the
+  audit log and publishes it as a broker event the webhook pipeline forwards
+  by type. The policy is off by default with no global switch.
+
 - Full-featured admin console (todo §31): `admin.html` grows five panels
   over the admin REST surface — account lifecycle (desired-state editing,
   enable/disable, delete with name-match confirmation), trades &
