@@ -45,9 +45,10 @@ public sealed class AccountStore
 		string? note,
 		string? updatedBy = null,
 		bool? marketListingsEnabled = null,
-		IReadOnlyList<BoostTarget>? boostTargets = null)
+		IReadOnlyList<BoostTarget>? boostTargets = null,
+		TradePolicy? tradePolicy = null)
 	{
-		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, boostTargets, out var normalizedAccountName);
+		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, boostTargets, tradePolicy, out var normalizedAccountName);
 
 		lock (_gate)
 		{
@@ -124,6 +125,7 @@ public sealed class AccountStore
 		string? note,
 		string? updatedBy,
 		IReadOnlyList<BoostTarget>? boostTargets,
+		TradePolicy? tradePolicy,
 		out string normalizedAccountName)
 	{
 		if (string.IsNullOrWhiteSpace(accountName))
@@ -151,8 +153,55 @@ public sealed class AccountStore
 			AgentId: NormalizeOptional(agentId),
 			Note: NormalizeOptional(note),
 			Version: new ConfigVersion(1, DateTimeOffset.UtcNow, string.IsNullOrWhiteSpace(updatedBy) ? null : updatedBy),
-			BoostTargets: normalizedTargets
+			BoostTargets: normalizedTargets,
+			TradePolicy: NormalizeTradePolicy(tradePolicy)
 		);
+	}
+
+	/// <summary>
+	/// Validates and normalizes the auto-accept policy: partner ids must be
+	/// positive (zero is not a usable SteamId and is dropped, mirroring boost
+	/// targets), the whitelist is deduplicated and sorted so the spec is
+	/// independent of input order, and enabling the flag with an empty
+	/// whitelist is rejected at declaration time — the empty whitelist means
+	/// the policy is off, and that interlock must never depend on the
+	/// reconciler remembering to check it. A policy with nothing active
+	/// normalizes to null; an omitted policy clears any previous one (full
+	/// replace semantics, same direction as the rest of the spec: an update
+	/// that forgets the policy lands on the safe side — no auto-accept).
+	/// </summary>
+	private static TradePolicy? NormalizeTradePolicy(TradePolicy? tradePolicy)
+	{
+		if (tradePolicy is null)
+		{
+			return null;
+		}
+
+		ulong[]? whitelist = null;
+		if (tradePolicy.PartnerWhitelist is { Count: > 0 })
+		{
+			whitelist = tradePolicy.PartnerWhitelist
+				.Where(id => id != 0ul)
+				.Distinct()
+				.OrderBy(id => id)
+				.ToArray();
+			if (whitelist.Length == 0)
+			{
+				// Every entry was unusable: an empty whitelist means the policy is off.
+				whitelist = null;
+			}
+		}
+
+		if (tradePolicy.AutoAcceptGifts && whitelist is null)
+		{
+			throw new ArgumentException(
+				"auto-accept requires a non-empty partner whitelist (an empty whitelist means the policy is off)",
+				nameof(tradePolicy));
+		}
+
+		return tradePolicy.AutoAcceptGifts || whitelist is not null
+			? new TradePolicy(tradePolicy.AutoAcceptGifts, whitelist)
+			: null;
 	}
 
 	/// <summary>

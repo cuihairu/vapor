@@ -2036,7 +2036,11 @@
                 note: document.getElementById("editNote").value.trim() || null,
                 updatedBy: "admin-console",
                 marketListingsEnabled: document.getElementById("editMarketListings").checked,
-                boostTargets
+                boostTargets,
+                // PUT is a full replace: carry the declared trade policy through
+                // untouched until the panel grows dedicated editing for it, or
+                // every unrelated edit would silently disable auto-accept.
+                tradePolicy: state.accounts.find((item) => item.accountName === accountName)?.tradePolicy ?? null
             };
 
             try {

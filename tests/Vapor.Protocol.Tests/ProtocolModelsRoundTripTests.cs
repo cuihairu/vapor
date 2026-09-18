@@ -173,6 +173,33 @@ public sealed class ProtocolModelsRoundTripTests
 	}
 
 	[Fact]
+	public void TradePolicy_RoundTrips_WithWhitelist()
+	{
+		var spec = new AccountSpec(
+			"alice", Enabled: true, AccountDesiredState.Online,
+			TradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [76561197960265728ul, 76561198000000000ul]));
+
+		AccountSpec parsed = RoundTrip(spec);
+
+		Assert.NotNull(parsed.TradePolicy);
+		Assert.True(parsed.TradePolicy!.AutoAcceptGifts);
+		Assert.Equal(new ulong[] { 76561197960265728, 76561198000000000 }, parsed.TradePolicy.PartnerWhitelist!.ToArray());
+	}
+
+	[Fact]
+	public void TradePolicy_DisabledFlag_SerializesExplicitly()
+	{
+		// The flag must stay visible in JSON (not dropped by a default-value
+		// omit): an operator reading the API response must be able to tell an
+		// explicit opt-out from an absent policy.
+		string json = JsonSerializer.Serialize(
+			new TradePolicy(AutoAcceptGifts: false),
+			JsonDefaults.Options);
+
+		Assert.Contains("\"autoAcceptGifts\":false", json);
+	}
+
+	[Fact]
 	public void AccountConfig_RoundTrips_WithPasswordFormat()
 	{
 		var config = new AccountConfig(

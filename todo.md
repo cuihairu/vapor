@@ -718,12 +718,14 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 ### 32.1 实施阶段
 
-- [ ] **P1 配置面**：`AccountSpec.TradePolicy`（新 record：`AutoAcceptGifts bool` 默认 false + `PartnerWhitelist IReadOnlyList<ulong>`；fail-fast 校验：steamId 正 64 位、去重排序、AutoAcceptGifts=true 须白名单非空）+ `PUT /v1/accounts` 透传 + 审计。
+- [x] **P1 配置面**：`AccountSpec.TradePolicy`（新 record：`AutoAcceptGifts bool` 默认 false + `PartnerWhitelist IReadOnlyList<ulong>`；fail-fast 校验：steamId 正 64 位、去重排序、AutoAcceptGifts=true 须白名单非空）+ `PUT /v1/accounts` 透传 + 审计。（✅ 2026-09-18）
 - [ ] **P2 评估循环**：Reconciler 增 `TradeOfferCheckedAt` 节流（与 farm/boost 同构，`ReconcileTradeRefreshSeconds` 默认 600s）→ `GET trade-offers`（activeOnly）→ 逐条判定：非白名单 partner → 跳过；有 items_to_give → 跳过；纯收 + 白名单 → 走 accept 通道（auto mobile confirm）→ 无条件盖章 CheckedAt；查询失败仅记 deviation 等满间隔。
 - [ ] **P3 审计与可观测**：每次评估落审计（含「跳过」决策与原因：partner 不在白名单 / 非纯收 / 策略未开启）；自动接受事件接入 webhook 管道（`trade.auto_accepted`）。
 - [ ] **P4 收尾**：feature-matrix 交易行措辞、production.md 配置矩阵（env 开关）、CHANGELOG、全量测试 + CI。
 
 > 红线：①策略 per-account 显式开启，**默认关闭**，全局无「一键全开」；②白名单为空时策略等于未开启（双保险）；③非纯收报价即使白名单内也**永不**自动接受——等价性判断不做（ASF 同款取舍）；④评估循环失败容错与 farm/boost 同款（deviation 不吃登录预算）；⑤identity secret 不出 agent（复用既有 confirm 通道约束）。
+
+> 2026-09-18：**§32 P1 配置面落地（feat 提交，Protocol + ControlPlane + admin.html 防回归三处）**。①`Vapor.Protocol` 新 `TradePolicy(AutoAcceptGifts=false, PartnerWhitelist=ulong[]?)` record，`AccountSpec` 增可空 `TradePolicy` 字段（null=未配置=策略关闭）。②`AccountStore.NormalizeTradePolicy`：SteamId 0 视为不可用条目丢弃（对齐 BoostTarget 的 AppId=0 处理）、去重升序排序（spec 与输入顺序无关）、**AutoAcceptGifts=true + 白名单空（含全零被滤光的边界）→ ArgumentException 拒绝保存**——立项红线②的 fail-fast：双保险锁在声明时，不依赖 Reconciler 运行时记得检查；`AutoAcceptGifts=false + 白名单非空` 保留（预备名单，运行时不动作）；两者皆空归一化为 null。③**省略即清除**（与 IdleApps/BoostTargets 同为全量替换语义，区别于 MarketListingsEnabled 的 null-keep）：方向性取舍——PUT 漏带策略字段落在「不自动接受」的安全侧，绝不落在「悄悄保留自动接受」的危险侧；admin.html `saveAccountEdits` 同步改为回传现有 `tradePolicy`（否则 §31 P1 面板的每次无关编辑都会静默关掉策略——在面板长出专属编辑控件前的防回归措施）。④PUT `/v1/accounts` 透传 + 审计 details 增 `tradePolicy{autoAcceptGifts,partnerWhitelist}`。⑤测试：AccountStore 4 个（归一化/空名单拒绝/全零边界/省略清除）、AccountApi 2 个（白名单往返含升序断言/autoAccept 无名单 400）、Protocol round-trip 2 个（ulong 白名单往返/`autoAcceptGifts:false` 显式落 JSON 不被默认值省略）。验证：134 相关测试 + 全量全绿、format 门禁过。
 
 > 2026-09-18：**§31 P2 交易与确认面板落地（feat 提交，admin.html 单文件改动）**。①「交易与确认」面板（账户管理之后，右上账户下拉复用 §31 P1 拉取的 `state.accounts`）。②四子区：**报价**（`GET /v1/accounts/{name}/trade-offers?activeOnly=true` → 收入/发出合并渲染，收入侧内联「接受/拒绝」——accept 强制 confirm 弹窗且 body 携带列表输出的 partner_steam_id，verifyState 显式 true）；**mobile 确认批量**（type all/trade/market × operation allow/cancel 两下拉 + confirm 后 POST accept-all，helper 注明 identity secret 不出 agent）；**loot**（partnerSteamId 与 tradeUrl 二选一校验 + appIds 可选限定 + btn-danger + confirm 说明不可逆，响应里 mobile_confirmation 状态进事件日志）；**换卡**（查重复卡方案 → `<details>` 折叠 JSON 全文审阅 + 配对数摘要 → 「按方案发送报价」要求 lastSwapPlan 已存在且 partner 非空 → confirm 后 POST swap-offers `{send: true, keep, maxSwaps}`）。③202 pending 语义统一处理：响应 `{status:"pending"}` 时事件日志显示作业短 id 排队提示。④红线落实：全部写操作 confirm 前置、accept/loot/swap 三处弹窗均含「资产转移不可逆/核实对方身份」文案、UI 零业务逻辑（服务端校验是唯一真源）。验证：契约测试 9/9、全量 2185 全绿、format 门禁过、JS node --check 过。
 

@@ -437,7 +437,7 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 	AccountSpec spec;
 	try
 	{
-		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy, req.MarketListingsEnabled, req.BoostTargets);
+		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy, req.MarketListingsEnabled, req.BoostTargets, req.TradePolicy);
 	}
 	catch (ArgumentException ex)
 	{
@@ -460,6 +460,13 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 			["agentId"] = spec.AgentId,
 			["marketListingsEnabled"] = spec.MarketListingsEnabled,
 			["boostTargets"] = spec.BoostTargets?.Select(t => new Dictionary<string, object?> { ["appId"] = t.AppId, ["targetHours"] = t.TargetHours }).ToList(),
+			["tradePolicy"] = spec.TradePolicy is null
+				? null
+				: new Dictionary<string, object?>
+				{
+					["autoAcceptGifts"] = spec.TradePolicy.AutoAcceptGifts,
+					["partnerWhitelist"] = spec.TradePolicy.PartnerWhitelist
+				},
 			["version"] = spec.Version?.Version
 		});
 	return Results.Ok(new { spec });
@@ -3011,7 +3018,8 @@ public sealed record PutAccountRequest(
 	string? Note = null,
 	string? UpdatedBy = null,
 	bool? MarketListingsEnabled = null,
-	IReadOnlyList<BoostTarget>? BoostTargets = null
+	IReadOnlyList<BoostTarget>? BoostTargets = null,
+	TradePolicy? TradePolicy = null
 );
 
 // Request body for trade offer accept/decline endpoints

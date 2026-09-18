@@ -40,6 +40,19 @@ public enum AccountDesiredState
 public sealed record BoostTarget(uint AppId, double TargetHours);
 
 /// <summary>
+/// Conservative auto-accept policy for incoming trade offers (todo §32).
+/// Deliberately gifts-only: offers where the partner gives anything back are
+/// never auto-accepted — value equivalence is not judged automatically (the
+/// same trade-off ASF makes with AcceptGifts). Off by default and inert while
+/// <paramref name="PartnerWhitelist"/> is empty: enabling the flag with an
+/// empty whitelist is rejected at declaration time (double interlock).
+/// </summary>
+public sealed record TradePolicy(
+	bool AutoAcceptGifts = false,
+	IReadOnlyList<ulong>? PartnerWhitelist = null
+);
+
+/// <summary>
 /// Desired-state specification for a farm account. This is metadata and intent only —
 /// credentials never live in the control plane; per-agent credential stores
 /// (e.g. FileCredentialStore) and the existing <c>/v1/config/account</c> settings remain
@@ -55,5 +68,6 @@ public sealed record AccountSpec(
 	string? Note = null,
 	ConfigVersion? Version = null,
 	bool MarketListingsEnabled = false,
-	IReadOnlyList<BoostTarget>? BoostTargets = null
+	IReadOnlyList<BoostTarget>? BoostTargets = null,
+	TradePolicy? TradePolicy = null
 );

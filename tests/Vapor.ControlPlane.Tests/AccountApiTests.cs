@@ -167,6 +167,53 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task PutAccount_TradePolicy_RoundTripsWhitelist()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage put = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			enabled = true,
+			desiredState = "online",
+			tradePolicy = new
+			{
+				autoAcceptGifts = true,
+				partnerWhitelist = new ulong[] { 76561198000000000, 76561197960265728 }
+			}
+		});
+
+		Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+		string body = await put.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement spec = doc.RootElement.GetProperty("spec");
+
+		JsonElement policy = spec.GetProperty("tradePolicy");
+		Assert.True(policy.GetProperty("autoAcceptGifts").GetBoolean());
+		JsonElement whitelist = policy.GetProperty("partnerWhitelist");
+		Assert.Equal(2, whitelist.GetArrayLength());
+		Assert.Equal(76561197960265728ul, whitelist[0].GetUInt64()); // sorted ascending
+	}
+
+	[Fact]
+	public async Task PutAccount_AutoAcceptGifts_WithoutWhitelist_ReturnsBadRequest()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage put = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			enabled = true,
+			desiredState = "online",
+			tradePolicy = new { autoAcceptGifts = true }
+		});
+
+		Assert.Equal(HttpStatusCode.BadRequest, put.StatusCode);
+	}
+
+	[Fact]
 	public async Task PutAccount_ReplacesExistingSpec()
 	{
 		await using var factory = CreateFactory();

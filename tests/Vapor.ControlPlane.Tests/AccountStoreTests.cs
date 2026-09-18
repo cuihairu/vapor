@@ -291,6 +291,72 @@ public sealed class AccountStoreTests
 	}
 
 	[Fact]
+	public void Upsert_TradePolicyWhitelist_NormalizesSortsAndDeduplicates()
+	{
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(
+				AutoAcceptGifts: false,
+				PartnerWhitelist: [76561198000000000ul, 76561197960265728ul, 76561198000000000ul, 0ul]));
+
+		// Zero ids carry no usable Steam identity and are dropped; survivors
+		// sort ascending so the spec is independent of input order.
+		Assert.NotNull(spec.TradePolicy);
+		Assert.False(spec.TradePolicy!.AutoAcceptGifts);
+		Assert.Equal(
+			new ulong[] { 76561197960265728, 76561198000000000 },
+			spec.TradePolicy.PartnerWhitelist!.ToArray());
+	}
+
+	[Fact]
+	public void Upsert_AutoAcceptGifts_WithEmptyWhitelist_Throws()
+	{
+		var store = new AccountStore();
+
+		// Red line ② of todo §32: an empty whitelist means the policy is off —
+		// the declaration-time interlock must reject the contradictory combo
+		// instead of letting the reconciler silently skip everything.
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert(
+				"alice", enabled: true, AccountDesiredState.Online, null, null, null, null,
+				tradePolicy: new TradePolicy(AutoAcceptGifts: true)));
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert(
+				"alice", enabled: true, AccountDesiredState.Online, null, null, null, null,
+				tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [0ul])));
+	}
+
+	[Fact]
+	public void Upsert_TradePolicyWithNothingActive_NormalizesToNull()
+	{
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: false, PartnerWhitelist: []));
+
+		Assert.Null(spec.TradePolicy);
+	}
+
+	[Fact]
+	public void Upsert_OmittedTradePolicy_ClearsPreviousOne()
+	{
+		// Full replace semantics, same direction as the rest of the spec: an
+		// update that forgets the policy lands on the safe side — no
+		// auto-accept — never on silently keeping it enabled.
+		var store = new AccountStore();
+		store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [76561197960265728ul]));
+
+		AccountSpec updated = store.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null);
+
+		Assert.Null(updated.TradePolicy);
+	}
+
+	[Fact]
 	public void List_IsOrderedByAccountName()
 	{
 		var store = new AccountStore();
