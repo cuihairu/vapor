@@ -735,7 +735,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 ---
 
-## 33. 成就解锁/管理：显式单发 + 布尔置位划线（📋 2026-09-18 立项，用户裁定）
+## 33. 成就解锁/管理：显式单发 + 布尔置位划线（✅ 2026-09-18 完成，P0–P3 全落地；用户裁定立项）
 
 > 立项动机：推翻 §11.4「需求弱，后置」的记录（2026-09-13 P6 收口与 2026-09-14 P7 立项两度维持后置），用户裁定立项。对标 SGI 成就面板：列表 + 解锁 + 重置。**技术路径分叉**（已核实）：成就 schema/解锁态**读取**走社区 stats 页解析（`/profiles/{steamid}/stats/{appid}?tab=achievements`，SteamWebHandler 会话 cookie——badges 页同款先例；steamid 从 steamLoginSecure cookie 反解——inventory 先例；零新配置。Steam Web API `ISteamUserStats` 需独立 API key，CP 无此配置概念，不为此引新配置面）；成就**写入**没有用户侧 web API，只能走 SteamKit client 协议 `SteamUserStats` handler（SetAchievement/ClearAchievement + StoreStats），transport 加方法——`GetHandler<SteamApps>()`（RequestFreeLicenseAsync）先例，agent 侧经 `session.SteamClientManager` 直达（AddLicenseAction 先例）。**与 §11.5 灰区的边界（立项即划线）**：只做成就布尔置位（unlock/clear），**stat 数值编辑维持明确不采用**——两者同在 `SteamUserStats` API 面上，用能力边界而非回避来划线。**ToS 语义如实记录**：成就置位是官方 API 面上的账号数据写入（SAM/SGI 长期实践、无 VAC 关联——VAC 检测游戏文件/内存篡改，不检测 stats API 调用），但属「伪造账号数据」语义灰区；以显式单发动作 + 全量审计应对，不做自动化，风险用户自担。
 
