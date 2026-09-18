@@ -142,6 +142,9 @@ public sealed class DashboardStaticTests
 		Assert.Contains("ToS 灰区操作", html, StringComparison.Ordinal); // market listing create
 		Assert.Contains("积分消费不可逆", html, StringComparison.Ordinal); // points shop force claim
 		Assert.Contains("已沉淀的采集结果会保留", html, StringComparison.Ordinal); // crawl plan delete
+		Assert.Contains("项成就置为已解锁", html, StringComparison.Ordinal); // achievement unlock gate (§33)
+		Assert.Contains("此操作不可逆：将清零账户", html, StringComparison.Ordinal); // achievement reset, confirm #1 (§33: destructive, double-gated in the UI)
+		Assert.Contains("再次确认：向账户", html, StringComparison.Ordinal); // achievement reset, confirm #2
 	}
 
 	[Fact]

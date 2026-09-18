@@ -960,6 +960,33 @@
                         </div>
                         <div class="helper">保存走 PUT 全量语义：所有字段按表单当前值提交。市场挂单开关是灰区操作门控，开启后市场类操作才会被服务端接受。</div>
                     </div>
+
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">成就管理</div>
+                        <button class="btn btn-secondary btn-small" id="loadAchievementsButton">拉取成就列表</button>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="achievementAccountSelect">账户</label>
+                            <select id="achievementAccountSelect">
+                                <option value="">正在加载账户...</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="achievementAppIdInput">App ID</label>
+                            <input id="achievementAppIdInput" type="text" placeholder="400">
+                        </div>
+                    </div>
+                    <div class="helper">列表来自社区成就页；api name（图标名推断）是写入通道的标识符，hash 命名图标的推断名可能被 Steam 拒绝——逐条结果如实标注。解锁/重置均为显式单发动作：先勾选，再确认，没有全量隐式路径。</div>
+                    <div class="list" id="achievementListBox">
+                        <div class="empty-state">选择账户并输入 app id 后拉取。</div>
+                    </div>
+                    <div class="button-row" id="achievementActionBar" hidden>
+                        <button class="btn btn-secondary btn-small" id="selectAllAchievementsButton">全选</button>
+                        <button class="btn btn-primary btn-small" id="unlockSelectedAchievementsButton">解锁选中</button>
+                        <button class="btn btn-danger btn-small" id="resetSelectedAchievementsButton">重置选中</button>
+                    </div>
+                    <div class="list" id="achievementResultBox" hidden></div>
                 </section>
 
                 <section class="panel fade-in">
@@ -1316,6 +1343,7 @@
             selectedJobId: null,
             accounts: [],
             editingAccountName: null,
+            achievements: null,
             tradeOffers: null,
             lastSwapPlan: null,
             lastPointsDefinitions: null,
@@ -1424,6 +1452,10 @@
             document.getElementById("refreshAccountsButton").addEventListener("click", () => refreshAccounts());
             document.getElementById("saveAccountButton").addEventListener("click", () => saveAccountEdits());
             document.getElementById("cancelEditButton").addEventListener("click", () => closeAccountEditor());
+            document.getElementById("loadAchievementsButton").addEventListener("click", () => loadAchievements());
+            document.getElementById("selectAllAchievementsButton").addEventListener("click", () => toggleAllAchievements());
+            document.getElementById("unlockSelectedAchievementsButton").addEventListener("click", () => submitAchievementWrite(true));
+            document.getElementById("resetSelectedAchievementsButton").addEventListener("click", () => submitAchievementWrite(false));
             document.getElementById("refreshOffersButton").addEventListener("click", () => refreshTradeOffers());
             document.getElementById("tradeAccountSelect").addEventListener("change", () => {
                 state.tradeOffers = null;
@@ -1871,6 +1903,7 @@
             state.accounts = data.accounts || [];
             renderAccounts();
             populateTradeAccountSelect();
+            populateAchievementAccountSelect();
         }
 
         function populateTradeAccountSelect() {
@@ -1977,6 +2010,156 @@
         function closeAccountEditor() {
             state.editingAccountName = null;
             document.getElementById("accountEditor").hidden = true;
+        }
+
+        function populateAchievementAccountSelect() {
+            const select = document.getElementById("achievementAccountSelect");
+            const current = select.value;
+            const accounts = [...state.accounts].sort((a, b) => String(a.accountName).localeCompare(String(b.accountName), "zh-CN"));
+            select.innerHTML = accounts.length
+                ? accounts.map((account) => `<option value="${escapeHtml(account.accountName)}">${escapeHtml(account.accountName)}${account.enabled ? "" : "（已禁用）"}</option>`).join("")
+                : '<option value="">暂无账户</option>';
+            if (current && accounts.some((account) => account.accountName === current)) {
+                select.value = current;
+            }
+        }
+
+        async function loadAchievements() {
+            const accountName = document.getElementById("achievementAccountSelect").value;
+            const appId = parseInt(document.getElementById("achievementAppIdInput").value, 10);
+            if (!accountName) {
+                alert("请先选择账户");
+                return;
+            }
+            if (!(Number.isInteger(appId) && appId > 0)) {
+                alert("请输入有效的 app id（正整数）");
+                return;
+            }
+
+            const box = document.getElementById("achievementListBox");
+            box.innerHTML = '<div class="empty-state">正在拉取成就列表...</div>';
+            try {
+                const data = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/achievements?appId=${appId}`);
+                const page = data?.achievements;
+                if (!page || !Array.isArray(page.achievements)) {
+                    state.achievements = null;
+                    const pending = data?.status === "pending";
+                    box.innerHTML = pending
+                        ? `<div class="empty-state">任务仍在排队（job ${escapeHtml(shortId(data.job_id))}），稍后重试。</div>`
+                        : '<div class="empty-state">响应中没有成就列表。</div>';
+                    return;
+                }
+                state.achievements = { accountName, appId, page };
+                renderAchievementList();
+            } catch (error) {
+                state.achievements = null;
+                box.innerHTML = `<div class="empty-state">拉取失败: ${escapeHtml(error.message)}</div>`;
+            }
+        }
+
+        function renderAchievementList() {
+            const current = state.achievements;
+            const box = document.getElementById("achievementListBox");
+            const actionBar = document.getElementById("achievementActionBar");
+            document.getElementById("selectAllAchievementsButton").textContent = "全选";
+            if (!current || !current.page.achievements.length) {
+                box.innerHTML = '<div class="empty-state">该游戏没有可列出的成就。</div>';
+                actionBar.hidden = true;
+                return;
+            }
+
+            actionBar.hidden = false;
+            box.innerHTML = `
+                <div class="row-head">
+                    <div class="tiny">已解锁 ${escapeHtml(String(current.page.unlocked_count ?? "?"))} / ${escapeHtml(String(current.page.total_count ?? current.page.achievements.length))} · 勾选目标成就后执行</div>
+                </div>
+            ` + current.page.achievements.map((item) => `
+                <article class="card-row">
+                    <label class="row-head" style="align-items: center; cursor: pointer;">
+                        <input type="checkbox" data-achievement-name="${escapeHtml(item.api_name)}">
+                        <span class="strong">${escapeHtml(item.display_name || item.api_name)}</span>
+                        <span class="badge ${item.unlocked ? "finished" : "queued"}">${item.unlocked ? "已解锁" : "未解锁"}</span>
+                    </label>
+                    <div class="tiny mono">${escapeHtml(item.api_name)}</div>
+                    ${item.description ? `<div class="helper">${escapeHtml(item.description)}</div>` : ""}
+                </article>
+            `).join("");
+        }
+
+        function toggleAllAchievements() {
+            const boxes = [...document.querySelectorAll("#achievementListBox [data-achievement-name]")];
+            if (!boxes.length) {
+                return;
+            }
+            const target = boxes.some((box) => !box.checked);
+            boxes.forEach((box) => { box.checked = target; });
+            document.getElementById("selectAllAchievementsButton").textContent = target ? "取消全选" : "全选";
+        }
+
+        function collectSelectedAchievementNames() {
+            return [...document.querySelectorAll("#achievementListBox [data-achievement-name]:checked")]
+                .map((box) => box.dataset.achievementName)
+                .filter(Boolean);
+        }
+
+        // Both writes are explicit single-shot dispatches: the selected names are
+        // submitted as-is (no implicit full-batch path — todo §33 red line ③),
+        // unlock gates on one confirm, reset on a double confirm plus the
+        // server-side confirm:true gate at the API layer.
+        async function submitAchievementWrite(unlock) {
+            const current = state.achievements;
+            if (!current) {
+                alert("请先拉取成就列表");
+                return;
+            }
+
+            const names = collectSelectedAchievementNames();
+            if (!names.length) {
+                alert("请先勾选要操作的成就");
+                return;
+            }
+
+            if (unlock) {
+                const confirmed = window.confirm(`将把账户「${current.accountName}」的 ${names.length} 项成就置为已解锁（显式提交所选 api name）。确认执行？`);
+                if (!confirmed) {
+                    return;
+                }
+            } else {
+                const first = window.confirm(`此操作不可逆：将清零账户「${current.accountName}」的 ${names.length} 项成就进度。确认继续？`);
+                if (!first) {
+                    return;
+                }
+                const second = window.confirm(`再次确认：向账户「${current.accountName}」提交 ${names.length} 项成就重置？`);
+                if (!second) {
+                    return;
+                }
+            }
+
+            const body = { appId: current.appId, names };
+            if (!unlock) {
+                body.confirm = true;
+            }
+
+            const verb = unlock ? "解锁" : "重置";
+            try {
+                const data = await apiFetch(`/v1/accounts/${encodeURIComponent(current.accountName)}/achievements/${unlock ? "unlock" : "reset"}`, {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                if (data?.status === "pending") {
+                    renderOperationResult(document.getElementById("achievementResultBox"), data, `${verb}任务仍在排队（job ${shortId(data.job_id)}），稍后重拉列表查看`);
+                    return;
+                }
+                const result = data?.result ?? data;
+                renderOperationResult(
+                    document.getElementById("achievementResultBox"),
+                    result,
+                    `${verb}结果：${result?.succeeded_count ?? "?"} 成功 / ${result?.failed_count ?? "?"} 失败${result?.verified ? " · 已读回验证" : " · 读回验证不可用"}`);
+                addEvent("achievement", `${verb} ${current.accountName} app ${current.appId}：${result?.succeeded_count ?? "?"} 成功 / ${result?.failed_count ?? "?"} 失败`);
+                await loadAchievements(); // refresh unlock states from the community page
+            } catch (error) {
+                alert(`${verb}失败: ${error.message}`);
+            }
         }
 
         function parseCsvInput(text) {
