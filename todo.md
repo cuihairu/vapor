@@ -661,3 +661,18 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 > 风险备注:①profile games tab HTML 结构无官方契约,Regex 解析需真实样本 fixture 护航,页面改版时 fail loudly（解析零命中要报警而非静默空表,否则 boost 会误判全部达标直接停挂）;②时长查询节流（games tab 页面重,别按 reconcile 周期裸拉,参照 FarmQueueCheckedAt 节流字段先例）;③play 多 app 并行时 Steam 只显示首个,但时长全部累计——目标语义按「累计时长」写清楚。
 
 > 2026-09-18：**§29 收口（P0–P4 全落地,feat×3 + docs×4 + 立项,共 8 提交）**。链路:`6ba5100` 立项 → `10a9a77` P1 数据源（games tab 内嵌 `var rgGames` JSON,候选扫描 + 平衡扫描器,25 测试）→ `5fc5e26` P2 配置面（`BoostTarget` spec + PUT 透传 + fail-fast 校验矩阵,11 测试）→ `dee4e96` P3 编排（`ReconcileBoostAsync` farm 镜像,9 测试）→ P4 文档收口。行为定案:独立 `boost` 期望状态;未达标集合一次 play 派发多 app 并行（风险备注③的「累计时长」语义——`get_playtime` 输出即 Steam 服务端累计口径）;IdleApps 沿用排除名单;全达标停挂保持在线;查询失败/无效输出仅记 deviation、等满 `ReconcileBoostRefreshSeconds`（默认 1800s）再重试,绝不静默判「全部达标」。风险备注①②落实为:解析零命中抛异常（P1）+ `BoostCheckedAt` 无条件盖章节流（P3）。**遗留观察（P3 实现对比发现,暂不立项）**:farm 的 `refreshDue` 仍是「`FarmQueue is null` 即重查」——get_card_drops 失败后每个 reconcile 周期（15s）重拉徽章页,与注释宣称的「等下次刷新间隔」不符;boost 侧已改为 `BoostCheckedAt` 判定。farm 行为变更涉及既有测试语义,等真实查询失败频率数据再决定是否对齐。本节 45 个新测试（25+11+9）,Reconciler 套件 65 全绿,CI 全绿（`7092f0d`,feat 提交 `dee4e96` 因连续推送被 Actions 合并,由 HEAD 快照覆盖验证）。
+
+## 30. 覆盖率盘点 + BotSession 取消竞态变体确定性化（✅ 2026-09-18 完成）
+
+> 立项动机：§29 收口当日纯 docs 提交（`189f556`）ubuntu Debug 单 job 挂 `BotSessionTests.ExecuteActionAsync_WithTimeout_ThrowsTimeoutException`（其余 9 job 全绿），`gh run rerun --failed` 即绿——flake 家族（2026-09-13 437 行同文件已修两变体后第三发作）第四成员；同轮用户要求覆盖率推进到 98% 以上。
+
+### 30.1 覆盖率盘点（结论：99.8%，目标已远超）
+
+- [x] 全量合并覆盖 **99.8%（13387/13417）**（`coverage-summary.py`，基线 99.5% 之上再升）；§29 boost 全部新文件（SteamProfileGamesClient / GetPlaytimeAction / Reconciler boost 段 / AccountStore 校验）100% 不在缺口列表。30 行未覆盖行逐行定性：①平台守卫（FileCredentialStore `IsWindows()` return，Linux 永不可覆盖）；②真网络（SteamClientManager 反射包装 `GenerateAccessTokenForAppAsync`、TimeSync 默认端点重载）；③宿主配置分支（Program.cs `UseStaticFiles()` else）；④**同一事务内防御性死守卫**（SqliteJobStore 314-317/622-623/867：SELECT 已带 `status` 过滤后同连接 UPDATE 必命中，属跨进程双保险）；⑤并发交错守卫（SessionManager 132-133 `TryAdd` 失败分支，无 hook 点）；⑥后台循环取消空 catch（时序命中不可断言）。唯一干净可测缺口补测：`GetPlan_WithUnknownId_ReturnsNull`（SqliteCrawlStore 251，走 `GetPlanUnsafeAsync` 查库路径，区别于既有空 id 短路测试）。（✅ 2026-09-18）
+
+### 30.2 BotSession 取消竞态变体（机理实测闭合 + 确定性化）
+
+- [x] 机理：mock action `Task.Delay(1min, ct)` + 调用方 100ms `CancelAfter` 真时间竞态。翻车链：调用方线程在 `TryWrite`（BotSession.cs:100）与 `WaitAsync`（:102）之间被池饥饿抢占 ≥100ms → 处理循环跑完「Delay 同步抛 → catch(OCE) → `TrySetResult("canceled")`」（HandleExecuteAction :306-310）→ 调用方恢复后 `WaitAsync` 见 task **已完成**——.NET 10 实测验证（最小复现程序）：**被等待 task 已完成时 `WaitAsync(ct)` 正常返回，忽略已取消 token** → 无异常 → 断言挂。附带发现：:306 的 `"canceled"` 结果在正常时序对调用方不可达（调用方 `WaitAsync` 注册必然早于 action 内部注册，取消时按注册序先触发抛 OCE）——生产 API 的「执行中取消」对外契约实际上只有 OCE 一种结局（记录在案，暂不改实现）。（✅ 2026-09-18）
+- [x] 修复：改写为 `ExecuteActionAsync_CancelWhileActionRunning_ThrowsOperationCanceledException`——mock TCS `started` 信号确认 action 已 park 后再 `Cancel()`（park-then-cancel 排序），取消回调按注册序锁定调用方 `WaitAsync` 先触发；删 100ms 真等与 1min park（`Timeout.InfiniteTimeSpan` 受 ct）。原「timeout → action timeout」意图已由既有确定性测试覆盖（`TimeoutSeconds: 1` + 结果断言）。5 连跑全绿、单轮 ~170ms。全量 2092 测试绿 + format 过。（✅ 2026-09-18）
+
+> 2026-09-18：**两题一并收口（test + docs 两提交）**。方法论再沉淀：①「任务已完成的 task，`WaitAsync` 直接返回结果」是 .NET 的真实语义（先查完成再看取消）——依赖 `WaitAsync` 抛 OCE 的测试必须保证**调用时** token 尚未取消、或被等待 task 尚未完成，二者其一否则断言不可靠；②覆盖率缺口的六类定性里，③④⑤是防御性/并发代码的自然残留，不追净——把「行数」当目标会逼出赌时序的坏测试，§27 家族方法论（等待=断言对象、mock TCS 信号）在这里的反面教材就是被替换的 100ms 竞态版。
