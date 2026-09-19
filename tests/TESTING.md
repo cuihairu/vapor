@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1207 tests)
+├── Vapor.Steam.Core.Tests/               (1214 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -29,7 +29,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1197 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果)、payload 值形状与分支加固、熔断器/限流器边界 |
+| Vapor.Steam.Core.Tests | 1214 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果)、payload 值形状与分支加固、熔断器/限流器边界 |
 | Vapor.ControlPlane.Tests | 603 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
 | Vapor.Plugins.Core.Tests | 128 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 126 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
@@ -38,7 +38,7 @@ tests/
 | Vapor.Plugins.Monitoring.Tests | 35 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
-| **合计** | **2263** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2270** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -49,7 +49,7 @@ tests/
 
 ## 测试分类
 
-### Steam.Core(1207 个测试)
+### Steam.Core(1214 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -107,6 +107,7 @@ tests/
 | TradeRateLimiterTests | 16 | 频控(窗口/并发槽/超时/租约与销毁交互) |
 | CardSwapMatcherTests | 9 | 重复分组与 1:1 互补匹配(keep/excess 只取可交易/排序确定性/双向互补条件/单向不配/maxSwaps 截断/context 规则) |
 | TradeUrlParamsTests / TradeUrlParamsExtendedTests | 7 | 报价 URL 参数 |
+| TradeParsingPropertyTests | 7 | FsCheck property:报价 URL 解析(任意输入不抛且解析成功必 ≥ base/32 位形态加 base/64 位形态直通/token URL 编码往返,lone surrogate 过滤)与状态机谓词(无过期时间永不过期/CanAccept⟹CanDecline+收到的 Active/sender 自匹配合规域恒过——抓出 AccountIdOther 次规范形态被 ToAccountId 折 0 的防御语义边界) |
 
 #### 安全与凭据
 | 测试类 | 数量 | 说明 |
@@ -311,6 +312,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 > - **防御兜底与时序边沿**（13 行）：`SqliteJobStore` 迁移边沿（316/622/623/867）、`SqliteCrawlStore` 同事务同谓词防御性 CAS（251）、`SteamTimeSynchronizer` 真实网络超时（73）、`MetricsHttpServer` 断连 catch（137/140，时序边沿，多轮实测在命中与未命中间波动）、`MarketWatchPlugin` 轮询循环 catch OCE/Exception（194/196/197，时序边沿）、`Program` 135 取决于测试 bin 是否含 wwwroot、2653 agent WS 循环异常出口 finally。
 
+> 2026-09-19 维护轮（Code scanning 告警清零 + FsCheck 扩面，2263→2270 全绿：Steam.Core 1207→1214）。①**CodeQL `cs/cleartext-storage-of-sensitive-information` 13 条 open（high）根治**——名字启发式把 ulong 局部变量 `accountId` 命中为敏感账户数据，taint 沿 `PartnerSteamId` 传入五个文件的 13 个日志 sink（值实为公开 SteamID 非凭据；09-18 dismiss 过一轮但代码改动行号漂移后同源重开——dismiss 绑定位置治标不治本），源改名三处（`TradeModels` 的 `out var parsedPartner`、`ToSteamId64(uint partnerId)` 参数、round-trip 测试参数 `rawId64`）断名流，CodeQL 重扫 open 清零且结构性不再重开。**命名纪律入册：src/tests 的 ulong 标识符局部变量避开 `accountId` 形命名**（SteamID 一律 `steamId`/`partnerId`）。②**FsCheck 扩面**（§36 收官列明的可迭代方向）+7 property（`TradeParsingPropertyTests`）：报价 URL 解析四条（任意输入不抛且解析成功必 ≥ base、32 位形态加 base、64 位形态直通、token URL 编码往返——lone surrogate 过滤照 crypto 先例）+ 状态机三条（无过期时间永不过期、CanAccept ⟹ CanDecline + 收到的 Active、sender 自匹配合规域恒过）。两处修正入册：时间偏移 helper 须用 `FromUnixTimeMilliseconds`（epoch 起算）而非 `AddMilliseconds`（epoch 总量加到 2026 溢出 9999 上限）；ValidateForAccept 自匹配性质需规范域 guard——`AccountIdOther` 次规范形态（< base）被 `ToAccountId` 折 0 属有意防御语义（`ToAccountId_WithSubBaseValue_ReturnsZero` 锚定），恒等式只在 64 位规范域成立。③统计表 stale 修正：Steam.Core 行 1197 为 §34 轮漏更（实为 1207），本轮起以 TRX 实测计数为准。验证：Steam.Core 1214 全绿、format 门禁过、CI 终态见提交后监控。
+
 ### 排除项
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
@@ -457,7 +460,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 ## 测试维护
 
 - 定期更新测试以匹配代码变更
-- 保持测试覆盖率稳步提升（当前 99.3%，CI/Codecov 门禁 70%，见上方基线表）
+- 保持测试覆盖率稳步提升（当前 99.6%，CI 覆盖率门禁 99.5%，见上方基线表）
 - 新功能必须包含测试
 - 修复 bug 时添加回归测试
 - 定期审查和重构测试代码
