@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1249 tests)
+├── Vapor.Steam.Core.Tests/               (1256 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -29,7 +29,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1249 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固、trade 资产载荷解析 property、Steam TOTP property、熔断器/限流器边界 |
+| Vapor.Steam.Core.Tests | 1256 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析 property、Steam TOTP property、熔断器/限流器边界 |
 | Vapor.ControlPlane.Tests | 604 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
 | Vapor.Plugins.Core.Tests | 129 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 129 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
@@ -39,7 +39,7 @@ tests/
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 27 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2337** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2344** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -50,7 +50,7 @@ tests/
 
 ## 测试分类
 
-### Steam.Core(1249 个测试)
+### Steam.Core(1256 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -144,6 +144,7 @@ tests/
 | SteamCacheTtlTests | 2 | 分级 TTL 新鲜度 |
 | GameModelsTests | 3 | 游戏数据模型 |
 | PayloadReaderTests / TradeModelsEdgeTests | 25 | payload 读取器方法级分支(17) + 交易模型边界(8:TradeUrlParams/TradeAsset 等值形状与非法输入) |
+| PayloadReaderPropertyTests | 7 | FsCheck property:精确键恒压大小写变体/变体回退命中(OrdinalIgnoreCase)、boxed long 域判定(恰 int 域内转换)、boxed double 域判定(整数且域内,NaN/∞ 全 null)、任意 int 三形态(装箱/invariant 字符串/JSON 字符串)往返、任意 bool 三形态往返(**bool.ToString() 产 "True"/"False" 须被 TryParse 接受**——点例只测过小写)、任意形状×任意键全读取器不抛 |
 
 #### Steam 认证
 | 测试类 | 数量 | 说明 |
@@ -293,7 +294,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 | Steam.Core | 99.7% |
 | MarketWatch | 98.9% |
 | KeyRotation | 98.1%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 2 行——测试进程内会终止 testhost，结构性不可测） |
-| **合计** | **99.7%** (14545/14584) |
+| **合计** | **99.7%** (14547/14584) |
 
 > 历史基线：2026-09-12 首次真实全解决方案基线为 74.3%（此前 44.6% 的初版系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致，合并未归一化导致同一行被重复计入分母）。2026-09-13 覆盖率冲刺（逐文件提取未覆盖行并针对性补测）后达 95.9%。2026-09-14 第二轮冲刺后达 98.6%（Agent 91.9%→98.1%、ControlPlane 97.9%→99.5%、Plugins.Core 88.1%→99.1%、Monitoring 89.7%→97.2%）；同日第二轮半（fd1ae2e，+36 测试）删除第二轮归档的死代码（`VaporCryptoHelper` 防御 catch、`HttpCircuitBreaker` HalfOpen 存储态、`RecurringJobScheduler` missed 组合、`SteamTotp` 空 base64、`RedactingLoggerProvider.AppendPairs`）并新增 TracingTests/TestFixturesTests/SteamTimeSynchronizerTests，TestFixtures 故障 fixture 库亦获全覆盖，TestFixtures 68.3%→100%、Monitoring 97.2%→100%；回调泵同步 Sleep 改异步 Delay 后达 **99.5%**（57 行未覆盖）。2026-09-15 P7/P8/P9 三个功能阶段落地后新代码覆盖率债使合计回落至 98.5%（Steam.Core 97.8%、ControlPlane 98.8%）。
 >
@@ -329,6 +330,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-19 维护轮五（FsCheck 扩面四——trade 资产载荷解析 property；「继续」自主立项，§36 收官点名的 offer 解析族；2321→**2328** 全绿：Steam.Core 1236→1243，**性质测试第 4 次抓获真产品缺陷并修复**）。+7 property（`TradeAssetParsingPropertyTests`，`ParseTradeAssets`/`ParseSingleAsset` private→internal 直测）：①**字段精确性**——任意 boxed 数值与 InvariantCulture 字符串（线上 JSON 数字的替身）精确解析（全范围生成器，assetId==0 guard 排除丢条目域）；②**默认值二分语义**——缺键/null 保 CS:GO 默认（730/2/1）、不可读值同样回退默认；③**丢条目**——asset_id 缺失/null/0/不可读/溢出五形态全丢；④**容器全形状**——payload 键缺失/null/字典列表/混合元素列表/裸标量任意形状不抛、缺键得 Empty 非错误、产出条目 assetId 恒非零；⑤**过滤保序**——有效/无效混合条目按输入序保留有效者。**缺陷（TryParse out 参数陷阱，§36 CA1806 注释声称语义的假落实）**：`uint appId = 730; _ = uint.TryParse(obj.ToString(), out appId)`——TryParse 失败时把 out 参数**写 0**，预置默认被覆盖，注释「unreadable keeps default」与实际行为不符：不可读 app_id/context_id 产出 AppId=0/ContextId=0 的静默垃圾条目（缺键与不可读两条路径行为不一致；仅 amount 因下游 clamp 碰巧正确）；修复为失败分支显式重赋默认（amount 的 ≤0 clamp 一并统一进解析处），「缺键 = 不可读 = 默认」三态一致。**方法论入册**：①「预置默认 + 丢弃 TryParse 返回值」是 C# 陷阱写法——out 参数失败写 0 使预置失效，防御性解析必须检查返回值并在失败分支显式回退；②注释声称的语义未经测试锚定时可能整段为假——§36 CA1806 治理时给这四处加的注释就是对行为的错误断言，property 测试以「我认为的语义」写断言即刻暴露。**测试侧修正两条**：FsCheck 默认 string 生成器含 null——payload 字典 key 用 `NonNull<string>`（先例 `VaporCryptoRoundTripPropertyTests`）；混合类型 switch 臂需显式 `(object?)` 转换消 CS8506。验证：全量覆盖率轮全绿（合计 **99.7%** 14547/14584，门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
 
 > 2026-09-19 维护轮六（FsCheck 扩面五——认证码数学 property：SteamTotp + ConfirmationHashGenerator；「继续」自主立项，§36 收官点名的可迭代方向；2328→**2337** 全绿：Steam.Core 1243→1249 / MobileAuthenticator 126→129）。+9 property：①**SteamTotp（`SteamTotpPropertyTests`，6 条）**——**RFC 6238 oracle 交叉验证**（测试内本地手写规范实现：HMAC-SHA1/30s 窗口 big-endian 计数器/dynamic truncation/Steam 字母表投影，与产品实现任意 secret×时间全域恒等——「实现 = 规范」性质，独立于产品代码路径）、输出确定性 + 恒 5 字符 ⊆ 26 符号无混淆字母表（0/1/I/L/O 缺席 = 转抄安全语义的构造性保证）、同 30s 窗口任意偏移同码（窗口索引全域 × 偏移全域构造域，规避 ulong 时间溢出）、SecondsRemaining 周期性（SR(t)=SR(t+30)）+ 值域 [1,30]（负余数修正域全域）、DecodeSecret 任意合法 base64 往返恒等 + 坏输入按 ParamName 拒绝；②**ConfirmationHashGenerator（`ConfirmationHashGeneratorPropertyTests`，3 条，MobileAuthenticator.Tests 首次引入 FsCheck）**——HMAC-SHA1 oracle 交叉验证（8B big-endian 时间 + UTF-8 tag 拼接，任意 secret×时间×四已知 tag 恒等）、确定性 + 四已知 tag 同输入互异、失败契约（空 secret 先于空 tag 检查 → ParamName 分别为 identitySecretBase64/tag）。**本轮无产品缺陷**——认证数学已有已知向量锚定，property 的价值是把「3 个 RFC 向量点例」升级为「全域 = 规范」断言；oracle 交叉验证形态适用于一切有规范可依的实现（RFC/协议文档）。**测试侧修正两条入册**：①反例清单须实测——`"ZZZZ"` 是合法 base64（4 字符组解码 3 字节），直觉上「乱码」的串可能落进合法域，被 property 抓出后换 `"===="`（长度 4 全 padding 非法）；②`uint % int` 提升为 long 不能作 string 索引器参数（显式 `(int)` 收窄）。顺带修正 4 处 stale 计数（ControlPlane 603→604、插件体系 345→349、Plugins.Core 128→129、MobileAuthenticator 126→129——维护轮四只更了统计表漏了分类标题，本轮起分类标题一并对照）。覆盖率合计 99.7%（14545/14584）：分子 −2 为 SessionManager Barrier 竞态臂轮间波动（上轮命中本轮未命中，在册时序边沿家族照旧定性）。验证：全量覆盖率轮全绿（门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
+
+> 2026-09-19 维护轮七（FsCheck 扩面六——payload 读取器值形状 property；「继续」自主立项，轮五 trade 资产解析的同族地基收官——全部 action 入口都走 `PayloadReader`；2337→**2344** 全绿：Steam.Core 1249→1256）。+7 property（`PayloadReaderPropertyTests`）：①**查找语义**——精确键恒压大小写变体（decoy 在旁不误返）、变体回退命中（`ToUpperInvariant` 孪生键全域，自碰撞 guard——decoy 跳过而非赋值，见下）；②**GetInt32 域判定**——boxed long 恰 int 域内转换（全域 long 二分边界）、boxed double「整数且域内」双条件（生成器含 NaN/±∞ 全 null——与 §36 TryGetDouble 的 IsFinite 守卫语义呼应）；③**往返三形态**——任意 int 经装箱/invariant 字符串/JSON 字符串三形态存活（负数与 ±int 边界全域，NumberStyles.Integer 锚定）；任意 bool 三形态往返——**`bool.ToString()` 产 "True"/"False" 必须被 bool.TryParse 接受**（点例只测过小写 "true"/"false"，大小写形态此前无锚）；④**总函数性**——任意形状×任意键×三读取器永不抛。**测试侧自纠一条**：首版「精确键压变体」性质中，key 全大写自反时 decoy 赋值会**覆盖** exact 值（注释声称「碰撞时断言仍成立」是错的——轮五同款「注释未推演」陷阱，property 一轮即抓）；修复为自碰撞时跳过 decoy。覆盖率合计 99.7%（14547/14584，Barrier 竞态臂 2 行本轮命中回归）。验证：全量覆盖率轮全绿（门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
 
 ### 排除项
 
