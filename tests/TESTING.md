@@ -12,7 +12,7 @@ tests/
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (573 tests)
+├── Vapor.ControlPlane.Tests/             (595 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
 ├── Vapor.Plugins.Core.Tests/             (128 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (126 tests)
@@ -30,7 +30,7 @@ tests/
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
 | Vapor.Steam.Core.Tests | 1194 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果)、payload 值形状与分支加固、熔断器/限流器边界 |
-| Vapor.ControlPlane.Tests | 573 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排(boost/trade 策略)、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
+| Vapor.ControlPlane.Tests | 595 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化)、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
 | Vapor.Plugins.Core.Tests | 128 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 126 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
 | Vapor.Agent.Tests | 54 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload)、WS URI 构造、maFile 离线导入 CLI、追踪注入 |
@@ -38,7 +38,7 @@ tests/
 | Vapor.Plugins.Monitoring.Tests | 35 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 39 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
-| **合计** | **2226** | (2026-09-18 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2248** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -145,13 +145,13 @@ tests/
 | SteamTotpTests | 14 | Steam TOTP(本地 2FA 码生成) |
 | SteamTimeSynchronizerTests | 9 | Steam 服务器时间同步 |
 
-### ControlPlane(573 个测试)
+### ControlPlane(595 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | ProgramBranchCoverageTests | 73 | Program 组装层分支(配置解析/环境变量回退/装配路径逐支驱动) |
 | AccountApiTests | 93 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取、挂单创建/撤单、积分兑换、重复查询/换卡报价:fake agent 顺序回报;五端点 202/502 三态与 claim 校验) |
-| DesiredStateReconcilerTests | 56 | 账户编排(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸) |
+| DesiredStateReconcilerTests | 78 | 账户编排(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸 + §35 派发守卫(agent 能力缺失与 dry-run)/审计隔离(异常吞咽与 OCE 传播)/payload 多类型解析防御/结算回读防御(空 Tasks/失败 deviation/confirm 链)) |
 | CrawlApiTests | 40 | 数据抓取 REST(计划 CRUD/PUT merge 语义/触发/分片领取/行回写/claim 校验与去重) |
 | CrawlRunWorkerTests | 27 | 抓取执行 worker(读取/派发取消传播/GetJob 故障吞咽/坏 tick 兜底/停机竞态双路径/审计故障不阻断/混合列表输出解析) |
 | SqliteJobStoreTests | 25 | job 存储(并发/迁移/周期模板) |
@@ -184,7 +184,7 @@ tests/
 
 - **Plugins.Core(128)**:清单解析(13)、发现(5)、加载(11)+加载器(8)、卸载与 ALC 回收(9,含 DisposeAsync 卸载自身抛错隔离)、信任与权限(18)、事件分发(12)、配置扩展(20)、能力(7)、插件 API 与 SemVer 兼容(18,含 TryParseVersion theory 展开)、管理器并发(1)、故障 fixture 库(6)
 - **MobileAuthenticator(126)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(41)+ 动作边界:payload 形状/失败语义/冷却与并发(44)、确认客户端解析含 type 归一化(10)+ 客户端会话分支(17)、解析分支(10)、确认哈希(8)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
-- **MarketWatch(56)**:watch 存储(18)/阈值评估/三个 watch action(kind=price/free)/轮询告警与 webhook(free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机/循环重启测试钩子)/单 app 抓取失败隔离/阈值 payload 值形状/无参构造 Info/插件宿主实战加载(2)
+- **MarketWatch(56)**:watch 存储(18)/阈值评估/三个 watch action(kind=price/free)/轮询告警与 webhook(free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机/手动驱动前 drain-and-stop 测试钩子)/单 app 抓取失败隔离/阈值 payload 值形状/无参构造 Info/插件宿主实战加载(2)
 - **Monitoring(35)**:指标注册表(9)/HTTP 服务(16)/插件生命周期(10)
 
 ### Agent(54 个测试)
@@ -268,7 +268,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。
 
-### 当前基线（2026-09-18，行覆盖 99.3%）
+### 当前基线（2026-09-19，行覆盖 99.6%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中）：
 
@@ -276,15 +276,15 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 |--------|--------|
 | Agent | 100.0% |
 | MobileAuthenticator | 100.0% |
-| Monitoring | 100.0% |
+| Monitoring | 99.4%（`MetricsHttpServer` 时序边沿 2 行，本轮未命中） |
 | Plugins.Core | 100.0% |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） |
 | Protocol | 100.0% |
-| ControlPlane | 99.1% |
+| ControlPlane | 99.8% |
 | Steam.Core | 99.4% |
 | MarketWatch | 98.9% |
-| **合计** | **99.3%** (14354/14452) |
+| **合计** | **99.6%** (14407/14459) |
 
 > 历史基线：2026-09-12 首次真实全解决方案基线为 74.3%（此前 44.6% 的初版系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致，合并未归一化导致同一行被重复计入分母）。2026-09-13 覆盖率冲刺（逐文件提取未覆盖行并针对性补测）后达 95.9%。2026-09-14 第二轮冲刺后达 98.6%（Agent 91.9%→98.1%、ControlPlane 97.9%→99.5%、Plugins.Core 88.1%→99.1%、Monitoring 89.7%→97.2%）；同日第二轮半（fd1ae2e，+36 测试）删除第二轮归档的死代码（`VaporCryptoHelper` 防御 catch、`HttpCircuitBreaker` HalfOpen 存储态、`RecurringJobScheduler` missed 组合、`SteamTotp` 空 base64、`RedactingLoggerProvider.AppendPairs`）并新增 TracingTests/TestFixturesTests/SteamTimeSynchronizerTests，TestFixtures 故障 fixture 库亦获全覆盖，TestFixtures 68.3%→100%、Monitoring 97.2%→100%；回调泵同步 Sleep 改异步 Delay 后达 **99.5%**（57 行未覆盖）。2026-09-15 P7/P8/P9 三个功能阶段落地后新代码覆盖率债使合计回落至 98.5%（Steam.Core 97.8%、ControlPlane 98.8%）。
 >
@@ -296,13 +296,15 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 >
 > 2026-09-18 基线刷新（§31 admin 管理台 / §32 编排器保守自动接受 / §33 成就管理落地后）：TRX 计数 2093→2216，新代码债使合计回落至 **99.1%**（Steam.Core 99.7%→99.0%、ControlPlane 99.8%→99.1%）；同日 +10 测试（2216→2226）收掉成就读写 action 的边界缺口（`GetAchievementsAction` 的 internal 工厂 ctor 与元数据/无 webHandler/非数字 steam_id；unlock/reset 的 transport 抛异常臂；reset 无 client 与无响应；`ParseNames` 双格式值形状——裸 string、.NET List、JSON 数组非字符串元素逐字透传、null 与标量拒绝），Steam.Core 99.0%→99.4%、Monitoring 时序边沿行本轮实测命中回到 **100%**，合计升至 **99.3%**（14354/14452）。剩余 98 行的定性见下表：`DesiredStateReconciler` 51 行编排分支（no-agent skip/dry-run 守卫/审计异常隔离/payload 多类型解析）为干净但集成型构造，留后续测试深化冲刺；§33 新 records（`ISteamTransport`/协议 handler）的合成成员 Equals/ToString 属覆盖噪音，定性入册不强追。
 >
-> 剩余 98 行未覆盖，六类（非测试缺口，不计入门禁预期）：
-> - **编排分支（集成型构造）**（51 行）：`DesiredStateReconciler` 的 §32 trade/§29 boost 编排循环——no-agent skip、`GuardDryRunAsync`、审计异常隔离 catch、payload 多类型解析 switch。逻辑干净，但需要「多账户 store + 编排器全装配」的集成型夹具，立项为后续测试深化冲刺（不承诺）。
-> - **record 合成成员（噪音）**（约 16 行）：§33 引入的 `ISteamTransport` 与协议 handler 新 records 的 Equals/ToString/Deconstruct——真实路径仅构造不比较，定性入册不强追。
+> 2026-09-19 §35 Reconciler 测试深化（+22 测试，2226→2248 全绿：ControlPlane 573→595）收掉 `DesiredStateReconciler` 51 行编排分支中的 48 行，ControlPlane 99.1%→**99.8%**，合计升至 **99.6%**（14407/14459）。覆盖内容：派发守卫（boost evaluate 的 ActiveJobId 在飞行等待、playtime/trade 扫描/gift accept 的 no-agent skip 与 dry-run guard）；审计隔离（评估与 auto-accept 的异常吞咽及 OCE rethrow、201 offer 的 decisionsTruncated 软上限）；payload 解析防御（offerId==0/非 object JsonElement/裸 string 条目、OutputFlagIsTrue 双形态、boost 空 targets、playtimes 容器为 string、数值全形状臂——boxed int/long/double/string/JsonElement/缺 key）；结算回读防御（playtime/trade 扫描/accept 三处 StripTasks 空 Tasks 静默返回、accept 失败 deviation 且队列 drain、confirm Finished/Failed 两态）。两处实测定性防御深度不可达入册：accept dry-run guard 661（全局 dry-run 下前置扫描已被拦，cfg 只读无中途切换）、confirm 放弃 759-760（agent 消失走步骤 1 rebalance 清空 AssignedAgent+ActiveJobId）。修正三处测试自身断言错误：Boost 无 targets 被 store fail-fast 拒绝（改用 Online 状态直测）、审计断言未计入 ThrowOnRecord 置位前的合法条目（改记置位前计数）、gift accept no-agent 实际命中两轮 skip（settle 同 pass 尝试+下轮重试）。意外收获一个族一 flake：`GetMarketListings_AgentReportsFailure_Returns502` 与 `ProgramBranchCoverageTests` 类间并行时，30s 等待循环读到后者的 300ms `AccountTaskRunner.WaitWindow` 窗口提前 202（新增 `AccountTaskWaitWindowCollection` 串行化两类，全量覆盖率轮实测复现、修复后全绿）。Monitoring 时序边沿行（137/140）本轮未命中回到 99.4%，照旧定性。剩余 52 行定性见下表。
+>
+> 剩余 52 行未覆盖，六类（非测试缺口，不计入门禁预期）：
+> - **编排分支防御深度不可达**（3 行）：`DesiredStateReconciler` 661（accept dry-run guard：全局 dry-run 下前置扫描派发已被拦，cfg 只读无中途切换路径）、759-760（confirm 放弃：agent 消失走步骤 1 rebalance 清空 `AssignedAgent`+`ActiveJobId`，confirm 结算读到的状态组合不可达）。§35 实测定性，同「同谓词防御性死分支」家族。
+> - **record 合成成员（噪音）**（16 行）：`ISteamTransport`（210-240 的 Equals/ToString）与 `SteamUserStatsProtocolHandler`（12-15）——真实路径仅构造不比较，定性入册不强追。
 > - **平台分支**（2 行）：`FileCredentialStore` 的 Windows return 与 Unix 权限 catch 另一侧（本机 Linux 非 root 只能走单侧，root 下 chmod 成功需守卫）。
-> - **集成壳/反射**（约 21 行）：`SteamClientManager` 的 SteamKit2 内部类型反射（66-72）、`SteamStoreApiClient` 真实 HTTP 壳（47-51）、`SessionManager` 从不 Complete 的通道正常出口（122/216/276）与 Barrier 竞态臂（132/133，现有测试在 2 核 CI 零命中）、`BotSession` SteamKit 回调深处（224/246）。
-> - **结构性 DEAD**（约 9 行）：`RedisVaporCache` for(;;) 无自然出口（108）、`RecurringJobScheduler`/`TaskSchedulerService` 的 `PeriodicTimer.WaitForNextTickAsync` 仅在 Dispose 时返 false（56/42）、`MarketWatchPlugin` 不可注入的防御深度与 const 行（27/174-177）。
-> - **防御兜底与时序边沿**（约 7 行）：`SqliteJobStore` 迁移边沿（316/622/623/867）、`SqliteCrawlStore` 同事务同谓词防御性 CAS（251）、`SteamTimeSynchronizer` 真实网络超时（73）、`MetricsHttpServer` 断连 catch（137/140，两轮实测未命中，时序边沿）、`CrawlRunWorker` 105/106 为 coverlet 异步状态机行归属偏差（对应路径已有测试走过）、`Program` 135 取决于测试 bin 是否含 wwwroot。
+> - **集成壳/反射**（14 行）：`SteamClientManager` 的 SteamKit2 内部类型反射（66-72）、`SessionManager` 从不 Complete 的通道正常出口（122/216/276）与 Barrier 竞态臂（132/133，现有测试在 2 核 CI 零命中）、`BotSession` SteamKit 回调深处（224/246）、`SteamProfileGamesClient` 前导空白跳过 while（154）。
+> - **结构性 DEAD**（4 行）：`RedisVaporCache` for(;;) 无自然出口（108）、`RecurringJobScheduler`/`TaskSchedulerService` 的 `PeriodicTimer.WaitForNextTickAsync` 仅在 Dispose 时返 false（56/42）、`MarketWatchPlugin` const 行（27）。
+> - **防御兜底与时序边沿**（13 行）：`SqliteJobStore` 迁移边沿（316/622/623/867）、`SqliteCrawlStore` 同事务同谓词防御性 CAS（251）、`SteamTimeSynchronizer` 真实网络超时（73）、`MetricsHttpServer` 断连 catch（137/140，时序边沿，多轮实测在命中与未命中间波动）、`MarketWatchPlugin` 轮询循环 catch OCE/Exception（194/196/197，时序边沿）、`Program` 135 取决于测试 bin 是否含 wwwroot、2653 agent WS 循环异常出口 finally。
 
 ### 排除项
 
