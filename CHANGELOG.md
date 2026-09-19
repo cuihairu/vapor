@@ -75,6 +75,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Refresh cadence configurable via `Vapor_RECONCILE_BOOST_REFRESH_SECONDS`
   (default 1800s).
 
+### Fixed
+
+- Market fee math (`MarketFeeCalculator`, exposed via property tests):
+  `FromBuyerPrice` started its search at the exact-15%-fees estimate
+  `floor(target × 100 / 115)`, but the two floored fee components can
+  undercut that estimate (and the one-cent minimum leaves up to two
+  further cents on very low prices), so the largest feasible seller was
+  systematically missed by up to three cents — a seller selling a typical
+  sub-$1 card received one cent less than the buyer target allowed. The
+  walk now starts at estimate+3 (a proven upper bound on the shortfall)
+  and still steps down, so exact-fee targets like 115 → 100 are unchanged.
+  Both entry points also guard prices above `MaxSellerProceedsCents`
+  (`int.MaxValue / 15`, ~$1.43M) where the int fee multiplies previously
+  overflowed unchecked and could wrap the buyer price negative.
+
 ## [0.1.0-alpha.2] - 2026-09-17
 
 ### Changed
