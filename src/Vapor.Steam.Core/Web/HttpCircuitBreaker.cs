@@ -180,4 +180,11 @@ public sealed record WebRequestMetricsSnapshot(
 /// <summary>
 /// Thrown when the circuit breaker is open and the request was rejected without hitting the network.
 /// </summary>
-public sealed class CircuitBreakerOpenException(string message) : Exception(message);
+public sealed class CircuitBreakerOpenException : Exception
+{
+	public CircuitBreakerOpenException() { }
+
+	public CircuitBreakerOpenException(string message) : base(message) { }
+
+	public CircuitBreakerOpenException(string message, Exception innerException) : base(message, innerException) { }
+}

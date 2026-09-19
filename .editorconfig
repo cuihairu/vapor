@@ -18,3 +18,76 @@ end_of_line = lf
 [*.sln]
 end_of_line = crlf
 
+# ── Roslyn 分析器分层（§36，ASF 风格收紧）──────────────────────────────────
+# Directory.Build.props 全开 AnalysisLevel=latest-all + EnforceCodeStyleInBuild，
+# TreatWarningsAsErrors 使警告成错误。这里只做两件事：与仓库架构决策直接冲突的
+# 规则降 none（永久、注释写明理由），保留可见性但不阻塞 build 的降 suggestion。
+# 真边界规则（culture/同步 IO/dispose/SQL/TryParse 语义等）保持默认 error。
+
+[*.cs]
+# 架构决策冲突：
+dotnet_diagnostic.CA1031.severity = none   # catch Exception 隔离是审计/插件/编排层的显式设计（不破坏编排）
+dotnet_diagnostic.CA1707.severity = none   # 测试方法名下划线是仓库命名铁律
+dotnet_diagnostic.CA1848.severity = none   # LoggerMessage delegate 是性能风格大重构，不属边界检查
+dotnet_diagnostic.CA1515.severity = none   # 类型保持 public 供 InternalsVisibleTo 测试
+dotnet_diagnostic.CA1062.severity = none   # nullable enable 下参数 null 校验由编译器覆盖
+dotnet_diagnostic.CA1873.severity = none   # 日志参数求值成本微优化
+dotnet_diagnostic.CA5350.severity = none   # SHA1/HMACSHA1 是 Steam Guard/SteamId 协议要求，非选型
+# API design 风格（改面大、无 bug 检出价值）：
+dotnet_diagnostic.CA1050.severity = none   # namespace 外类型
+dotnet_diagnostic.CA1002.severity = none   # List 属性暴露
+dotnet_diagnostic.CA1056.severity = none   # URI 属性用 string
+dotnet_diagnostic.CA1054.severity = none   # URI 参数用 string
+dotnet_diagnostic.CA1716.severity = none   # 保留词命名
+dotnet_diagnostic.CA1724.severity = none   # 类型名与 namespace 冲突
+dotnet_diagnostic.CA1815.severity = none   # struct Equals/GetHashCode
+dotnet_diagnostic.CA1819.severity = none   # 属性返回数组
+dotnet_diagnostic.CA1028.severity = none   # enum 存储类型
+dotnet_diagnostic.CA1024.severity = none   # 属性化建议
+dotnet_diagnostic.CA1064.severity = none   # 泛型 exception
+dotnet_diagnostic.CA1051.severity = none   # 可见实例字段
+dotnet_diagnostic.CA1030.severity = none   # 事件建议
+dotnet_diagnostic.CA1068.severity = none   # CancellationToken 参数序：API design 约定，现有面改动无 bug 价值
+dotnet_diagnostic.CA1711.severity = none   # 后缀命名（标识符假后缀），命名风格不属边界检查
+# throw-helper 风格重构（CA1510/12/13），无 bug 价值：
+dotnet_diagnostic.CA1510.severity = none
+dotnet_diagnostic.CA1512.severity = none
+dotnet_diagnostic.CA1513.severity = none
+# 保留可见性不阻塞（真实益但本轮不作为门禁）：
+dotnet_diagnostic.CA2007.severity = suggestion  # ConfigureAwait：ASP.NET Core 无同步上下文，库侧惯例已有
+dotnet_diagnostic.CA1822.severity = suggestion  # 成员 static 化
+dotnet_diagnostic.CA1826.severity = suggestion  # LINQ 聚合替代手写循环
+dotnet_diagnostic.CA1859.severity = suggestion  # sealed 化
+dotnet_diagnostic.CA1308.severity = suggestion  # ToLowerInvariant：协议值大小写语义敏感，按站点惯例
+# CA1849 同步 IO：本仓库三处已审均为工程不适用——CTS.Cancel 换 CancelAsync 会改变
+# 回调时序、Microsoft.Data.Sqlite 事务 API 是假异步、MemoryStream/内存流不阻塞。
+# 真网络/文件同步调用仍存在风险，降 suggestion 留 review 把关，不做构建门禁。
+dotnet_diagnostic.CA1849.severity = suggestion
+
+# 测试代码：静态规则的 bug 检出价值在产品路径；测试自身的边界问题由测试执行
+# 暴露。上列已 none 的不再重复，这里补 tests 特有噪声（fixture/惯用法）：
+[tests/**.cs]
+dotnet_diagnostic.CA2007.severity = none   # ConfigureAwait 在测试无意义
+dotnet_diagnostic.CA2000.severity = none   # 测试内对象生命周期由 using/xunit 管理，误报为主
+dotnet_diagnostic.CA1861.severity = none   # const 数组参数（测试数据）
+dotnet_diagnostic.CA2234.severity = none   # HttpClient string-URL 惯用法
+dotnet_diagnostic.CA1305.severity = none   # 测试断言消息不做 culture 格式化
+dotnet_diagnostic.CA1307.severity = none   # 测试内错误消息比较
+dotnet_diagnostic.CA1849.severity = none   # 测试宿主同步 IO 不在产品路径上
+dotnet_diagnostic.CA1063.severity = none   # dispose 模式由 xunit IAsyncDisposable 惯例取代
+dotnet_diagnostic.CA2213.severity = none   # 未 Start 的 BackgroundService 等测试桩无可释放资源，字段清理由显式 Dispose 管
+dotnet_diagnostic.CA5401.severity = none   # 固定种子 Random 是测试确定性手段
+dotnet_diagnostic.CA2016.severity = none   # token 透传（测试短路路径）
+dotnet_diagnostic.CA1802.severity = none   # literal 化建议
+dotnet_diagnostic.CA1508.severity = none   # 冗余 null 检查（测试防御式构造）
+dotnet_diagnostic.CA1032.severity = none   # 测试桩 exception 不需要全 ctor
+dotnet_diagnostic.CA2100.severity = none   # 测试内 SQLite schema 固定串
+dotnet_diagnostic.CA2025.severity = none   # 测试桩 dispose 模式
+dotnet_diagnostic.CA2008.severity = none   # Task 构造器（测试低层注入）
+dotnet_diagnostic.CA1852.severity = none   # sealed 化建议
+dotnet_diagnostic.CA1836.severity = none   # IsDefault 建议
+dotnet_diagnostic.CA1834.severity = none   # StringBuilder 常量建议
+dotnet_diagnostic.CA1812.severity = none   # 未实例化类（fixture/桩）
+dotnet_diagnostic.CA1816.severity = none   # GC.SuppressFinalize（测试桩）
+dotnet_diagnostic.CA1711.severity = none   # 后缀命名（桩类名）
+

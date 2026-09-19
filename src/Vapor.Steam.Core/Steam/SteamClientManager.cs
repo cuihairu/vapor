@@ -80,12 +80,20 @@ internal sealed record RedeemReceiptParseResult(
 
 public sealed class SteamAuthCodeRequiredException : Exception
 {
+	public SteamAuthCodeRequiredException() { }
+
 	public SteamAuthCodeRequiredException(string message) : base(message) { }
+
+	public SteamAuthCodeRequiredException(string message, Exception innerException) : base(message, innerException) { }
 }
 
 public sealed class SteamTwoFactorCodeRequiredException : Exception
 {
+	public SteamTwoFactorCodeRequiredException() { }
+
 	public SteamTwoFactorCodeRequiredException(string message) : base(message) { }
+
+	public SteamTwoFactorCodeRequiredException(string message, Exception innerException) : base(message, innerException) { }
 }
 
 /// <summary>

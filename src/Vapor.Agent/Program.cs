@@ -34,12 +34,16 @@ VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
 if (args.Length > 0 && args[0].Equals("import-mafile", StringComparison.OrdinalIgnoreCase))
 {
 	using var importLoggerFactory = LoggerFactory.Create(builder => builder.AddRedactingConsole().SetMinimumLevel(LogLevel.Information));
+	// CA2000 suppressed: ownership of importStore transfers to MaFileImportCli.RunAsync,
+	// which disposes it before returning.
+#pragma warning disable CA2000
 	var importStore = new FileCredentialStore(importLoggerFactory.CreateLogger<FileCredentialStore>());
 	int exitCode = await MaFileImportCli.RunAsync(
 		args.Skip(1).ToArray(),
 		importStore,
 		importLoggerFactory.CreateLogger("Vapor.Agent.ImportMaFile"));
 	return exitCode;
+#pragma warning restore CA2000
 }
 
 string agentId = RequireEnv("AGENT_ID");
@@ -314,6 +318,9 @@ static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadP
 	var eventDispatcher = new PluginEventDispatcher(loggerFactory);
 	eventDispatcher.Start(services.GetRequiredService<ISessionManager>());
 
+	// CA2000 suppressed: ownership of the manager transfers to the caller along with
+	// eventDispatcher; it is disposed there, not in this scope.
+#pragma warning disable CA2000
 	var manager = new PluginManager(
 		new DefaultPluginHostServices(loggerFactory, services),
 		loggerFactory);
@@ -355,6 +362,7 @@ static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadP
 		report.Failures.Count,
 		eventDispatcher.SubscriberCount);
 	return (manager, eventDispatcher);
+#pragma warning restore CA2000
 }
 
 async Task RunOnce(CancellationToken cancellationToken)
@@ -446,10 +454,14 @@ async Task RunOnce(CancellationToken cancellationToken)
 				currentAttempt = task.Attempt;
 			}
 
+			// CA2025 suppressed: heartbeatTask is awaited below (after heartbeatCts.Cancel)
+			// before this scope exits; it is not left orphaned.
+#pragma warning disable CA2025
 			var heartbeatTask = Task.Run(
 				() => HeartbeatLoop(ws, sendGate, task, heartbeatCts.Token),
 				heartbeatCts.Token
 			);
+#pragma warning restore CA2025
 
 			bool success;
 			string? error;
@@ -784,7 +796,7 @@ static async Task PublishSessionEventAsync(string wsUrlBase, string agentApiKey,
 		var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
 		// POST to a new endpoint that will publish the event
-		var response = await httpClient.PostAsync($"{httpBaseUrl}/v1/sessions/events", content);
+		var response = await httpClient.PostAsync(new Uri($"{httpBaseUrl}/v1/sessions/events"), content);
 
 		if (!response.IsSuccessStatusCode)
 		{

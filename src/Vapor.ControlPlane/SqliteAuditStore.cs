@@ -172,6 +172,9 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 
 		if (withPaging)
 		{
+			// CA2100 suppressed: every interpolated fragment (whereClause/order) is a
+			// compile-time constant built above; all user input rides as $parameters.
+#pragma warning disable CA2100
 			cmd.CommandText = $"""
 				SELECT id, ts_ms, action, actor, remote_ip, account_name, job_id, details_json
 				FROM audit_logs
@@ -179,16 +182,21 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 				{order}
 				LIMIT $limit OFFSET $offset;
 				""";
+#pragma warning restore CA2100
 			cmd.Parameters.AddWithValue("$limit", limit);
 			cmd.Parameters.AddWithValue("$offset", offset);
 		}
 		else
 		{
+			// CA2100 suppressed: whereClause is built from compile-time constants above;
+			// user input rides as $parameters.
+#pragma warning disable CA2100
 			cmd.CommandText = $"""
 				SELECT COUNT(*)
 				FROM audit_logs
 				{whereClause};
 				""";
+#pragma warning restore CA2100
 		}
 	}
 

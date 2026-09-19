@@ -70,7 +70,7 @@ public sealed class SteamStoreApiClient : ISteamStoreApiClient
 		try
 		{
 			using var doc = JsonDocument.Parse(response.Body);
-			if (!doc.RootElement.TryGetProperty(appId.ToString(), out var appRoot) ||
+			if (!doc.RootElement.TryGetProperty(appId.ToString(System.Globalization.CultureInfo.InvariantCulture), out var appRoot) ||
 				!appRoot.TryGetProperty("success", out var successElem) || !successElem.GetBoolean())
 			{
 				return null;

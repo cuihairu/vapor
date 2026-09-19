@@ -278,6 +278,8 @@ public sealed class BotSession : IDisposable
 		using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cmd.CancellationToken);
 		CancellationToken effectiveToken = linkedCts.Token;
 
+		// CA2000 suppressed: timeoutCts is disposed in this method's finally block.
+#pragma warning disable CA2000
 		CancellationTokenSource? timeoutCts = null;
 		if (action.Metadata.TimeoutSeconds is > 0)
 		{
@@ -313,6 +315,7 @@ public sealed class BotSession : IDisposable
 		{
 			timeoutCts?.Dispose();
 			_actionLock.Release();
+#pragma warning restore CA2000
 		}
 	}
 

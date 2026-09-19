@@ -79,6 +79,9 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		_eventCallback = callback;
 	}
 
+	// CA2025 suppressed: the session created here is owned by the _sessions dictionary;
+	// capturing it in the pump Task below does not transfer ownership out of this type.
+#pragma warning disable CA2025
 	public Task<BotSession> GetOrCreateSessionAsync(
 		string accountName,
 		AccountCredentials credentials,
@@ -135,6 +138,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 
 		return Task.FromResult(session);
 	}
+#pragma warning restore CA2025
 
 	public Task<BotSession?> GetSessionAsync(string accountName, CancellationToken cancellationToken = default)
 	{

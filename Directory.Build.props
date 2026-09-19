@@ -5,6 +5,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
+
+    <!-- ASF-style strictness: every CA rule participates in the build and a
+         warning is a build failure. Noisy rules are demoted (never silenced)
+         per-rule in .editorconfig. -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <MSBuildTreatWarningsAsErrors>true</MSBuildTreatWarningsAsErrors>
+    <!-- Transitive dependencies included; NU19xx audit warnings become errors
+         through TreatWarningsAsErrors. -->
+    <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>
 
   <!-- Test coverage settings for test projects -->

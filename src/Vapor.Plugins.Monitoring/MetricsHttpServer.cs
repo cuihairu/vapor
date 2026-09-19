@@ -72,6 +72,8 @@ public sealed class MetricsHttpServer : IDisposable
 
 	public void Dispose()
 	{
+		_listener?.Dispose(); // release the socket even when Stop() never ran (CA2213)
+		_listener = null;
 		Stop();
 		_cts.Dispose();
 	}
@@ -200,6 +202,6 @@ public sealed class MetricsHttpServer : IDisposable
 		}
 
 		path = path.Trim();
-		return path.StartsWith("/", StringComparison.Ordinal) ? path : "/" + path;
+		return path.StartsWith('/') ? path : "/" + path;
 	}
 }

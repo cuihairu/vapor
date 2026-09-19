@@ -265,9 +265,9 @@ public sealed class GetTradeConfirmationsAction : IAction
 			["count"] = confirmations.Count,
 			["confirmations"] = confirmations.Select(c => new Dictionary<string, object?>
 			{
-				["id"] = c.Id.ToString(),
-				["nonce"] = c.Nonce.ToString(),
-				["creator_id"] = c.CreatorId.ToString(),
+				["id"] = c.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+				["nonce"] = c.Nonce.ToString(System.Globalization.CultureInfo.InvariantCulture),
+				["creator_id"] = c.CreatorId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["headline"] = c.Headline,
 				["summary"] = c.Summary
 			}).ToList()
@@ -372,7 +372,7 @@ public sealed class RespondTradeConfirmationAction : IAction
 
 		return new ActionResult(true, null, new Dictionary<string, object?>
 		{
-			["confirmation_id"] = confirmationId.ToString(),
+			["confirmation_id"] = confirmationId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 			["operation"] = operation.Value == ConfirmationOperation.Allow ? "allow" : "cancel"
 		});
 	}

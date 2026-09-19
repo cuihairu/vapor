@@ -13,6 +13,9 @@ namespace Vapor.Plugins.Monitoring;
 /// server of its own). Also contributes a <c>get_metrics</c> action and a
 /// <c>/metrics</c> plugin web route for pull-based access through hosts.
 /// </summary>
+// CA1001 suppressed: the plugin protocol releases resources through ShutdownAsync
+// (which disposes the pump CTS and the metrics server), not through IDisposable.
+#pragma warning disable CA1001
 public sealed class MonitoringPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 {
 	/// <summary>Default TCP port for the self-hosted metrics endpoint.</summary>

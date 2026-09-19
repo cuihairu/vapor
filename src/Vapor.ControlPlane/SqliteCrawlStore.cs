@@ -584,6 +584,9 @@ public sealed class SqliteCrawlStore : IDisposable
 
 		string whereClause = where.Count > 0 ? $"WHERE {string.Join(" AND ", where)}" : "";
 
+		// CA2100 suppressed: every interpolated fragment (whereClause) is a
+		// compile-time constant built above; all user input rides as $parameters.
+#pragma warning disable CA2100
 		if (withPaging)
 		{
 			int limit = query.Limit <= 0 ? 100 : Math.Min(query.Limit, 500);
@@ -600,6 +603,7 @@ public sealed class SqliteCrawlStore : IDisposable
 		else
 		{
 			cmd.CommandText = $"SELECT COUNT(*) FROM crawl_results {whereClause};";
+#pragma warning restore CA2100
 		}
 	}
 

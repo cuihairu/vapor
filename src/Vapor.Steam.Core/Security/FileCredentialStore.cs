@@ -17,7 +17,7 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 	private const string BackupFileExtension = ".bak";
 	private const string TempFileExtension = ".tmp";
 
-	private static readonly UnixFileMode CredentialFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+	private const UnixFileMode CredentialFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 
 	private readonly ILogger<FileCredentialStore> _logger;
 	private readonly string _credentialsPath;

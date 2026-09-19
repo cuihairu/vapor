@@ -3,6 +3,8 @@ namespace Vapor.Plugins.Core;
 /// <summary>Raised when plugin discovery, loading or unloading fails.</summary>
 public sealed class PluginException : Exception
 {
+	public PluginException() { }
+
 	public PluginException(string message) : base(message)
 	{
 	}

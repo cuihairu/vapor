@@ -145,6 +145,13 @@ public sealed class RedactingLoggerProvider : ILoggerProvider
 			}
 		}
 
-		private sealed class RedactedException(string message) : Exception(message);
+		private sealed class RedactedException : Exception
+		{
+			public RedactedException() { }
+
+			public RedactedException(string message) : base(message) { }
+
+			public RedactedException(string message, Exception innerException) : base(message, innerException) { }
+		}
 	}
 }

@@ -107,12 +107,16 @@ public sealed class SteamWebHandler : IDisposable
 		_config = config ?? new SteamWebHandlerConfig();
 		_logger = logger;
 
+		// CA2000 suppressed: ownership of the handler transfers to _httpClient, which
+		// disposes it with the client; a using here would dispose it too early.
+#pragma warning disable CA2000
 		var handler = new SocketsHttpHandler
 		{
 			AllowAutoRedirect = false,
 			AutomaticDecompression = System.Net.DecompressionMethods.All,
 			PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15)
 		};
+#pragma warning restore CA2000
 
 		_httpClient = new(handler)
 		{
@@ -460,21 +464,21 @@ public sealed class SteamWebHandler : IDisposable
 		}
 
 		// Referer
-		if (url.Host.Contains("steamcommunity.com"))
+		if (url.Host.Contains("steamcommunity.com", System.StringComparison.Ordinal))
 		{
 			request.Headers.TryAddWithoutValidation("Referer", _config.SteamCommunityUrl.ToString());
 		}
-		else if (url.Host.Contains("steampowered.com"))
+		else if (url.Host.Contains("steampowered.com", System.StringComparison.Ordinal))
 		{
 			request.Headers.TryAddWithoutValidation("Referer", _config.SteamStoreUrl.ToString());
 		}
 
 		// Origin header
-		if (url.Host.Contains("steamcommunity.com"))
+		if (url.Host.Contains("steamcommunity.com", System.StringComparison.Ordinal))
 		{
 			request.Headers.TryAddWithoutValidation("Origin", _config.SteamCommunityUrl.ToString());
 		}
-		else if (url.Host.Contains("steampowered.com"))
+		else if (url.Host.Contains("steampowered.com", System.StringComparison.Ordinal))
 		{
 			request.Headers.TryAddWithoutValidation("Origin", _config.SteamStoreUrl.ToString());
 		}

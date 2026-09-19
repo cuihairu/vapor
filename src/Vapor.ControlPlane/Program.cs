@@ -165,7 +165,7 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 
 	sb.Append("# HELP vapor_controlplane_agents_connected Currently connected agents.\n");
 	sb.Append("# TYPE vapor_controlplane_agents_connected gauge\n");
-	sb.Append("vapor_controlplane_agents_connected ").Append(agents.ListConnected().Count()).Append('\n');
+	sb.Append("vapor_controlplane_agents_connected ").Append(agents.ListConnected().Count).Append('\n');
 
 	sb.Append("# HELP vapor_controlplane_dispatch_failures_total Task dispatch failures since startup.\n");
 	sb.Append("# TYPE vapor_controlplane_dispatch_failures_total counter\n");

@@ -135,7 +135,7 @@ public sealed class GetInventoryAction : IAction
 
 			var output = new Dictionary<string, object?>
 			{
-				["steam_id"] = steamId.ToString(),
+				["steam_id"] = steamId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["app_id"] = appId,
 				["context_id"] = contextId,
 				["total_count"] = kept.Count,

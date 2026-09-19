@@ -260,11 +260,11 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 			// Build trade offer JSON
 			var tradeOfferJson = BuildTradeOfferJson(itemsToGive, itemsToReceive, partnerSteamId, token);
 
-			var content = new FormUrlEncodedContent(new Dictionary<string, string>
+			using var content = new FormUrlEncodedContent(new Dictionary<string, string>
 			{
 				["sessionid"] = sessionId,
 				["serverid"] = "1",
-				["partner"] = partnerSteamId.ToString(),
+				["partner"] = partnerSteamId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["tradeoffermessage"] = message ?? string.Empty,
 				["json_tradeoffer"] = tradeOfferJson,
 				["captcha"] = string.Empty,
@@ -345,12 +345,12 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				};
 			}
 
-			var content = new FormUrlEncodedContent(new Dictionary<string, string>
+			using var content = new FormUrlEncodedContent(new Dictionary<string, string>
 			{
 				["sessionid"] = sessionId,
 				["serverid"] = "1",
-				["tradeofferid"] = tradeOfferId.ToString(),
-				["partner"] = partnerSteamId.ToString(),
+				["tradeofferid"] = tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+				["partner"] = partnerSteamId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["captcha"] = string.Empty
 			});
 
@@ -426,11 +426,11 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				};
 			}
 
-			var content = new FormUrlEncodedContent(new Dictionary<string, string>
+			using var content = new FormUrlEncodedContent(new Dictionary<string, string>
 			{
 				["sessionid"] = sessionId,
 				["serverid"] = "1",
-				["tradeofferid"] = tradeOfferId.ToString()
+				["tradeofferid"] = tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture)
 			});
 
 			var headers = new Dictionary<string, string>
@@ -491,11 +491,11 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				};
 			}
 
-			var content = new FormUrlEncodedContent(new Dictionary<string, string>
+			using var content = new FormUrlEncodedContent(new Dictionary<string, string>
 			{
 				["sessionid"] = sessionId,
 				["serverid"] = "1",
-				["tradeofferid"] = tradeOfferId.ToString()
+				["tradeofferid"] = tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture)
 			});
 
 			var headers = new Dictionary<string, string>
@@ -605,7 +605,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 		{
 			if (i > 0) sb.Append(',');
 			var item = itemsToGive[i];
-			sb.Append($"{{\"appid\":{item.AppId},\"contextid\":\"{item.ContextId}\",\"amount\":{item.Amount},\"assetid\":\"{item.AssetId}\"}}");
+			sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"{{\"appid\":{item.AppId},\"contextid\":\"{item.ContextId}\",\"amount\":{item.Amount},\"assetid\":\"{item.AssetId}\"}}");
 		}
 		sb.Append("],");
 		sb.Append("\"currency\":[],");
@@ -619,12 +619,12 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 		{
 			if (i > 0) sb.Append(',');
 			var item = itemsToReceive[i];
-			sb.Append($"{{\"appid\":{item.AppId},\"contextid\":\"{item.ContextId}\",\"amount\":{item.Amount},\"assetid\":\"{item.AssetId}\"}}");
+			sb.Append(System.Globalization.CultureInfo.InvariantCulture, $"{{\"appid\":{item.AppId},\"contextid\":\"{item.ContextId}\",\"amount\":{item.Amount},\"assetid\":\"{item.AssetId}\"}}");
 		}
 		sb.Append("],");
 		sb.Append("\"currency\":[],");
 		sb.Append("\"ready\":false");
-		sb.Append("}");
+		sb.Append('}');
 
 		sb.Append('}');
 
@@ -663,10 +663,10 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				foreach (var desc in descriptionsElem.EnumerateArray())
 				{
 					var classId = desc.TryGetProperty("classid", out var classIdElem)
-						? ulong.Parse(classIdElem.GetString() ?? "0")
+						? ulong.Parse(classIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 					var instanceId = desc.TryGetProperty("instanceid", out var instanceIdElem)
-						? ulong.Parse(instanceIdElem.GetString() ?? "0")
+						? ulong.Parse(instanceIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 
 					descriptions[(classId, instanceId)] = desc;
@@ -679,13 +679,13 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				foreach (var asset in assetsElem.EnumerateArray())
 				{
 					var classId = asset.TryGetProperty("classid", out var classIdElem)
-						? ulong.Parse(classIdElem.GetString() ?? "0")
+						? ulong.Parse(classIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 					var instanceId = asset.TryGetProperty("instanceid", out var instanceIdElem)
-						? ulong.Parse(instanceIdElem.GetString() ?? "0")
+						? ulong.Parse(instanceIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 					var assetId = asset.TryGetProperty("assetid", out var assetIdElem)
-						? ulong.Parse(assetIdElem.GetString() ?? "0")
+						? ulong.Parse(assetIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 					var amount = asset.TryGetProperty("amount", out var amountElem)
 						? amountElem.GetInt32()
@@ -726,7 +726,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				: items.Count;
 
 			var lastAssetId = root.TryGetProperty("last_assetid", out var lastAssetIdElem)
-				? ulong.Parse(lastAssetIdElem.GetString() ?? "0")
+				? ulong.Parse(lastAssetIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 				: (ulong?)null;
 
 			var hasMore = root.TryGetProperty("more_items", out var moreElem) && moreElem.GetInt32() == 1;
@@ -782,10 +782,10 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				{
 					var appId = desc.TryGetProperty("appid", out var appIdElem) ? appIdElem.GetUInt32() : 0;
 					var classId = desc.TryGetProperty("classid", out var classIdElem)
-						? ulong.Parse(classIdElem.GetString() ?? "0")
+						? ulong.Parse(classIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 					var instanceId = desc.TryGetProperty("instanceid", out var instanceIdElem)
-						? ulong.Parse(instanceIdElem.GetString() ?? "0")
+						? ulong.Parse(instanceIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 
 					descriptions[(appId, classId, instanceId)] = desc;
@@ -833,7 +833,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 		return new TradeOffer
 		{
 			TradeOfferId = offer.TryGetProperty("tradeofferid", out var idElem)
-				? ulong.Parse(idElem.GetString() ?? "0")
+				? ulong.Parse(idElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 				: 0,
 			AccountIdOther = offer.TryGetProperty("accountid_other", out var otherElem)
 				? (ulong)otherElem.GetInt32()
@@ -911,7 +911,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 			if (root.TryGetProperty("success", out var successElem) && successElem.GetInt32() == 1)
 			{
 				var tradeOfferId = root.TryGetProperty("tradeofferid", out var idElem)
-					? ulong.Parse(idElem.GetString() ?? "0")
+					? ulong.Parse(idElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 					: 0;
 
 				var requiresMobileConfirmation = root.TryGetProperty("requires_mobile_confirmation", out var mobileElem)

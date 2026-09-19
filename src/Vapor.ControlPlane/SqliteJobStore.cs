@@ -1003,6 +1003,9 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 
 	private void EnsureColumn(string table, string column, string definition)
 	{
+		// CA2100 suppressed: table/column/definition come only from Migrate()'s
+		// compile-time literals; no external input reaches the schema.
+#pragma warning disable CA2100
 		HashSet<string> existing = new(StringComparer.Ordinal);
 		using (var cmd = _connection.CreateCommand())
 		{
@@ -1020,6 +1023,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			cmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
 			cmd.ExecuteNonQuery();
 		}
+#pragma warning restore CA2100
 	}
 
 	private async Task RecomputeJob(string jobId, CancellationToken cancellationToken)

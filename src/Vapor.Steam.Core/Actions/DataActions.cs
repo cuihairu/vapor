@@ -532,7 +532,7 @@ public sealed class GetPriceAction : StoreDataActionBase, IAction
 				return new ActionResult(false, $"No price information available for app {appId}", null);
 			}
 
-			_logger.LogInformation("Fetched price for app {AppId}: {Final}", appId, price.FinalFormatted ?? price.Final?.ToString());
+			_logger.LogInformation("Fetched price for app {AppId}: {Final}", appId, price.FinalFormatted ?? price.Final?.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
 			return new ActionResult(true, null, new Dictionary<string, object?>
 			{

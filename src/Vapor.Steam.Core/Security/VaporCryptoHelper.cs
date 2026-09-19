@@ -40,7 +40,6 @@ public enum ECryptoMethod : byte
 public static partial class VaporCryptoHelper
 {
 	private const byte MinimumCryptKeyBytes = 32;
-	private const byte DefaultKeyLength = 32;
 	private const string AesGcmPrefix = "gcm:";
 	private const int AesGcmNonceSize = 12;
 	private const int AesGcmTagSize = 16;

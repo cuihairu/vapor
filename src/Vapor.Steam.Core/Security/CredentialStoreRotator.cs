@@ -169,5 +169,12 @@ public static class CredentialStoreRotator
 		public DateTimeOffset? AccessTokenExpiresAt { get; set; }
 	}
 
-	private sealed class CredentialRotationException(string message) : Exception(message);
+	private sealed class CredentialRotationException : Exception
+	{
+		public CredentialRotationException() { }
+
+		public CredentialRotationException(string message) : base(message) { }
+
+		public CredentialRotationException(string message, Exception innerException) : base(message, innerException) { }
+	}
 }

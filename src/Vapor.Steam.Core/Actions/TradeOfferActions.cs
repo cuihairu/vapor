@@ -136,8 +136,8 @@ public sealed class SendTradeOfferAction : IAction
 
 			var output = new Dictionary<string, object?>
 			{
-				["trade_offer_id"] = result.TradeOfferId?.ToString(),
-				["partner_steam_id"] = partnerSteamId.ToString(),
+				["trade_offer_id"] = result.TradeOfferId?.ToString(System.Globalization.CultureInfo.InvariantCulture),
+				["partner_steam_id"] = partnerSteamId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["requires_mobile_confirmation"] = result.RequiresMobileConfirmation,
 				["ownership_verified"] = itemsToGive.Count > 0 && !skipVerification
 			};
@@ -272,22 +272,25 @@ public sealed class SendTradeOfferAction : IAction
 
 		if (item.TryGetValue("app_id", out var appIdObj) && appIdObj != null)
 		{
-			uint.TryParse(appIdObj.ToString(), out appId);
+			// Unreadable app id keeps the CS:GO default (730); the entry is dropped later
+			// anyway when asset_id is unusable.
+			_ = uint.TryParse(appIdObj.ToString(), out appId);
 		}
 
 		if (item.TryGetValue("context_id", out var contextIdObj) && contextIdObj != null)
 		{
-			ulong.TryParse(contextIdObj.ToString(), out contextId);
+			_ = ulong.TryParse(contextIdObj.ToString(), out contextId); // unreadable keeps default 2
 		}
 
 		if (item.TryGetValue("asset_id", out var assetIdObj) && assetIdObj != null)
 		{
-			ulong.TryParse(assetIdObj.ToString(), out assetId);
+			// asset_id == 0 after a failed parse drops the entry below — intentional.
+			_ = ulong.TryParse(assetIdObj.ToString(), out assetId);
 		}
 
 		if (item.TryGetValue("amount", out var amountObj) && amountObj != null)
 		{
-			int.TryParse(amountObj.ToString(), out amount);
+			_ = int.TryParse(amountObj.ToString(), out amount); // unreadable keeps default 1
 		}
 
 		if (assetId == 0)
@@ -394,11 +397,11 @@ public sealed class AcceptTradeOfferAction : IAction
 				return new ActionResult(false, result.Error ?? "Failed to accept trade offer", null);
 			}
 
-			_logger.LogInformation("Accepted trade offer {TradeOfferId}", tradeOfferId);
+			_logger.LogInformation("Accepted trade offer {TradeOfferId}", tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
 			var output = new Dictionary<string, object?>
 			{
-				["trade_offer_id"] = tradeOfferId.ToString(),
+				["trade_offer_id"] = tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["requires_mobile_confirmation"] = result.RequiresMobileConfirmation,
 				["state_verified"] = verifyState
 			};
@@ -530,11 +533,11 @@ public sealed class DeclineTradeOfferAction : IAction
 				return new ActionResult(false, result.Error ?? "Failed to decline trade offer", null);
 			}
 
-			_logger.LogInformation("Declined trade offer {TradeOfferId}", tradeOfferId);
+			_logger.LogInformation("Declined trade offer {TradeOfferId}", tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
 			var output = new Dictionary<string, object?>
 			{
-				["trade_offer_id"] = tradeOfferId.ToString(),
+				["trade_offer_id"] = tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["state_verified"] = verifyState
 			};
 
@@ -650,11 +653,11 @@ public sealed class CancelTradeOfferAction : IAction
 				return new ActionResult(false, result.Error ?? "Failed to cancel trade offer", null);
 			}
 
-			_logger.LogInformation("Canceled trade offer {TradeOfferId}", tradeOfferId);
+			_logger.LogInformation("Canceled trade offer {TradeOfferId}", tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
 			var output = new Dictionary<string, object?>
 			{
-				["trade_offer_id"] = tradeOfferId.ToString(),
+				["trade_offer_id"] = tradeOfferId.ToString(System.Globalization.CultureInfo.InvariantCulture),
 				["state_verified"] = verifyState
 			};
 
