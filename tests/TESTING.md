@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1256 tests)
+├── Vapor.Steam.Core.Tests/               (1263 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -29,7 +29,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1256 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析 property、Steam TOTP property、熔断器/限流器边界 |
+| Vapor.Steam.Core.Tests | 1263 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界 |
 | Vapor.ControlPlane.Tests | 604 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
 | Vapor.Plugins.Core.Tests | 129 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 129 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
@@ -39,7 +39,7 @@ tests/
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 27 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2344** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2351** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -50,7 +50,7 @@ tests/
 
 ## 测试分类
 
-### Steam.Core(1256 个测试)
+### Steam.Core(1263 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -106,6 +106,7 @@ tests/
 | TradeOfferStateMachineTests | 35 | 报价状态机 |
 | TradeActionValidationTests | 15 | 交易动作校验 |
 | TradeAssetValidatorTests | 13 | 资产校验 |
+| TradeAssetValidatorPropertyTests | 7 | FsCheck property:守卫链顺序(非法 amount→未拥有→不可交易→冷却→数量不足,早失败遮蔽后检查)、重复条目数量聚合(Σ 请求 vs 可用,坍缩为单条短缺错误)、冷却边界(now 本身过、严格大于才拦)、空报价恒 Success 单例、成功 ⟺ Errors 空 + CombinedError 契约、非法 amount 独立报错不进聚合;全程注入时钟保确定性 |
 | TradeRateLimiterTests | 16 | 频控(窗口/并发槽/超时/租约与销毁交互) |
 | CardSwapMatcherTests | 9 | 重复分组与 1:1 互补匹配(keep/excess 只取可交易/排序确定性/双向互补条件/单向不配/maxSwaps 截断/context 规则) |
 | TradeUrlParamsTests / TradeUrlParamsExtendedTests | 7 | 报价 URL 参数 |
@@ -332,6 +333,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-19 维护轮六（FsCheck 扩面五——认证码数学 property：SteamTotp + ConfirmationHashGenerator；「继续」自主立项，§36 收官点名的可迭代方向；2328→**2337** 全绿：Steam.Core 1243→1249 / MobileAuthenticator 126→129）。+9 property：①**SteamTotp（`SteamTotpPropertyTests`，6 条）**——**RFC 6238 oracle 交叉验证**（测试内本地手写规范实现：HMAC-SHA1/30s 窗口 big-endian 计数器/dynamic truncation/Steam 字母表投影，与产品实现任意 secret×时间全域恒等——「实现 = 规范」性质，独立于产品代码路径）、输出确定性 + 恒 5 字符 ⊆ 26 符号无混淆字母表（0/1/I/L/O 缺席 = 转抄安全语义的构造性保证）、同 30s 窗口任意偏移同码（窗口索引全域 × 偏移全域构造域，规避 ulong 时间溢出）、SecondsRemaining 周期性（SR(t)=SR(t+30)）+ 值域 [1,30]（负余数修正域全域）、DecodeSecret 任意合法 base64 往返恒等 + 坏输入按 ParamName 拒绝；②**ConfirmationHashGenerator（`ConfirmationHashGeneratorPropertyTests`，3 条，MobileAuthenticator.Tests 首次引入 FsCheck）**——HMAC-SHA1 oracle 交叉验证（8B big-endian 时间 + UTF-8 tag 拼接，任意 secret×时间×四已知 tag 恒等）、确定性 + 四已知 tag 同输入互异、失败契约（空 secret 先于空 tag 检查 → ParamName 分别为 identitySecretBase64/tag）。**本轮无产品缺陷**——认证数学已有已知向量锚定，property 的价值是把「3 个 RFC 向量点例」升级为「全域 = 规范」断言；oracle 交叉验证形态适用于一切有规范可依的实现（RFC/协议文档）。**测试侧修正两条入册**：①反例清单须实测——`"ZZZZ"` 是合法 base64（4 字符组解码 3 字节），直觉上「乱码」的串可能落进合法域，被 property 抓出后换 `"===="`（长度 4 全 padding 非法）；②`uint % int` 提升为 long 不能作 string 索引器参数（显式 `(int)` 收窄）。顺带修正 4 处 stale 计数（ControlPlane 603→604、插件体系 345→349、Plugins.Core 128→129、MobileAuthenticator 126→129——维护轮四只更了统计表漏了分类标题，本轮起分类标题一并对照）。覆盖率合计 99.7%（14545/14584）：分子 −2 为 SessionManager Barrier 竞态臂轮间波动（上轮命中本轮未命中，在册时序边沿家族照旧定性）。验证：全量覆盖率轮全绿（门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
 
 > 2026-09-19 维护轮七（FsCheck 扩面六——payload 读取器值形状 property；「继续」自主立项，轮五 trade 资产解析的同族地基收官——全部 action 入口都走 `PayloadReader`；2337→**2344** 全绿：Steam.Core 1249→1256）。+7 property（`PayloadReaderPropertyTests`）：①**查找语义**——精确键恒压大小写变体（decoy 在旁不误返）、变体回退命中（`ToUpperInvariant` 孪生键全域，自碰撞 guard——decoy 跳过而非赋值，见下）；②**GetInt32 域判定**——boxed long 恰 int 域内转换（全域 long 二分边界）、boxed double「整数且域内」双条件（生成器含 NaN/±∞ 全 null——与 §36 TryGetDouble 的 IsFinite 守卫语义呼应）；③**往返三形态**——任意 int 经装箱/invariant 字符串/JSON 字符串三形态存活（负数与 ±int 边界全域，NumberStyles.Integer 锚定）；任意 bool 三形态往返——**`bool.ToString()` 产 "True"/"False" 必须被 bool.TryParse 接受**（点例只测过小写 "true"/"false"，大小写形态此前无锚）；④**总函数性**——任意形状×任意键×三读取器永不抛。**测试侧自纠一条**：首版「精确键压变体」性质中，key 全大写自反时 decoy 赋值会**覆盖** exact 值（注释声称「碰撞时断言仍成立」是错的——轮五同款「注释未推演」陷阱，property 一轮即抓）；修复为自碰撞时跳过 decoy。覆盖率合计 99.7%（14547/14584，Barrier 竞态臂 2 行本轮命中回归）。验证：全量覆盖率轮全绿（门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
+
+> 2026-09-19 维护轮八（FsCheck 扩面七——资产校验守卫链 property；「继续」自主立项；用户中途下达 §38 四大功能方向后本压缩收尾；2344→**2351** 全绿：Steam.Core 1256→1263）。+7 property（`TradeAssetValidatorPropertyTests`）：①**守卫链顺序**——非法 amount → 未拥有 → 不可交易 → 冷却 → 数量不足逐级短路与遮蔽（未拥有资产报 not found 而非 untradable，双门同破报 not tradable 而非 cooldown）；②**重复条目聚合**——Σ 请求量 vs 可用量判定、超额坍缩为单条短缺错误（消息含 Σ 与可用量）；③**冷却边界**——`TradabilityDate == now` 放行（严格大于才拦，一 tick 后即拦）；④空报价恒 `Success` 单例（ReferenceEquals）；⑤非法 amount 独立报错且不进聚合（与合法重复条目并存时只报一条）。全程注入时钟（轮二 `IsTradableNow` 教训复用）。本轮无产品缺陷。验证：全量覆盖率轮全绿（合计 99.7% 14547/14584，门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
 
 ### 排除项
 
