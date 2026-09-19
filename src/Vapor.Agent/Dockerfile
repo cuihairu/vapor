@@ -4,6 +4,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY Directory.Build.props ./
+COPY .editorconfig ./
 COPY global.json ./
 COPY Vapor.sln ./
 COPY src/Vapor.Protocol/Vapor.Protocol.csproj src/Vapor.Protocol/
