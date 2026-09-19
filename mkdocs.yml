@@ -1,0 +1,89 @@
+site_name: Vapor
+site_description: >-
+  API-controlled, headless Steam automation platform (ASF-inspired):
+  centralized control plane + regional agents for large-scale
+  multi-account batch operations.
+site_author: cuihairu
+site_url: https://cuihairu.github.io/vapor/
+repo_url: https://github.com/cuihairu/vapor
+repo_name: cuihairu/vapor
+edit_uri: edit/main/docs/
+
+# docs/testing.md is not tracked: CI mirrors tests/TESTING.md there before the
+# build so the site serves a live copy without a second authoritative file.
+
+theme:
+  name: material
+  language: en
+  logo: assets/vapor.svg
+  favicon: assets/vapor.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.action.edit
+    - navigation.footer
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.betterem
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Local run: running.md
+      - Docker & Compose: docker.md
+      - Production deployment: production.md
+  - Design:
+      - Architecture: architecture.md
+      - Session engine: session-engine.md
+      - Plugin development: plugins.md
+      - Feature matrix (vs. ASF): feature-matrix.md
+      - Performance: performance.md
+  - Reference:
+      - Data dictionary: data-dictionary.md
+      - Testing: testing.md
+      - Releasing: releasing.md
+      - Troubleshooting: troubleshooting.md
+
+extra:
+  status:
+    alpha: "Alpha — breaking changes expected"
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/cuihairu/vapor

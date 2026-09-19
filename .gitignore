@@ -58,3 +58,6 @@ tests/*/coverage.cobertura.xml
 data/
 .claude/worktrees/
 coverage/
+
+# Docs site mirror built by .github/workflows/docs.yml from tests/TESTING.md
+docs/testing.md
