@@ -1210,7 +1210,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 		return appId != 0;
 	}
 
-	private static bool TryGetDouble(Dictionary<string, object?> dict, string key, out double value)
+	// internal for tests (property-based invariants), see Vapor.ControlPlane.Tests.
+	internal static bool TryGetDouble(Dictionary<string, object?> dict, string key, out double value)
 	{
 		value = 0;
 		if (!dict.TryGetValue(key, out object? raw) || raw is null)
@@ -1220,7 +1221,10 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 		switch (raw)
 		{
-			case double d:
+			// Non-finite values are rejected: a NaN/∞ boost goal would silently
+			// never satisfy (NaN comparisons are false) but would still flow into
+			// deviation records; conservative refusal keeps the payload honest.
+			case double d when double.IsFinite(d):
 				value = d;
 				return true;
 			case long l:
@@ -1232,7 +1236,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 			case System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } element:
 				return element.TryGetDouble(out value);
 			case string s:
-				return double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value);
+				return double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out value)
+					&& double.IsFinite(value);
 			default:
 				return false;
 		}

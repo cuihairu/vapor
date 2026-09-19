@@ -170,7 +170,8 @@ public sealed class AccountStore
 	/// replace semantics, same direction as the rest of the spec: an update
 	/// that forgets the policy lands on the safe side — no auto-accept).
 	/// </summary>
-	private static TradePolicy? NormalizeTradePolicy(TradePolicy? tradePolicy)
+	// internal for tests (property-based invariants), see Vapor.ControlPlane.Tests.
+	internal static TradePolicy? NormalizeTradePolicy(TradePolicy? tradePolicy)
 	{
 		if (tradePolicy is null)
 		{
