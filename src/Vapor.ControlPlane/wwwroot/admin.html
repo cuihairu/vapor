@@ -1343,6 +1343,7 @@
             challenges: new Map(),
             selectedJobId: null,
             accounts: [],
+            standing: new Map(),
             editingAccountName: null,
             achievements: null,
             tradeOffers: null,
@@ -1903,6 +1904,14 @@
         async function refreshAccounts() {
             const data = await apiFetch("/v1/accounts");
             state.accounts = data.accounts || [];
+            try {
+                const standing = await apiFetch("/v1/orchestration/standing");
+                state.standing = new Map((standing.standing || []).map((entry) => [entry.accountName, entry]));
+            } catch (error) {
+                // Standing is supplementary — an older control plane or a hiccup
+                // must not blank the account list.
+                state.standing = new Map();
+            }
             renderAccounts();
             populateTradeAccountSelect();
             populateAchievementAccountSelect();
@@ -1945,6 +1954,13 @@
                 if (account.note) {
                     notes.push(account.note);
                 }
+                const standingEntry = state.standing.get(account.accountName);
+                const standingClass = standingEntry
+                    ? ({ clean: "finished", restricted: "running", banned: "failed" }[standingEntry.standing] || "queued")
+                    : "queued";
+                const standingText = standingEntry
+                    ? ({ clean: "状态正常", restricted: "受限", banned: "封禁" }[standingEntry.standing] || standingEntry.standing)
+                    : "未体检";
                 return `
                     <article class="card-row">
                         <div class="row-head">
@@ -1956,11 +1972,14 @@
                         </div>
                         <div class="summary-row">
                             <span class="agent-chip">state: ${escapeHtml(account.desiredState)}</span>
+                            <span class="badge ${standingClass}" title="账号体检（VAC/社区/经济封禁）">${escapeHtml(standingText)}</span>
+                            ${standingEntry && standingEntry.quarantined ? '<span class="badge failed" title="异常账号已隔离：编排器暂停其一切交易调度">已隔离</span>' : ""}
                             ${account.marketListingsEnabled ? '<span class="agent-chip">市场挂单 ✓</span>' : ""}
                         </div>
                         ${notes.length ? `<div class="helper">${escapeHtml(notes.join(" · "))}</div>` : ""}
                         <div class="button-row">
                             <button class="btn btn-secondary btn-small" data-edit-account="${escapeHtml(account.accountName)}">编辑</button>
+                            <button class="btn btn-secondary btn-small" data-standing-check="${escapeHtml(account.accountName)}">体检</button>
                             <button class="btn btn-secondary btn-small" data-toggle-account="${escapeHtml(account.accountName)}" data-next-enabled="${account.enabled ? "false" : "true"}">${account.enabled ? "禁用" : "启用"}</button>
                             <button class="btn btn-danger btn-small" data-delete-account="${escapeHtml(account.accountName)}">删除</button>
                         </div>
@@ -1970,6 +1989,10 @@
 
             container.querySelectorAll("[data-edit-account]").forEach((button) => {
                 button.addEventListener("click", () => editAccount(button.dataset.editAccount));
+            });
+
+            container.querySelectorAll("[data-standing-check]").forEach((button) => {
+                button.addEventListener("click", () => runStandingCheck(button.dataset.standingCheck));
             });
 
             container.querySelectorAll("[data-toggle-account]").forEach((button) => {
@@ -2257,6 +2280,15 @@
                 await refreshAccounts();
             } catch (error) {
                 alert(`操作失败: ${error.message}`);
+            }
+        }
+
+        async function runStandingCheck(accountName) {
+            try {
+                await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/standing-check`, { method: "POST" });
+                addEvent("task", `已排期 ${accountName} 账号体检，下一轮编排立即执行`);
+            } catch (error) {
+                alert(`体检排期失败: ${error.message}`);
             }
         }
 

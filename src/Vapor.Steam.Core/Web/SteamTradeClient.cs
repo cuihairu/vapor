@@ -551,37 +551,8 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 		return _webHandler.TryResolveOwnSteamId();
 	}
 
-	private async Task<string?> GetApiKeyAsync(CancellationToken cancellationToken)
-	{
-		// First, try to get the API key from cookies/session
-		var url = "https://steamcommunity.com/dev/apikey";
-		var response = await _webHandler.GetAsync(new Uri(url), null, cancellationToken).ConfigureAwait(false);
-
-		if (!response.IsSuccess || string.IsNullOrEmpty(response.Body))
-		{
-			return null;
-		}
-
-		// Parse the API key from the response
-		// Look for the API key in the response body
-		const string keyPattern = "<p>Key: ";
-		var keyIndex = response.Body.IndexOf(keyPattern, StringComparison.OrdinalIgnoreCase);
-		if (keyIndex >= 0)
-		{
-			var startIndex = keyIndex + keyPattern.Length;
-			var endIndex = response.Body.IndexOf("</p>", startIndex, StringComparison.OrdinalIgnoreCase);
-			if (endIndex > startIndex)
-			{
-				var key = response.Body[startIndex..endIndex].Trim();
-				if (!string.IsNullOrEmpty(key) && key.Length > 20)
-				{
-					return key;
-				}
-			}
-		}
-
-		return null;
-	}
+	private Task<string?> GetApiKeyAsync(CancellationToken cancellationToken) =>
+		SteamWebApiKeyFetcher.FetchAsync(_webHandler, cancellationToken);
 
 	private string BuildTradeOfferJson(
 		IReadOnlyList<TradeAsset> itemsToGive,

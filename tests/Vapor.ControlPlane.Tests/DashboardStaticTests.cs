@@ -161,6 +161,21 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_StandingPanel_ShowsBadgesQuarantineAndManualCheck()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		// §38 P2 contract: the account list pulls the standing snapshot, renders
+		// a clean/restricted/banned badge plus a quarantine flag, and the manual
+		// "体检" button hits the forced-check endpoint (results land only via the
+		// orchestrator's own settle path, never by dispatching a raw job).
+		Assert.Contains("/v1/orchestration/standing", html, StringComparison.Ordinal);
+		Assert.Contains("data-standing-check", html, StringComparison.Ordinal);
+		Assert.Contains("/standing-check", html, StringComparison.Ordinal);
+		Assert.Contains("已隔离", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task RootPath_RedirectsToAdminConsole()
 	{
 		await using var factory = CreateFactory();

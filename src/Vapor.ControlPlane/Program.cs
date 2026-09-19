@@ -574,6 +574,57 @@ app.MapPost("/v1/accounts/{name}/disable", async (HttpContext ctx, Config cfg, I
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
+app.MapGet("/v1/orchestration/standing", (HttpContext ctx, Config cfg, DesiredStateReconciler reconciler) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	return Results.Ok(new { standing = reconciler.GetStandingSummaries() });
+})
+	.WithTags("Accounts")
+	.WithSummary("Standing snapshot for every account the orchestrator tracks")
+	.Produces(200)
+	.Produces(401);
+
+app.MapPost("/v1/accounts/{name}/standing-check", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, DesiredStateReconciler reconciler, string name) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name);
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	if (!reconciler.RequestStandingCheck(name))
+	{
+		return Results.Conflict(new ErrorResponse("standing check not scheduled: a job is active or standing checks are disabled"));
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"standing_check_requested",
+		accountName: spec.AccountName,
+		details: new Dictionary<string, object?>
+		{
+			["lastStanding"] = reconciler.GetOrchestrationView(spec.AccountName)?.Standing
+		});
+	return Results.Accepted($"/v1/accounts/{name}", new { scheduled = true });
+})
+	.WithTags("Accounts")
+	.WithSummary("Schedule an immediate standing check on the next reconcile pass")
+	.Produces(202)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(409)
+	.Produces(401);
+
 app.MapGet("/v1/accounts/{name}/trade-offers", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, bool? activeOnly) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))

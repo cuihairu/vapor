@@ -141,6 +141,33 @@ public sealed class CheckProxyActionTests : IDisposable
 		Assert.Contains("socket exploded", (string?)result.Output["error"]);
 	}
 
+	[Fact]
+	public void Metadata_DescribesProxyCheck()
+	{
+		var action = new CheckProxyAction(NullLogger<CheckProxyAction>.Instance);
+
+		Assert.Equal("check_proxy", action.Name);
+		Assert.Equal("check_proxy", action.Metadata.Name);
+		Assert.False(action.Metadata.RequiresLogin);
+		Assert.Equal(30, action.Metadata.TimeoutSeconds);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_WhenCancellationIsExternal_RethrowsOperationCanceled()
+	{
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+		var action = new CheckProxyAction(NullLogger<CheckProxyAction>.Instance)
+		{
+			ProbeOverride = (_, ct) => Task.FromCanceled<ProxyProbeResult>(ct)
+		};
+		var session = CreateSession(proxy: "socks5://gw.example.com:1080");
+
+		// Task.FromCanceled surfaces as TaskCanceledException (an OCE subclass).
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(
+			() => action.ExecuteAsync(session, new Dictionary<string, object?>(), cts.Token));
+	}
+
 	private BotSession CreateSession(string? proxy)
 	{
 		var session = new BotSession(

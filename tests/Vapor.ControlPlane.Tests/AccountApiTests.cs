@@ -316,6 +316,59 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task StandingEndpoints_RequireAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage list = await client.GetAsync("/v1/orchestration/standing");
+		using HttpResponseMessage force = await client.PostAsync("/v1/accounts/alice/standing-check", null);
+
+		Assert.Equal(HttpStatusCode.Unauthorized, list.StatusCode);
+		Assert.Equal(HttpStatusCode.Unauthorized, force.StatusCode);
+	}
+
+	[Fact]
+	public async Task StandingCheck_AccountMissing_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.PostAsync("/v1/accounts/ghost/standing-check", null);
+
+		Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+	}
+
+	[Fact]
+	public async Task StandingEndpoints_ListAndScheduleForcedCheck()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		// One reconcile pass so the orchestrator tracks alice.
+		DesiredStateReconciler reconciler = factory.Services.GetRequiredService<DesiredStateReconciler>();
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		using HttpResponseMessage list = await client.GetAsync("/v1/orchestration/standing");
+		Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+		string listBody = await list.Content.ReadAsStringAsync();
+		using var listDoc = JsonDocument.Parse(listBody);
+		JsonElement entries = listDoc.RootElement.GetProperty("standing");
+		Assert.Equal(1, entries.GetArrayLength());
+		Assert.Equal("alice", entries[0].GetProperty("accountName").GetString());
+		Assert.False(entries[0].GetProperty("quarantined").GetBoolean());
+		// WhenWritingNull drops "standing": null — absent means "never checked".
+		Assert.False(entries[0].TryGetProperty("standing", out JsonElement standingValue)
+			&& standingValue.ValueKind != JsonValueKind.Null);
+
+		using HttpResponseMessage forced = await client.PostAsync("/v1/accounts/alice/standing-check", null);
+		Assert.Equal(HttpStatusCode.Accepted, forced.StatusCode);
+	}
+
+	[Fact]
 	public async Task DeleteAccount_RemovesSpecAndIsAudited()
 	{
 		await using var factory = CreateFactory();

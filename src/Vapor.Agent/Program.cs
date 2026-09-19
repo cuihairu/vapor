@@ -70,6 +70,7 @@ var serviceCollection = new ServiceCollection()
 	.AddSingleton<IdleAction>()
 	.AddSingleton<EchoAction>()
 	.AddSingleton<CheckProxyAction>()
+	.AddSingleton<CheckAccountStandingAction>()
 	.AddSingleton<LoginAction>()
 	.AddSingleton<PlayGamesAction>()
 	.AddSingleton<RedeemKeyAction>()
@@ -195,6 +196,7 @@ actionRegistry.Register(serviceProvider.GetRequiredService<PingAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<IdleAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<EchoAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CheckProxyAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<CheckAccountStandingAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<LoginAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<PlayGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<RedeemKeyAction>());

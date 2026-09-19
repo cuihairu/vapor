@@ -30,6 +30,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 	private const string PlayGamesAction = "play_games";
 	private const string CardDropsAction = "get_card_drops";
 	private const string PlaytimeAction = "get_playtime";
+	private const string CheckStandingAction = "check_account_standing";
 	// Values mirror the AccountTaskRunner action constants; the reconciler
 	// dispatches the same jobs through IJobStore directly.
 	private const string TradeOffersAction = "get_trade_offers";
@@ -48,6 +49,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 	internal static TimeSpan PlaytimeInFlightWindow = TimeSpan.FromSeconds(150);
 	/// <summary>Same idea for the trade-loop jobs (30s timeouts).</summary>
 	internal static TimeSpan TradeInFlightWindow = TimeSpan.FromSeconds(60);
+	/// <summary>Same idea for check_account_standing jobs (60s timeout, two API round-trips).</summary>
+	internal static TimeSpan StandingInFlightWindow = TimeSpan.FromSeconds(150);
 	/// <summary>Backoff ceiling for consecutive login failures.</summary>
 	private static readonly TimeSpan MaxCooldown = TimeSpan.FromMinutes(15);
 	private static readonly HashSet<string> TransitionalStates = new(StringComparer.Ordinal)
@@ -272,6 +275,20 @@ public sealed class DesiredStateReconciler : BackgroundService
 				await SettleActiveJobAsync(spec, runtime, connected, load, cancellationToken).ConfigureAwait(false);
 			}
 
+			// Standing health check: a periodic per-account probe of the ban
+			// state, ahead of the trade policy (a quarantined account never
+			// reaches it — the check below claims the slot and returns).
+			if (_cfg.ReconcileStandingRefreshSeconds > 0
+				&& now - runtime.StandingCheckedAt >= TimeSpan.FromSeconds(_cfg.ReconcileStandingRefreshSeconds)
+				&& runtime.ActiveJobId is null)
+			{
+				await ReconcileStandingAsync(spec, runtime, connected, load, now, cancellationToken).ConfigureAwait(false);
+				if (runtime.ActiveJobId is not null)
+				{
+					return;
+				}
+			}
+
 			// Trade-policy evaluation runs for any connected account with the
 			// policy enabled, before the desired-state loop claims the single
 			// per-account slot; when the trade loop holds the slot this pass,
@@ -441,6 +458,55 @@ public sealed class DesiredStateReconciler : BackgroundService
 	/// Farm query failures only mark a deviation and wait for the next refresh
 	/// interval — they never consume the login failure budget.
 	/// </summary>
+	/// <summary>
+	/// Dispatches a periodic check_account_standing job. CheckedAt is stamped
+	/// on settle (not here), so a failed or lost check retries on the next
+	/// refresh interval — the same pattern as the farm-queue refresh.
+	/// </summary>
+	private async Task ReconcileStandingAsync(
+		AccountSpec spec,
+		AccountRuntime runtime,
+		Dictionary<string, ConnectedAgent> connected,
+		Dictionary<string, int> load,
+		DateTimeOffset now,
+		CancellationToken cancellationToken)
+	{
+		ConnectedAgent? agent = PickAgent(spec, connected, load, CheckStandingAction);
+		if (agent is null)
+		{
+			Interlocked.Increment(ref _noAgentSkips);
+			runtime.LastDeviation = "no capable agent available";
+			return;
+		}
+
+		if (!await GuardDryRunAsync(spec, runtime, $"would dispatch check_account_standing to agent '{agent.Hello.AgentId}'", cancellationToken).ConfigureAwait(false))
+		{
+			return;
+		}
+
+		JobWithTasks job = await _jobs.CreateJob(
+			new CreateJobRequest(
+				Action: CheckStandingAction,
+				Region: spec.Region,
+				Targets: [spec.AccountName],
+				Payload: new Dictionary<string, object?>(),
+				Meta: new Dictionary<string, string> { ["orchestrator"] = OrchestratorMeta }),
+			cancellationToken).ConfigureAwait(false);
+
+		runtime.AssignedAgent = agent.Hello.AgentId;
+		runtime.ActiveJobId = job.Job.Id;
+		runtime.ActiveJobAction = CheckStandingAction;
+		runtime.ActiveJobDispatchedAt = now;
+		runtime.LastAction = "standing_check_dispatched";
+		runtime.LastActionAt = now;
+		runtime.LastDeviation = null;
+		load[agent.Hello.AgentId] = load.GetValueOrDefault(agent.Hello.AgentId) + 1;
+
+		await RecordActionAsync(spec, job.Job.Id, "standing_check_dispatched",
+			reason: runtime.StandingSummary is null ? "initial standing check" : "standing refresh",
+			agentId: agent.Hello.AgentId, cancellationToken: cancellationToken).ConfigureAwait(false);
+	}
+
 	private async Task ReconcileFarmAsync(
 		AccountSpec spec,
 		AccountRuntime runtime,
@@ -639,6 +705,15 @@ public sealed class DesiredStateReconciler : BackgroundService
 	{
 		// A trade job (query / accept / confirm) is still in flight — wait for it.
 		if (runtime.ActiveJobId is not null)
+		{
+			return;
+		}
+
+		// Standing quarantine: a VAC/community/game/economy-banned account
+		// never receives trade work. The alert and audit entry happen once at
+		// detection (standing check settle); every pass while quarantined just
+		// skips silently.
+		if (runtime.StandingQuarantined)
 		{
 			return;
 		}
@@ -1454,6 +1529,68 @@ public sealed class DesiredStateReconciler : BackgroundService
 			return;
 		}
 
+		// Standing-check outcomes feed the quarantine gate. A ban hit flips the
+		// runtime into quarantine (blocking all trade work) exactly once, with an
+		// alert event and an audit entry; a release back to clean flips it out.
+		if (string.Equals(action, CheckStandingAction, StringComparison.Ordinal))
+		{
+			runtime.StandingCheckedAt = DateTimeOffset.UtcNow;
+			JobTask? standingTask = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
+				?? outcome.Tasks.FirstOrDefault();
+			if (standingTask is null)
+			{
+				return;
+			}
+
+			if (standingTask.Status != JobTaskStatus.Finished)
+			{
+				runtime.LastDeviation = $"job {action} outcome: {standingTask.Status} {standingTask.Error}".TrimEnd();
+				return;
+			}
+
+			string? summary = standingTask.Output is { } output
+				&& output.TryGetValue("standing", out object? value)
+				&& value is string s
+					? s
+					: null;
+			if (summary is null)
+			{
+				runtime.LastDeviation = "standing check output unreadable";
+				return;
+			}
+
+			runtime.StandingSummary = summary;
+			bool quarantine = !string.Equals(summary, "clean", StringComparison.Ordinal);
+			if (quarantine && !runtime.StandingQuarantined)
+			{
+				runtime.StandingQuarantined = true;
+				_logger.LogWarning("Account {AccountName} quarantined from trade work: standing={Standing}", spec.AccountName, summary);
+				_events.Publish(jobId, "account.standing_alert", new Dictionary<string, object?>
+				{
+					["account"] = spec.AccountName,
+					["standing"] = summary,
+					["economyBan"] = standingTask.Output!.TryGetValue("economyBan", out object? econ) ? econ : null,
+					["vacBanned"] = standingTask.Output.TryGetValue("vacBanned", out object? vac) ? vac : null,
+				});
+				await RecordActionAsync(spec, jobId, "standing_quarantined",
+					reason: summary, cancellationToken: cancellationToken).ConfigureAwait(false);
+			}
+			else if (!quarantine && runtime.StandingQuarantined)
+			{
+				runtime.StandingQuarantined = false;
+				_logger.LogInformation("Account {AccountName} released from trade quarantine: standing=clean", spec.AccountName);
+				_events.Publish(jobId, "account.standing_released", new Dictionary<string, object?>
+				{
+					["account"] = spec.AccountName,
+					["standing"] = summary,
+				});
+				await RecordActionAsync(spec, jobId, "standing_released",
+					reason: "clean", cancellationToken: cancellationToken).ConfigureAwait(false);
+			}
+
+			return;
+		}
+
 		// Playtime query outcomes feed the boost schedule with the same rules:
 		// no login-failure accounting, stamped refresh time, deviations instead
 		// of retries. An invalid report leaves the previous unmet set untouched
@@ -1724,6 +1861,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 			return CardDropsInFlightWindow;
 		}
 
+		if (string.Equals(action, CheckStandingAction, StringComparison.Ordinal))
+		{
+			return StandingInFlightWindow;
+		}
+
 		if (string.Equals(action, TradeOffersAction, StringComparison.Ordinal)
 			|| string.Equals(action, AcceptTradeOfferAction, StringComparison.Ordinal)
 			|| string.Equals(action, ConfirmTradeOfferAction, StringComparison.Ordinal))
@@ -1814,9 +1956,41 @@ public sealed class DesiredStateReconciler : BackgroundService
 			TradeOfferCheckedAt: runtime.TradeOfferCheckedAt == DateTimeOffset.MinValue ? null : runtime.TradeOfferCheckedAt,
 			LastAction: runtime.LastAction,
 			LastActionAt: runtime.LastActionAt == DateTimeOffset.MinValue ? null : runtime.LastActionAt,
-			LastDeviation: runtime.LastDeviation
+			LastDeviation: runtime.LastDeviation,
+			Standing: runtime.StandingSummary,
+			StandingQuarantined: runtime.StandingQuarantined,
+			StandingCheckedAt: runtime.StandingCheckedAt == DateTimeOffset.MinValue ? null : runtime.StandingCheckedAt
 		);
 	}
+
+	/// <summary>
+	/// Forces the next reconcile pass to re-run the standing check for one
+	/// account (dashboard "run check now"). Honors the single-writer slot:
+	/// refused while a job is in flight, when the account is unknown to the
+	/// orchestrator, or when standing checks are disabled.
+	/// </summary>
+	internal bool RequestStandingCheck(string accountName)
+	{
+		if (_cfg.ReconcileStandingRefreshSeconds <= 0
+			|| !_runtime.TryGetValue(accountName, out AccountRuntime? runtime)
+			|| runtime.ActiveJobId is not null)
+		{
+			return false;
+		}
+
+		runtime.StandingCheckedAt = DateTimeOffset.MinValue;
+		return true;
+	}
+
+	/// <summary>Standing snapshot for every tracked account (dashboard account list).</summary>
+	internal IReadOnlyList<AccountStandingView> GetStandingSummaries() =>
+		_runtime.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+			.Select(kv => new AccountStandingView(
+				kv.Key,
+				kv.Value.StandingSummary,
+				kv.Value.StandingQuarantined,
+				kv.Value.StandingCheckedAt == DateTimeOffset.MinValue ? null : kv.Value.StandingCheckedAt))
+			.ToList();
 
 	private sealed class AccountRuntime
 	{
@@ -1836,6 +2010,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 		public List<PendingGiftOffer>? TradeOffersToAccept;
 		public DateTimeOffset TradeOfferCheckedAt = DateTimeOffset.MinValue;
 		public PendingGiftOffer? AcceptingOffer;
+		public string? StandingSummary;
+		public DateTimeOffset StandingCheckedAt = DateTimeOffset.MinValue;
+		public bool StandingQuarantined;
 		public string? LastCountedFailureKey;
 		public int? SpecVersion;
 		public DateTimeOffset LastActionAt = DateTimeOffset.MinValue;
@@ -1871,5 +2048,16 @@ public sealed record AccountOrchestrationView(
 	DateTimeOffset? TradeOfferCheckedAt = null,
 	string? LastAction = null,
 	DateTimeOffset? LastActionAt = null,
-	string? LastDeviation = null
+	string? LastDeviation = null,
+	string? Standing = null,
+	bool StandingQuarantined = false,
+	DateTimeOffset? StandingCheckedAt = null
+);
+
+/// <summary>Read-only standing snapshot for one account (dashboard list payload).</summary>
+public sealed record AccountStandingView(
+	string AccountName,
+	string? Standing,
+	bool Quarantined,
+	DateTimeOffset? CheckedAt
 );

@@ -46,6 +46,7 @@ public sealed class ProxyOptionsTests
 	[InlineData("socks5://:pass@host")]
 	[InlineData("socks5://[::1:1080")]
 	[InlineData("socks5://::1:1080")]
+	[InlineData("http://[::1]junk")] // junk after a bracketed IPv6 host
 	[InlineData("http://host:0")]
 	[InlineData("http://host:notaport")]
 	[InlineData("http://host:70000")]
@@ -55,6 +56,18 @@ public sealed class ProxyOptionsTests
 		var ex = Assert.ThrowsAny<ArgumentException>(() => ProxyOptions.Parse(input, "cfg"));
 
 		Assert.Equal("cfg", ex.ParamName);
+	}
+
+	[Fact]
+	public void Parse_InvalidPercentEncoding_IsKeptVerbatim()
+	{
+		// Uri.UnescapeDataString leaves malformed sequences untouched on .NET
+		// (it does not throw), so garbage in credentials survives verbatim —
+		// anchored here so a switch to a stricter decoder is a conscious change.
+		var options = ProxyOptions.Parse("socks5://us%zz:pw@10.0.0.9:1080");
+
+		Assert.Equal("us%zz", options.UserName);
+		Assert.Equal("pw", options.Password);
 	}
 
 	[Fact]
