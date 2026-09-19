@@ -118,6 +118,13 @@ jobs:
         files: "**/TestResults/*/coverage.cobertura.xml"
         fail_ci_if_error: false
 
+    # 覆盖率门禁：合计行覆盖率跌破基线即红。基线与 tests/TESTING.md 的统计
+    # 同步演进（当前 2026-09-19 基线 99.6%）。门禁留 0.1 个百分点的时序边沿
+    # 缓冲（Monitoring 等的断连 catch 行多轮实测波动 ±0.1%）——跌破 99.5%
+    # 意味着真实的测试/代码回退；提升测试后在这里同步抬高。
+    - name: Coverage gate
+      run: python3 scripts/coverage-summary.py tests --min 99.5
+
   format:
     runs-on: ubuntu-latest
     timeout-minutes: 20
