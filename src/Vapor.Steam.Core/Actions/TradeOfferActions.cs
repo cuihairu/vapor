@@ -14,6 +14,11 @@ namespace Vapor.Steam.Core.Actions;
 /// </summary>
 public sealed class SendTradeOfferAction : IAction
 {
+	// CS:GO defaults applied when an asset field is missing or unreadable.
+	private const uint DefaultAppId = 730;
+	private const ulong DefaultContextId = 2;
+	private const int DefaultAmount = 1;
+
 	private readonly ILogger<SendTradeOfferAction> _logger;
 	private readonly Func<SteamWebHandler, ISteamTradeClient> _tradeClientFactory;
 	private readonly TradeRateLimiter? _rateLimiter;
@@ -223,7 +228,9 @@ public sealed class SendTradeOfferAction : IAction
 
 	internal static readonly TradeRateLease NoopLease = new(static () => { });
 
-	private static List<TradeAsset> ParseTradeAssets(IReadOnlyDictionary<string, object?> payload, string key)
+	// Internal for property-based coverage (tests act as a TryParse oracle
+	// over the per-field parse semantics); behavior is unchanged.
+	internal static List<TradeAsset> ParseTradeAssets(IReadOnlyDictionary<string, object?> payload, string key)
 	{
 		var assets = new List<TradeAsset>();
 
@@ -263,23 +270,31 @@ public sealed class SendTradeOfferAction : IAction
 		return assets;
 	}
 
-	private static TradeAsset? ParseSingleAsset(Dictionary<string, object?> item)
+	internal static TradeAsset? ParseSingleAsset(Dictionary<string, object?> item)
 	{
-		uint appId = 730;
-		ulong contextId = 2;
+		uint appId = DefaultAppId;
+		ulong contextId = DefaultContextId;
 		ulong assetId = 0;
-		int amount = 1;
+		int amount = DefaultAmount;
 
+		// TryParse writes 0 into its out parameter on failure, so each failed
+		// parse below must re-apply the field's default: an unreadable value
+		// must behave like a missing one, never yield a zero field on an
+		// otherwise-usable asset entry.
 		if (item.TryGetValue("app_id", out var appIdObj) && appIdObj != null)
 		{
-			// Unreadable app id keeps the CS:GO default (730); the entry is dropped later
-			// anyway when asset_id is unusable.
-			_ = uint.TryParse(appIdObj.ToString(), out appId);
+			if (!uint.TryParse(appIdObj.ToString(), out appId))
+			{
+				appId = DefaultAppId;
+			}
 		}
 
 		if (item.TryGetValue("context_id", out var contextIdObj) && contextIdObj != null)
 		{
-			_ = ulong.TryParse(contextIdObj.ToString(), out contextId); // unreadable keeps default 2
+			if (!ulong.TryParse(contextIdObj.ToString(), out contextId))
+			{
+				contextId = DefaultContextId;
+			}
 		}
 
 		if (item.TryGetValue("asset_id", out var assetIdObj) && assetIdObj != null)
@@ -290,7 +305,10 @@ public sealed class SendTradeOfferAction : IAction
 
 		if (item.TryGetValue("amount", out var amountObj) && amountObj != null)
 		{
-			_ = int.TryParse(amountObj.ToString(), out amount); // unreadable keeps default 1
+			if (!int.TryParse(amountObj.ToString(), out amount) || amount <= 0)
+			{
+				amount = DefaultAmount;
+			}
 		}
 
 		if (assetId == 0)
@@ -303,7 +321,7 @@ public sealed class SendTradeOfferAction : IAction
 			AppId = appId,
 			ContextId = contextId,
 			AssetId = assetId,
-			Amount = amount > 0 ? amount : 1
+			Amount = amount
 		};
 	}
 }
