@@ -29,7 +29,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1224 | 动作、会话状态机、交易校验、凭据/加密、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果)、payload 值形状与分支加固、熔断器/限流器边界 |
+| Vapor.Steam.Core.Tests | 1234 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固、熔断器/限流器边界 |
 | Vapor.ControlPlane.Tests | 603 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
 | Vapor.Plugins.Core.Tests | 128 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 126 | TOTP、确认哈希、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
@@ -38,7 +38,8 @@ tests/
 | Vapor.Plugins.Monitoring.Tests | 35 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
-| **合计** | **2280** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| Vapor.KeyRotation.Tests | 27 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
+| **合计** | **2317** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -49,7 +50,7 @@ tests/
 
 ## 测试分类
 
-### Steam.Core(1224 个测试)
+### Steam.Core(1234 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -273,7 +274,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。
 
-### 当前基线（2026-09-19，行覆盖 99.6%）
+### 当前基线（2026-09-19，行覆盖 99.7%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中）：
 
@@ -287,9 +288,10 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） |
 | Protocol | 100.0% |
 | ControlPlane | 99.8% |
-| Steam.Core | 99.3%（NaN 边界新分支覆盖 + 既有边沿波动） |
+| Steam.Core | 99.7% |
 | MarketWatch | 98.9% |
-| **合计** | **99.6%** (14413/14476) |
+| KeyRotation | 98.1%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 2 行——测试进程内会终止 testhost，结构性不可测） |
+| **合计** | **99.7%** (14538/14581) |
 
 > 历史基线：2026-09-12 首次真实全解决方案基线为 74.3%（此前 44.6% 的初版系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致，合并未归一化导致同一行被重复计入分母）。2026-09-13 覆盖率冲刺（逐文件提取未覆盖行并针对性补测）后达 95.9%。2026-09-14 第二轮冲刺后达 98.6%（Agent 91.9%→98.1%、ControlPlane 97.9%→99.5%、Plugins.Core 88.1%→99.1%、Monitoring 89.7%→97.2%）；同日第二轮半（fd1ae2e，+36 测试）删除第二轮归档的死代码（`VaporCryptoHelper` 防御 catch、`HttpCircuitBreaker` HalfOpen 存储态、`RecurringJobScheduler` missed 组合、`SteamTotp` 空 base64、`RedactingLoggerProvider.AppendPairs`）并新增 TracingTests/TestFixturesTests/SteamTimeSynchronizerTests，TestFixtures 故障 fixture 库亦获全覆盖，TestFixtures 68.3%→100%、Monitoring 97.2%→100%；回调泵同步 Sleep 改异步 Delay 后达 **99.5%**（57 行未覆盖）。2026-09-15 P7/P8/P9 三个功能阶段落地后新代码覆盖率债使合计回落至 98.5%（Steam.Core 97.8%、ControlPlane 98.8%）。
 >
@@ -319,6 +321,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-19 维护轮二（FsCheck 扩面续——换卡匹配算法 property，2270→2275 全绿：Steam.Core 1214→1219）。+5 property（`CardSwapMatcherPropertyTests`，覆盖 `FindDuplicates`/`MatchSwaps`/`ContextIdFor` 纯算法面）：①**分组不变量**——尺寸账目（TotalTradable > keep 且 Excess 恰为 TotalTradable - keep）、只收可交易身份且 excess 拷贝全部 Tradable、组按 (app, class, instance) 升序输出；②**匹配严格互补**——每个 swap 的收/给卡对方均零持有（双向 DoesNotContain）、双侧资产均来自各自 excess 池、context 规则随 Give/Receive、maxSwaps 上限；③**两确定性**——同输入两次结果全等（DuplicateGroup 是 record 且集合字段引用比较，逐字段 + SequenceEqual 比较，§36 教训复用）；④**ContextIdFor 全域**——753→6 其余→2。**生成器方法论入册**：identity id（app/class/instance）必须缩域（4×5×2 池）否则随机 id 几乎零碰撞、性质真空转；assetId 保持全域保证唯一性；数组参数（uint[]/ulong[]/bool[]）经最短长度对齐构造 items——FsCheck 默认 Arb 覆盖原始类型数组，自定义 record 不进生成器。`IsTradableNow` 依赖 `UtcNow`——property 只用 `TradabilityDate=null`（未来锁定期与 Tradable=false 在该谓词等价，仅测其一保持确定性）。验证：Steam.Core 1219 全绿、format 门禁过、CI 终态见提交后监控。
 
 > 2026-09-19 维护轮三（FsCheck 扩面三——市场手续费数学 property，2275→2280 全绿：Steam.Core 1219→1224，**性质测试再抓两个真产品缺陷并修复**）。+5 property（`MarketFeeCalculatorPropertyTests`）：拆分恒等（Buyer = Seller + 双费）+ 费下界、20 分起比例精确（floor 域）、买家价严格单调、`FromBuyerPrice` **极大性**（落点 ≤ 目标且 seller+1 必超）、域二分完备（<3 分 null、≥3 分必有解）、上限守卫。**缺陷一（定价精度，影响日常域）**：`FromBuyerPrice` 从「精确 15% 费」估计 `floor(target×100/115)` 起 down-walk，但两个 floor 费分量之和可低于 floor 的 15%（分数截断 + 低价 min-1-cent 区欠至 2 分）→ 真实可行 seller 可达估计 +2~3 而 walker 永远到不了——反例 buyer=39 时返回 34 而可行 35（39 分买家价）——**所有 <$1 卡的 dry-run 定价系统性少算卖家收益**；修复为起点 +3（欠账通用上界，推导入注释），115→100 等精确域不变（既有 11 例全过锚定）。**缺陷二（溢出守卫，极端域）**：`sellerProceedsCents × 5/10` int 乘法在 >`int.MaxValue/15` 时 unchecked wrap 可产出负买家价——新增 `MaxSellerProceedsCents` public 上限（≈$1.43M，远超真实挂单）双侧 AOORE 守卫 + buyer 侧乘法 long 化；property 用「上限域内断言正确、上限外断言守卫」的双分支形态钉死溢出行为。方法论：**极大性断言是定价/搜索类 walker 的杀手锏性质**——「落点合法（≤ 目标）」单侧断言对次优结果完全失明，「+1 必超」直接暴露起点低估。验证：Steam.Core 1224 全绿（property 5 + 既有 11 全过）、format 门禁过、CI 终态见提交后监控。
+
+> 2026-09-19 覆盖率扫零轮（用户指令「找出覆盖率为 0 的项目/类并提至 98%+」；2280→2317 全绿：Steam.Core 1224→1234 / 新增 Vapor.KeyRotation.Tests 27）。**盘点**：全解决方案程序集最低 98.9%、合计 99.7%，分母对比（src 全部源文件 vs cobertura class 条目）定位唯一真正的 0% 项目/类 = `tools/Vapor.KeyRotation`（211 行 CLI 壳，无测试项目、从未进覆盖率分母）；三个纯接口（`IJobStore`/`IActionExecutionObserver`/`ISteamTradeClient`）与 `Program.Partial.cs`（3 行空 partial 声明）无可执行行，定性为分母噪音。**KeyRotation 壳测试（+27，98.1%）**：`Program.Main` 直调全分支（help 双旗/未知参数/三形态缺参/坏 base64/同钥拒绝/store 缺失/损坏 JSON）+ 真实旋转三态（dry-run 断言逐行输出与文件零改动、applied 断言备份落盘且新钥可解回原文、aborted 断言 FAILED 逐账户上报）+ 反射直测私有静态（`ParseKeySpec` 六臂：base64 大小写、file 缺失/长 base64 解码/短 base64 回退/纯文本、env 设/未设、裸文本；`ExpandPath` `~/` 与 `~\` 双臂 + 相对路径；`GetValue` 正常取值与索引推进）。**不可测定性**：`GetValue` 缺值臂的 `Environment.Exit(2)`（117-118）在测试进程内会终止 testhost，结构性不可达——CLI 进程语义与测试进程语义的根本冲突。**教训两条入册**：①CLI 测试传参必须带 key-spec 前缀（`base64:`）——裸 base64 会被文档化的 plain-text 回退当作密钥材料，产品行为正确而测试静默错语；本轮用「同进程内 SHA256 hash 对比」定位：直调 `Rotate` 成功、镜像 `ParseKeySpec` 产出直调也成功、唯 Main 失败 → 在 Main 内临时 dump 实收参数 hash，发现与测试侧构造的 hash 不一致 → 反推出参数本身缺前缀（部件探针全绿 + 组合失败时，对比「产品进程内部实际收到的参数」而非继续拆部件）。②`Environment.Exit` 路径是 CLI 覆盖率的固有天花板（98%+ 即为满覆盖），不追。**上会话遗留落地**（工作树中未提交的 +10 测试一并验证并入）：`SteamAuthTokenProvider.GenerateAccessTokenForAppAsync` 反射桥（09-17 曾定性「不可收敛：需活 CM 连接」——推翻：反射替换 `_authentication`/`_generateAccessTokenMethod` 两字段指向 fake generator 即可钉死参数顺序与结果映射，SteamClientManager 88.6% 中反射 4 行收掉，剩异常类 CA1032 备用 ctor 4 行入合成噪音册）与 `UserStatsProtocol` records 契约 9 例（构造面/相等语义/OK 载荷配对规则/协议响应单载荷，定性表中「record 合成成员」类相应缩减，`ISteamTransport` 仅剩 240 一行 ToString）。**本轮后剩余 43 行定性**：异常类 CA1032 备用 ctor（SteamClientManager 4 + ControlPlane Exceptions 2 + PluginException 1，合成噪音）、KeyRotation `Environment.Exit`（2，结构性）、防御性死分支/时序边沿/平台分支（其余，多轮实测波动，照旧）。验证：全量两轮全绿（含覆盖率轮，合计 **99.7%** 14538/14581，门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
 
 ### 排除项
 
@@ -466,7 +470,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 ## 测试维护
 
 - 定期更新测试以匹配代码变更
-- 保持测试覆盖率稳步提升（当前 99.6%，CI 覆盖率门禁 99.5%，见上方基线表）
+- 保持测试覆盖率稳步提升（当前 99.7%，CI 覆盖率门禁 99.5%，见上方基线表）
 - 新功能必须包含测试
 - 修复 bug 时添加回归测试
 - 定期审查和重构测试代码
