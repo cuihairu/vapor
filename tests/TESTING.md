@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1263 tests)
+├── Vapor.Steam.Core.Tests/               (1318 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -29,17 +29,17 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1263 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界 |
+| Vapor.Steam.Core.Tests | 1318 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检) |
 | Vapor.ControlPlane.Tests | 604 | REST API、SQLite job/审计/抓取存储、任务派发、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
 | Vapor.Plugins.Core.Tests | 129 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 129 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
-| Vapor.Agent.Tests | 54 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload)、WS URI 构造、maFile 离线导入 CLI、追踪注入 |
+| Vapor.Agent.Tests | 56 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入 |
 | Vapor.Plugins.MarketWatch.Tests | 56 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/轮询循环确定性停机/阈值 payload 值形状/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 35 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 27 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2351** | (2026-09-19 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2408** | (2026-09-20 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -286,16 +286,16 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 |--------|--------|
 | Agent | 100.0% |
 | MobileAuthenticator | 100.0% |
-| Monitoring | 99.4%（`MetricsHttpServer` 时序边沿 2 行，本轮未命中） |
+| Monitoring | 100.0%（`MetricsHttpServer` 时序边沿 2 行，轮间波动命中归位） |
 | Plugins.Core | 100.0% |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） |
 | Protocol | 100.0% |
 | ControlPlane | 99.8% |
-| Steam.Core | 99.7% |
+| Steam.Core | 99.5%（新增代理链路 4 行边界缺口——BotSession 命令循环 catch 尾、SessionManager try 边界；代理解析/存储/CM/Web/check_proxy 全覆盖） |
 | MarketWatch | 98.9% |
 | KeyRotation | 98.1%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 2 行——测试进程内会终止 testhost，结构性不可测） |
-| **合计** | **99.7%** (14547/14584) |
+| **合计** | **99.7%** (14742/14788) |
 
 > 历史基线：2026-09-12 首次真实全解决方案基线为 74.3%（此前 44.6% 的初版系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致，合并未归一化导致同一行被重复计入分母）。2026-09-13 覆盖率冲刺（逐文件提取未覆盖行并针对性补测）后达 95.9%。2026-09-14 第二轮冲刺后达 98.6%（Agent 91.9%→98.1%、ControlPlane 97.9%→99.5%、Plugins.Core 88.1%→99.1%、Monitoring 89.7%→97.2%）；同日第二轮半（fd1ae2e，+36 测试）删除第二轮归档的死代码（`VaporCryptoHelper` 防御 catch、`HttpCircuitBreaker` HalfOpen 存储态、`RecurringJobScheduler` missed 组合、`SteamTotp` 空 base64、`RedactingLoggerProvider.AppendPairs`）并新增 TracingTests/TestFixturesTests/SteamTimeSynchronizerTests，TestFixtures 故障 fixture 库亦获全覆盖，TestFixtures 68.3%→100%、Monitoring 97.2%→100%；回调泵同步 Sleep 改异步 Delay 后达 **99.5%**（57 行未覆盖）。2026-09-15 P7/P8/P9 三个功能阶段落地后新代码覆盖率债使合计回落至 98.5%（Steam.Core 97.8%、ControlPlane 98.8%）。
 >
@@ -335,6 +335,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-19 维护轮七（FsCheck 扩面六——payload 读取器值形状 property；「继续」自主立项，轮五 trade 资产解析的同族地基收官——全部 action 入口都走 `PayloadReader`；2337→**2344** 全绿：Steam.Core 1249→1256）。+7 property（`PayloadReaderPropertyTests`）：①**查找语义**——精确键恒压大小写变体（decoy 在旁不误返）、变体回退命中（`ToUpperInvariant` 孪生键全域，自碰撞 guard——decoy 跳过而非赋值，见下）；②**GetInt32 域判定**——boxed long 恰 int 域内转换（全域 long 二分边界）、boxed double「整数且域内」双条件（生成器含 NaN/±∞ 全 null——与 §36 TryGetDouble 的 IsFinite 守卫语义呼应）；③**往返三形态**——任意 int 经装箱/invariant 字符串/JSON 字符串三形态存活（负数与 ±int 边界全域，NumberStyles.Integer 锚定）；任意 bool 三形态往返——**`bool.ToString()` 产 "True"/"False" 必须被 bool.TryParse 接受**（点例只测过小写 "true"/"false"，大小写形态此前无锚）；④**总函数性**——任意形状×任意键×三读取器永不抛。**测试侧自纠一条**：首版「精确键压变体」性质中，key 全大写自反时 decoy 赋值会**覆盖** exact 值（注释声称「碰撞时断言仍成立」是错的——轮五同款「注释未推演」陷阱，property 一轮即抓）；修复为自碰撞时跳过 decoy。覆盖率合计 99.7%（14547/14584，Barrier 竞态臂 2 行本轮命中回归）。验证：全量覆盖率轮全绿（门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
 
 > 2026-09-19 维护轮八（FsCheck 扩面七——资产校验守卫链 property；「继续」自主立项；用户中途下达 §38 四大功能方向后本压缩收尾；2344→**2351** 全绿：Steam.Core 1256→1263）。+7 property（`TradeAssetValidatorPropertyTests`）：①**守卫链顺序**——非法 amount → 未拥有 → 不可交易 → 冷却 → 数量不足逐级短路与遮蔽（未拥有资产报 not found 而非 untradable，双门同破报 not tradable 而非 cooldown）；②**重复条目聚合**——Σ 请求量 vs 可用量判定、超额坍缩为单条短缺错误（消息含 Σ 与可用量）；③**冷却边界**——`TradabilityDate == now` 放行（严格大于才拦，一 tick 后即拦）；④空报价恒 `Success` 单例（ReferenceEquals）；⑤非法 amount 独立报错且不进聚合（与合法重复条目并存时只报一条）。全程注入时钟（轮二 `IsTradableNow` 教训复用）。本轮无产品缺陷。验证：全量覆盖率轮全绿（合计 99.7% 14547/14584，门禁 99.5 过）、format 门禁过、CI 终态见提交后监控。
+> 2026-09-20 §38 P1 每账号代理（用户 2026-09-19 下达四大方向之④并排序第一——多账号同 IP 易关联封号，保号地基优先；2351→**2408** 全绿：Steam.Core 1263→1318、Agent 54→56，+57）。七件套：①**`ProxyOptions` 解析器**（http/https/socks5 白名单、凭据 percent-decode、IPv6 方括号强制、scheme 默认端口 80/443/1080、`ToString` 恒掩码原文不可逆）+ 16 example + 4 property（受控域生成器；**property 抓出 2 个真缺陷**：`ArgumentNullException.ThrowIfNull` 的 ParamName 恒为 "value" 而非调用方命名——须手工构造；`user@host` 无冒号形态 password 应保持 null 却被 `Decode(null)` 变空串）；②**`AccountCredentials.Proxy` 加密持久化**（`SaveProxyAsync` 先解析 fail-fast、null 清除未知账户为 no-op；RoundTrip 跨实例测试抓出写侧 `EncryptValue`/读侧 `DecryptValue` 白名单双侧漏项——实现轮自查未发现，测试轮即抓）；③**CM 层代理**：`SteamClientManager` 改 `SteamConfiguration.Create`（**WebSocket-only** + `WithHttpClientFactory` 按活跃账户代理建 `SocketsHttpHandler`，socks5 远程 DNS），`SetAccountProxyAsync` 出口变化 → 断开 CM 等 OnDisconnected TCS（10s 上限）→ 下次 `ConnectAsync` 新代理重建（调研结论见 todo §38：SteamKit2 官方「CM 代理 unlikely」已过时，3.4.0 全程公共 API 可达）；④Web 层 `SteamWebHandlerConfig.Proxy` + `SessionManager` 按账户注入（CM/Web/trade/mobileconf 同出口）；⑤脱敏：Redactor 黑名单加 proxy + `scheme://user:pass@` URI 凭据正则（`<scheme>://<redacted>@`），JSON 嵌套字符串同效；⑥**`check_proxy` action**（payload 代理优先于已配置；出口 IP/Steam 可达/延迟；输出掩码化；真网络探针 `ExcludeFromCodeCoverage` + `ProbeOverride` 测试 seam）；⑦dashboard check_proxy 选项 + login/check_proxy payload 代理字段提示；Agent 侧 payload `proxy` 预解析 fail-fast（畸形端点在任何 session 触碰前失败）、四凭据构造点全透传。补测两处新分支：BotSession 密码登录路径 proxy 透传/无代理不触碰 transport、SessionManager 代理持久化失败容忍（store 抛异常登录仍成功）。折衷在册：代理按活跃账户生效（共享 CM 串行），切换断开重连 ~1-2s；并行多账号需 per-account SteamClient 池（P3 后方向）。覆盖率合计 99.7%（14742/14788）：Monitoring 时序边沿 2 行本轮命中归位；Steam.Core 99.7%→99.5% 为新增代理链路 4 行边界缺口（BotSession 命令循环 catch 尾、SessionManager try 边界——与在册时序边沿同性质）。**测试侧教训入册**：`scripts/run-tests.sh` 固定 `--configuration Release`，本地 `dotnet test --no-build` 不带 `-c Release` 会静默使用陈旧 Debug DLL（本轮实测 573 vs 实际 604 的 ControlPlane 幻差，计数/验证一律显式 `-c Release`）；另与运行中的测试轮并发分析 `TestResults/*/coverage.cobertura.xml` 会捞到半成品报告（实测 6.3% 幻值），一切数字以最终轮完成后为准。验证：全量覆盖率轮全绿（门禁 99.5 过）、format 过、CI 终态见提交后监控。
 
 ### 排除项
 
