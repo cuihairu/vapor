@@ -51,6 +51,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Protocol", "src\Vapor
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Plugins.TestFixtures", "tests\Vapor.Plugins.TestFixtures\Vapor.Plugins.TestFixtures.csproj", "{4E00B0BD-AF7C-4C97-AAA7-C8558FBE4FFA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.KeyRotation.Tests", "tests\Vapor.KeyRotation.Tests\Vapor.KeyRotation.Tests.csproj", "{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -313,6 +315,18 @@ Global
 		{4E00B0BD-AF7C-4C97-AAA7-C8558FBE4FFA}.Release|x64.Build.0 = Release|Any CPU
 		{4E00B0BD-AF7C-4C97-AAA7-C8558FBE4FFA}.Release|x86.ActiveCfg = Release|Any CPU
 		{4E00B0BD-AF7C-4C97-AAA7-C8558FBE4FFA}.Release|x86.Build.0 = Release|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Debug|x64.Build.0 = Debug|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Debug|x86.Build.0 = Debug|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Release|x64.ActiveCfg = Release|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Release|x64.Build.0 = Release|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Release|x86.ActiveCfg = Release|Any CPU
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -334,5 +348,6 @@ Global
 		{0C92AAA6-687C-4CB8-AB44-79FF51A70605} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{D646AA8D-DA88-40BF-BC52-4DA847C82649} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{4E00B0BD-AF7C-4C97-AAA7-C8558FBE4FFA} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

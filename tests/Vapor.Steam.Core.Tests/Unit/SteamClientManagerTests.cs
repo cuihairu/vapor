@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Moq;
+using System.Reflection;
 using SteamKit2;
 using SteamKit2.Authentication;
 using SteamKit2.Internal;
@@ -37,6 +38,30 @@ public class SteamClientManagerTests : IDisposable
 		var provider = new SteamAuthTokenProvider(new SteamClient());
 
 		Assert.NotNull(provider.Authentication);
+	}
+
+	[Fact]
+	public async Task SteamAuthTokenProvider_GenerateAccessTokenForAppAsync_PassesArgumentsAndMapsResult()
+	{
+		// The provider is a reflection bridge onto SteamKit2's authentication
+		// service, which needs a live CM connection to answer for real. Re-point
+		// the bridge at a controllable source to pin the argument order and the
+		// result mapping — the only logic this class owns.
+		var provider = new SteamAuthTokenProvider(new SteamClient());
+		var fake = new FakeTokenGenerator();
+		var authField = typeof(SteamAuthTokenProvider).GetField("_authentication", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		var methodField = typeof(SteamAuthTokenProvider).GetField("_generateAccessTokenMethod", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		authField.SetValue(provider, fake);
+		methodField.SetValue(provider, typeof(FakeTokenGenerator).GetMethod(nameof(FakeTokenGenerator.GenerateAccessTokenForAppAsync)));
+
+		var steamId = new SteamID(76561197960265730ul);
+		var result = await provider.GenerateAccessTokenForAppAsync(steamId, "refresh-token", allowRenewal: false);
+
+		Assert.Same(steamId, fake.ReceivedSteamId);
+		Assert.Equal("refresh-token", fake.ReceivedRefreshToken);
+		Assert.False(fake.ReceivedAllowRenewal);
+		Assert.Equal("access-token", result.AccessToken);
+		Assert.Equal("refresh-token", result.RefreshToken);
 	}
 
 	[Fact]
@@ -399,6 +424,38 @@ public class SteamClientManagerTests : IDisposable
 		var refreshed = await manager.RefreshAccessTokenAsync("test_account", CancellationToken.None);
 
 		Assert.False(refreshed);
+	}
+
+	private sealed class FakeTokenGenerator
+	{
+		public SteamID? ReceivedSteamId { get; private set; }
+		public string? ReceivedRefreshToken { get; private set; }
+		public bool ReceivedAllowRenewal { get; private set; }
+
+		public Task<AccessTokenGenerateResult> GenerateAccessTokenForAppAsync(SteamID steamId, string refreshToken, bool allowRenewal)
+		{
+			ReceivedSteamId = steamId;
+			ReceivedRefreshToken = refreshToken;
+			ReceivedAllowRenewal = allowRenewal;
+			return Task.FromResult(CreateGenerateResult("access-token", "refresh-token"));
+		}
+
+		// AccessTokenGenerateResult has no public constructor — SteamKit2 builds
+		// it from the protobuf response. Assemble the response the same way.
+		private static AccessTokenGenerateResult CreateGenerateResult(string accessToken, string refreshToken)
+		{
+			var response = new CAuthentication_AccessToken_GenerateForApp_Response
+			{
+				access_token = accessToken,
+				refresh_token = refreshToken,
+			};
+			return (AccessTokenGenerateResult)Activator.CreateInstance(
+				typeof(AccessTokenGenerateResult),
+				BindingFlags.Instance | BindingFlags.NonPublic,
+				binder: null,
+				[response],
+				culture: null)!;
+		}
 	}
 
 	private sealed class FakeSteamAuthTokenProvider : ISteamAuthTokenProvider
