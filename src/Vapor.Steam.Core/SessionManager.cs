@@ -82,14 +82,14 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	// CA2025 suppressed: the session created here is owned by the _sessions dictionary;
 	// capturing it in the pump Task below does not transfer ownership out of this type.
 #pragma warning disable CA2025
-	public Task<BotSession> GetOrCreateSessionAsync(
+	public async Task<BotSession> GetOrCreateSessionAsync(
 		string accountName,
 		AccountCredentials credentials,
 		CancellationToken cancellationToken = default)
 	{
 		if (_sessions.TryGetValue(accountName, out var existing))
 		{
-			return Task.FromResult(existing);
+			return existing;
 		}
 
 		var session = new BotSession(
@@ -98,16 +98,20 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			_actionRegistry,
 			_loggerFactory.CreateLogger<BotSession>(),
 			_steamClientManager,
-			steamWebHandler: new SteamWebHandler(
-				new SteamWebHandlerConfig(),
-				_loggerFactory.CreateLogger<SteamWebHandler>()
-			),
+			steamWebHandler: CreateWebHandler(accountName, credentials.Proxy),
 			eventCallback: _eventCallback
 		);
 
 		if (_sessions.TryAdd(accountName, session))
 		{
 			session.Start();
+
+			// Persist the proxy so an agent restart restores the session with the
+			// same exit IP; a persistence failure must not fail the sign-in.
+			if (credentials.Proxy != null && _credentialStore != null)
+			{
+				await PersistProxyAsync(accountName, credentials.Proxy).ConfigureAwait(false);
+			}
 
 			_ = Task.Run(async () =>
 			{
@@ -133,10 +137,10 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		else
 		{
 			session.Dispose();
-			return Task.FromResult(_sessions[accountName]);
+			return _sessions[accountName];
 		}
 
-		return Task.FromResult(session);
+		return session;
 	}
 #pragma warning restore CA2025
 
@@ -184,7 +188,8 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			AccountName: accountName,
 			Password: string.Empty, // No password needed for token-based login
 			RefreshToken: await _credentialStore.GetRefreshTokenAsync(accountName, cancellationToken).ConfigureAwait(false),
-			AccessToken: (await _credentialStore.GetAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false))?.Token
+			AccessToken: (await _credentialStore.GetAccessTokenAsync(accountName, cancellationToken).ConfigureAwait(false))?.Token,
+			Proxy: await _credentialStore.GetProxyAsync(accountName, cancellationToken).ConfigureAwait(false)
 		);
 
 		// Create a new session with restored credentials
@@ -194,10 +199,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			_actionRegistry,
 			_loggerFactory.CreateLogger<BotSession>(),
 			_steamClientManager,
-			steamWebHandler: new SteamWebHandler(
-				new SteamWebHandlerConfig(),
-				_loggerFactory.CreateLogger<SteamWebHandler>()
-			),
+			steamWebHandler: CreateWebHandler(accountName, credentials.Proxy),
 			eventCallback: _eventCallback
 		);
 
@@ -253,6 +255,36 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		await foreach (var evt in _eventChannel.Reader.ReadAllAsync(cancellationToken))
 		{
 			yield return evt;
+		}
+	}
+
+	/// <summary>
+	/// Builds the per-account web handler. A configured proxy is parsed here so a
+	/// malformed endpoint fails session creation before any connection is made;
+	/// the log line carries only the masked endpoint form.
+	/// </summary>
+	private SteamWebHandler CreateWebHandler(string accountName, string? proxy)
+	{
+		var config = new SteamWebHandlerConfig();
+		if (!string.IsNullOrWhiteSpace(proxy))
+		{
+			var options = ProxyOptions.Parse(proxy, nameof(proxy));
+			config = config with { Proxy = options };
+			_logger.LogInformation("Account {AccountName} routes Steam web traffic through {Proxy}", accountName, options.ToString());
+		}
+
+		return new SteamWebHandler(config, _loggerFactory.CreateLogger<SteamWebHandler>());
+	}
+
+	private async Task PersistProxyAsync(string accountName, string proxy)
+	{
+		try
+		{
+			await _credentialStore!.SaveProxyAsync(accountName, proxy).ConfigureAwait(false);
+		}
+		catch (Exception ex)
+		{
+			_logger.LogWarning(ex, "Failed to persist proxy for {AccountName}; session restore will not have it", accountName);
 		}
 	}
 

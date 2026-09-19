@@ -69,6 +69,7 @@ var serviceCollection = new ServiceCollection()
 	.AddSingleton<PingAction>()
 	.AddSingleton<IdleAction>()
 	.AddSingleton<EchoAction>()
+	.AddSingleton<CheckProxyAction>()
 	.AddSingleton<LoginAction>()
 	.AddSingleton<PlayGamesAction>()
 	.AddSingleton<RedeemKeyAction>()
@@ -193,6 +194,7 @@ sessionManager.SetEventCallback(async (accountName, eventType, state, message) =
 actionRegistry.Register(serviceProvider.GetRequiredService<PingAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<IdleAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<EchoAction>());
+actionRegistry.Register(serviceProvider.GetRequiredService<CheckProxyAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<LoginAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<PlayGamesAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<RedeemKeyAction>());

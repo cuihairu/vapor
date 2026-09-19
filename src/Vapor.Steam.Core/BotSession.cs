@@ -12,7 +12,8 @@ public sealed record AccountCredentials(
 	string? TwoFactorCode = null,
 	string? RefreshToken = null,
 	string? AccessToken = null,
-	bool QrLogin = false
+	bool QrLogin = false,
+	string? Proxy = null
 );
 
 public delegate Task SessionEventDelegate(string accountName, string eventType, string state, string? message);
@@ -44,6 +45,9 @@ public sealed class BotSession : IDisposable
 	public DateTimeOffset LastHeartbeat => _lastHeartbeat;
 	public ISteamClientManager? SteamClientManager => _steamClientManager;
 	public SteamWebHandler? SteamWebHandler => _steamWebHandler;
+
+	/// <summary>The egress proxy this account was configured with (raw endpoint string), or null.</summary>
+	public string? ConfiguredProxy => _credentials.Proxy;
 
 	public BotSession(
 		string accountName,
@@ -391,6 +395,14 @@ public sealed class BotSession : IDisposable
 		{
 			SetState(SessionState.Connected, "logged in (stub mode)");
 			return new SessionCommandResult(true, null, null);
+		}
+
+		// Stage the account's egress proxy before touching the network: a proxy
+		// switch tears the shared CM connection down so this account's connect
+		// goes out through its own IP. Malformed endpoints fail the login here.
+		if (!string.IsNullOrWhiteSpace(_credentials.Proxy))
+		{
+			await _steamClientManager.SetAccountProxyAsync(_accountName, _credentials.Proxy, cancellationToken).ConfigureAwait(false);
 		}
 
 		if (_credentials.QrLogin)

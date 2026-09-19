@@ -77,6 +77,12 @@ public sealed record SteamWebHandlerConfig
 	/// Base URL for Steam Help.
 	/// </summary>
 	public Uri SteamHelpUrl { get; init; } = new("https://help.steampowered.com");
+
+	/// <summary>
+	/// Per-account egress proxy for every Steam web request (parsed form; the
+	/// raw endpoint string never round-trips here). Null means direct.
+	/// </summary>
+	public ProxyOptions? Proxy { get; init; }
 }
 
 /// <summary>
@@ -116,6 +122,12 @@ public sealed class SteamWebHandler : IDisposable
 			AutomaticDecompression = System.Net.DecompressionMethods.All,
 			PooledConnectionIdleTimeout = TimeSpan.FromSeconds(15)
 		};
+
+		if (_config.Proxy is { } proxy)
+		{
+			handler.Proxy = proxy.ToWebProxy();
+			handler.UseProxy = true;
+		}
 #pragma warning restore CA2000
 
 		_httpClient = new(handler)

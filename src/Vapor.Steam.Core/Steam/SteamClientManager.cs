@@ -9,6 +9,7 @@ using SteamKit2.WebUI.Internal;
 using Vapor.Steam.Core.Security;
 using System.Diagnostics.CodeAnalysis;
 using Vapor.Steam.Core.Utilities;
+using Vapor.Steam.Core.Web;
 
 namespace Vapor.Steam.Core.Steam;
 
@@ -112,6 +113,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		public SteamID? SteamId { get; init; }
 		public string? AuthCode { get; init; }
 		public string? TwoFactorCode { get; init; }
+		public string? Proxy { get; init; }
 		public TaskCompletionSource<SteamUser.LoggedOnCallback>? LoginTcs { get; init; }
 	}
 
@@ -125,13 +127,18 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private readonly object _connectLock = new();
 	private TaskCompletionSource<bool> _connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 	private string? _activeLoginAccountName;
+
+	// The exit proxy the next CM connection must use. The SteamKit HTTP client
+	// factory reads this when the CM WebSocket (and any WebAPI/CDN) invoker is
+	// built; SetAccountProxyAsync writes it before the caller's connect.
+	private string? _pendingProxy;
 	private bool _disposed;
 
 	public SteamClientManager(ILogger<SteamClientManager> logger, ICredentialStore? credentialStore = null)
 	{
 		_logger = logger;
 		_credentialStore = credentialStore;
-		_steamClient = new SteamClient();
+		_steamClient = CreateSteamClient();
 		_callbackManager = new CallbackManager(_steamClient);
 		_steamAuthTokenProvider = new SteamAuthTokenProvider(_steamClient);
 		_steamClient.AddHandler(_userStatsProtocol);
@@ -146,12 +153,53 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	{
 		_logger = logger;
 		_credentialStore = credentialStore;
-		_steamClient = new SteamClient();
+		_steamClient = CreateSteamClient();
 		_callbackManager = new CallbackManager(_steamClient);
 		_steamAuthTokenProvider = steamAuthTokenProvider;
 		_steamClient.AddHandler(_userStatsProtocol);
 
 		SubscribeCallbacks();
+	}
+
+	/// <summary>
+	/// SteamKit2's CM socket has no proxy support for its TCP/UDP transports, but
+	/// the WebSocket transport is built on the HTTP client factory — so the client
+	/// runs WebSocket-only and every CM connection (plus SteamKit's own WebAPI/CDN
+	/// calls) is built through <see cref="CreateProxiedHttpClient"/>, which applies
+	/// the pending per-account proxy. socks5 endpoints resolve remotely at the
+	/// proxy, keeping the local resolver out of the account's traffic path.
+	/// </summary>
+	private SteamClient CreateSteamClient() =>
+		new(SteamConfiguration.Create(builder => builder
+			.WithProtocolTypes(ProtocolTypes.WebSocket)
+			.WithHttpClientFactory(CreateProxiedHttpClient)));
+
+	private HttpClient CreateProxiedHttpClient(HttpClientPurpose purpose)
+	{
+		var proxy = _pendingProxy;
+
+		// CA2000 suppressed: ownership of both handler and client transfers to the
+		// returned HttpClient; SteamKit2 disposes the invoker with the connection.
+#pragma warning disable CA2000
+		var handler = new SocketsHttpHandler
+		{
+			ConnectTimeout = TimeSpan.FromSeconds(15)
+		};
+
+		if (proxy != null)
+		{
+			handler.Proxy = ProxyOptions.Parse(proxy, "proxy").ToWebProxy();
+			handler.UseProxy = true;
+			_logger.LogInformation("Building {Purpose} transport through {Proxy}", purpose, ProxyOptions.Parse(proxy, "proxy").ToString());
+		}
+
+		return new HttpClient(handler)
+		{
+			// The CM WebSocket is a long-lived socket; only the handshake goes
+			// through this client. WebAPI/CDN purposes keep a finite timeout.
+			Timeout = purpose == HttpClientPurpose.CMWebSocket ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(60)
+		};
+#pragma warning restore CA2000
 	}
 
 	public Task<TransportLogOnDetails?> GetLogOnDetailsAsync(string accountName)
@@ -226,6 +274,50 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		{
 			throw new InvalidOperationException("Steam client failed to connect");
 		}
+	}
+
+	public async Task SetAccountProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(accountName);
+		if (proxy != null)
+		{
+			ProxyOptions.Parse(proxy, nameof(proxy)); // fail fast on malformed endpoints
+		}
+
+		_loginStates.AddOrUpdate(
+			accountName,
+			_ => new LoginState(accountName, string.Empty) { Proxy = proxy },
+			(_, existing) => existing with { Proxy = proxy });
+
+		// The CM socket is process-wide: when the requested exit differs from the
+		// staged one, tear the live connection down and wait for the disconnect
+		// callback so the caller's connect re-establishes it through the new proxy.
+		if (string.Equals(proxy, _pendingProxy, StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		Task settle;
+		lock (_connectLock)
+		{
+			_pendingProxy = proxy;
+			settle = _steamClient.IsConnected ? _connectedTcs.Task : Task.CompletedTask;
+			if (_steamClient.IsConnected)
+			{
+				try
+				{
+					_steamClient.Disconnect();
+				}
+				catch (Exception ex)
+				{
+					_logger.LogWarning(ex, "Failed to drop the CM connection for a proxy switch");
+				}
+			}
+		}
+
+		// Bounded wait: the disconnect callback settles the TCS; the ceiling keeps a
+		// wedged socket from blocking account switching forever.
+		await settle.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
 	}
 
 	public async Task DisconnectAsync()

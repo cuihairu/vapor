@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Vapor.Protocol;
 using Vapor.Steam.Core;
 using Vapor.Steam.Core.Utilities;
+using Vapor.Steam.Core.Web;
 
 namespace Vapor.Agent;
 
@@ -34,6 +35,15 @@ public static class AgentTaskExecutor
 			string? refreshToken = PayloadReader.GetString(payload, "refreshToken") ?? PayloadReader.GetString(payload, "refresh_token");
 			bool qrLogin = PayloadReader.GetBool(payload, "qrLogin") ?? PayloadReader.GetBool(payload, "qr_login") ?? false;
 
+			// Per-account egress proxy (http/https/socks5, credentials inline).
+			// Parsed up front so a malformed value fails the task with the
+			// account's configuration named, before any session is touched.
+			string? proxy = PayloadReader.GetString(payload, "proxy");
+			if (proxy != null)
+			{
+				ProxyOptions.Parse(proxy, "proxy");
+			}
+
 			BotSession session;
 
 			if (qrLogin)
@@ -44,7 +54,8 @@ public static class AgentTaskExecutor
 				var qrCredentials = new AccountCredentials(
 					AccountName: accountName,
 					Password: string.Empty,
-					QrLogin: true
+					QrLogin: true,
+					Proxy: proxy
 				);
 
 				session = await sessionManager.GetOrCreateSessionAsync(
@@ -62,7 +73,8 @@ public static class AgentTaskExecutor
 					AuthCode: PayloadReader.GetString(payload, "authCode") ?? PayloadReader.GetString(payload, "auth_code"),
 					TwoFactorCode: PayloadReader.GetString(payload, "twoFactorCode") ?? PayloadReader.GetString(payload, "two_factor_code"),
 					RefreshToken: refreshToken,
-					AccessToken: accessToken
+					AccessToken: accessToken,
+					Proxy: proxy
 				);
 
 				session = await sessionManager.GetOrCreateSessionAsync(
@@ -78,7 +90,8 @@ public static class AgentTaskExecutor
 					AccountName: accountName,
 					Password: password,
 					AuthCode: PayloadReader.GetString(payload, "authCode") ?? PayloadReader.GetString(payload, "auth_code"),
-					TwoFactorCode: PayloadReader.GetString(payload, "twoFactorCode") ?? PayloadReader.GetString(payload, "two_factor_code")
+					TwoFactorCode: PayloadReader.GetString(payload, "twoFactorCode") ?? PayloadReader.GetString(payload, "two_factor_code"),
+					Proxy: proxy
 				);
 
 				session = await sessionManager.GetOrCreateSessionAsync(
@@ -96,7 +109,8 @@ public static class AgentTaskExecutor
 					AccountName: accountName,
 					Password: string.Empty,
 					AccessToken: accessToken,
-					RefreshToken: refreshToken
+					RefreshToken: refreshToken,
+					Proxy: proxy
 				);
 
 				session = await sessionManager.GetOrCreateSessionAsync(

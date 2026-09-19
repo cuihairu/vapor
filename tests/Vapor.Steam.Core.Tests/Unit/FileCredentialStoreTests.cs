@@ -515,4 +515,50 @@ public sealed class FileCredentialStoreTests : IDisposable
 			File.SetUnixFileMode(_dataDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
 		}
 	}
+
+	[Fact]
+	public async Task SaveProxyAsync_RoundTrips_AndPersistsAcrossReload()
+	{
+		using var store = CreateStore();
+		await store.SaveProxyAsync("account-a", "socks5://john:s3cret@10.0.0.9:1080");
+
+		// A fresh store instance reads the persisted file from scratch.
+		using var reloaded = CreateStore();
+
+		Assert.Equal("socks5://john:s3cret@10.0.0.9:1080", await reloaded.GetProxyAsync("account-a"));
+	}
+
+	[Fact]
+	public async Task SaveProxyAsync_NullClearsStoredValue_WithoutCreatingAccounts()
+	{
+		using var store = CreateStore();
+
+		// Clearing an unknown account is a no-op, not an implicit account creation.
+		await store.SaveProxyAsync("ghost", null);
+		Assert.False(await store.HasCredentialsAsync("ghost"));
+
+		await store.SaveProxyAsync("account-a", "http://p:8080");
+		await store.SaveProxyAsync("account-a", null);
+
+		Assert.Null(await store.GetProxyAsync("account-a"));
+	}
+
+	[Theory]
+	[InlineData("not-a-proxy")]
+	[InlineData("ftp://host")]
+	public async Task SaveProxyAsync_MalformedEndpoint_ThrowsAndStoresNothing(string proxy)
+	{
+		using var store = CreateStore();
+
+		await Assert.ThrowsAsync<ArgumentException>(() => store.SaveProxyAsync("account-a", proxy));
+		Assert.Null(await store.GetProxyAsync("account-a"));
+	}
+
+	[Fact]
+	public async Task GetProxyAsync_UnknownAccount_ReturnsNull()
+	{
+		using var store = CreateStore();
+
+		Assert.Null(await store.GetProxyAsync("nobody"));
+	}
 }

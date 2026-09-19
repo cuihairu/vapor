@@ -18,6 +18,14 @@ public interface ISteamTransport
 	/// <summary>Connects the transport to the Steam network, waiting until the connection is up.</summary>
 	Task ConnectAsync(CancellationToken cancellationToken = default);
 
+	/// <summary>
+	/// Stages the per-account egress proxy for the next connection. When it differs
+	/// from the live CM exit, the connection is torn down so the next connect
+	/// re-establishes it through the new proxy. A malformed endpoint throws
+	/// ArgumentException naming the parameter.
+	/// </summary>
+	Task SetAccountProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default);
+
 	/// <summary>Drops the connection to the Steam network.</summary>
 	Task DisconnectAsync();
 

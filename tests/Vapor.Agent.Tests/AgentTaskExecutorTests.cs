@@ -321,4 +321,41 @@ public class AgentTaskExecutorTests
 		Assert.True(success);
 		Assert.True(Assert.Single(captured).QrLogin);
 	}
+
+	[Fact]
+	public async Task ProxyPayload_IsCarriedOntoCredentials()
+	{
+		var session = CreateStubSession();
+		var (manager, captured) = CreateMockedManager(session);
+		var payload = new Dictionary<string, object?>
+		{
+			["password"] = "s3cret",
+			["proxy"] = "socks5://gw.example.com:1080"
+		};
+
+		var (success, _, _) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(payload: payload), manager.Object, NullLogger.Instance, CancellationToken.None);
+
+		Assert.True(success);
+		Assert.Equal("socks5://gw.example.com:1080", Assert.Single(captured).Proxy);
+	}
+
+	[Fact]
+	public async Task ProxyPayload_MalformedEndpoint_FailsBeforeAnySessionIsTouched()
+	{
+		var session = CreateStubSession();
+		var (manager, captured) = CreateMockedManager(session);
+		var payload = new Dictionary<string, object?>
+		{
+			["password"] = "s3cret",
+			["proxy"] = "not-a-proxy"
+		};
+
+		var (success, error, _) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(payload: payload), manager.Object, NullLogger.Instance, CancellationToken.None);
+
+		Assert.False(success);
+		Assert.Contains("proxy", error, StringComparison.Ordinal);
+		Assert.Empty(captured);
+	}
 }

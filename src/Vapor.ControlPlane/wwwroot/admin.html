@@ -752,6 +752,7 @@
                                         <option value="ping">ping</option>
                                         <option value="echo">echo</option>
                                         <option value="login">login</option>
+                                        <option value="check_proxy">check_proxy</option>
                                         <option value="idle">idle</option>
                                         <option value="play_games">play_games</option>
                                     </optgroup>
@@ -1369,7 +1370,8 @@
         const payloadPlaceholders = {
             ping: "",
             echo: '{"message":"hello"}',
-            login: '{"password":"<steam-password>"}',
+            login: '{"password":"<steam-password>","proxy":"socks5://user:pass@host:1080"}',
+            check_proxy: '{"proxy":"socks5://user:pass@host:1080"}',
             idle: '{"seconds":60}',
             play_games: '{"app_ids":[730,570]}',
             redeem_key: '{"key":"AAAAA-BBBBB-CCCCC"}',
@@ -3444,7 +3446,8 @@
             const hints = {
                 ping: "连通性探测，无需负载。",
                 echo: "echo 会返回 payload 内容，适合连通性和负载格式验证。",
-                login: "login 常见参数: password, authCode, twoFactorCode, refreshToken, accessToken（扫码登录在 payload 传 {\"qrLogin\":true}，二维码经认证挑战面板展示）。",
+                login: "login 常见参数: password, authCode, twoFactorCode, refreshToken, accessToken（扫码登录在 payload 传 {\"qrLogin\":true}，二维码经认证挑战面板展示）；可选 proxy 为该账号指定独立出口代理（http/https/socks5，凭据可内嵌，如 socks5://user:pass@host:1080）。",
+                check_proxy: "check_proxy 检查账号代理连通性并回报出口 IP/Steam 可达性/延迟；proxy 留空时使用账号已配置的代理，均未配置则回报 proxyEnabled=false。",
                 idle: "idle 可传动作专用参数；若留空则按服务端默认行为执行。",
                 play_games: "play_games 挂机游玩，app_ids 支持 \"730,570\" 字符串或数组。",
                 redeem_key: "redeem_key 一般传 {\"key\":\"AAAAA-BBBBB-CCCCC\"}。",

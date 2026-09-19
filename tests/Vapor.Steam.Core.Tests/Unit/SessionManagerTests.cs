@@ -471,6 +471,10 @@ public class SessionManagerTests : IDisposable
 			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync("refresh-token");
 		credentialStoreMock
+			.Setup(s => s.GetProxyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
+		credentialStoreMock
 			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new StoredAccessToken("access-token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
@@ -527,6 +531,10 @@ public class SessionManagerTests : IDisposable
 			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync("refresh-token");
 		credentialStoreMock
+			.Setup(s => s.GetProxyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
+		credentialStoreMock
 			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new StoredAccessToken("access-token", DateTimeOffset.UtcNow.AddSeconds(1)));
 
@@ -571,6 +579,10 @@ public class SessionManagerTests : IDisposable
 		credentialStoreMock
 			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync("refresh-token");
+		credentialStoreMock
+			.Setup(s => s.GetProxyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
 		credentialStoreMock
 			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new StoredAccessToken("access-token", DateTimeOffset.UtcNow.AddHours(2)));
@@ -795,6 +807,10 @@ public class SessionManagerTests : IDisposable
 			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync("refresh-token");
 		credentialStoreMock
+			.Setup(s => s.GetProxyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
+		credentialStoreMock
 			.Setup(s => s.GetAccessTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new StoredAccessToken("access-token", DateTimeOffset.UtcNow.AddSeconds(-10))); // expired
 
@@ -891,6 +907,10 @@ public class SessionManagerTests : IDisposable
 			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync("refresh-token");
 		credentialStoreMock
+			.Setup(s => s.GetProxyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
+		credentialStoreMock
 			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.Returns(() =>
 			{
@@ -953,6 +973,10 @@ public class SessionManagerTests : IDisposable
 		credentialStoreMock
 			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync("refresh-token");
+		credentialStoreMock
+			.Setup(s => s.GetProxyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+
 		credentialStoreMock
 			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
 			.ReturnsAsync(new StoredAccessToken(

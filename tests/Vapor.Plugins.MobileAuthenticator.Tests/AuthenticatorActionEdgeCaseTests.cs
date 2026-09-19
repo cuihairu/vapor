@@ -842,5 +842,10 @@ public class AuthenticatorActionEdgeCaseTests
 
 		public Task<string?> GetIdentitySecretAsync(string accountName, CancellationToken cancellationToken = default)
 			=> Task.FromResult(IdentitySecrets.TryGetValue(accountName, out string? secret) ? secret : null);
+		public Task SaveProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
+			=> Task.CompletedTask;
+
+		public Task<string?> GetProxyAsync(string accountName, CancellationToken cancellationToken = default)
+			=> Task.FromResult<string?>(null);
 	}
 }

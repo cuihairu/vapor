@@ -95,4 +95,37 @@ public sealed class SensitiveDataRedactorTests
 		Assert.Equal(string.Empty, SensitiveDataRedactor.SanitizeLogValue(null));
 		Assert.Equal(string.Empty, SensitiveDataRedactor.SanitizeLogValue(string.Empty));
 	}
+
+	[Theory]
+	[InlineData("socks5://john:s3cret@10.0.0.9:1080", "socks5://<redacted>@10.0.0.9:1080")]
+	[InlineData("http://proxy.example.com:8080", "http://proxy.example.com:8080")]
+	[InlineData("see https://alice:p%40ss@gw.example.net:8443 now", "see https://<redacted>@gw.example.net:8443 now")]
+	public void Redact_ProxyUriCredentials_AreMasked_EndpointStaysLegible(string input, string expected)
+	{
+		Assert.Equal(expected, SensitiveDataRedactor.Redact(input));
+	}
+
+	[Fact]
+	public void Redact_ProxyKeyValue_IsFullyRedacted()
+	{
+		const string input = """{"proxy":"socks5://john:s3cret@10.0.0.9:1080"}""";
+
+		var redacted = SensitiveDataRedactor.Redact(input);
+
+		Assert.DoesNotContain("john", redacted, StringComparison.Ordinal);
+		Assert.DoesNotContain("s3cret", redacted, StringComparison.Ordinal);
+		Assert.DoesNotContain("10.0.0.9", redacted, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void Redact_ProxyUriNestedInJsonString_MasksCredentialsOnly()
+	{
+		const string input = """{"note":"routing via socks5://bob:hunter2@egress:9050 tonight"}""";
+
+		var redacted = SensitiveDataRedactor.Redact(input);
+
+		Assert.DoesNotContain("bob", redacted, StringComparison.Ordinal);
+		Assert.DoesNotContain("hunter2", redacted, StringComparison.Ordinal);
+		Assert.Contains("egress:9050", redacted, StringComparison.Ordinal);
+	}
 }

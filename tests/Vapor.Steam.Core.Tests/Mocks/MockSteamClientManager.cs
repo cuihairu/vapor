@@ -39,6 +39,11 @@ public sealed class MockSteamClientManager : ISteamClientManager
 		return Task.CompletedTask;
 	}
 
+	public Task SetAccountProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
+	{
+		return Task.CompletedTask;
+	}
+
 	public Task DisconnectAsync()
 	{
 		_isConnected = false;

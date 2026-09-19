@@ -22,7 +22,8 @@ public static partial class SensitiveDataRedactor
 		"twofactorcode",
 		"code",
 		"key",
-		"secret"
+		"secret",
+		"proxy"
 	};
 
 	public static string Redact(string? value)
@@ -32,9 +33,12 @@ public static partial class SensitiveDataRedactor
 			return value ?? string.Empty;
 		}
 
-		return TryRedactJson(value, out var redactedJson)
+		// Inline proxy credentials can ride anywhere (a note, a URL, a nested
+		// JSON string), so the URI credential form is scrubbed before any
+		// structured redaction looks at keys.
+		return TryRedactJson(ScrubProxyCredentials(value), out var redactedJson)
 			? redactedJson
-			: RedactKeyValueText(value);
+			: RedactKeyValueText(ScrubProxyCredentials(value));
 	}
 
 	/// <summary>
@@ -126,10 +130,31 @@ public static partial class SensitiveDataRedactor
 				writer.WriteEndArray();
 				break;
 			default:
-				element.WriteTo(writer);
+				if (element.ValueKind == JsonValueKind.String && element.GetString() is { Length: > 0 } text)
+				{
+					writer.WriteStringValue(ScrubProxyCredentials(text));
+				}
+				else
+				{
+					element.WriteTo(writer);
+				}
+
 				break;
 		}
 	}
+
+	/// <summary>
+	/// Masks the user:password segment of an inline proxy URI (http/https/socks5),
+	/// wherever the URI appears. Credentials-free URIs never carry the '@' form
+	/// and pass through untouched; over-masking the user name is acceptable —
+	/// only the endpoint host and port need to stay legible for diagnostics.
+	/// </summary>
+	private static string ScrubProxyCredentials(string value) =>
+		ProxyCredentialPattern().Replace(value, match =>
+		{
+			var scheme = match.Groups["scheme"].Value;
+			return scheme + "://<redacted>@";
+		});
 
 	private static string RedactKeyValueText(string value)
 	{
@@ -171,4 +196,7 @@ public static partial class SensitiveDataRedactor
 
 	[GeneratedRegex("(?<prefix>(?:^|[?&\\s,{])(?:\"?)(?<key>[A-Za-z0-9_\\-]+)(?:\"?)\\s*[:=]\\s*(?:\"?))(?<value>[^\",\\s}&]+)(?<suffix>\"?)", RegexOptions.CultureInvariant)]
 	private static partial Regex SensitiveValuePattern();
+
+	[GeneratedRegex("(?<scheme>https?|socks5)://[^/@\\s]+@", RegexOptions.CultureInvariant)]
+	private static partial Regex ProxyCredentialPattern();
 }

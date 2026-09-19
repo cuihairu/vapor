@@ -93,4 +93,21 @@ public interface ICredentialStore
 	/// <param name="accountName">The account name.</param>
 	/// <param name="cancellationToken">Cancellation token.</param>
 	Task<string?> GetIdentitySecretAsync(string accountName, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Saves the per-account egress proxy configuration (http/https/socks5 endpoint
+	/// with inline credentials) so restored sessions keep using the same exit IP.
+	/// Stored encrypted alongside the other account secrets; never surfaced in logs.
+	/// </summary>
+	/// <param name="accountName">The account name.</param>
+	/// <param name="proxy">The proxy endpoint string, or null to clear it.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	Task SaveProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Gets the stored per-account proxy configuration, or null when none is stored.
+	/// </summary>
+	/// <param name="accountName">The account name.</param>
+	/// <param name="cancellationToken">Cancellation token.</param>
+	Task<string?> GetProxyAsync(string accountName, CancellationToken cancellationToken = default);
 }

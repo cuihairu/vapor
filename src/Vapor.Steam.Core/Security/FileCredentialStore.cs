@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Vapor.Steam.Core.Web;
 
 namespace Vapor.Steam.Core.Security;
 
@@ -279,6 +280,60 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		}
 	}
 
+	public async Task SaveProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(accountName);
+		if (proxy != null)
+		{
+			ProxyOptions.Parse(proxy, nameof(proxy)); // fail fast on malformed endpoints
+		}
+
+		await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+		await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			if (!_credentials.TryGetValue(accountName, out var creds))
+			{
+				if (proxy == null)
+				{
+					return; // nothing stored, nothing to clear
+				}
+
+				creds = new AccountCredentials();
+				_credentials[accountName] = creds;
+			}
+
+			creds.Proxy = proxy;
+
+			await SaveToFileAsync(cancellationToken).ConfigureAwait(false);
+			_logger.LogDebug("Saved proxy for {AccountName}", accountName);
+		}
+		finally
+		{
+			_lock.Release();
+		}
+	}
+
+	public async Task<string?> GetProxyAsync(string accountName, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrEmpty(accountName);
+
+		await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+		await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			return _credentials.TryGetValue(accountName, out var creds)
+				? creds.Proxy
+				: null;
+		}
+		finally
+		{
+			_lock.Release();
+		}
+	}
+
 	public void Dispose()
 	{
 		if (_disposed)
@@ -405,7 +460,8 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 				AccessToken = await DecryptValueAsync(creds.AccessToken, accountName, nameof(creds.AccessToken), cancellationToken).ConfigureAwait(false),
 				AccessTokenExpiresAt = creds.AccessTokenExpiresAt,
 				SharedSecret = await DecryptValueAsync(creds.SharedSecret, accountName, nameof(creds.SharedSecret), cancellationToken).ConfigureAwait(false),
-				IdentitySecret = await DecryptValueAsync(creds.IdentitySecret, accountName, nameof(creds.IdentitySecret), cancellationToken).ConfigureAwait(false)
+				IdentitySecret = await DecryptValueAsync(creds.IdentitySecret, accountName, nameof(creds.IdentitySecret), cancellationToken).ConfigureAwait(false),
+				Proxy = await DecryptValueAsync(creds.Proxy, accountName, nameof(creds.Proxy), cancellationToken).ConfigureAwait(false)
 			};
 		}
 
@@ -446,6 +502,7 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 			string? encryptedAccessToken = EncryptValue(creds.AccessToken);
 			string? encryptedSharedSecret = EncryptValue(creds.SharedSecret);
 			string? encryptedIdentitySecret = EncryptValue(creds.IdentitySecret);
+			string? encryptedProxy = EncryptValue(creds.Proxy);
 
 			accounts[accountName] = new AccountCredentials
 			{
@@ -454,7 +511,8 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 				AccessToken = encryptedAccessToken,
 				AccessTokenExpiresAt = creds.AccessTokenExpiresAt,
 				SharedSecret = encryptedSharedSecret,
-				IdentitySecret = encryptedIdentitySecret
+				IdentitySecret = encryptedIdentitySecret,
+				Proxy = encryptedProxy
 			};
 		}
 
@@ -571,5 +629,6 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 		public DateTimeOffset? AccessTokenExpiresAt { get; set; }
 		public string? SharedSecret { get; set; }
 		public string? IdentitySecret { get; set; }
+		public string? Proxy { get; set; }
 	}
 }
