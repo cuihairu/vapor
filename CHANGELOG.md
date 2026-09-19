@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Abnormal account standing detection (todo §38 P2): every account runs a
+  periodic standing check through the orchestrator (default every 6h,
+  `Vapor_RECONCILE_STANDING_REFRESH_SECONDS`) using the new
+  `check_account_standing` action — the agent fetches its Steam Web API key
+  from the logged-in web session, queries `GetPlayerBans/v1` (authoritative
+  VAC/community/game/economy bans) and `GetSteamLevel/v1` (level 0 ⇒ limited
+  profile; level failures degrade gracefully), and classifies the account as
+  `clean`, `restricted` (economy probation) or `banned` (any ban flag). A
+  `banned` result quarantines the account: the trade evaluation loop skips
+  all further trade dispatches, a `standing_quarantined` audit entry and an
+  `account.standing_alert` broker event (webhook-forwardable) are emitted,
+  and a later clean result releases the quarantine symmetrically. New REST
+  surface: `GET /v1/orchestration/standing` (per-account snapshot) and
+  `POST /v1/accounts/{name}/standing-check` (force a check on the next
+  reconcile pass through the orchestrator's own pipeline). The admin
+  console's account cards show a standing badge (clean/restricted/banned/
+  unchecked), a quarantine flag, and a manual "体检" button.
+
+- Per-account proxy support (todo §38 P1): every account can route all Steam
+  traffic — CM login (WebSocket-only via the SteamKit2 3.4.0
+  `WithHttpClientFactory` path, socks5 remote DNS included), web API, trades
+  and mobile confirmations — through its own http/https/socks5 proxy to avoid
+  multi-account same-IP association bans. Proxy endpoints are stored
+  encrypted per account (`FileCredentialStore.SaveProxyAsync`), the agent
+  pre-parses payload proxies fail-fast before any session is touched,
+  credentials are scrubbed from logs by the redactor (blacklist + URI
+  pattern), and the new `check_proxy` action probes exit IP / Steam
+  reachability / latency through the configured (or payload-provided) proxy
+  with masked output. Compromise on record: the proxy applies to the active
+  account (shared CM client, serial switching — egress changes drop the CM
+  connection); parallel multi-account egress needs a per-account
+  SteamClient pool (future direction).
+
 - Achievement listing, unlock and reset (todo §33): achievements are listed
   via the community per-game stats page (`get_achievements` +
   `GET /v1/accounts/{name}/achievements?appId=`) — API names are inferred

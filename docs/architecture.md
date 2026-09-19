@@ -261,7 +261,17 @@ loop (default 15s) that converges actual session state onto it:
 - disabled / `offline` accounts are unassigned and their in-flight jobs
   cancelled;
 - dry-run mode reports every deviation via audit and metrics without
-  dispatching.
+  dispatching;
+- every 6 hours by default (`ReconcileStandingRefreshSeconds`) the orchestrator
+  runs an abnormal-standing check per connected account: the agent resolves the
+  account's Steam Web API key from its logged-in web session and queries
+  GetPlayerBans plus GetSteamLevel; a `banned` aggregate (VAC / community /
+  game / economy ban) quarantines the account — the trade loop skips all
+  dispatches for it — and emits a `standing_quarantined` audit entry plus an
+  `account.standing_alert` broker event; a later `clean` result releases the
+  quarantine symmetrically. Operators can force a check via
+  `POST /v1/accounts/{name}/standing-check` and read per-account standing via
+  `GET /v1/orchestration/standing`.
 
 All orchestration decisions are audited (`account.reconciled`,
 `account.spec.updated/enabled/disabled/removed`) and exported as Prometheus
