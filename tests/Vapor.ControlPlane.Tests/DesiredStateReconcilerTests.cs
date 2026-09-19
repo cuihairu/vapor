@@ -1768,6 +1768,569 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.Single(jobs.Created);
 	}
 
+	// ── §35 reconciliation guard coverage ──
+
+	[Fact]
+	public async Task Boost_NoCapableAgent_MarksDeviationWithoutDispatch()
+	{
+		AccountStore accounts = NewBoostStore("alice", [(220, 10.0)]);
+		var agents = NewRegistry(("agent-1", "us-east", new Dictionary<string, bool> { ["login"] = true })); // no get_playtime
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.NoAgentSkips);
+		Assert.Equal("no capable agent available", reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task Boost_DryRun_GuardsPlaytimeDispatch()
+	{
+		AccountStore accounts = NewBoostStore("alice", [(220, 10.0)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, dryRun: true);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.DryRunDeviations);
+		Assert.Contains("get_playtime", reconciler.GetOrchestrationView("alice")!.LastDeviation, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Boost_ActivePlaytimeJob_WaitsForIt()
+	{
+		AccountStore accounts = NewBoostStore("alice", [(220, 10.0)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		DesiredStateReconciler.PlaytimeInFlightWindow = TimeSpan.FromHours(1); // keep the query in flight
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created); // the second pass sees the query in flight and waits
+	}
+
+	[Fact]
+	public async Task TradePolicy_NoCapableAgent_SkipsScan()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", new Dictionary<string, bool> { ["login"] = true })); // no get_trade_offers
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.NoAgentSkips);
+		Assert.Equal("no capable agent available", reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task TradePolicy_DryRun_GuardsScanDispatch()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, dryRun: true);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1, reconciler.DryRunDeviations);
+		Assert.Contains("get_trade_offers", reconciler.GetOrchestrationView("alice")!.LastDeviation, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task GiftAccept_NoCapableAgent_MarksDeviationWithoutDispatch()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", new Dictionary<string, bool> { ["get_trade_offers"] = true })); // scan ok, no accept_trade_offer
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Pass 1 dispatches the scan; pass 2 settles it into the accept queue and
+		// immediately tries to dispatch the accept (no capable agent — skip), and
+		// pass 3 retries the same dispatch (skip again) — the queue survives for a
+		// later pass instead of being dropped.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created); // scan only — the accept was never dispatched
+		Assert.Equal(2, reconciler.NoAgentSkips);
+		Assert.Equal([111UL], reconciler.GetOrchestrationView("alice")!.TradeOffersToAccept);
+	}
+
+	[Fact]
+	public async Task TradeEvaluation_MoreThan200Decisions_TruncatesAudit()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit);
+
+		// 201 unknown-partner offers: every one is audited as a skip decision,
+		// but the details payload caps at 200 and raises decisionsTruncated.
+		var offers = new (string, string, int, bool)[201];
+		for (int i = 0; i < offers.Length; i++)
+		{
+			offers[i] = ((1000 + i).ToString(), "999", 0, false);
+		}
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(offers);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AuditEntry entry = Assert.Single(audit.Entries, e => e.Action == "trade.policy_evaluated");
+		Assert.Equal(201, entry.Details!["evaluatedCount"]);
+		Assert.Equal(0, entry.Details!["eligibleCount"]);
+		Assert.Equal(true, entry.Details!["decisionsTruncated"]);
+		var decisions = Assert.IsType<List<Dictionary<string, object?>>>(entry.Details!["decisions"]);
+		Assert.Equal(200, decisions.Count);
+	}
+
+	[Fact]
+	public async Task TradeEvaluation_AuditFailure_IsIsolatedFromOrchestration()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore { ThrowOnRecord = true };
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit);
+
+		// The evaluation audit fails to persist, but the queue and the accept
+		// dispatch march on — audit isolation must not stall the policy loop.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(2, jobs.Created.Count);
+		Assert.Equal("accept_trade_offer", jobs.Created[1].Action);
+		Assert.Empty(audit.Entries);
+	}
+
+	[Fact]
+	public async Task TradeEvaluation_AuditCancellation_PropagatesOce()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		audit.ThrowOceOnRecord = true; // cancellation is not an isolation case — it propagates
+
+		await Assert.ThrowsAsync<OperationCanceledException>(() => reconciler.ReconcileOnce(CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task AutoAccept_AuditFailure_IsIsolatedFromOrchestration()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit);
+
+		// The scan settles normally; from the accept dispatch on, the audit
+		// store is down — the accept still completes and the loop stays alive.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		int settled = audit.Entries.Count; // the earlier passes audited normally
+		audit.ThrowOnRecord = true;
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = new Dictionary<string, object?> { ["requires_mobile_confirmation"] = false };
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(2, jobs.Created.Count); // scan + accept, no crash in between
+		Assert.Equal(settled, audit.Entries.Count); // the auto-accept audit was dropped
+	}
+
+	[Fact]
+	public async Task AutoAccept_AuditCancellation_PropagatesOce()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = new Dictionary<string, object?> { ["requires_mobile_confirmation"] = false };
+		audit.ThrowOceOnRecord = true; // cancellation during the accept-settle audit propagates
+
+		await Assert.ThrowsAsync<OperationCanceledException>(() => reconciler.ReconcileOnce(CancellationToken.None));
+	}
+
+	[Fact]
+	public void ExtractPendingGiftOffers_UnusableEntries_AreDroppedOrSafe()
+	{
+		AccountStore accounts = new();
+		AccountSpec spec = accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+
+		// A zero offer id cannot be referenced by a later accept — dropped.
+		Assert.Empty(DesiredStateReconciler.ExtractPendingGiftOffers(
+			TradeOutput(("0", "456", 0, IsOurs: false)), spec));
+
+		// SQLite round-trip array carrying a non-object element: unusable,
+		// dropped, the rest still evaluated.
+		using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(
+			"""
+			["not-an-offer", {"trade_offer_id":"111","partner_steam_id":"456","items_to_give_count":0,"is_our_offer":false}]
+			"""))
+		{
+			List<DesiredStateReconciler.PendingGiftOffer> offers =
+				DesiredStateReconciler.ExtractPendingGiftOffers(
+					new Dictionary<string, object?> { ["received_offers"] = doc.RootElement.Clone() }, spec);
+			Assert.Single(offers);
+			Assert.Equal(111UL, offers[0].OfferId);
+		}
+
+		// A fresh-dispatch list carrying a bare string entry: unusable, dropped.
+		var mixed = new Dictionary<string, object?>
+		{
+			["received_offers"] = new List<object?>
+			{
+				"junk",
+				new Dictionary<string, object?> { ["trade_offer_id"] = "222", ["partner_steam_id"] = "456", ["items_to_give_count"] = 0, ["is_our_offer"] = false }
+			}
+		};
+		List<DesiredStateReconciler.PendingGiftOffer> dictOffers =
+			DesiredStateReconciler.ExtractPendingGiftOffers(mixed, spec);
+		Assert.Single(dictOffers);
+		Assert.Equal(222UL, dictOffers[0].OfferId);
+	}
+
+	[Fact]
+	public void ExtractBoostUnmet_EmptyOrMalformedTargets_ReportSafe()
+	{
+		AccountStore accounts = new();
+
+		// No targets at all: nothing to boost — an empty set, not a null (null
+		// would read as "unusable report" and keep retrying). The store rejects a
+		// Boost account without targets, so this shape only surfaces directly.
+		AccountSpec bare = accounts.Upsert("bare", true, AccountDesiredState.Online, null, null, null, null);
+		Assert.Empty(DesiredStateReconciler.ExtractBoostUnmet(PlaytimeOutput((220, 1.0)), bare)!);
+
+		// A playtimes value that is neither an array nor a list (a bare string
+		// survived some round-trip): the report is unusable, not "all met".
+		AccountSpec boosted = accounts.Upsert("alice", true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(220, 10.0)]);
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(
+			new Dictionary<string, object?> { ["playtimes"] = "garbage" }, boosted));
+
+		// A list carrying a non-dictionary entry poisons the whole report.
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(
+			new Dictionary<string, object?>
+			{
+				["playtimes"] = new List<object?> { "junk", new Dictionary<string, object?> { ["app_id"] = 220L, ["hours"] = 1.0 } }
+			}, boosted));
+	}
+
+	[Fact]
+	public void ExtractBoostUnmet_HoursRawShapes_BoxedDoubleJsonNumberAndMissing()
+	{
+		AccountStore accounts = new();
+		AccountSpec spec = accounts.Upsert("alice", true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(220, 10.0)]);
+
+		// Boxed double and long hours read straight from the dictionary.
+		Assert.Empty(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 220L, ["hours"] = 10.0 } }
+		}, spec)!);
+		Assert.Empty(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 220L, ["hours"] = 10L } }
+		}, spec)!);
+
+		// A JSON number hours (nested round-trip) parses through the element arm.
+		System.Text.Json.JsonElement jsonHours =
+			System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("10.0");
+		Assert.Empty(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 220L, ["hours"] = jsonHours } }
+		}, spec)!);
+
+		// A missing hours key is unreadable — the report is poisoned.
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 220L } }
+		}, spec));
+	}
+
+	[Fact]
+	public void ExtractBoostUnmet_NumberCoercion_CoversAllValueShapes()
+	{
+		AccountStore accounts = new();
+		AccountSpec spec = accounts.Upsert("alice", true, AccountDesiredState.Boost, null, null, null, null,
+			boostTargets: [new BoostTarget(220, 10.0)]);
+
+		// int app id with an int hour value.
+		Assert.Equal([220u], DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 220, ["hours"] = 5 } }
+		}, spec));
+
+		// String hour values parse in the invariant culture.
+		Assert.Empty(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 220L, ["hours"] = "10.5" } }
+		}, spec)!);
+
+		// SQLite round-trip: both values arrive as JsonElement numbers.
+		Dictionary<string, object?> roundTripped = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			System.Text.Json.JsonSerializer.Serialize(PlaytimeOutput((220, 10.0))))!;
+		Assert.Empty(DesiredStateReconciler.ExtractBoostUnmet(roundTripped, spec)!);
+
+		// An unreadable hour value poisons the report (conservative).
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["app_id"] = 220L, ["hours"] = true } }
+		}, spec));
+
+		// A missing app id is unusable even next to a valid reading.
+		Assert.Null(DesiredStateReconciler.ExtractBoostUnmet(new Dictionary<string, object?>
+		{
+			["playtimes"] = new List<object?> { new Dictionary<string, object?> { ["hours"] = 1.0 } }
+		}, spec));
+	}
+
+	[Fact]
+	public async Task PlaytimeSettle_StrippedTasks_ReturnsQuietly()
+	{
+		AccountStore accounts = NewBoostStore("alice", [(220, 10.0)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// The outcome row vanished (store recovered without tasks): the settle
+		// stamps the refresh interval and returns quietly — no deviation storm.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.StripTasks("job-1");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created); // no retry storm inside the refresh interval
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task TradeScanSettle_StrippedTasks_ReturnsQuietly()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.StripTasks("job-1");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.TradeOffersToAccept);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task AcceptSettle_StrippedTasks_DrainsQueueAndReturnsQuietly()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// The accept's outcome row vanished: the decision is drained whatever
+		// the outcome (never spun on within this cycle) and the settle is quiet.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.StripTasks("job-2");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Empty(reconciler.GetOrchestrationView("alice")!.TradeOffersToAccept!);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task AcceptSettle_Failed_MarksDeviationAndDrainsQueue()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Failed, "steam rejected");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Contains("accept outcome", view.LastDeviation, StringComparison.Ordinal);
+		Assert.Contains("steam rejected", view.LastDeviation, StringComparison.Ordinal);
+		Assert.Empty(view.TradeOffersToAccept!); // drained — retried only after the next re-detect
+	}
+
+	[Fact]
+	public async Task AcceptFinished_MissingConfirmationFlag_DoesNotChainConfirm()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// The accept output omits requires_mobile_confirmation entirely — read
+		// as false, no confirm job chains (a missing flag never chains).
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = new Dictionary<string, object?>(); // no flag key at all
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(2, jobs.Created.Count);
+	}
+
+	[Fact]
+	public async Task ConfirmSettle_Failed_MarksDeviation()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Scan → accept → the chained confirm fails: its outcome shows up as a
+		// deviation (the accept itself already went through).
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{"requires_mobile_confirmation": true}""")!; // SQLite round-trip shape reads as true
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Equal(3, jobs.Created.Count); // confirm chained via the JsonElement flag
+
+		jobs.Outcomes["task-3-0"] = (JobTaskStatus.Failed, "confirmation expired");
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Contains("trade mobile confirmation outcome", view.LastDeviation, StringComparison.Ordinal);
+		Assert.Contains("confirmation expired", view.LastDeviation, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ConfirmSettle_Finished_LeavesQuietly()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Scan → accept → chained confirm finishes cleanly: no deviation, the
+		// policy loop is fully drained.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{"requires_mobile_confirmation": true}""")!;
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-3-0"] = (JobTaskStatus.Finished, null);
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(3, jobs.Created.Count);
+		Assert.Null(reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
 	[Fact]
 	public void ExtractPendingGiftOffers_HandlesJsonElementAndDictionaryForms()
 	{

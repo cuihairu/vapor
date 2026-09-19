@@ -22,6 +22,9 @@ namespace Vapor.ControlPlane.Tests;
 /// responses, SSE streams, the agent WebSocket lifecycle, audit-persistence
 /// failure handling and the live (non-JsonElement) task-output shapes.
 /// </summary>
+// Shares the static AccountTaskRunner.WaitWindow/PollInterval knobs with
+// AccountApiTests (see AccountTaskWaitWindowCollection).
+[Collection(AccountTaskWaitWindowCollection.Name)]
 public sealed class ProgramBranchCoverageTests
 {
 	// ── auth matrix ──────────────────────────────────────────────────────────

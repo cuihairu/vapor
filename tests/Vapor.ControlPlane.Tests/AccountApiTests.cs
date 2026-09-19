@@ -13,6 +13,9 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
+// Shares the static AccountTaskRunner.WaitWindow/PollInterval knobs with
+// ProgramBranchCoverageTests (see AccountTaskWaitWindowCollection).
+[Collection(AccountTaskWaitWindowCollection.Name)]
 public sealed class AccountApiTests
 {
 	[Fact]
