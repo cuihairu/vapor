@@ -12,12 +12,12 @@ public sealed class TradeOfferStateMachineTests
 	[InlineData(12345678UL)]
 	[InlineData(0UL)]
 	[InlineData(uint.MaxValue)]
-	public void SteamIdConversion_RoundTrips(ulong accountId64)
+	public void SteamIdConversion_RoundTrips(ulong rawId64)
 	{
-		ulong steamId64 = TradeOfferStateMachine.ToSteamId64((uint)accountId64);
+		ulong steamId64 = TradeOfferStateMachine.ToSteamId64((uint)rawId64);
 
-		Assert.Equal(TradeOfferStateMachine.SteamId64Base + accountId64, steamId64);
-		Assert.Equal((uint)accountId64, TradeOfferStateMachine.ToAccountId(steamId64));
+		Assert.Equal(TradeOfferStateMachine.SteamId64Base + rawId64, steamId64);
+		Assert.Equal((uint)rawId64, TradeOfferStateMachine.ToAccountId(steamId64));
 	}
 
 	[Fact]

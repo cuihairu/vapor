@@ -476,14 +476,14 @@ public sealed record TradeUrlParams
 
 			// The partner parameter is usually the 32-bit account ID, but some
 			// tools emit the full 64-bit SteamID; handle both.
-			if (!ulong.TryParse(partner, out var accountId))
+			if (!ulong.TryParse(partner, out var parsedPartner))
 			{
 				return null;
 			}
 
-			ulong steamId = accountId >= 76561197960265728UL
-				? accountId
-				: 76561197960265728UL + accountId;
+			ulong steamId = parsedPartner >= 76561197960265728UL
+				? parsedPartner
+				: 76561197960265728UL + parsedPartner;
 
 			return new TradeUrlParams
 			{

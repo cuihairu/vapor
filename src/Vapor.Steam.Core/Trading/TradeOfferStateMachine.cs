@@ -27,9 +27,9 @@ public static class TradeOfferStateMachine
 	/// <summary>
 	/// Converts a 32-bit account ID to a 64-bit SteamID.
 	/// </summary>
-	public static ulong ToSteamId64(uint accountId)
+	public static ulong ToSteamId64(uint partnerId)
 	{
-		return SteamId64Base + accountId;
+		return SteamId64Base + partnerId;
 	}
 
 	/// <summary>
