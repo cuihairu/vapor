@@ -696,22 +696,6 @@ app.MapGet("/v1/plugins/installed", (HttpContext ctx, Config cfg, PluginInventor
 	.Produces(200)
 	.Produces(401);
 
-static string? NormalizeSha256(string? sha256)
-{
-	if (sha256 is null)
-	{
-		return null;
-	}
-
-	string trimmed = sha256.Trim();
-	if (trimmed.Length != 64 || !trimmed.All(char.IsAsciiHexDigit))
-	{
-		return null;
-	}
-
-	return trimmed.ToLowerInvariant();
-}
-
 app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, IJobStore store, AgentRegistry agents, PluginCatalogService catalog, PluginInstallRequest request) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
@@ -720,7 +704,7 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 	}
 
 	string? url = request.Url?.Trim();
-	string? sha256 = NormalizeSha256(request.Sha256);
+	string? sha256 = Sha256Normalizer.Normalize(request.Sha256);
 	if (request.AgentIds is not { Count: > 0 })
 	{
 		return Results.BadRequest(new ErrorResponse("agentIds must name at least one agent"));
