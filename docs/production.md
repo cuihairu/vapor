@@ -54,6 +54,7 @@ are in [docker.md](docker.md).
 | `Vapor_WEBHOOK_NOTIFICATIONS_EVENTS` | no | all | Comma-separated event-type allowlist (e.g. `task.completed,auth.challenge`) |
 | `Vapor_WEBHOOK_NOTIFICATIONS_MAX_RETRIES` | no | `3` | Per-event delivery attempts before the failure is counted and dropped |
 | `Vapor_WEBHOOK_NOTIFICATIONS_RETRY_BASE_DELAY_MS` | no | `500` | Retry backoff base (`base × 2^attempt`) |
+| `Vapor_PLUGIN_INDEX_URL` | no | off | PluginStore index source (JSON: `{plugins:[{id,name,version,apiVersion,url,sha256,...}]}`); off = catalog endpoint reports `configured: false`. Point it only at an index you control |
 | `Vapor_CRAWL_DB_PATH` | no | `data/crawl.db` | SQLite file for crawl plans and per-app harvest results |
 | `Vapor_CRAWL_WORKER_TICK_SECONDS` | no | `5` | Crawl worker claim/poll cadence; `<= 0` disables crawl orchestration |
 | `Vapor_CRAWL_KEEP_RUNS` | no | `10` | Recent runs whose results are kept per plan (older runs pruned on completion) |
@@ -166,6 +167,14 @@ manifest format are documented in the
   `market.country` and `market.webhook_url` (env:
   `VAPOR_MARKETWATCH_INTERVAL_SECONDS`, `VAPOR_MARKETWATCH_THRESHOLD_PERCENT`,
   `VAPOR_MARKETWATCH_COUNTRY`, `VAPOR_MARKETWATCH_WEBHOOK_URL`).
+- Plugins can also be installed at runtime via the `plugin_install` /
+  `plugin_uninstall` / `plugin_list` host actions — hot-loaded after SHA-256
+  verification, no restart needed (see the
+  [plugin development guide](plugins.md)).
+- The ControlPlane's PluginStore reads its plugin index from
+  `Vapor_PLUGIN_INDEX_URL` (ControlPlane env; unset = catalog endpoint reports
+  `configured: false`). Pin SHA-256 digests yourself and only point it at an
+  index you control — the digest pins integrity, not origin.
 
 ### Steps
 

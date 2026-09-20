@@ -341,3 +341,71 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 4. Ship only your own binaries; the host resolves shared contract assemblies itself.
 5. Drop the directory into `VAPOR_PLUGINS_DIR` and check the startup log for the
    `granted [...]` line.
+
+## Runtime installation and the PluginStore
+
+Beyond the startup directory scan, plugins can be installed while the agent is
+running. The transport is deliberately boring: a zip package downloaded by the
+agent itself, verified, unpacked to a staging directory and hot-loaded — the
+ControlPlane never brokers the binary.
+
+### Package format
+
+A package is a plain zip whose **root contains `plugin.json`** plus the entry
+assembly and any private dependency DLLs (the same layout as a plugin directory).
+Every install request must carry the package's SHA-256 hex digest; a mismatch
+fails before anything is written under the plugins root.
+
+```
+my-plugin.zip
+├── plugin.json          # required at the zip root
+├── MyPlugin.dll
+└── Deps/*.dll
+```
+
+### Agent-side job actions
+
+Three host actions (no bot session required, targeted with the `agent:{id}`
+task-target prefix) cover the lifecycle:
+
+| Action | Payload | Behaviour |
+|--------|---------|-----------|
+| `plugin_install` | `url`, `sha256`, optional `pluginId`/`version` | download → checksum → staging unpack → manifest validation → hot-load; reinstalling an installed id replaces it (`replaced: true`) |
+| `plugin_uninstall` | `pluginId` | unload + retire the directory (renamed aside then deleted); uninstalling an unknown id is idempotent success (`removed: false`) |
+| `plugin_list` | — | report the current inventory |
+
+Every action's output carries the agent's **full installed list** under
+`plugins`, so the ControlPlane mirror stays current even for failed installs.
+The install pipeline validates before touching the real plugins root: URL
+scheme (`http`/`https`/`file`), digest hex, zip-slip entries, manifest-at-root,
+and — when `pluginId`/`version` were requested — that the manifest matches
+them. A failed install leaves no trace in the plugin directory.
+
+### ControlPlane PluginStore
+
+The ControlPlane adds a plugin **index source** (`Vapor_PLUGIN_INDEX_URL`, a
+JSON document of the shape below) and REST endpoints that fan out install
+jobs to the named agents:
+
+```json
+{ "plugins": [ { "id": "vapor.monitoring", "name": "Monitoring",
+  "version": "1.0.0", "apiVersion": "1.0", "description": "...",
+  "url": "https://.../vapor.monitoring.zip", "sha256": "<64 hex>",
+  "trust": "official", "permissions": ["actions"] } ] }
+```
+
+- `GET /v1/plugins/catalog` — the fetched index (60s cache, `error` surfaced inline)
+- `GET /v1/plugins/installed` — the last-reported inventory per agent
+- `POST /v1/plugins/install` — by `pluginId` (resolved from the catalog) or direct `url`+`sha256`; one targeted job per agent
+- `POST /v1/plugins/uninstall/{pluginId}` — uninstall from the named agents
+- `POST /v1/plugins/inventory/refresh` — re-run `plugin_list` to re-sync the mirror
+
+The admin console's **插件管理** panel (PluginStore) renders the catalog with
+per-agent targeting and one-click batch install.
+
+### Trust boundary, stated plainly
+
+The checksum guarantees *integrity against the digest you pinned*, not the
+origin of the package; `trust` remains a manifest-declared label and the
+host's `MinimumTrust` policy is unchanged. Point `Vapor_PLUGIN_INDEX_URL` only
+at index sources you control, and pin digests you computed yourself.

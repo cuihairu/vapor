@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Plugin ecosystem (todo §38 P4): plugins install at runtime through three new
+  agent host actions — `plugin_install` (download url + mandatory sha256 →
+  checksum → staging unpack with zip-slip protection and manifest-at-root
+  validation → hot-load; reinstalling an installed id replaces it),
+  `plugin_uninstall` (unload + retire directory; idempotent on unknown ids)
+  and `plugin_list` — no bot session required. Host actions ride the existing
+  job pipeline and are targeted with the new `agent:{id}` task-target prefix:
+  the scheduler routes them directly to the named agent instead of a region
+  pick, failing over via the usual dispatch-retry path when the agent is
+  offline. Every action's output carries the agent's full installed list,
+  which the ControlPlane mirrors per agent and exposes through
+  `/v1/plugins/catalog` (index source from `Vapor_PLUGIN_INDEX_URL`, 60s
+  cache), `/v1/plugins/installed`, `POST /v1/plugins/install` (by catalog
+  `pluginId` or direct `url`+`sha256`; one targeted job per agent),
+  `POST /v1/plugins/uninstall/{pluginId}` and
+  `POST /v1/plugins/inventory/refresh`. The admin console gains a
+  PluginStore panel: catalog browsing with per-agent targeting, one-click
+  batch install, per-agent inventory chips with uninstall, and an inventory
+  re-sync button. Trust boundary on record: the checksum pins integrity
+  against the supplied digest, not package origin — `trust` remains
+  manifest-declared and the host's `MinimumTrust` policy is unchanged.
+
 - ASF-style smart-farming enhancements (todo §38 P3): farm accounts accept an
   optional per-account farm policy via the accounts API — a per-game hour
   budget (a fuse against dead farming: an app idled for the whole budget in

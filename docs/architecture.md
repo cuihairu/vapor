@@ -315,6 +315,25 @@ leave the control plane. Delivery counters are exported as
 `vapor_controlplane_notifications_total{sink,outcome}` and
 `vapor_controlplane_notification_retries_total{sink}`.
 
+### Plugin Ecosystem (PluginStore)
+
+Plugins install at runtime through three host actions (`plugin_install` /
+`plugin_uninstall` / `plugin_list`) that need no bot session — tasks targeted
+with the `agent:{id}` prefix are routed by the scheduler directly to the named
+agent (bypassing region pick) and executed as host actions. The ControlPlane
+never brokers binaries: an install job tells the agent a package `url` +
+mandatory `sha256`; the agent downloads, verifies the digest, unpacks to a
+staging directory (zip-slip checked, manifest-at-root required), validates the
+manifest against the requested `pluginId`/`version`, then hot-swaps
+(unload → retire old directory → move → load). Every action's output carries
+the full installed list, which the ControlPlane mirrors per agent
+(`PluginInventory`) and surfaces via `/v1/plugins/catalog` (fetched from
+`Vapor_PLUGIN_INDEX_URL`), `/v1/plugins/installed` and the install / uninstall
+/ inventory-refresh fan-out endpoints; the admin console's PluginStore panel
+renders the catalog with per-agent batch install. The checksum pins integrity
+against the supplied digest, not package origin — `trust` remains manifest-
+declared and the host's `MinimumTrust` policy is unchanged.
+
 ## Steam Transport Adapter
 
 All Steam network protocol access is isolated behind `ISteamTransport`
