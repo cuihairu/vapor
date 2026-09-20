@@ -74,6 +74,25 @@ internal static class PluginTestPackages
 		return dir;
 	}
 
+	/// <summary>
+	/// Cleanup that tolerates the collectible-ALC file lock on Windows: a plugin
+	/// DLL stays mapped until GC releases it, so deleting the plugins root can
+	/// throw right after a test passes. Leftovers live under %TEMP% either way.
+	/// </summary>
+	internal static void DeleteBestEffort(string directory)
+	{
+		try
+		{
+			Directory.Delete(directory, recursive: true);
+		}
+		catch (IOException)
+		{
+		}
+		catch (UnauthorizedAccessException)
+		{
+		}
+	}
+
 	private sealed class ServiceProviderStub : IServiceProvider
 	{
 		public object? GetService(Type serviceType) => null;
@@ -190,7 +209,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(staging)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(staging)!.FullName);
 		}
 	}
 
@@ -217,7 +236,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(staging)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(staging)!.FullName);
 		}
 	}
 
@@ -245,7 +264,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(staging)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(staging)!.FullName);
 		}
 	}
 
@@ -280,7 +299,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -307,7 +326,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -335,7 +354,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -363,11 +382,16 @@ public sealed class PluginPackageInstallerTests
 			Assert.True(second.Success, second.Error);
 			Assert.True(second.Replaced);
 			Assert.Single(manager.LoadedPlugins);
-			Assert.DoesNotContain(Directory.GetDirectories(root), d => d.Contains(".old-", StringComparison.Ordinal));
+			if (!OperatingSystem.IsWindows())
+			{
+				// Windows keeps the retired DLL mapped until GC, so the installer's
+				// best-effort delete can legitimately leave an ".old-" directory behind.
+				Assert.DoesNotContain(Directory.GetDirectories(root), d => d.Contains(".old-", StringComparison.Ordinal));
+			}
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -390,7 +414,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -405,7 +429,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -425,7 +449,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -446,7 +470,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -482,7 +506,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -516,7 +540,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -552,7 +576,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -601,7 +625,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -626,7 +650,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -651,7 +675,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -674,7 +698,7 @@ public sealed class PluginPackageInstallerTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -721,7 +745,7 @@ public sealed class PluginInstallActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -756,7 +780,7 @@ public sealed class PluginInstallActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -804,7 +828,7 @@ public sealed class PluginInstallActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -834,7 +858,7 @@ public sealed class PluginInstallActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 }
@@ -923,7 +947,7 @@ public sealed class PluginUninstallActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -945,7 +969,7 @@ public sealed class PluginUninstallActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -972,7 +996,7 @@ public sealed class PluginUninstallActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 }
@@ -1005,7 +1029,7 @@ public sealed class PluginListActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 
@@ -1035,7 +1059,7 @@ public sealed class PluginListActionTests
 		}
 		finally
 		{
-			Directory.Delete(Directory.GetParent(root)!.FullName, recursive: true);
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
 		}
 	}
 }
