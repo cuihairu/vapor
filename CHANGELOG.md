@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ASF-style smart-farming enhancements (todo §38 P3): farm accounts accept an
+  optional per-account farm policy via the accounts API — a per-game hour
+  budget (a fuse against dead farming: an app idled for the whole budget in
+  the current session is skipped and the loop rotates), a queue priority
+  order (cards descending — the report default — cards ascending, or app id
+  ascending) and a priority-apps list pinned to the queue head in
+  declaration order. Completed apps are detected by queue diff (the drops
+  report only lists apps with remaining drops) and, together with
+  budget-skipped apps, are never re-queued when a lagging report still lists
+  them; draining the queue emits a one-shot completion audit entry and
+  `account.farm_progress` broker event (kinds `app_completed`,
+  `app_budget_exhausted`, `queue_empty`). Session card statistics
+  (remaining / collected / cards-per-hour) accumulate monotonically across
+  report totals and survive spec updates, as do completion and skip marks —
+  a spec update is a policy edit, not a reset. New REST surface:
+  `GET /v1/orchestration/farm` (per-account farm snapshot); the admin
+  console's account cards show a live farm badge and the account editor
+  carries the farm policy fields.
+
 - Abnormal account standing detection (todo §38 P2): every account runs a
   periodic standing check through the orchestrator (default every 6h,
   `Vapor_RECONCILE_STANDING_REFRESH_SECONDS`) using the new

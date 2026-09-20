@@ -44,7 +44,7 @@ are in [docker.md](docker.md).
 | `Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS` | no | `3` | Consecutive failed logins before an account is throttled (reset by updating its spec) |
 | `Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS` | no | `60` | Base of the exponential retry cooldown (`base × 2^(n-1)`, capped at 15 min); `0` disables |
 | `Vapor_RECONCILE_SESSION_STALENESS_SECONDS` | no | `120` | Session snapshots older than this are treated as stale by the orchestrator |
-| `Vapor_RECONCILE_FARM_REFRESH_SECONDS` | no | `300` | How often `farm` accounts re-query remaining card drops and rebuild the play queue |
+| `Vapor_RECONCILE_FARM_REFRESH_SECONDS` | no | `300` | How often `farm` accounts re-query remaining card drops and rebuild the play queue; the per-account farm policy (per-game budget, queue ordering, priority apps) is part of the account spec via the accounts API, not an env knob |
 | `Vapor_RECONCILE_BOOST_REFRESH_SECONDS` | no | `1800` | How often `boost` accounts re-query total playtime and rebuild the below-target schedule |
 | `Vapor_RECONCILE_TRADE_REFRESH_SECONDS` | no | `600` | How often connected accounts with an auto-accept trade policy re-query active trade offers |
 | `Vapor_RECONCILE_STANDING_REFRESH_SECONDS` | no | `21600` | How often the orchestrator runs the abnormal-standing check (`check_account_standing`); a banned result quarantines the account from trade dispatches until a later clean result releases it |

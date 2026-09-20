@@ -247,7 +247,27 @@ loop (default 15s) that converges actual session state onto it:
 - `idle` accounts additionally get a `play_games` job, and a stop job when
   switched back to `online`;
 - `farm` accounts periodically re-query remaining card drops and play the
-  next drop-bearing app, stopping when the queue is empty;
+  next drop-bearing app, stopping when the queue is empty. An optional
+  per-account farm policy (`FarmPolicy` on the spec, set via the accounts
+  API) shapes the loop: `priorityOrder` re-orders the queue (by remaining
+  card count descending — the report order — ascending, or by app id),
+  `priorityApps` pins apps to the head of the queue in declaration order,
+  and `perGameHourBudget` acts as a fuse against dead farming — once an app
+  has been idled for the whole budget in the current session it is marked
+  budget-skipped and the loop rotates to the next game. Apps that leave the
+  drops report are marked completed (queue-diff detection) and, together
+  with budget-skipped apps, never re-enter the queue even when a lagging
+  report still lists them. Draining the queue stops idling with a one-shot
+  completion notice; a later report with fresh drops starts a new round.
+  Spec updates are policy edits, not resets: completion marks, skip marks
+  and the efficiency counters survive them — only the per-game budget clock
+  restarts and the queue is force-refreshed. Card statistics accumulate
+  monotonically (`collected` grows by the decrease between consecutive
+  report totals; newly queued games never read as negative progress); the
+  farm snapshot endpoint `GET /v1/orchestration/farm` exposes per-account
+  queue, counters and cards-per-hour, and the `account.farm_progress` broker
+  event (kinds `app_completed` / `app_budget_exhausted` / `queue_empty`)
+  is webhook-forwardable;
 - `boost` accounts periodically re-query total playtime and idle every app
   below its target hours in one multi-app `play_games` job (IdleApps still
   act as an exclusion list), stopping once every target is met; query
