@@ -63,7 +63,23 @@ public sealed class TaskSchedulerService : BackgroundService
 
 				using Activity? dispatch = StartDispatchActivity(task, region);
 
-				var agent = _agents.Pick(region, task.Action);
+				// Host-targeted tasks ("agent:{id}" — e.g. plugin lifecycle) must land on
+				// the named machine: each agent has its own filesystem, so the region's
+				// deterministic pick would be wrong whenever the region has >1 agent.
+				ConnectedAgent? agent;
+				if (HostTaskTarget.TryParseAgentId(task.Target, out string targetAgentId))
+				{
+					agent = _agents.Get(targetAgentId);
+					if (agent is { } targeted && !targeted.SupportsAction(task.Action))
+					{
+						agent = null;
+					}
+				}
+				else
+				{
+					agent = _agents.Pick(region, task.Action);
+				}
+
 				if (agent == null)
 				{
 					await HandleUndispatchableTaskAsync(task, "task.dispatch_failed", "no capable agent available", cancellationToken, dispatch: dispatch).ConfigureAwait(false);

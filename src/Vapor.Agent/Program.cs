@@ -227,7 +227,19 @@ actionRegistry.Register(serviceProvider.GetRequiredService<GetPriceAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetMarketListingsAction>());
 
 // Load plugins (discovery + isolated load + contribution registration).
-var (pluginManager, pluginEvents) = await LoadPluginsAsync(serviceProvider, actionRegistry, logger);
+var (pluginManager, pluginEvents, pluginsDirectory) = await LoadPluginsAsync(serviceProvider, actionRegistry, logger);
+
+// Host-scoped actions run on the machine itself (no bot session): plugin lifecycle.
+// They ride the regular task pipeline so retries/audits/jobs-panel apply, and are
+// advertised in hello capabilities like any other action.
+var hostLoggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
+var installer = new PluginPackageInstaller(pluginsDirectory, null, hostLoggerFactory.CreateLogger<PluginPackageInstaller>());
+IReadOnlyDictionary<string, IHostAction> hostActions = new Dictionary<string, IHostAction>(StringComparer.OrdinalIgnoreCase)
+{
+	["plugin_install"] = new PluginInstallAction(installer, pluginManager, hostLoggerFactory.CreateLogger<PluginInstallAction>()),
+	["plugin_uninstall"] = new PluginUninstallAction(pluginsDirectory, pluginManager, hostLoggerFactory.CreateLogger<PluginUninstallAction>()),
+	["plugin_list"] = new PluginListAction(pluginsDirectory, pluginManager)
+};
 
 using CancellationTokenSource cts = new();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -292,19 +304,12 @@ while (!cts.IsCancellationRequested)
 	}
 }
 
-if (pluginManager is not null)
-{
-	await pluginManager.DisposeAsync();
-}
-
-if (pluginEvents is not null)
-{
-	await pluginEvents.DisposeAsync();
-}
+await pluginManager.DisposeAsync();
+await pluginEvents.DisposeAsync();
 
 return 0;
 
-static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger)
+static async Task<(PluginManager Manager, PluginEventDispatcher Events, string PluginsDirectory)> LoadPluginsAsync(IServiceProvider services, IActionRegistry actionRegistry, ILogger logger)
 {
 	var pluginsDir = Environment.GetEnvironmentVariable("VAPOR_PLUGINS_DIR");
 	if (string.IsNullOrWhiteSpace(pluginsDir))
@@ -312,11 +317,9 @@ static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadP
 		pluginsDir = Path.Combine(AppContext.BaseDirectory, "plugins");
 	}
 
-	if (!Directory.Exists(pluginsDir))
-	{
-		logger.LogDebug("No plugins directory found at {PluginsDirectory}; skipping plugin load", pluginsDir);
-		return (null, null);
-	}
+	// The plugin host is always up so runtime installs (plugin_install) have a
+	// place to land even on an agent that started with no plugins directory.
+	Directory.CreateDirectory(pluginsDir);
 
 	var loggerFactory = services.GetRequiredService<ILoggerFactory>();
 	var eventDispatcher = new PluginEventDispatcher(loggerFactory);
@@ -365,7 +368,7 @@ static async Task<(PluginManager? Manager, PluginEventDispatcher? Events)> LoadP
 		report.Loaded.Count,
 		report.Failures.Count,
 		eventDispatcher.SubscriberCount);
-	return (manager, eventDispatcher);
+	return (manager, eventDispatcher, pluginsDir);
 #pragma warning restore CA2000
 }
 
@@ -387,7 +390,9 @@ async Task RunOnce(CancellationToken cancellationToken)
 	string? currentTaskId = null;
 	int currentAttempt = 0;
 
-	var capabilities = actionRegistry.ListNames().ToDictionary(name => name, _ => true, StringComparer.OrdinalIgnoreCase);
+	var capabilities = actionRegistry.ListNames().Concat(hostActions.Keys)
+		.Distinct(StringComparer.OrdinalIgnoreCase)
+		.ToDictionary(name => name, _ => true, StringComparer.OrdinalIgnoreCase);
 	var hello = new AgentHello(agentId, region, capabilities, null);
 	await SendLocked(ws, sendGate, new WSMessage("hello", hello, null, null), cancellationToken);
 
@@ -475,12 +480,26 @@ async Task RunOnce(CancellationToken cancellationToken)
 			{
 				try
 				{
-					(success, error, output) = await AgentTaskExecutor.ExecuteAsync(
-						task,
-						sessionManager,
-						logger,
-						executeCts.Token
-					);
+					if (hostActions.TryGetValue(task.Action.Trim(), out var hostAction))
+					{
+						// Host-scoped action: runs on this machine, no bot session.
+						(success, error, output) = await HostActionExecutor.ExecuteAsync(
+							hostAction,
+							task,
+							agentId,
+							logger,
+							executeCts.Token
+						);
+					}
+					else
+					{
+						(success, error, output) = await AgentTaskExecutor.ExecuteAsync(
+							task,
+							sessionManager,
+							logger,
+							executeCts.Token
+						);
+					}
 
 					execute?.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, error);
 					replyTraceparent = execute?.Id;

@@ -15,6 +15,9 @@ public sealed class AgentRegistry
 
 	public IReadOnlyList<string> Regions() => _agents.Values.Select(a => a.Hello.Region).Distinct(StringComparer.Ordinal).OrderBy(r => r, StringComparer.Ordinal).ToList();
 
+	/// <summary>Looks a connected agent up by id (host-targeted dispatch).</summary>
+	public ConnectedAgent? Get(string agentId) => _agents.TryGetValue(agentId, out var agent) ? agent : null;
+
 	public ConnectedAgent? Pick(string region)
 	{
 		var candidates = _agents.Values.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal)).OrderBy(a => a.Hello.AgentId, StringComparer.Ordinal).ToList();

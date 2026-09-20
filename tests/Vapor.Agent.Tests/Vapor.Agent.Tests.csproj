@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vapor.Agent\Vapor.Agent.csproj" />
+    <ProjectReference Include="..\Vapor.Plugins.TestPlugin\Vapor.Plugins.TestPlugin.csproj" />
   </ItemGroup>
 
 </Project>

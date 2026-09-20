@@ -1337,6 +1337,33 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">插件管理</h2>
+                            <div class="panel-subtitle">PluginStore:浏览插件索引源并批量安装到 Agent;已装清单由各 Agent 的 plugin_list 回报。</div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-small" id="refreshPluginsButton">刷新</button>
+                            <button class="btn btn-secondary btn-small" id="syncPluginsButton">同步已装清单</button>
+                        </div>
+                    </div>
+                    <div class="stack">
+                        <div>
+                            <div class="panel-subtitle" style="margin-bottom: 6px;">插件索引源</div>
+                            <div class="list" id="pluginCatalogList">
+                                <div class="empty-state">插件索引未加载。</div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="panel-subtitle" style="margin-bottom: 6px;">Agent 已安装</div>
+                            <div class="list" id="pluginInstalledList">
+                                <div class="empty-state">尚未同步已装清单。</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">事件日志</h2>
                             <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
                         </div>
@@ -1370,6 +1397,8 @@
             lastPointsDefinitions: null,
             crawlPlans: [],
             editingCrawlPlanId: null,
+            pluginCatalog: null,
+            pluginInstalled: [],
             configGlobal: null,
             configAccounts: [],
             globalSettingsWorking: new Map(),
@@ -1468,6 +1497,8 @@
 
             document.getElementById("refreshJobsButton").addEventListener("click", () => refreshJobs());
             document.getElementById("refreshAgentsButton").addEventListener("click", () => refreshAgents());
+            document.getElementById("refreshPluginsButton").addEventListener("click", () => refreshPlugins());
+            document.getElementById("syncPluginsButton").addEventListener("click", () => syncPluginInventory());
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
             document.getElementById("qrLoginButton").addEventListener("click", () => startQrLogin());
             document.getElementById("refreshChallengesButton").addEventListener("click", () => refreshAuthChallenges());
@@ -1519,6 +1550,7 @@
                     refreshAuthChallenges(),
                     refreshAccounts(),
                     refreshCrawlPlans(),
+                    refreshPlugins(),
                     refreshConfig()
                 ]);
                 restartStreams();
@@ -1789,6 +1821,170 @@
                     cancelJob(button.dataset.cancelJob);
                 });
             });
+        }
+
+        async function refreshPlugins() {
+            const [catalogData, installedData] = await Promise.all([
+                apiFetch("/v1/plugins/catalog").catch(() => null),
+                apiFetch("/v1/plugins/installed").catch(() => null)
+            ]);
+            if (catalogData) {
+                state.pluginCatalog = catalogData;
+            }
+            if (installedData) {
+                state.pluginInstalled = installedData.agents || [];
+            }
+            renderPluginCatalog();
+            renderPluginInstalled();
+        }
+
+        function trustBadgeClass(trust) {
+            if (trust === "official") {
+                return "finished";
+            }
+            if (trust === "community") {
+                return "running";
+            }
+            return "pending";
+        }
+
+        function renderPluginCatalog() {
+            const container = document.getElementById("pluginCatalogList");
+            const catalog = state.pluginCatalog;
+            if (!catalog || !catalog.configured) {
+                container.innerHTML = '<div class="empty-state">插件索引源未配置(设置 Vapor_PLUGIN_INDEX_URL 后可用)。</div>';
+                return;
+            }
+
+            if (catalog.error) {
+                container.innerHTML = `<div class="empty-state">索引源拉取失败: ${escapeHtml(catalog.error)}</div>`;
+                return;
+            }
+
+            const entries = catalog.entries || [];
+            if (!entries.length) {
+                container.innerHTML = '<div class="empty-state">索引源为空。</div>';
+                return;
+            }
+
+            const agentOptions = state.agents
+                .map((agent) => `<label class="tiny"><input type="checkbox" class="plugin-agent-target" value="${escapeHtml(agent.id)}" checked> ${escapeHtml(agent.id)}</label>`)
+                .join("");
+
+            container.innerHTML = entries.map((entry) => `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">${escapeHtml(entry.name)} <span class="tiny mono">${escapeHtml(entry.id)}</span></div>
+                            <div class="tiny mono">v${escapeHtml(entry.version)} · api ${escapeHtml(entry.apiVersion)}</div>
+                        </div>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <span class="badge ${trustBadgeClass(entry.trust)}">${escapeHtml(entry.trust || "unknown")}</span>
+                            <button class="btn btn-primary btn-small plugin-install-button" data-plugin-id="${escapeHtml(entry.id)}">安装</button>
+                        </div>
+                    </div>
+                    ${entry.description ? `<div class="helper">${escapeHtml(entry.description)}</div>` : ""}
+                    <div class="summary-row">${(entry.permissions || []).map((p) => `<span class="agent-chip">${escapeHtml(p)}</span>`).join("") || '<span class="agent-chip">permissions: 未声明</span>'}</div>
+                </article>
+            `).join("") + `<div class="helper">安装目标 Agent: ${agentOptions || "暂无已连接 Agent"}</div>`;
+
+            container.querySelectorAll(".plugin-install-button").forEach((button) => {
+                button.addEventListener("click", () => installPlugin(button.dataset.pluginId));
+            });
+        }
+
+        async function installPlugin(pluginId) {
+            const targets = Array.from(document.querySelectorAll("#pluginCatalogList .plugin-agent-target:checked"))
+                .map((box) => box.value);
+            if (!targets.length) {
+                alert("请至少选择一个安装目标 Agent。");
+                return;
+            }
+
+            if (!window.confirm(`确认向 ${targets.length} 个 Agent(${targets.join(", ")})安装插件 ${pluginId}?安装包将经 SHA-256 校验后热加载。`)) {
+                return;
+            }
+
+            try {
+                const result = await apiFetch("/v1/plugins/install", {
+                    method: "POST",
+                    body: JSON.stringify({ pluginId, agentIds: targets })
+                });
+                renderOperationResult(document.getElementById("pluginCatalogList"), result, `插件 ${pluginId} 安装已派发`);
+                await refreshPlugins();
+            } catch (error) {
+                alert(`安装派发失败: ${error.message}`);
+            }
+        }
+
+        function renderPluginInstalled() {
+            const container = document.getElementById("pluginInstalledList");
+            const agents = state.pluginInstalled || [];
+            if (!agents.length) {
+                container.innerHTML = '<div class="empty-state">尚未同步已装清单(点击「同步已装清单」或等待插件任务回报)。</div>';
+                return;
+            }
+
+            container.innerHTML = agents.map((agent) => {
+                const plugins = agent.plugins || [];
+                const rows = plugins.length
+                    ? plugins.map((plugin) => `
+                        <div class="row-head">
+                            <div class="title-group">
+                                <div class="strong">${escapeHtml(plugin.name || plugin.id)} <span class="tiny mono">v${escapeHtml(plugin.version)}</span></div>
+                                <div class="summary-row">${(plugin.actions || []).map((a) => `<span class="agent-chip">${escapeHtml(a)}</span>`).join("")}</div>
+                            </div>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <span class="badge ${trustBadgeClass(plugin.trust)}">${escapeHtml(plugin.trust || "unknown")}</span>
+                                <button class="btn btn-secondary btn-small plugin-uninstall-button" data-agent-id="${escapeHtml(agent.agentId)}" data-plugin-id="${escapeHtml(plugin.id)}">卸载</button>
+                            </div>
+                        </div>`).join("<hr>")
+                    : '<div class="helper">该 Agent 未报告任何已装插件。</div>';
+                return `
+                    <article class="card-row">
+                        <div class="row-head">
+                            <div class="strong">${escapeHtml(agent.agentId)}</div>
+                            <span class="tiny mono">回报于 ${formatDate(agent.reportedAt)}</span>
+                        </div>
+                        ${rows}
+                    </article>
+                `;
+            }).join("");
+
+            container.querySelectorAll(".plugin-uninstall-button").forEach((button) => {
+                button.addEventListener("click", () => uninstallPlugin(button.dataset.agentId, button.dataset.pluginId));
+            });
+        }
+
+        async function uninstallPlugin(agentId, pluginId) {
+            if (!window.confirm(`确认从 Agent ${agentId} 卸载插件 ${pluginId}?插件目录将被删除,该操作不可逆。`)) {
+                return;
+            }
+
+            try {
+                const result = await apiFetch(`/v1/plugins/uninstall/${encodeURIComponent(pluginId)}`, {
+                    method: "POST",
+                    body: JSON.stringify({ agentIds: [agentId] })
+                });
+                renderOperationResult(document.getElementById("pluginInstalledList"), result, `插件 ${pluginId} 卸载已派发`);
+                await refreshPlugins();
+            } catch (error) {
+                alert(`卸载派发失败: ${error.message}`);
+            }
+        }
+
+        async function syncPluginInventory() {
+            const connected = (state.agents || []).map((agent) => agent.id);
+            const body = connected.length ? { agentIds: connected } : {};
+            try {
+                await apiFetch("/v1/plugins/inventory/refresh", {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                await refreshPlugins();
+            } catch (error) {
+                alert(`同步派发失败: ${error.message}`);
+            }
         }
 
         function renderAgents() {

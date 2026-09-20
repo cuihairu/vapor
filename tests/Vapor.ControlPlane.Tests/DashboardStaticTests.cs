@@ -195,6 +195,26 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_PluginStorePanel_ShowsCatalogInstallAndInventorySync()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		// §38 P4 contract: the PluginStore panel browses the plugin index,
+		// installs to a checked set of agents (checksum call-out visible), and
+		// mirrors the reported inventory with uninstall + re-sync actions.
+		Assert.Contains("/v1/plugins/catalog", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/plugins/installed", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/plugins/uninstall/", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/plugins/inventory/refresh", html, StringComparison.Ordinal);
+		Assert.Contains("pluginCatalogList", html, StringComparison.Ordinal);
+		Assert.Contains("pluginInstalledList", html, StringComparison.Ordinal);
+		Assert.Contains("plugin-install-button", html, StringComparison.Ordinal);
+		Assert.Contains("data-plugin-id", html, StringComparison.Ordinal);
+		Assert.Contains("plugin-agent-target", html, StringComparison.Ordinal);
+		Assert.Contains("SHA-256", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task RootPath_RedirectsToAdminConsole()
 	{
 		await using var factory = CreateFactory();
