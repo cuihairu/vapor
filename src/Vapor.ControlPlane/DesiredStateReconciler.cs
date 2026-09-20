@@ -211,16 +211,19 @@ public sealed class DesiredStateReconciler : BackgroundService
 		CancellationToken cancellationToken)
 	{
 		// A spec update resets the failure budget, giving operators a lever to un-throttle.
-		// It also invalidates the farm queue — the exclusion list may have changed — and
-		// the trade loop: the whitelist may have changed, so pending decisions are
-		// dropped and the next pass re-queries instead of acting on stale data.
+		// It also invalidates the farm queue for act purposes by forcing a queue
+		// refresh (the exclusion list may have changed — CheckedAt reset below),
+		// restarts the per-game budget clock, and drops the trade loop's pending
+		// decisions. Completion marks, skip marks and the efficiency counters are
+		// facts, not policy: they survive spec changes (the dashboard's stats
+		// panel would otherwise lose history on every unrelated edit).
 		if (runtime.SpecVersion != spec.Version?.Version)
 		{
 			runtime.SpecVersion = spec.Version?.Version;
 			runtime.LoginAttempts = 0;
 			runtime.NextAttemptAt = DateTimeOffset.MinValue;
-			runtime.FarmQueue = null;
 			runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
+			runtime.FarmAppStartedAt = null;
 			runtime.BoostUnmetApps = null;
 			runtime.BoostPlayingApps = null;
 			runtime.BoostCheckedAt = DateTimeOffset.MinValue;
@@ -243,6 +246,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			runtime.ActiveJobAction = null;
 			runtime.Idling = false;
 			runtime.FarmingAppId = null;
+			runtime.FarmAppStartedAt = null;
 			runtime.BoostPlayingApps = null;
 			Interlocked.Increment(ref _rebalances);
 			await RecordActionAsync(spec, null, "rebalanced", $"agent '{lost}' disconnected", cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -317,6 +321,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			// Leaving the farm/boost state drops its bookkeeping.
 			runtime.FarmQueue = null;
 			runtime.FarmingAppId = null;
+			ResetFarmPolicyBookkeeping(runtime);
 			runtime.FarmQueueCheckedAt = DateTimeOffset.MinValue;
 			runtime.BoostUnmetApps = null;
 			runtime.BoostPlayingApps = null;
@@ -574,7 +579,46 @@ public sealed class DesiredStateReconciler : BackgroundService
 		}
 		if (runtime.FarmingAppId is uint farming && queue.Contains(farming))
 		{
-			return; // current game still has drops
+			// The per-game budget (if declared) is a fuse against dead farming:
+			// once the app has been idled for the whole budget it is marked
+			// budget-exhausted and pulled from the queue even though the report
+			// still shows drops — the flow below then rotates to the next game
+			// or stops the idling. Done/failed-never checks are settled at
+			// report time, so this is the only decision this loop makes per pass.
+			double? budget = spec.FarmPolicy?.PerGameHourBudget;
+			if (budget is not { } hours)
+			{
+				return; // no budget declared — idle the current game until its drops run out
+			}
+			if (runtime.FarmAppStartedAt is not { } startedAt)
+			{
+				// The clock was reset by a policy edit (spec bump) or an agent
+				// rebalance, but the game keeps idling — restart the clock from
+				// now instead of disarming the fuse forever (nothing re-dispatches
+				// a play job for the app that is already running).
+				runtime.FarmAppStartedAt = now;
+				return;
+			}
+			if (now - startedAt < TimeSpan.FromHours(hours))
+			{
+				return; // current game still has drops and budget to spare
+			}
+
+			queue.Remove(farming);
+			(runtime.FarmSkippedApps ??= []).Add(farming);
+			_logger.LogWarning(
+				"Farm app {AppId} for {AccountName} exhausted its {Hours:0.#}h budget after {Elapsed:0.#}h — skipped",
+				farming, spec.AccountName, hours, (now - startedAt).TotalHours);
+			await RecordActionAsync(spec, null, "farm_app_budget_exhausted",
+				reason: $"app {farming} idled {(now - startedAt).TotalHours:0.#}h without finishing its drops (budget {hours:0.#}h)",
+				cancellationToken: cancellationToken).ConfigureAwait(false);
+			_events.Publish(null, "account.farm_progress", new Dictionary<string, object?>
+			{
+				["account"] = spec.AccountName,
+				["kind"] = "app_budget_exhausted",
+				["appId"] = farming,
+			});
+			// Fall through: rotate to the next queued game, or stop if none is left.
 		}
 
 		if (queue.Count > 0)
@@ -583,7 +627,30 @@ public sealed class DesiredStateReconciler : BackgroundService
 		}
 		else if (runtime.Idling || runtime.FarmingAppId is not null)
 		{
-			// Everything is farmed out: stop idling, keep the session online.
+			// Everything is farmed out (drained, budget-skipped or excluded):
+			// stop idling, keep the session online. The completion notice fires
+			// exactly once per drain; a later report with fresh drops resets it.
+			if (!runtime.FarmCompletedNotified)
+			{
+				runtime.FarmCompletedNotified = true;
+				int completed = runtime.FarmCompletedApps?.Count ?? 0;
+				int skipped = runtime.FarmSkippedApps?.Count ?? 0;
+				_logger.LogInformation(
+					"Farm queue for {AccountName} fully drained: {Completed} app(s) completed, {Skipped} budget-skipped, {Collected} card(s) collected",
+					spec.AccountName, completed, skipped, runtime.FarmCardsCollected);
+				await RecordActionAsync(spec, null, "farm_completed",
+					reason: $"queue drained: {completed} completed, {skipped} budget-skipped, {runtime.FarmCardsCollected} cards collected this session",
+					cancellationToken: cancellationToken).ConfigureAwait(false);
+				_events.Publish(null, "account.farm_progress", new Dictionary<string, object?>
+				{
+					["account"] = spec.AccountName,
+					["kind"] = "queue_empty",
+					["completed"] = completed,
+					["skipped"] = skipped,
+					["cardsCollected"] = runtime.FarmCardsCollected,
+				});
+			}
+
 			await DispatchPlayAsync(spec, runtime, connected, load, stop: true, cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 	}
@@ -1114,9 +1181,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 	/// <summary>
 	/// Rebuilds the farm queue from a get_card_drops task output. Entries are
-	/// kept in report order (drops-remaining descending as produced by the
-	/// action); the account's IdleApps list is the farm exclusion list. Accepts
-	/// both in-memory dictionaries and JsonElement objects (SQLite round-trip).
+	/// ordered by the account's <see cref="FarmPolicy"/> (default: report order,
+	/// drops-remaining descending as produced by the action), with the policy's
+	/// priority apps — in their declaration order — heading the queue; the
+	/// account's IdleApps list is the farm exclusion list. Accepts both
+	/// in-memory dictionaries and JsonElement objects (SQLite round-trip).
 	/// A missing/invalid output yields an empty queue — treated as "nothing to
 	/// farm", never as a query failure.
 	/// </summary>
@@ -1128,10 +1197,10 @@ public sealed class DesiredStateReconciler : BackgroundService
 			excluded.Add(app.Trim());
 		}
 
-		var queue = new List<uint>();
+		var drops = new List<(uint AppId, int Remaining)>();
 		if (output is null || !output.TryGetValue("drops", out object? raw) || raw is null)
 		{
-			return queue;
+			return [];
 		}
 
 		void Collect(object? entry)
@@ -1143,7 +1212,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 			if (remaining > 0 && appId != 0 && !excluded.Contains(appId.ToString(System.Globalization.CultureInfo.InvariantCulture)))
 			{
-				queue.Add(appId);
+				drops.Add((appId, remaining));
 			}
 		}
 
@@ -1162,6 +1231,31 @@ public sealed class DesiredStateReconciler : BackgroundService
 			{
 				Collect(entry);
 			}
+		}
+
+		IEnumerable<(uint AppId, int Remaining)> ordered = spec.FarmPolicy?.PriorityOrder switch
+		{
+			// CardsDescending keeps the report's native order (already remaining-descending).
+			FarmPriorityOrder.CardsAscending => drops.OrderBy(t => t.Remaining),
+			FarmPriorityOrder.AppIdAscending => drops.OrderBy(t => t.AppId),
+			_ => drops
+		};
+
+		var queue = ordered.Select(t => t.AppId).ToList();
+		if (spec.FarmPolicy?.PriorityApps is { Count: > 0 } priorities)
+		{
+			// Declaration order IS the queue priority: pull each prioritized app
+			// (when present) to the head, first declared first.
+			var head = new List<uint>();
+			foreach (uint app in priorities)
+			{
+				if (queue.Remove(app))
+				{
+					head.Add(app);
+				}
+			}
+
+			queue.InsertRange(0, head);
 		}
 
 		return queue;
@@ -1370,6 +1464,48 @@ public sealed class DesiredStateReconciler : BackgroundService
 			&& property.TryGetInt64(out value);
 	}
 
+	/// <summary>
+	/// Clears the farm policy's decision bookkeeping (completion/skip marks,
+	/// the per-game clock and the efficiency counters). Used when the account
+	/// leaves the farm state and when a fresh report starts a new round after a
+	/// full drain — a spec update deliberately keeps the marks and counters
+	/// (facts survive policy edits) and only restarts the budget clock.
+	/// </summary>
+	private static void ResetFarmPolicyBookkeeping(AccountRuntime runtime)
+	{
+		runtime.FarmCompletedApps = null;
+		runtime.FarmSkippedApps = null;
+		runtime.FarmAppStartedAt = null;
+		runtime.FarmStatsStartedAt = null;
+		runtime.FarmCardsRemaining = null;
+		runtime.FarmCardsCollected = 0;
+		runtime.FarmCompletedNotified = false;
+	}
+
+	/// <summary>Reads the report's total remaining drop count; a missing or unreadable total simply skips the counters.</summary>
+	private static bool TryReadTotalDropsRemaining(IReadOnlyDictionary<string, object?>? output, out int totalRemaining)
+	{
+		totalRemaining = 0;
+		if (output is null || !output.TryGetValue("total_drops_remaining", out object? raw) || raw is null)
+		{
+			return false;
+		}
+
+		if (raw is System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.Number } element)
+		{
+			return element.TryGetInt32(out totalRemaining) && totalRemaining >= 0;
+		}
+
+		if (TryGetNumber(new Dictionary<string, object?> { ["v"] = raw }, "v", out long value)
+			&& value is >= 0 and <= int.MaxValue)
+		{
+			totalRemaining = (int)value;
+			return true;
+		}
+
+		return false;
+	}
+
 	private static bool TryGetNumber(Dictionary<string, object?> dict, string key, out long value)
 	{
 		value = 0;
@@ -1454,6 +1590,15 @@ public sealed class DesiredStateReconciler : BackgroundService
 		runtime.ActiveJobDispatchedAt = DateTimeOffset.UtcNow;
 		runtime.Idling = !stop;
 		runtime.FarmingAppId = stop ? null : farmAppId;
+		if (stop)
+		{
+			runtime.FarmAppStartedAt = null;
+		}
+		else if (farmAppId is not null)
+		{
+			// The per-game budget clock starts when the farm loop starts idling the app.
+			runtime.FarmAppStartedAt = DateTimeOffset.UtcNow;
+		}
 		runtime.BoostPlayingApps = stop ? null : (boostGames is { Length: > 0 }
 			? boostGames.Split(',').Select(a => uint.TryParse(a, System.Globalization.CultureInfo.InvariantCulture, out uint id) ? id : 0).Where(id => id != 0).ToList()
 			: runtime.BoostPlayingApps);
@@ -1517,7 +1662,61 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 			if (dropsTask.Status == JobTaskStatus.Finished)
 			{
-				runtime.FarmQueue = ExtractFarmQueue(dropsTask.Output, spec);
+				List<uint> fresh = ExtractFarmQueue(dropsTask.Output, spec);
+
+				// Completion marking by queue diff: the report only contains apps
+				// that still have drops, so an app that was queued last round and
+				// is gone now has finished farming. Marked once, with an audit
+				// entry and a farm_progress event per app.
+				if (runtime.FarmQueue is { } previous)
+				{
+					foreach (uint completedApp in previous.Where(a => !fresh.Contains(a)))
+					{
+						(runtime.FarmCompletedApps ??= []).Add(completedApp);
+						_logger.LogInformation(
+							"Farm app {AppId} for {AccountName} finished: no drops remaining",
+							completedApp, spec.AccountName);
+						await RecordActionAsync(spec, jobId, "farm_app_completed",
+							reason: $"app {completedApp} card drops exhausted",
+							cancellationToken: cancellationToken).ConfigureAwait(false);
+						_events.Publish(jobId, "account.farm_progress", new Dictionary<string, object?>
+						{
+							["account"] = spec.AccountName,
+							["kind"] = "app_completed",
+							["appId"] = completedApp,
+						});
+					}
+				}
+
+				// A new round after a full drain (Steam granted fresh drops for a
+				// finished game) restarts the bookkeeping: previously completed or
+				// budget-skipped apps may farm again.
+				if (fresh.Count > 0 && runtime.FarmCompletedNotified)
+				{
+					ResetFarmPolicyBookkeeping(runtime);
+				}
+
+				// Done and budget-skipped apps never re-enter the queue, however
+				// often the report lags behind the decisions.
+				fresh.RemoveAll(a => runtime.FarmCompletedApps?.Contains(a) == true
+					|| runtime.FarmSkippedApps?.Contains(a) == true);
+
+				// Efficiency counters: the collected total only ever grows, by the
+				// drop counts that disappeared between two reports — a newly queued
+				// game raising the remaining total must not read as negative
+				// progress.
+				if (TryReadTotalDropsRemaining(dropsTask.Output, out int totalRemaining))
+				{
+					if (runtime.FarmCardsRemaining is { } previousTotal && totalRemaining < previousTotal)
+					{
+						runtime.FarmCardsCollected += previousTotal - totalRemaining;
+					}
+
+					runtime.FarmCardsRemaining = totalRemaining;
+					runtime.FarmStatsStartedAt ??= DateTimeOffset.UtcNow;
+				}
+
+				runtime.FarmQueue = fresh;
 				_logger.LogInformation("Farm queue for {AccountName} refreshed: {Count} app(s) with drops",
 					spec.AccountName, runtime.FarmQueue.Count);
 			}
@@ -1959,8 +2158,27 @@ public sealed class DesiredStateReconciler : BackgroundService
 			LastDeviation: runtime.LastDeviation,
 			Standing: runtime.StandingSummary,
 			StandingQuarantined: runtime.StandingQuarantined,
-			StandingCheckedAt: runtime.StandingCheckedAt == DateTimeOffset.MinValue ? null : runtime.StandingCheckedAt
+			StandingCheckedAt: runtime.StandingCheckedAt == DateTimeOffset.MinValue ? null : runtime.StandingCheckedAt,
+			FarmCompletedApps: runtime.FarmCompletedApps,
+			FarmSkippedApps: runtime.FarmSkippedApps,
+			FarmAppStartedAt: runtime.FarmAppStartedAt,
+			FarmStatsStartedAt: runtime.FarmStatsStartedAt,
+			FarmCardsRemaining: runtime.FarmCardsRemaining,
+			FarmCardsCollected: runtime.FarmCardsCollected,
+			FarmCardsPerHour: CardsPerHour(runtime)
 		);
+	}
+
+	/// <summary>Collection rate over the stats window (cards per hour); null before the first report.</summary>
+	private static double? CardsPerHour(AccountRuntime runtime)
+	{
+		if (runtime.FarmStatsStartedAt is not { } startedAt || runtime.FarmCardsCollected <= 0)
+		{
+			return null;
+		}
+
+		double hours = (DateTimeOffset.UtcNow - startedAt).TotalHours;
+		return hours > 0 ? Math.Round(runtime.FarmCardsCollected / hours, 2) : null;
 	}
 
 	/// <summary>
@@ -1992,6 +2210,22 @@ public sealed class DesiredStateReconciler : BackgroundService
 				kv.Value.StandingCheckedAt == DateTimeOffset.MinValue ? null : kv.Value.StandingCheckedAt))
 			.ToList();
 
+	/// <summary>Farm-loop snapshot for every tracked account (GET /v1/orchestration/farm).</summary>
+	internal IReadOnlyList<FarmAccountView> GetFarmSummaries() =>
+		_runtime.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+			.Select(kv => new FarmAccountView(
+				AccountName: kv.Key,
+				FarmingAppId: kv.Value.FarmingAppId,
+				Queue: kv.Value.FarmQueue,
+				CardsRemaining: kv.Value.FarmCardsRemaining,
+				CardsCollected: kv.Value.FarmCardsCollected,
+				CardsPerHour: CardsPerHour(kv.Value),
+				CompletedApps: kv.Value.FarmCompletedApps,
+				SkippedApps: kv.Value.FarmSkippedApps,
+				QueueRefreshedAt: kv.Value.FarmQueueCheckedAt == DateTimeOffset.MinValue ? null : kv.Value.FarmQueueCheckedAt,
+				StatsStartedAt: kv.Value.FarmStatsStartedAt))
+			.ToList();
+
 	private sealed class AccountRuntime
 	{
 		public string? AssignedAgent;
@@ -2004,6 +2238,13 @@ public sealed class DesiredStateReconciler : BackgroundService
 		public List<uint>? FarmQueue;
 		public uint? FarmingAppId;
 		public DateTimeOffset FarmQueueCheckedAt = DateTimeOffset.MinValue;
+		public List<uint>? FarmCompletedApps;
+		public List<uint>? FarmSkippedApps;
+		public DateTimeOffset? FarmAppStartedAt;
+		public DateTimeOffset? FarmStatsStartedAt;
+		public int? FarmCardsRemaining;
+		public int FarmCardsCollected;
+		public bool FarmCompletedNotified;
 		public List<uint>? BoostUnmetApps;
 		public List<uint>? BoostPlayingApps;
 		public DateTimeOffset BoostCheckedAt = DateTimeOffset.MinValue;
@@ -2051,7 +2292,14 @@ public sealed record AccountOrchestrationView(
 	string? LastDeviation = null,
 	string? Standing = null,
 	bool StandingQuarantined = false,
-	DateTimeOffset? StandingCheckedAt = null
+	DateTimeOffset? StandingCheckedAt = null,
+	IReadOnlyList<uint>? FarmCompletedApps = null,
+	IReadOnlyList<uint>? FarmSkippedApps = null,
+	DateTimeOffset? FarmAppStartedAt = null,
+	DateTimeOffset? FarmStatsStartedAt = null,
+	int? FarmCardsRemaining = null,
+	int FarmCardsCollected = 0,
+	double? FarmCardsPerHour = null
 );
 
 /// <summary>Read-only standing snapshot for one account (dashboard list payload).</summary>
@@ -2060,4 +2308,18 @@ public sealed record AccountStandingView(
 	string? Standing,
 	bool Quarantined,
 	DateTimeOffset? CheckedAt
+);
+
+/// <summary>Read-only farm-loop snapshot for one account (dashboard farm panel payload).</summary>
+public sealed record FarmAccountView(
+	string AccountName,
+	uint? FarmingAppId,
+	IReadOnlyList<uint>? Queue,
+	int? CardsRemaining,
+	int CardsCollected,
+	double? CardsPerHour,
+	IReadOnlyList<uint>? CompletedApps,
+	IReadOnlyList<uint>? SkippedApps,
+	DateTimeOffset? QueueRefreshedAt,
+	DateTimeOffset? StatsStartedAt
 );

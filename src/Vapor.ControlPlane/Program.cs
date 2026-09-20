@@ -438,7 +438,7 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 	AccountSpec spec;
 	try
 	{
-		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy, req.MarketListingsEnabled, req.BoostTargets, req.TradePolicy);
+		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy, req.MarketListingsEnabled, req.BoostTargets, req.TradePolicy, req.FarmPolicy);
 	}
 	catch (ArgumentException ex)
 	{
@@ -467,6 +467,14 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 				{
 					["autoAcceptGifts"] = spec.TradePolicy.AutoAcceptGifts,
 					["partnerWhitelist"] = spec.TradePolicy.PartnerWhitelist
+				},
+			["farmPolicy"] = spec.FarmPolicy is null
+				? null
+				: new Dictionary<string, object?>
+				{
+					["perGameHourBudget"] = spec.FarmPolicy.PerGameHourBudget,
+					["priorityOrder"] = spec.FarmPolicy.PriorityOrder.ToString(),
+					["priorityApps"] = spec.FarmPolicy.PriorityApps
 				},
 			["version"] = spec.Version?.Version
 		});
@@ -585,6 +593,20 @@ app.MapGet("/v1/orchestration/standing", (HttpContext ctx, Config cfg, DesiredSt
 })
 	.WithTags("Accounts")
 	.WithSummary("Standing snapshot for every account the orchestrator tracks")
+	.Produces(200)
+	.Produces(401);
+
+app.MapGet("/v1/orchestration/farm", (HttpContext ctx, Config cfg, DesiredStateReconciler reconciler) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	return Results.Ok(new { farm = reconciler.GetFarmSummaries() });
+})
+	.WithTags("Accounts")
+	.WithSummary("Farm-loop snapshot for every account the orchestrator tracks (queue, progress, efficiency counters)")
 	.Produces(200)
 	.Produces(401);
 
@@ -3226,7 +3248,8 @@ public sealed record PutAccountRequest(
 	string? UpdatedBy = null,
 	bool? MarketListingsEnabled = null,
 	IReadOnlyList<BoostTarget>? BoostTargets = null,
-	TradePolicy? TradePolicy = null
+	TradePolicy? TradePolicy = null,
+	FarmPolicy? FarmPolicy = null
 );
 
 // Request body for trade offer accept/decline endpoints

@@ -46,9 +46,10 @@ public sealed class AccountStore
 		string? updatedBy = null,
 		bool? marketListingsEnabled = null,
 		IReadOnlyList<BoostTarget>? boostTargets = null,
-		TradePolicy? tradePolicy = null)
+		TradePolicy? tradePolicy = null,
+		FarmPolicy? farmPolicy = null)
 	{
-		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, boostTargets, tradePolicy, out var normalizedAccountName);
+		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, boostTargets, tradePolicy, farmPolicy, out var normalizedAccountName);
 
 		lock (_gate)
 		{
@@ -126,6 +127,7 @@ public sealed class AccountStore
 		string? updatedBy,
 		IReadOnlyList<BoostTarget>? boostTargets,
 		TradePolicy? tradePolicy,
+		FarmPolicy? farmPolicy,
 		out string normalizedAccountName)
 	{
 		if (string.IsNullOrWhiteSpace(accountName))
@@ -154,8 +156,53 @@ public sealed class AccountStore
 			Note: NormalizeOptional(note),
 			Version: new ConfigVersion(1, DateTimeOffset.UtcNow, string.IsNullOrWhiteSpace(updatedBy) ? null : updatedBy),
 			BoostTargets: normalizedTargets,
-			TradePolicy: NormalizeTradePolicy(tradePolicy)
+			TradePolicy: NormalizeTradePolicy(tradePolicy),
+			FarmPolicy: NormalizeFarmPolicy(farmPolicy)
 		);
+	}
+
+	/// <summary>
+	/// Validates and normalizes the farm policy: the per-game budget must be a
+	/// finite positive number (a NaN/∞ goal would silently never trip, a zero
+	/// or negative one is a contradictory "no farming" declaration), the
+	/// priority list keeps its declaration order (list position IS the queue
+	/// priority — the first entry heads the queue) with zero ids dropped and
+	/// duplicates collapsed. A policy with nothing active normalizes to null;
+	/// an omitted policy clears any previous one (full replace semantics,
+	/// same direction as the rest of the spec).
+	/// </summary>
+	// internal for tests (property-based invariants), see Vapor.ControlPlane.Tests.
+	internal static FarmPolicy? NormalizeFarmPolicy(FarmPolicy? farmPolicy)
+	{
+		if (farmPolicy is null)
+		{
+			return null;
+		}
+
+		if (farmPolicy.PerGameHourBudget is { } budget && (!double.IsFinite(budget) || budget <= 0))
+		{
+			throw new ArgumentException(
+				$"farm per-game hour budget must be a finite positive number, got {budget}",
+				nameof(farmPolicy));
+		}
+
+		uint[]? priorityApps = null;
+		if (farmPolicy.PriorityApps is { Count: > 0 })
+		{
+			var seen = new HashSet<uint>();
+			priorityApps = farmPolicy.PriorityApps
+				.Where(id => id != 0u && seen.Add(id))
+				.ToArray();
+			if (priorityApps.Length == 0)
+			{
+				priorityApps = null;
+			}
+		}
+
+		bool orderActive = farmPolicy.PriorityOrder != FarmPriorityOrder.CardsDescending;
+		return farmPolicy.PerGameHourBudget is not null || orderActive || priorityApps is not null
+			? new FarmPolicy(farmPolicy.PerGameHourBudget, farmPolicy.PriorityOrder, priorityApps)
+			: null;
 	}
 
 	/// <summary>

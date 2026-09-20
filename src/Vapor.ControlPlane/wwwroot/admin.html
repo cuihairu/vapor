@@ -935,6 +935,24 @@
                         </div>
                         <div class="field-grid">
                             <div class="field">
+                                <label for="editFarmBudget">Farm 单游戏时长预算（小时，留空不限）</label>
+                                <input id="editFarmBudget" type="number" min="0.1" step="0.1" placeholder="如 5 = 挂满 5 小时仍未掉完卡则跳过">
+                            </div>
+                            <div class="field">
+                                <label for="editFarmPriorityOrder">Farm 队列排序</label>
+                                <select id="editFarmPriorityOrder">
+                                    <option value="CardsDescending">卡数多优先（默认）</option>
+                                    <option value="CardsAscending">卡数少优先（先清尾款）</option>
+                                    <option value="AppIdAscending">按 appid 升序（稳定）</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="editFarmPriorityApps">Farm 优先置顶（appid CSV，列表顺序即优先顺序）</label>
+                            <input id="editFarmPriorityApps" type="text" placeholder="570, 730 = 先挂 570，再挂 730，其余按排序">
+                        </div>
+                        <div class="field-grid">
+                            <div class="field">
                                 <label for="editRegion">区域（留空为任意）</label>
                                 <input id="editRegion" type="text">
                             </div>
@@ -1344,6 +1362,7 @@
             selectedJobId: null,
             accounts: [],
             standing: new Map(),
+            farm: new Map(),
             editingAccountName: null,
             achievements: null,
             tradeOffers: null,
@@ -1912,6 +1931,13 @@
                 // must not blank the account list.
                 state.standing = new Map();
             }
+            try {
+                const farm = await apiFetch("/v1/orchestration/farm");
+                state.farm = new Map((farm.farm || []).map((entry) => [entry.accountName, entry]));
+            } catch (error) {
+                // Same supplementary posture for the farm snapshot.
+                state.farm = new Map();
+            }
             renderAccounts();
             populateTradeAccountSelect();
             populateAchievementAccountSelect();
@@ -1961,6 +1987,34 @@
                 const standingText = standingEntry
                     ? ({ clean: "状态正常", restricted: "受限", banned: "封禁" }[standingEntry.standing] || standingEntry.standing)
                     : "未体检";
+                // Farm efficiency badge (ASF-style panel): progress and collection
+                // rate for farm accounts, hidden for everything else.
+                const farmEntry = state.farm.get(account.accountName);
+                const farmActive = String(account.desiredState).toLowerCase() === "farm";
+                let farmBadge = "";
+                if (farmActive && farmEntry) {
+                    const collected = Number(farmEntry.cardsCollected || 0);
+                    const remaining = farmEntry.cardsRemaining;
+                    const rate = Number(farmEntry.cardsPerHour || 0);
+                    const doneCount = (farmEntry.completedApps || []).length;
+                    const skipCount = (farmEntry.skippedApps || []).length;
+                    const parts = [];
+                    if (farmEntry.farmingAppId) {
+                        parts.push(`挂 ${farmEntry.farmingAppId}`);
+                    }
+                    if (remaining !== null && remaining !== undefined) {
+                        parts.push(`剩 ${remaining} 卡`);
+                    }
+                    if (collected > 0) {
+                        parts.push(`已收 ${collected}${rate > 0 ? `（${rate}/时）` : ""}`);
+                    }
+                    if (doneCount || skipCount) {
+                        parts.push(`完成 ${doneCount}${skipCount ? ` · 跳过 ${skipCount}` : ""}`);
+                    }
+                    if (parts.length) {
+                        farmBadge = `<span class="badge queued" title="挂卡进度（单会话口径，重启控制面后重新累计）">${escapeHtml(parts.join(" · "))}</span>`;
+                    }
+                }
                 return `
                     <article class="card-row">
                         <div class="row-head">
@@ -1974,6 +2028,7 @@
                             <span class="agent-chip">state: ${escapeHtml(account.desiredState)}</span>
                             <span class="badge ${standingClass}" title="账号体检（VAC/社区/经济封禁）">${escapeHtml(standingText)}</span>
                             ${standingEntry && standingEntry.quarantined ? '<span class="badge failed" title="异常账号已隔离：编排器暂停其一切交易调度">已隔离</span>' : ""}
+                            ${farmBadge}
                             ${account.marketListingsEnabled ? '<span class="agent-chip">市场挂单 ✓</span>' : ""}
                         </div>
                         ${notes.length ? `<div class="helper">${escapeHtml(notes.join(" · "))}</div>` : ""}
@@ -2021,6 +2076,9 @@
             document.getElementById("editBoostTargets").value = (account.boostTargets || [])
                 .map((target) => `${target.appId}:${target.targetHours}`)
                 .join(", ");
+            document.getElementById("editFarmBudget").value = account.farmPolicy?.perGameHourBudget ?? "";
+            document.getElementById("editFarmPriorityOrder").value = account.farmPolicy?.priorityOrder || "CardsDescending";
+            document.getElementById("editFarmPriorityApps").value = (account.farmPolicy?.priorityApps || []).join(", ");
             document.getElementById("editRegion").value = account.region || "";
             document.getElementById("editAgentId").value = account.agentId || "";
             document.getElementById("editNote").value = account.note || "";
@@ -2221,6 +2279,37 @@
             });
         }
 
+        // Reads the farm-policy form fields into the PUT payload's farmPolicy
+        // value (null when everything is empty = default behaviour). Mirrors the
+        // server-side validation (finite positive budget) so typos surface
+        // locally instead of as a 400 after submit.
+        function parseFarmPolicyInput() {
+            const budgetText = document.getElementById("editFarmBudget").value.trim();
+            const budget = budgetText === "" ? null : Number(budgetText);
+            if (budgetText !== "" && (!Number.isFinite(budget) || budget <= 0)) {
+                throw new Error(`Farm 单游戏时长预算无效: "${budgetText}"（须为正数，留空表示不限）`);
+            }
+
+            const order = document.getElementById("editFarmPriorityOrder").value;
+            const priorityText = document.getElementById("editFarmPriorityApps").value;
+            const priorityApps = parseCsvInput(priorityText);
+            for (const entry of priorityApps) {
+                if (!/^\d+$/.test(entry) || Number(entry) <= 0) {
+                    throw new Error(`Farm 优先置顶 appid 无效: "${entry}"（须为正整数）`);
+                }
+            }
+
+            if (budget === null && order === "CardsDescending" && !priorityApps.length) {
+                return null;
+            }
+
+            return {
+                perGameHourBudget: budget,
+                priorityOrder: order,
+                priorityApps: priorityApps.length ? priorityApps.map(Number) : null
+            };
+        }
+
         async function saveAccountEdits() {
             const accountName = state.editingAccountName;
             if (!accountName) {
@@ -2230,6 +2319,14 @@
             let boostTargets;
             try {
                 boostTargets = parseBoostTargetsInput(document.getElementById("editBoostTargets").value);
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+
+            let farmPolicy;
+            try {
+                farmPolicy = parseFarmPolicyInput();
             } catch (error) {
                 alert(error.message);
                 return;
@@ -2245,6 +2342,9 @@
                 updatedBy: "admin-console",
                 marketListingsEnabled: document.getElementById("editMarketListings").checked,
                 boostTargets,
+                // PUT is a full replace: farmPolicy is whatever the form holds
+                // right now (null clears it), matching the server's semantics.
+                farmPolicy,
                 // PUT is a full replace: carry the declared trade policy through
                 // untouched until the panel grows dedicated editing for it, or
                 // every unrelated edit would silently disable auto-accept.

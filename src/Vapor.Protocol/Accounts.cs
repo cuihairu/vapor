@@ -40,6 +40,47 @@ public enum AccountDesiredState
 public sealed record BoostTarget(uint AppId, double TargetHours);
 
 /// <summary>
+/// How the farm loop orders the games with remaining card drops. The badges
+/// page report is already ordered by drops remaining descending, so
+/// <see cref="CardsDescending"/> preserves the natural most-productive-first
+/// order; the alternatives trade throughput for tail-cleanup or stable
+/// ordering.
+/// </summary>
+public enum FarmPriorityOrder
+{
+	/// <summary>Highest remaining card count first (the report's native order).</summary>
+	CardsDescending = 0,
+
+	/// <summary>Lowest remaining card count first — clear out nearly-done games.</summary>
+	CardsAscending = 1,
+
+	/// <summary>Stable app-id ascending order, independent of report counts.</summary>
+	AppIdAscending = 2
+}
+
+/// <summary>
+/// ASF-style tuning knobs for the farm loop. Null (or a policy that normalizes
+/// to nothing active) keeps the default behaviour: the natural report order and
+/// no per-game time budget.
+/// </summary>
+/// <param name="PerGameHourBudget">
+/// Optional fuse against dead farming: an app the loop has been idling for at
+/// least this many hours (wall clock, per session — restarting the control
+/// plane restarts its clock) is marked budget-exhausted, skipped and never
+/// re-queued even if the next report still shows drops for it.
+/// </param>
+/// <param name="PriorityOrder">Queue ordering applied after the priority apps.</param>
+/// <param name="PriorityApps">
+/// Explicitly prioritized app ids, in declaration order — they head the queue
+/// (in list order) ahead of everything the ordering policy places.
+/// </param>
+public sealed record FarmPolicy(
+	double? PerGameHourBudget = null,
+	FarmPriorityOrder PriorityOrder = FarmPriorityOrder.CardsDescending,
+	IReadOnlyList<uint>? PriorityApps = null
+);
+
+/// <summary>
 /// Conservative auto-accept policy for incoming trade offers (todo §32).
 /// Deliberately gifts-only: offers where the partner gives anything back are
 /// never auto-accepted — value equivalence is not judged automatically (the
@@ -69,5 +110,6 @@ public sealed record AccountSpec(
 	ConfigVersion? Version = null,
 	bool MarketListingsEnabled = false,
 	IReadOnlyList<BoostTarget>? BoostTargets = null,
-	TradePolicy? TradePolicy = null
+	TradePolicy? TradePolicy = null,
+	FarmPolicy? FarmPolicy = null
 );

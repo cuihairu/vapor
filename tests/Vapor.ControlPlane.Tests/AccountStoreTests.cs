@@ -356,6 +356,71 @@ public sealed class AccountStoreTests
 		Assert.Null(updated.TradePolicy);
 	}
 
+	// ── farm policy normalization (todo §38 P3-a) ──
+
+	[Theory]
+	[InlineData(0)]
+	[InlineData(-1)]
+	[InlineData(-0.5)]
+	[InlineData(double.NaN)]
+	[InlineData(double.PositiveInfinity)]
+	[InlineData(double.NegativeInfinity)]
+	public void NormalizeFarmPolicy_NonPositiveOrNonFiniteBudget_Throws(double budget)
+	{
+		// A NaN/∞ goal would silently never trip; zero or negative is a
+		// contradictory "no farming" declaration — both are refused outright.
+		Assert.Throws<ArgumentException>(() => AccountStore.NormalizeFarmPolicy(
+			new FarmPolicy(PerGameHourBudget: budget)));
+	}
+
+	[Fact]
+	public void NormalizeFarmPolicy_NothingActive_NormalizesToNull()
+	{
+		Assert.Null(AccountStore.NormalizeFarmPolicy(null));
+		Assert.Null(AccountStore.NormalizeFarmPolicy(new FarmPolicy()));
+		// Every priority entry unusable and no budget/order → nothing active.
+		Assert.Null(AccountStore.NormalizeFarmPolicy(new FarmPolicy(PriorityApps: [0, 0])));
+	}
+
+	[Fact]
+	public void NormalizeFarmPolicy_ActiveParts_AreKept()
+	{
+		FarmPolicy? normalized = AccountStore.NormalizeFarmPolicy(
+			new FarmPolicy(PerGameHourBudget: 5, PriorityOrder: FarmPriorityOrder.CardsAscending, PriorityApps: [730, 0, 730, 570]));
+
+		Assert.NotNull(normalized);
+		Assert.Equal(5, normalized.PerGameHourBudget);
+		Assert.Equal(FarmPriorityOrder.CardsAscending, normalized.PriorityOrder);
+		// Zero ids dropped, duplicates collapsed, declaration order preserved
+		// (list position IS the queue priority — never reordered).
+		Assert.Equal([730U, 570U], normalized.PriorityApps);
+	}
+
+	[Fact]
+	public void NormalizeFarmPolicy_UnusablePriorities_KeepActiveBudget()
+	{
+		FarmPolicy? normalized = AccountStore.NormalizeFarmPolicy(
+			new FarmPolicy(PerGameHourBudget: 2.5, PriorityApps: [0, 0]));
+
+		Assert.NotNull(normalized);
+		Assert.Equal(2.5, normalized.PerGameHourBudget);
+		Assert.Null(normalized.PriorityApps);
+	}
+
+	[Fact]
+	public void Upsert_FarmPolicy_IsCarriedThroughAndClearedOnOmission()
+	{
+		var store = new AccountStore();
+		AccountSpec declared = store.Upsert(
+			"alice", enabled: true, AccountDesiredState.Farm, null, null, null, null,
+			farmPolicy: new FarmPolicy(PerGameHourBudget: 5, PriorityApps: [730]));
+		Assert.NotNull(declared.FarmPolicy);
+
+		// Full replace: an update that forgets the policy clears it.
+		AccountSpec updated = store.Upsert("alice", enabled: true, AccountDesiredState.Farm, null, null, null, null);
+		Assert.Null(updated.FarmPolicy);
+	}
+
 	[Fact]
 	public void List_IsOrderedByAccountName()
 	{

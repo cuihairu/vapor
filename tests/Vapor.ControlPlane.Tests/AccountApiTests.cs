@@ -369,6 +369,69 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task FarmEndpoints_RequireAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage snapshot = await client.GetAsync("/v1/orchestration/farm");
+
+		Assert.Equal(HttpStatusCode.Unauthorized, snapshot.StatusCode);
+	}
+
+	[Fact]
+	public async Task FarmPolicy_PutValidationSnapshotAndClearing()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		// An invalid budget is refused at declaration time (fail-fast, same as boost targets).
+		using HttpResponseMessage invalid = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			desiredState = "farm",
+			farmPolicy = new { perGameHourBudget = -1 }
+		});
+		Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+		// A valid policy is carried into the spec.
+		using HttpResponseMessage declared = await client.PutAsJsonAsync("/v1/accounts/alice", new
+		{
+			desiredState = "farm",
+			farmPolicy = new { perGameHourBudget = 5, priorityOrder = "cardsAscending", priorityApps = new[] { 730, 570 } }
+		});
+		Assert.Equal(HttpStatusCode.OK, declared.StatusCode);
+		string specBody = await declared.Content.ReadAsStringAsync();
+		using var specDoc = JsonDocument.Parse(specBody);
+		JsonElement policy = specDoc.RootElement.GetProperty("spec").GetProperty("farmPolicy");
+		Assert.Equal(5, policy.GetProperty("perGameHourBudget").GetDouble());
+		Assert.Equal("cardsAscending", policy.GetProperty("priorityOrder").GetString());
+		Assert.Equal(2, policy.GetProperty("priorityApps").GetArrayLength());
+
+		// One reconcile pass so the orchestrator tracks alice, then the farm
+		// snapshot lists her with the efficiency counters present (0 collected).
+		DesiredStateReconciler reconciler = factory.Services.GetRequiredService<DesiredStateReconciler>();
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		using HttpResponseMessage snapshot = await client.GetAsync("/v1/orchestration/farm");
+		Assert.Equal(HttpStatusCode.OK, snapshot.StatusCode);
+		string snapshotBody = await snapshot.Content.ReadAsStringAsync();
+		using var snapshotDoc = JsonDocument.Parse(snapshotBody);
+		JsonElement farm = snapshotDoc.RootElement.GetProperty("farm");
+		Assert.Equal(1, farm.GetArrayLength());
+		Assert.Equal("alice", farm[0].GetProperty("accountName").GetString());
+		Assert.Equal(0, farm[0].GetProperty("cardsCollected").GetInt32());
+
+		// Full replace: an update that omits the policy clears it.
+		using HttpResponseMessage cleared = await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "farm" });
+		Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+		string clearedBody = await cleared.Content.ReadAsStringAsync();
+		using var clearedDoc = JsonDocument.Parse(clearedBody);
+		// WhenWritingNull drops "farmPolicy": null — absence means cleared.
+		Assert.False(clearedDoc.RootElement.GetProperty("spec").TryGetProperty("farmPolicy", out JsonElement clearedPolicy)
+			&& clearedPolicy.ValueKind != JsonValueKind.Null);
+	}
+
+	[Fact]
 	public async Task DeleteAccount_RemovesSpecAndIsAudited()
 	{
 		await using var factory = CreateFactory();

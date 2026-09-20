@@ -176,6 +176,25 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_FarmPanel_ShowsProgressBadgeAndPolicyFields()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		// §38 P3 contract: the account list pulls the farm snapshot and renders
+		// an efficiency badge (farming app / remaining / collected / done+skipped),
+		// and the account editor carries the farm policy fields (per-game budget,
+		// queue ordering, priority apps) with the server-side semantics mirrored
+		// client-side.
+		Assert.Contains("/v1/orchestration/farm", html, StringComparison.Ordinal);
+		Assert.Contains("editFarmBudget", html, StringComparison.Ordinal);
+		Assert.Contains("editFarmPriorityOrder", html, StringComparison.Ordinal);
+		Assert.Contains("editFarmPriorityApps", html, StringComparison.Ordinal);
+		Assert.Contains("CardsAscending", html, StringComparison.Ordinal);
+		Assert.Contains("AppIdAscending", html, StringComparison.Ordinal);
+		Assert.Contains("farmPolicy", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task RootPath_RedirectsToAdminConsole()
 	{
 		await using var factory = CreateFactory();
