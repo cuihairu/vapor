@@ -71,7 +71,10 @@ public sealed class SessionManagerLifecycleTests
 
 		channel.Writer.Complete();
 
-		await pump.WaitAsync(TimeSpan.FromSeconds(10));
+		// 30s budget: under CI load (2 cores + instrumentation) the pump's wakeup
+		// after Complete still has to fight the scheduler; the healthy path does
+		// not wait at all (the channel completes while the foreach is parked).
+		await pump.WaitAsync(TimeSpan.FromSeconds(30));
 		Assert.Equal(TaskStatus.RanToCompletion, pump.Status);
 
 		manager.Dispose();

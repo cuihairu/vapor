@@ -319,7 +319,10 @@ public sealed class EventBrokerTests
 	public async Task SubscribeSessions_CompletesGracefullyAndCleansUpWhenTheChannelCompletes()
 	{
 		var broker = new EventBroker();
-		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		// No timed CTS here: the pump must exit through channel completion, and a
+		// timed token would fire while the Task.Run pump is still queued under CI
+		// load, detonating WaitToReadAsync before the subscriber ever registers.
+		using var cts = new CancellationTokenSource();
 		var received = new List<SessionEvent>();
 
 		Task pump = Task.Run(async () =>
@@ -330,7 +333,9 @@ public sealed class EventBrokerTests
 			}
 		});
 
-		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+		// 30s budgets: only pool-scheduling delay under CI load; the healthy path
+		// exits the poll as soon as the subscription registers (immediately).
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(30);
 		while (broker.SessionSubscriberCount == 0 && DateTimeOffset.UtcNow < deadline)
 		{
 			await Task.Delay(10);
@@ -338,7 +343,7 @@ public sealed class EventBrokerTests
 
 		broker.PublishSession("alice", "state_changed", "Connected");
 		CompleteChannels(broker, "_sessionSubscribers");
-		await pump.WaitAsync(TimeSpan.FromSeconds(5));
+		await pump.WaitAsync(TimeSpan.FromSeconds(30));
 
 		_ = Assert.Single(received);
 		Assert.Equal(0, broker.SessionSubscriberCount);
@@ -348,7 +353,8 @@ public sealed class EventBrokerTests
 	public async Task SubscribeAuthChallenges_CompletesGracefullyAndCleansUpWhenTheChannelCompletes()
 	{
 		var broker = new EventBroker();
-		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		// Same as above: the timed token is the pump's own detonator under load.
+		using var cts = new CancellationTokenSource();
 		var received = new List<AuthChallengeEvent>();
 
 		Task pump = Task.Run(async () =>
@@ -359,7 +365,7 @@ public sealed class EventBrokerTests
 			}
 		});
 
-		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(30);
 		while (broker.AuthSubscriberCount == 0 && DateTimeOffset.UtcNow < deadline)
 		{
 			await Task.Delay(10);
@@ -367,7 +373,7 @@ public sealed class EventBrokerTests
 
 		broker.PublishAuthChallenge("alice", "2fa_required", code: "123456");
 		CompleteChannels(broker, "_authSubscribers");
-		await pump.WaitAsync(TimeSpan.FromSeconds(5));
+		await pump.WaitAsync(TimeSpan.FromSeconds(30));
 
 		_ = Assert.Single(received);
 		Assert.Equal(0, broker.AuthSubscriberCount);

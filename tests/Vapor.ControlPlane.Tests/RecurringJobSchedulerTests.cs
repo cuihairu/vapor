@@ -124,7 +124,14 @@ public sealed class RecurringJobSchedulerTests : IDisposable
 		}
 		finally
 		{
-			File.Delete(dbPath);
+			try
+			{
+				File.Delete(dbPath);
+			}
+			catch (IOException)
+			{
+				// Microsoft.Data.Sqlite pooling may still hold the file on Windows; best-effort cleanup.
+			}
 		}
 	}
 
