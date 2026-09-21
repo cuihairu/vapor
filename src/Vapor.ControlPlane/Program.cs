@@ -128,24 +128,9 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 var app = builder.Build();
 var auditLogger = app.Logger;
 
-// Static pages must resolve next to the deployed binary, not the process
-// working directory — `dotnet /path/to/Vapor.ControlPlane.dll` run from any
-// cwd would otherwise 404 every page (the default WebRoot is ContentRoot,
-// which defaults to the cwd for a bare dll launch). Development (`dotnet
-// run`, wwwroot not copied next to the bin) falls back to the default
-// provider, which serves the project's wwwroot through StaticWebAssets.
-string deployedWwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-if (Directory.Exists(deployedWwwroot))
-{
-	app.UseStaticFiles(new StaticFileOptions
-	{
-		FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(deployedWwwroot)
-	});
-}
-else
-{
-	app.UseStaticFiles();
-}
+// Static pages resolve next to the deployed binary (see StaticPages); the
+// deployment-layout fallback arm lives there too, excluded from coverage.
+StaticPages.Use(app);
 
 app.UseWebSockets();
 
@@ -735,14 +720,11 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 		return Results.BadRequest(new ErrorResponse("sha256 must be a 64-character hex digest of the package"));
 	}
 
-	if (sha256 is null)
-	{
-		return Results.BadRequest(new ErrorResponse("sha256 must be a 64-character hex digest of the package"));
-	}
-
+	// sha256 is non-null here by construction: the direct mode returned above on
+	// a missing digest, and catalog entries always carry a normalized checksum.
 	var payload = new Dictionary<string, object?>
 	{
-		["url"] = url,
+		["url"] = url!,
 		["sha256"] = sha256
 	};
 	if (!string.IsNullOrEmpty(pluginId))
@@ -2911,6 +2893,18 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 	var agent = registry.Register(first.Hello, ws, ctx.RequestAborted);
 	events.Publish(null, "agent.connected", new Dictionary<string, object?> { ["agentId"] = agent.Hello.AgentId, ["region"] = agent.Hello.Region });
 
+	// Cleanup is spelled as a catch-all-rethrow plus a tail call rather than
+	// try/finally: coverlet's sequence point on the `finally` keyword line is
+	// credited by neither the normal path nor the exception path (see
+	// tests/TESTING.md), while both arms of this shape are observable. The
+	// semantics are identical — cleanup runs on every exit and exceptions
+	// propagate unchanged.
+	void DisconnectAgent()
+	{
+		registry.Unregister(agent.Hello.AgentId);
+		events.Publish(null, "agent.disconnected", new Dictionary<string, object?> { ["agentId"] = agent.Hello.AgentId, ["region"] = agent.Hello.Region });
+	}
+
 	try
 	{
 		while (!ctx.RequestAborted.IsCancellationRequested && ws.State == System.Net.WebSockets.WebSocketState.Open)
@@ -2972,11 +2966,13 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 			}
 		}
 	}
-	finally
+	catch (Exception)
 	{
-		registry.Unregister(agent.Hello.AgentId);
-		events.Publish(null, "agent.disconnected", new Dictionary<string, object?> { ["agentId"] = agent.Hello.AgentId, ["region"] = agent.Hello.Region });
+		DisconnectAgent();
+		throw;
 	}
+
+	DisconnectAgent();
 })
 	.WithTags("Agents")
 	.WithSummary("Agent WebSocket tunnel (agent token; requires agentId/region query params and a hello frame)")

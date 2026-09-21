@@ -21,6 +21,7 @@ public sealed class AchievementStatsBitmapTests
 	public void IsSet_AbsentEntryCountsAsZero()
 	{
 		Assert.False(AchievementStatsBitmap.IsSet([], 3));
+		Assert.False(AchievementStatsBitmap.IsSet([new UserStatsEntry(5, 0b1)], 3)); // different stat id: no entry for it
 		Assert.False(AchievementStatsBitmap.IsSet([new UserStatsEntry(0, 0b1011)], 2)); // bit 2 not set
 		Assert.True(AchievementStatsBitmap.IsSet([new UserStatsEntry(0, 0b1011)], 3));
 	}

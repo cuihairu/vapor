@@ -252,6 +252,29 @@ public class MetricsHttpServerTests : IDisposable
 		Assert.True(response.IsSuccessStatusCode);
 	}
 
+	[Fact]
+	public async Task Handler_ClientGoneBeforeFirstRead_FailureIsSwallowed()
+	{
+		// A client that is already gone when the handler picks it up (accept raced
+		// the disconnect) must be absorbed by the IO-family catch — never surfacing
+		// an exception from the fire-and-forget handler task. Driving the handler
+		// with an already-disposed client is the deterministic form of that race.
+		var server = StartServer(() => "x\n");
+		using var goneClient = new TcpClient();
+		goneClient.Dispose();
+
+		MethodInfo handle = typeof(MetricsHttpServer).GetMethod(
+			"HandleClientAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		Task handler = (Task)handle.Invoke(server, [goneClient, CancellationToken.None])!;
+
+		await handler.WaitAsync(TimeSpan.FromSeconds(10)); // completes, does not fault
+
+		// The endpoint stays usable.
+		using var httpClient = new HttpClient();
+		var response = await httpClient.GetAsync($"http://127.0.0.1:{server.Port}/metrics");
+		Assert.True(response.IsSuccessStatusCode);
+	}
+
 	public void Dispose()
 	{
 		foreach (var server in _servers)

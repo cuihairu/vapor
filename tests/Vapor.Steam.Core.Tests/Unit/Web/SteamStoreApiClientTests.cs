@@ -302,6 +302,33 @@ public sealed class SteamStoreApiClientTests
 	}
 
 	[Fact]
+	public async Task GetPriceAsync_NonNumericPriceField_YieldsNullInsteadOfThrowing()
+	{
+		// Upstream drift guard: a boolean (or any other non-numeric kind) in a
+		// price slot must read as "absent", not crash the listing walk.
+		string json = """
+		{
+			"620": {
+				"success": true,
+				"data": {
+					"name": "Portal 2", "steam_appid": 620, "is_free": false,
+					"price_overview": { "currency": "USD", "initial": true, "final": 999, "discount_percent": 0 }
+				}
+			}
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var price = await client.GetPriceAsync(620);
+
+		Assert.NotNull(price);
+		Assert.Null(price!.Initial);
+		Assert.Equal(9.99m, price.Final);
+	}
+
+	[Fact]
 	public async Task SearchGamesAsync_WhenHttpFails_ReturnsEmptyList()
 	{
 		var (client, fake) = Create();

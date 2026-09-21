@@ -70,15 +70,11 @@ public sealed record Config(
 		int crawlRunTimeoutSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_RUN_TIMEOUT_SECONDS"), out int crawlRunTimeout) && crawlRunTimeout > 0 ? crawlRunTimeout : 1800;
 		int crawlIntervalMs = int.TryParse(Environment.GetEnvironmentVariable("Vapor_CRAWL_INTERVAL_MS"), out int crawlInterval) && crawlInterval >= 0 ? crawlInterval : 500;
 
-		HashSet<string> agentApiKeys = new(StringComparer.Ordinal);
-		foreach (string key in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-		{
-			if (key.Length == 0)
-			{
-				continue;
-			}
-			agentApiKeys.Add(key);
-		}
+		// RemoveEmptyEntries | TrimEntries already drops entries that are empty or
+		// whitespace-only (trim runs before removal), so no per-key guard is needed.
+		HashSet<string> agentApiKeys = new(
+			agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+			StringComparer.Ordinal);
 
 		string? pluginIndexUrl = Environment.GetEnvironmentVariable("Vapor_PLUGIN_INDEX_URL");
 		if (string.IsNullOrWhiteSpace(pluginIndexUrl))

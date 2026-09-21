@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
@@ -334,9 +335,32 @@ public sealed class ProgramCliTests : IDisposable
 		Assert.Equal(1, args[1]);
 	}
 
-	// GetValue's missing-value arm calls Environment.Exit(2), which would kill
-	// the test host; the arm stays structurally unreachable in-process and is
-	// covered only by manual CLI runs.
+	[Fact]
+	public void Run_MissingOptionValue_ChildProcessExitsWithCode2()
+	{
+		// GetValue's missing-value arm calls Environment.Exit(2), which would kill
+		// the test host if driven in-process; a child process proves the arm and
+		// its exit code deterministically.
+		string toolDll = typeof(Program).Assembly.Location;
+		using var process = Process.Start(new ProcessStartInfo
+		{
+			FileName = "dotnet",
+			ArgumentList = { toolDll, "--new-key" },
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			UseShellExecute = false,
+		})!;
+
+		// Drain both pipes before WaitForExit: a full pipe buffer would deadlock
+		// the child against a reader that never drains it.
+		string stdout = process.StandardOutput.ReadToEnd();
+		string stderr = process.StandardError.ReadToEnd();
+		Assert.True(process.WaitForExit(60_000), "child CLI process did not exit in time");
+
+		Assert.Equal(2, process.ExitCode);
+		Assert.Contains("ERROR: --new-key requires a value", stderr, StringComparison.Ordinal);
+		Assert.Empty(stdout);
+	}
 
 	// ---- fixtures & helpers ----
 

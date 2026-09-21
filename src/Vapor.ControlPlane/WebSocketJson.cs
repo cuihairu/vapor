@@ -14,7 +14,8 @@ public static class WebSocketJson
 
 		try
 		{
-			while (true)
+			bool endOfMessage = false;
+			while (!endOfMessage)
 			{
 				var result = await socket.ReceiveAsync(chunk, cancellationToken).ConfigureAwait(false);
 				if (result.MessageType == WebSocketMessageType.Close)
@@ -23,10 +24,7 @@ public static class WebSocketJson
 				}
 
 				buffer.Write(new ReadOnlySpan<byte>(chunk, 0, result.Count));
-				if (result.EndOfMessage)
-				{
-					break;
-				}
+				endOfMessage = result.EndOfMessage;
 			}
 
 			return JsonSerializer.Deserialize<T>(buffer.WrittenSpan, JsonDefaults.Options) ?? throw new InvalidOperationException("invalid JSON message");

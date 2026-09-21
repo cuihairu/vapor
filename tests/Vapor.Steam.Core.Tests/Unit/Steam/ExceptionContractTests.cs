@@ -43,4 +43,22 @@ public class ExceptionContractTests
 		Assert.Equal("two factor required", wrapped.Message);
 		Assert.Same(inner, wrapped.InnerException);
 	}
+
+	[Fact]
+	public void AchievementWriteResult_ToString_ReflectsSuccessAndVerification()
+	{
+		// The record's synthesized ToString is part of the result surface — logs
+		// and assertions rely on it. (Collection members render as their runtime
+		// type name, so the entries themselves never appear in the output.)
+		var result = new AchievementWriteResult(
+			Success: true,
+			Result: SteamResult.OK,
+			Entries: [new AchievementWriteEntry("ACH_BEAT_GAME", true, null)],
+			Verified: true);
+
+		string text = result.ToString();
+
+		Assert.StartsWith("AchievementWriteResult { Success = True", text, StringComparison.Ordinal);
+		Assert.EndsWith("Verified = True }", text, StringComparison.Ordinal);
+	}
 }

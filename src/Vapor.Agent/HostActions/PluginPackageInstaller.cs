@@ -16,8 +16,12 @@ namespace Vapor.Agent;
 public sealed class PluginPackageInstaller
 {
 	/// <summary>Hard cap on downloaded package size; the whole package is held in
-	/// memory for checksum verification, so an unbounded download would be an OOM lever.</summary>
-	internal const long MaxPackageBytes = 128 * 1024 * 1024;
+	/// memory for checksum verification, so an unbounded download would be an OOM lever.
+	/// Tests shrink <see cref="MaxPackageBytes"/> to exercise the streaming cap.</summary>
+	internal const long DefaultMaxPackageBytes = 128 * 1024 * 1024;
+
+	/// <summary>Per-instance size cap (defaults to <see cref="DefaultMaxPackageBytes"/>).</summary>
+	internal long MaxPackageBytes { get; init; } = DefaultMaxPackageBytes;
 
 	private readonly string _pluginsRoot;
 	private readonly Func<HttpClient> _httpClientFactory;
@@ -141,11 +145,10 @@ public sealed class PluginPackageInstaller
 				true, null, manifest.Id, manifest.Version, replaced,
 				loaded.Actions.Select(a => a.Name).Order(StringComparer.Ordinal).ToList());
 		}
-		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-		{
-			throw;
-		}
-		catch (Exception ex)
+		// Cancellation must never be surfaced as an install failure: the OCE arm
+		// of the filter rethrows it (the filter form keeps the transparency
+		// guarantee on a line the tests can always reach).
+		catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
 		{
 			_logger.LogWarning(ex, "Plugin install from {Url} failed after staging", SensitiveDataRedactor.Redact(url));
 			// The previous plugin was possibly unloaded but the new one failed to load;

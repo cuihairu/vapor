@@ -553,6 +553,42 @@ public sealed class CrawlRunWorkerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task BatchOutputEntriesWithoutAppId_AreSkipped()
+	{
+		// Agent actions are third-party code: a batch row with a zero or missing
+		// app_id must be dropped rather than recorded as "app 0".
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+		_jobs.RawOutputs[jobId] = new Dictionary<string, object?>
+		{
+			["games"] = new List<object?>
+			{
+				new Dictionary<string, object?> { ["app_id"] = 0, ["name"] = "zero-id" },
+				new Dictionary<string, object?> { ["name"] = "missing-id" },
+				new Dictionary<string, object?> { ["app_id"] = 570, ["name"] = "game-570" }
+			},
+			["errors"] = new List<object?>
+			{
+				new Dictionary<string, object?> { ["app_id"] = 0, ["error"] = "boom" },
+				new Dictionary<string, object?> { ["error"] = "also boom" }
+			}
+		};
+
+		await worker.RunTickAsync(CancellationToken.None); // collect
+
+		var rows = await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1"));
+		var okRow = Assert.Single(rows);
+		Assert.True(okRow.Ok);
+		Assert.Equal(570U, okRow.AppId);
+		Assert.Equal(1, worker.AppsSucceeded);
+	}
+
+	[Fact]
 	public async Task KeepRuns_PrunesOldRunsOnCompletion()
 	{
 		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
@@ -742,6 +778,9 @@ internal sealed class FakeCrawlJobStore : IJobStore
 	public bool CancelCanceledThrows { get; set; }
 	/// <summary>Exceptions thrown from GetJob once each (OCE → rethrow path, IOException → swallow path).</summary>
 	public Queue<Exception> GetJobExceptions { get; } = new();
+	/// <summary>Job snapshots returned from GetJob before falling through to the dictionary
+	/// (deterministic poll sequences, e.g. a pass where the task row is not yet visible).</summary>
+	public Queue<JobWithTasks> GetJobReplies { get; } = new();
 	public Func<CreateJobRequest, bool>? ThrowOnCreateWhen { get; set; }
 	/// <summary>Awaited inside CreateJob before the throw decision (parks a dispatch mid-call).</summary>
 	public Func<CreateJobRequest, Task>? CreateGate { get; set; }
@@ -781,6 +820,11 @@ internal sealed class FakeCrawlJobStore : IJobStore
 		if (GetJobExceptions.Count > 0)
 		{
 			throw GetJobExceptions.Dequeue();
+		}
+
+		if (GetJobReplies.Count > 0)
+		{
+			return Task.FromResult(GetJobReplies.Dequeue());
 		}
 
 		if (!_jobs.TryGetValue(jobId, out JobWithTasks? jobWithTasks))

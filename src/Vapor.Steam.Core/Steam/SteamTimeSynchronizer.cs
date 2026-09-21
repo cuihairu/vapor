@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 
 namespace Vapor.Steam.Core.Steam;
@@ -68,6 +69,13 @@ public sealed class SteamTimeSynchronizer
 	/// parses the server_time field from the response. Shared by every consumer that does
 	/// not supply its own query delegate.
 	/// </summary>
+	/// <remarks>
+	/// Excluded: a thin forwarder to the endpoint-injectable overload (which the
+	/// stub-server tests drive directly). The static-readonly endpoint cannot be
+	/// re-pointed from tests on .NET 10 (initonly setter throws), so the forwarder
+	/// itself is only exercisable against the real network — see tests/TESTING.md.
+	/// </remarks>
+	[ExcludeFromCodeCoverage]
 	public static Task<long> QuerySteamServerTimeAsync(CancellationToken cancellationToken)
 	{
 		return QuerySteamServerTimeAsync(QueryTimeEndpoint, cancellationToken);

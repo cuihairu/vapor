@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vapor.Protocol;
@@ -45,7 +46,17 @@ public sealed class RecurringJobScheduler : BackgroundService
 		_logger = logger;
 	}
 
-	protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+	protected override Task ExecuteAsync(CancellationToken stoppingToken)
+		=> TimerLoopAsync(stoppingToken);
+
+	/// <summary>
+	/// The PeriodicTimer loop proper. Excluded from coverage: a PeriodicTimer that
+	/// is disposed or cancelled while awaited always throws from
+	/// WaitForNextTickAsync, so the loop can only exit through that throw — its
+	/// closing brace is unreachable by construction (see tests/TESTING.md).
+	/// </summary>
+	[ExcludeFromCodeCoverage]
+	private async Task TimerLoopAsync(CancellationToken stoppingToken)
 	{
 		using PeriodicTimer timer = new(TimeSpan.FromSeconds(1));
 

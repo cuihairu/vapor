@@ -111,10 +111,10 @@ public sealed record ProxyOptions
 				throw Invalid(value, paramName, "user name is missing before ':' in credentials");
 			}
 
-			userName = Decode(userInfo, userName, value, paramName);
+			userName = Decode(userName);
 			if (password != null)
 			{
-				password = Decode(userInfo, password, value, paramName);
+				password = Decode(password);
 			}
 		}
 
@@ -217,21 +217,16 @@ public sealed record ProxyOptions
 		return (host, port, true);
 	}
 
-	private static string Decode(string userInfo, string component, string value, string paramName)
+	private static string Decode(string component)
 	{
 		if (!component.Contains('%', StringComparison.Ordinal))
 		{
 			return component;
 		}
 
-		try
-		{
-			return Uri.UnescapeDataString(component);
-		}
-		catch (UriFormatException)
-		{
-			throw Invalid(value, paramName, $"invalid percent-encoding in credentials '{userInfo}'");
-		}
+		// Uri.UnescapeDataString is total on .NET (invalid escapes like "%zz" come
+		// back verbatim rather than throwing), so nothing here can fail.
+		return Uri.UnescapeDataString(component);
 	}
 
 	private static ArgumentException Invalid(string value, string paramName, string reason) =>

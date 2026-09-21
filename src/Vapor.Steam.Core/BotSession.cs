@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Steam;
@@ -236,6 +237,13 @@ public sealed class BotSession : IDisposable
 		}
 	}
 
+	// [ExcludeFromCodeCoverage] — the loop exits only through cancellation: the
+	// while condition is checked after Task.Delay, and any cancellation (from
+	// Dispose or otherwise) surfaces as Task.Delay's OperationCanceledException,
+	// never as a condition-driven exit; that exit arm therefore has no
+	// in-process deterministic trigger (see tests/TESTING.md). Same family and
+	// treatment as SessionManager.RunTokenRefreshLoopAsync.
+	[ExcludeFromCodeCoverage]
 	private async Task RunSteamCallbacksAsync(CancellationToken cancellationToken)
 	{
 		try

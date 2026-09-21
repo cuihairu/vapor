@@ -153,6 +153,110 @@ public sealed class SqliteJobStoreTests
 		await store.RequeueTask("does-not-exist", TimeSpan.FromSeconds(5), cts.Token);
 	}
 
+	// ── row-vanished arms: another process can claim/finish a row between two of
+	// the store's statements on a shared file. A BEFORE trigger that RAISE(IGNORE)s
+	// the matching UPDATE makes the store's own statement report zero affected rows
+	// — the deterministic form of that race (no wall-clock interleave). ──
+
+	[Fact]
+	public async Task ClaimNextQueuedTask_ClaimUpdateTouchesNothing_YieldsNullKeepingTaskQueued()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+			JobWithTasks created = await store.CreateJob(
+				new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+
+			SabotageTaskUpdates(dbPath, "claim_sabotage", "NEW.status = 'Running'");
+
+			Assert.Null(await store.ClaimNextQueuedTask("local", cts.Token));
+
+			// The task is untouched: still queued for the next worker.
+			JobWithTasks job = await store.GetJob(created.Job.Id, cts.Token);
+			Assert.Equal(JobTaskStatus.Queued, job.Tasks.Single().Status);
+		}
+		finally
+		{
+			File.Delete(dbPath);
+		}
+	}
+
+	[Fact]
+	public async Task SetTaskResult_ResultUpdateTouchesNothing_ThrowsNotFound()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+			await store.CreateJob(new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+			JobTask claimed = (await store.ClaimNextQueuedTask("local", cts.Token))!;
+
+			SabotageTaskUpdates(dbPath, "result_sabotage", "NEW.status = 'Finished'");
+
+			var result = new TaskResult(claimed.Id, Success: true, Error: null, Output: null,
+				DateTimeOffset.UtcNow, claimed.Attempt);
+			NotFoundException ex = await Assert.ThrowsAsync<NotFoundException>(
+				() => store.SetTaskResult(result, cts.Token));
+			Assert.Equal("task not running", ex.Message);
+		}
+		finally
+		{
+			File.Delete(dbPath);
+		}
+	}
+
+	[Fact]
+	public async Task TriggerScheduledJob_AdvanceTouchesNothing_ReturnsNull()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+			JobWithTasks template = await store.CreateJob(
+				new CreateJobRequest("ping", null, ["alice"], null, null, new JobSchedule(IntervalSeconds: 60)),
+				cts.Token);
+
+			using (var raw = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+			{
+				raw.Open();
+				using var cmd = raw.CreateCommand();
+				cmd.CommandText =
+					$"CREATE TRIGGER advance_sabotage BEFORE UPDATE ON jobs WHEN NEW.id = '{template.Job.Id}' " +
+					"BEGIN SELECT RAISE(IGNORE); END;";
+				cmd.ExecuteNonQuery();
+			}
+
+			Job? triggered = await store.TriggerScheduledJob(
+				template.Job.Id, DateTimeOffset.UtcNow.AddSeconds(60), extraMeta: null, cts.Token);
+
+			Assert.Null(triggered);
+		}
+		finally
+		{
+			File.Delete(dbPath);
+		}
+	}
+
+	/// <summary>
+	/// Installs a BEFORE trigger that silently no-ops the matching task UPDATE:
+	/// RAISE(IGNORE) skips the row and reports zero changes, deterministically
+	/// reproducing "another process took the row first" (see tests/TESTING.md).
+	/// </summary>
+	private static void SabotageTaskUpdates(string dbPath, string triggerName, string whenClause)
+	{
+		using var raw = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}");
+		raw.Open();
+		using var cmd = raw.CreateCommand();
+		cmd.CommandText =
+			$"CREATE TRIGGER {triggerName} BEFORE UPDATE ON tasks WHEN {whenClause} " +
+			"BEGIN SELECT RAISE(IGNORE); END;";
+		cmd.ExecuteNonQuery();
+	}
+
 	[Fact]
 	public async Task SetTaskResult_QueuedTaskNeverClaimed_ThrowsNotFound()
 	{

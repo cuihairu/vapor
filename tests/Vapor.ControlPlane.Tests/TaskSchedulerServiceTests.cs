@@ -188,6 +188,24 @@ public sealed class TaskSchedulerServiceTests
 		Assert.Equal(TimeSpan.FromSeconds(300), store.StaleRequeueLeases[0]);
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_PreCanceledToken_UnwindsThroughTheTimerLoop()
+	{
+		// The host calls ExecuteAsync with the application lifetime token; a
+		// pre-cancelled token drives the same unwind deterministically — control
+		// reaches the loop call and the 250ms timer's await throws immediately.
+		var registry = new AgentRegistry();
+		var scheduler = new TaskSchedulerService(
+			registry, new FakeJobStore(), new RecordingEventBroker(), CreateConfig());
+		var execute = typeof(TaskSchedulerService).GetMethod(
+			"ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		Assert.NotNull(execute);
+
+		Task task = (Task)execute.Invoke(scheduler, [new CancellationToken(canceled: true)])!;
+
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+	}
+
 	private static Config CreateConfig() => new("", new HashSet<string>(StringComparer.Ordinal), "test.db", 300, false);
 
 	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0)

@@ -473,6 +473,45 @@ public sealed class BotSessionBranchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task CommandLoop_ExitsCleanly_WhenTheCommandChannelCompletes()
+	{
+		// Dispose cancels the CTS, so the loop normally ends through the
+		// OperationCanceledException arm; completing the channel instead must
+		// let the await-foreach drain and finish just as cleanly.
+		BotSession session = CreateSession();
+		var channel = (Channel<SessionCommand>)typeof(BotSession)
+			.GetField("_commandChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(session)!;
+		channel.Writer.Complete();
+		var background = (Task)typeof(BotSession)
+			.GetField("_backgroundTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(session)!;
+
+		await background;
+
+		Assert.Equal(TaskStatus.RanToCompletion, background.Status);
+	}
+
+	[Fact]
+	public async Task SteamCallbackLoop_TicksThenUnwindsOnCancellation()
+	{
+		// Driven directly (not via Task.Run) so the loop is guaranteed to enter:
+		// one tick of the 100ms poll cadence must land before the cancellation.
+		BotSession session = CreateSession();
+		var method = typeof(BotSession).GetMethod(
+			"RunSteamCallbacksAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		Assert.NotNull(method);
+		using var cts = new CancellationTokenSource();
+		var loop = (Task)method.Invoke(session, [cts.Token])!;
+
+		await Task.Delay(300, CancellationToken.None); // ≥3 windows of the 100ms cadence
+		cts.Cancel();
+
+		await loop.WaitAsync(TimeSpan.FromSeconds(10));
+		Assert.Equal(TaskStatus.RanToCompletion, loop.Status);
+	}
+
+	[Fact]
 	public void Dispose_AfterCtsAlreadyDisposed_DoesNotThrow()
 	{
 		var session = CreateSession(withEventCallback: false);

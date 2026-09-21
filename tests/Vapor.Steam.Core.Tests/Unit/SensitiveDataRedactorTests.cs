@@ -33,6 +33,31 @@ public sealed class SensitiveDataRedactorTests
 	}
 
 	[Fact]
+	public void Redact_WithArraysAndNonStringScalars_PreservesStructureRedactsOnlySensitiveKeys()
+	{
+		const string input = """
+			{"ids":[1,2,3],"flags":[true,false,null],"apps":[{"name":"steam","price":9.99},{"password":"hunter2","port":1080}],"count":7}
+			""";
+
+		var redacted = SensitiveDataRedactor.Redact(input);
+		using var document = JsonDocument.Parse(redacted);
+		var root = document.RootElement;
+
+		// Arrays survive with non-string scalars written through untouched.
+		Assert.Equal(3, root.GetProperty("ids").GetArrayLength());
+		Assert.Equal(1, root.GetProperty("ids")[0].GetInt32());
+		Assert.True(root.GetProperty("flags")[0].GetBoolean());
+		Assert.Equal(JsonValueKind.Null, root.GetProperty("flags")[2].ValueKind);
+		Assert.Equal(7, root.GetProperty("count").GetInt32());
+
+		// Objects inside arrays still redact sensitive keys; numbers pass through.
+		Assert.Equal(9.99m, root.GetProperty("apps")[0].GetProperty("price").GetDecimal());
+		Assert.Equal("<redacted>", root.GetProperty("apps")[1].GetProperty("password").GetString());
+		Assert.Equal(1080, root.GetProperty("apps")[1].GetProperty("port").GetInt32());
+		Assert.DoesNotContain("hunter2", redacted, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void Redact_WithKeyValueText_RedactsSensitiveFields()
 	{
 		const string input = "password=hunter2 access_token=abc123 refreshToken=xyz789 authorization=BearerToken code=123456";

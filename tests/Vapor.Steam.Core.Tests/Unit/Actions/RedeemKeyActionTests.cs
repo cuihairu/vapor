@@ -523,6 +523,24 @@ public class RedeemKeyActionTests
 		Assert.Equal("receipt-line", result.Output["receiptDetails"]);
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_TwoSegmentKey_FallsThroughToEdgeMasking()
+	{
+		// A key with a dash but fewer than three segments escapes the
+		// segment-masking branch and lands on the length-based masking rules.
+		var session = CreateTestSession("test_account");
+		var payload = new Dictionary<string, object?>
+		{
+			["key"] = "ABCDEFGHIJ-KLMNO"
+		};
+
+		var result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.NotNull(result.Output);
+		var maskedKey = result.Output["key"]?.ToString() ?? "";
+		Assert.Equal("A**************O", maskedKey);
+	}
+
 	private BotSession CreateTestSession(string accountName, ISteamClientManager? steamClientManager = null)
 	{
 		var credentials = new AccountCredentials(accountName, "test_password");

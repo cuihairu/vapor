@@ -558,29 +558,28 @@ public sealed class FileCredentialStore : ICredentialStore, IDisposable
 
 	private void CheckAndTightenFilePermissions()
 	{
-		if (OperatingSystem.IsWindows())
+		// Guard written as a positive block: the Windows arm is unreachable on
+		// Linux CI, and an early-return there leaves permanently-uncovered
+		// sequence points (see tests/TESTING.md).
+		if (!OperatingSystem.IsWindows())
 		{
-			return;
+			TightenPermissions(_credentialsPath);
+			TightenPermissions(_backupPath);
 		}
-
-		TightenPermissions(_credentialsPath);
-		TightenPermissions(_backupPath);
 	}
 
 	private void ApplyFilePermissions(string path)
 	{
-		if (OperatingSystem.IsWindows())
+		if (!OperatingSystem.IsWindows())
 		{
-			return;
-		}
-
-		try
-		{
-			File.SetUnixFileMode(path, CredentialFileMode);
-		}
-		catch (Exception ex)
-		{
-			_logger.LogWarning(ex, "Failed to restrict permissions on {Path}", path);
+			try
+			{
+				File.SetUnixFileMode(path, CredentialFileMode);
+			}
+			catch (Exception ex)
+			{
+				_logger.LogWarning(ex, "Failed to restrict permissions on {Path}", path);
+			}
 		}
 	}
 

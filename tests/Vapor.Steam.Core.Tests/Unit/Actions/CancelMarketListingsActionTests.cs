@@ -315,6 +315,29 @@ public sealed class CancelMarketListingsActionTests : IDisposable
 		return session;
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_TwentyFullPages_ExitsThroughThePageBudget()
+	{
+		// Every page comes back full (500 listings, huge total count), so the
+		// paging loop can only end through its page budget — never the
+		// short-page break.
+		var webHandler = new SteamWebHandler(
+			new SteamWebHandlerConfig { RateLimitIntervalMs = 0, MaxRetries = 1, EnableCircuitBreaker = false },
+			NullLogger<SteamWebHandler>.Instance,
+			new FullPagesHandler());
+		var action = new CancelMarketListingsAction(
+			_loggerMock.Object,
+			_ => new SteamMarketClient(webHandler, NullLogger<SteamMarketClient>.Instance));
+		var session = CreateSession(webHandler);
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["dry_run"] = true },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+	}
+
 	private (CancelMarketListingsAction Action, MarketFakeHandler Fake, BotSession Session) CreateAction()
 	{
 		var fake = new MarketFakeHandler { FailIds = [] };
@@ -344,6 +367,31 @@ public sealed class CancelMarketListingsActionTests : IDisposable
 	{
 		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
 			Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+	}
+
+	/// <summary>Serves PageSize-sized listing pages forever with a huge total count.</summary>
+	private sealed class FullPagesHandler : HttpMessageHandler
+	{
+		private readonly string _pageJson = BuildFullPage();
+
+		private static string BuildFullPage()
+		{
+			// Minimal entries: a listingid so the parser keeps them, plus a price
+			// so a page round-trips; nothing here matches any filter.
+			var listings = new List<string>(500);
+			for (int i = 0; i < 500; i++)
+			{
+				listings.Add($$"""{"listingid":"full-{{i}}","price":1,"fee":1,"game_appid":730,"contextid":"2","assetid":"asset-{{i}}"}""");
+			}
+
+			return $$"""{"success":true,"num_active_listings":99999,"total_count":99999,"mylistings":[{{string.Join(",", listings)}}],"assets":{},"hovers":""}""";
+		}
+
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+			Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+			{
+				Content = new StringContent(_pageJson, System.Text.Encoding.UTF8, "application/json")
+			});
 	}
 
 	private sealed class ThrowingHandler : HttpMessageHandler

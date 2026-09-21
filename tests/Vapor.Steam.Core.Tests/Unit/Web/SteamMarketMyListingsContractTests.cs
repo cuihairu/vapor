@@ -35,6 +35,29 @@ public sealed class SteamMarketMyListingsContractTests
 	}
 
 	[Fact]
+	public void ParseMyListings_AssetTableSkipsNonObjectNodes()
+	{
+		// Page data comes from Steam's web frontend: a non-object app node or
+		// context node in the assets table must be skipped, not crash the join.
+		const string json = """
+			{
+				"success": true,
+				"num_active_listings": 0,
+				"mylistings": [],
+				"assets": {
+					"753": "not-an-object",
+					"6": { "2": 42, "3": { "id": "asset-3", "icon_url": "x" } }
+				}
+			}
+			""";
+		using var doc = JsonDocument.Parse(json);
+
+		var page = SteamMarketClient.ParseMyListings(doc.RootElement, start: 0, pageSize: 100);
+
+		Assert.Empty(page.Listings);
+	}
+
+	[Fact]
 	public void Contract_ParsesListingsWithPricingAndAssetSummary()
 	{
 		var page = Replay();

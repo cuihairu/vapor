@@ -1,3 +1,5 @@
+using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using Vapor.Steam.Core.Security;
 using Xunit;
@@ -163,5 +165,24 @@ public sealed class CredentialStoreRotatorTests : IDisposable
 	{
 		Assert.Throws<FileNotFoundException>(
 			() => CredentialStoreRotator.Rotate(_storePath + ".missing", OldKey, NewKey));
+	}
+
+	[Fact]
+	public void CredentialRotationException_ConstructorChain_CarriesMessageAndInner()
+	{
+		// Full ctor surface of the private rotation exception: reflection keeps the
+		// type private while pinning the contract every future throw site relies on.
+		Type exType = typeof(CredentialStoreRotator).GetNestedType(
+			"CredentialRotationException", BindingFlags.NonPublic)!;
+		var parameterless = (Exception)Activator.CreateInstance(exType, nonPublic: true)!;
+		Assert.StartsWith("Exception of type", parameterless.Message, StringComparison.Ordinal);
+
+		var inner = new IOException("disk gone");
+		var full = (Exception)exType.GetConstructor(
+				BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null,
+				[typeof(string), typeof(Exception)], null)!
+			.Invoke(["rotation failed", inner]);
+		Assert.Equal("rotation failed", full.Message);
+		Assert.Same(inner, full.InnerException);
 	}
 }

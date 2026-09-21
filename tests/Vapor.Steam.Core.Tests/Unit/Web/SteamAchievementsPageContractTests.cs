@@ -147,4 +147,30 @@ public sealed class SteamAchievementsPageContractTests
 		Assert.Equal(1, result.TotalCount);
 		Assert.Equal(0, result.UnlockedCount); // no unlock-time block = locked
 	}
+
+	[Fact]
+	public void Parse_RowWithoutIcon_IsSkippedInsteadOfCrashing()
+	{
+		// A row the icon regex cannot match (markup drift, ad slot, emoji-only
+		// row) must be dropped — an achievement without an icon has no API name
+		// hint, and inventing one would fail loudly at write time.
+		const string html = """
+			<div id="personalAchieve" class="achievements_list ">
+				1 of 2 (50%) achievements earned:
+				<div role="button" class="achieveRow">
+					<div class="achieveImgHolder"><img src="https://shared.akamai.steamstatic.com/community_assets/images/apps/400/only_ach_bw.jpg"></div>
+					<div class="achieveTxtHolder"><div class="achieveTxt"><h3 class="ellipsis">Only One</h3></div></div>
+				</div>
+				<div role="button" class="achieveRow">
+					<div class="achieveTxtHolder"><div class="achieveTxt"><h3 class="ellipsis">Ghost Row</h3></div></div>
+				</div>
+			</div>
+			""";
+
+		var result = SteamAchievementsClient.ParseAchievementsPage(html);
+
+		var only = Assert.Single(result.Achievements);
+		Assert.Equal("Only One", only.DisplayName);
+		Assert.Equal(2, result.TotalCount); // summary stays authoritative over the surviving rows
+	}
 }

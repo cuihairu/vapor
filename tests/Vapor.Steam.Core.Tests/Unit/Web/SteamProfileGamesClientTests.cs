@@ -48,6 +48,29 @@ public sealed class SteamProfileGamesClientTests
 	}
 
 	[Fact]
+	public void MarkerFollowedByExtraWhitespace_StillFindsTheArray()
+	{
+		// The live page wraps lines, so the array opener may sit after the
+		// marker's single trailing space; the scanner must skip to it.
+		var result = Parse("<script>var rgGames =  [{\"appid\":220,\"name\":\"Portal 2\"}];</script>");
+
+		var game = Assert.Single(result);
+		Assert.Equal(220u, game.AppId);
+	}
+
+	[Fact]
+	public void NestedArraysInsideEntries_TerminateAtTheOuterBracket()
+	{
+		// Entries may carry nested arrays (tags, categories): an inner ']' only
+		// unwinds one depth level — the scan must keep going until the outer one.
+		var result = Parse(
+			"<script>var rgGames = [{\"appid\":440,\"name\":\"TF2\",\"tags\":[\"fps\",\"valve\"]}];</script>");
+
+		var game = Assert.Single(result);
+		Assert.Equal(440u, game.AppId);
+	}
+
+	[Fact]
 	public void PayloadWithTerminatorsInNames_ParsesCompletely()
 	{
 		// Semicolons, brackets and escaped quotes inside string values must

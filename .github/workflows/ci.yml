@@ -123,11 +123,11 @@ jobs:
         fail_ci_if_error: false
 
     # 覆盖率门禁：合计行覆盖率跌破基线即红。基线与 tests/TESTING.md 的统计
-    # 同步演进（当前 2026-09-19 基线 99.6%）。门禁留 0.1 个百分点的时序边沿
-    # 缓冲（Monitoring 等的断连 catch 行多轮实测波动 ±0.1%）——跌破 99.5%
-    # 意味着真实的测试/代码回退；提升测试后在这里同步抬高。
+    # 同步演进（2026-09-21 起合计基线 100.0%，分母仅余 2 行定性死分支）。
+    # 门禁 99.9% —— 跌破即真实的测试/代码回退（新增代码出现 >2 行未覆盖
+    # 缺口），而非时序噪声。
     - name: Coverage gate
-      run: python3 scripts/coverage-summary.py tests --min 99.5
+      run: python3 scripts/coverage-summary.py tests --min 99.9
 
   format:
     runs-on: ubuntu-latest

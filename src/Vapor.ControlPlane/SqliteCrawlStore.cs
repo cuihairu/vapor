@@ -225,12 +225,15 @@ public sealed class SqliteCrawlStore : IDisposable
 		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
 		try
 		{
-			string? planId;
+			CrawlPlan? plan;
 			long expectedDue;
 			using (var select = _connection.CreateCommand())
 			{
+				// The queued row IS the plan row: reading the full record here (instead
+				// of re-reading by id afterwards) leaves no window for the plan to
+				// vanish mid-claim — the CAS below is the only concurrency gate needed.
 				select.CommandText = """
-					SELECT id, next_run_at_ms FROM crawl_plans
+					SELECT * FROM crawl_plans
 					WHERE enabled = 1 AND next_run_at_ms IS NOT NULL AND next_run_at_ms <= $now
 					ORDER BY next_run_at_ms, id LIMIT 1;
 					""";
@@ -241,14 +244,8 @@ public sealed class SqliteCrawlStore : IDisposable
 					return null;
 				}
 
-				planId = reader.GetString(0);
-				expectedDue = reader.GetInt64(1);
-			}
-
-			CrawlPlan? plan = await GetPlanUnsafeAsync(planId, cancellationToken).ConfigureAwait(false);
-			if (plan == null)
-			{
-				return null;
+				plan = ReadPlanRow(reader);
+				expectedDue = reader.GetInt64(reader.GetOrdinal("next_run_at_ms"));
 			}
 
 			using var claim = _connection.CreateCommand();
@@ -256,7 +253,7 @@ public sealed class SqliteCrawlStore : IDisposable
 				UPDATE crawl_plans SET run_count = run_count + 1, last_run_id = $runId, last_run_at_ms = $now
 				WHERE id = $id AND enabled = 1 AND next_run_at_ms = $expected;
 				""";
-			claim.Parameters.AddWithValue("$id", planId);
+			claim.Parameters.AddWithValue("$id", plan.Id);
 			claim.Parameters.AddWithValue("$runId", runId);
 			claim.Parameters.AddWithValue("$now", nowMs);
 			claim.Parameters.AddWithValue("$expected", expectedDue);
@@ -428,15 +425,6 @@ public sealed class SqliteCrawlStore : IDisposable
 	}
 
 	// --- internals ---
-
-	private async Task<CrawlPlan?> GetPlanUnsafeAsync(string planId, CancellationToken cancellationToken)
-	{
-		using var cmd = _connection.CreateCommand();
-		cmd.CommandText = "SELECT * FROM crawl_plans WHERE id = $id;";
-		cmd.Parameters.AddWithValue("$id", planId);
-		using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-		return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? ReadPlanRow(reader) : null;
-	}
 
 	private static void BindPlan(SqliteCommand cmd, CrawlPlan plan)
 	{

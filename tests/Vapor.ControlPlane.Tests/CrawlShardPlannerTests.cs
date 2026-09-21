@@ -48,6 +48,24 @@ public sealed class CrawlShardPlannerTests
 	}
 
 	[Fact]
+	public void Build_OverrideSendingEveryAppToOneAccount_SkipsTheIdleAccounts()
+	{
+		var pool = new[] { Spec("alice"), Spec("bob") };
+
+		var plan = CrawlShardPlanner.Build(
+			new uint[] { 42 },
+			pool,
+			new Dictionary<uint, string> { [42] = "alice" },
+			shardSize: 200);
+
+		// bob's bucket stays empty: no assignment (and no empty chunk) for him.
+		Assert.Empty(plan.Warnings);
+		CrawlAssignment only = Assert.Single(plan.Assignments);
+		Assert.Equal("alice", only.Account);
+		Assert.Equal(new uint[] { 42 }, only.AppIds);
+	}
+
+	[Fact]
 	public void Build_OverrideNamingAccountOutsidePool_FallsBackToRotationWithWarning()
 	{
 		var pool = new[] { Spec("alice"), Spec("bob") };

@@ -164,4 +164,19 @@ public sealed class WebRequestMetricsTests
 
 		Assert.Equal(0, metrics.Snapshot().FailureRate);
 	}
+
+	[Fact]
+	public void CircuitBreakerOpenException_ConstructorChain_CarriesMessageAndInner()
+	{
+		// Full ctor surface contract: every overload must survive the message and
+		// inner exception the code (or a future caller) hands it. The parameterless
+		// overload carries the runtime's default exception message.
+		Assert.StartsWith("Exception of type", new CircuitBreakerOpenException().Message, StringComparison.Ordinal);
+		Assert.Equal("circuit tripped", new CircuitBreakerOpenException("circuit tripped").Message);
+
+		var inner = new InvalidOperationException("socket died");
+		var ex = new CircuitBreakerOpenException("circuit open", inner);
+		Assert.Equal("circuit open", ex.Message);
+		Assert.Same(inner, ex.InnerException);
+	}
 }

@@ -31,6 +31,21 @@ public sealed class PluginEventDispatcherTests
 	}
 
 	[Fact]
+	public async Task Remove_UnknownPlugin_ReportsFalse()
+	{
+		// Double-remove and never-subscribed probes must read as "not registered"
+		// instead of throwing or reporting a stale success.
+		await using var dispatcher = new PluginEventDispatcher(NullLoggerFactory.Instance);
+
+		var plugin = new RecordingEventPlugin();
+		Assert.False(dispatcher.Remove(plugin));
+
+		dispatcher.Add(plugin);
+		Assert.True(dispatcher.Remove(plugin));
+		Assert.False(dispatcher.Remove(plugin));
+	}
+
+	[Fact]
 	public async Task FailingSubscriber_DoesNotAffectOthers()
 	{
 		await using var dispatcher = new PluginEventDispatcher(NullLoggerFactory.Instance);

@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.ControlPlane;
@@ -2123,6 +2124,80 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 
 		Assert.DoesNotContain(jobs.Created, r => r.Action == "get_trade_offers");
 		Assert.Equal(createdBefore, jobs.Created.Count);
+	}
+
+	// ── defensive-arm contracts: the two trade guards below cannot be reached
+	// through the reconcile flow — an agent loss is swept at the top of the
+	// next pass (assignment cancelled and cleared) before any settle could
+	// chain a confirmation, and a dry-run pass never holds a non-empty accept
+	// queue because the scan that fills the queue is itself dry-run-gated.
+	// They are driven directly so the guard behavior stays pinned if those
+	// invariants ever change (see tests/TESTING.md). ──
+
+	[Fact]
+	public void ConfirmationWithoutAgent_SurfacesGoneDeviation()
+	{
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(new AccountStore(), agents, jobs);
+		var spec = new AccountSpec("alice", true, AccountDesiredState.Online, Region: "us-east");
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		object runtime = Activator.CreateInstance(runtimeType, nonPublic: true)!;
+		runtimeType.GetField("AssignedAgent")!.SetValue(runtime, "agent-1");
+
+		// The connected set no longer holds agent-1: the confirmation must
+		// surface the deviation instead of dispatching.
+		InvokeInstance(reconciler, "DispatchTradeConfirmAsync", spec, runtime,
+			new Dictionary<string, ConnectedAgent>(), new Dictionary<string, int>(), 111UL,
+			CancellationToken.None);
+
+		Assert.Equal(
+			"gift offer 111 accepted but its agent is gone for the mobile confirmation",
+			(string?)runtimeType.GetField("LastDeviation")!.GetValue(runtime));
+		Assert.Empty(jobs.Created);
+	}
+
+	[Fact]
+	public void DryRunQueuedAccept_SurfacesGuardDeviationWithoutDispatch()
+	{
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(new AccountStore(), agents, jobs, dryRun: true);
+		var spec = new AccountSpec("alice", true, AccountDesiredState.Online, Region: "us-east");
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		object runtime = Activator.CreateInstance(runtimeType, nonPublic: true)!;
+		runtimeType.GetField("TradeOffersToAccept")!.SetValue(runtime,
+			new List<DesiredStateReconciler.PendingGiftOffer> { new(111, Partner64) });
+		var connected = new Dictionary<string, ConnectedAgent> { ["agent-1"] = agents.Get("agent-1")! };
+
+		InvokeInstance(reconciler, "ReconcileTradeAsync", spec, runtime, connected,
+			new Dictionary<string, int>(), DateTimeOffset.UtcNow, CancellationToken.None);
+
+		Assert.Equal($"would accept gift offer 111 from {Partner64}",
+			(string?)runtimeType.GetField("LastDeviation")!.GetValue(runtime));
+		Assert.Empty(jobs.Created);
+		Assert.Equal(1L, reconciler.DryRunDeviations);
+	}
+
+	/// <summary>
+	/// Reflectively awaits a private instance method on the reconciler,
+	/// surfacing the real exception so asserts can match it.
+	/// </summary>
+	private static void InvokeInstance(
+		DesiredStateReconciler target,
+		string method,
+		params object?[] args)
+	{
+		MethodInfo? info = typeof(DesiredStateReconciler).GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance);
+		Assert.NotNull(info);
+		try
+		{
+			((Task)info.Invoke(target, args)!).GetAwaiter().GetResult();
+		}
+		catch (TargetInvocationException ex) when (ex.InnerException is not null)
+		{
+			System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+		}
 	}
 
 	[Fact]

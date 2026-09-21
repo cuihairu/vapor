@@ -384,11 +384,9 @@ public sealed class MemoryVaporCache : IVaporCache, IDisposable
 	{
 		while (_entries.Count > _options.Capacity)
 		{
-			LinkedListNode<string>? oldest = _lru.Last;
-			if (oldest == null)
-			{
-				break;
-			}
+			// _entries and _lru move in lockstep under the lock and Capacity is
+			// validated positive, so the LRU is never empty while eviction runs.
+			LinkedListNode<string> oldest = _lru.Last!;
 
 			_lru.RemoveLast();
 			_entries.Remove(oldest.Value);

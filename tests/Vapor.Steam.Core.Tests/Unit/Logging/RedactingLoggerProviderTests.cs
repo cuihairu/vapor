@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Logging;
@@ -200,6 +201,26 @@ public sealed class RedactingLoggerProviderTests
 		object? inner = entry.Exception?.Data["InnerException"];
 		Assert.NotNull(inner);
 		Assert.DoesNotContain("inner-secret-xyz", inner.ToString()!, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void RedactedException_ConstructorChain_CarriesMessageAndInner()
+	{
+		// Full ctor surface of the private redaction exception: reflection keeps
+		// the type private while pinning the contract its throw sites rely on.
+		Type exType = typeof(RedactingLoggerProvider)
+			.GetNestedType("RedactingLogger", BindingFlags.NonPublic)!
+			.GetNestedType("RedactedException", BindingFlags.NonPublic)!;
+		var parameterless = (Exception)Activator.CreateInstance(exType, nonPublic: true)!;
+		Assert.StartsWith("Exception of type", parameterless.Message, StringComparison.Ordinal);
+
+		var inner = new TimeoutException("socket died");
+		var full = (Exception)exType.GetConstructor(
+				BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null,
+				[typeof(string), typeof(Exception)], null)!
+			.Invoke(["redacted", inner]);
+		Assert.Equal("redacted", full.Message);
+		Assert.Same(inner, full.InnerException);
 	}
 
 	[Fact]

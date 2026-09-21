@@ -247,6 +247,20 @@ public sealed class PluginApiTests
 	}
 
 	[Fact]
+	public async Task Uninstall_WhitespaceRouteSegmentIsRejected()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+
+		// A route segment can carry decoded whitespace (the "%20" URL form), which
+		// trims to an empty plugin id — the endpoint must reject it before dispatch.
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/uninstall/%20", new { agentIds = new[] { "agent-1" } });
+
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+		Assert.Contains("pluginId is required", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task Refresh_DispatchesToRequestedAgents()
 	{
 		await using var factory = CreateFactory();
@@ -323,6 +337,231 @@ public sealed class PluginApiTests
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 		Assert.Equal(0, doc.RootElement.GetProperty("agents").GetArrayLength());
+	}
+
+	[Fact]
+	public async Task Installed_ReturnsSeededMirrorEntries()
+	{
+		await using var factory = CreateFactory(services =>
+		{
+			services.RemoveAll<PluginInventory>();
+			var seeded = new PluginInventory();
+			seeded.Update("ghost-agent", DateTimeOffset.UnixEpoch, PluginInventoryTests.RoundTripForSeed(new Dictionary<string, object?>
+			{
+				["plugins"] = new List<object>
+				{
+					new Dictionary<string, object?>
+					{
+						["id"] = "vapor.echo", ["name"] = "Echo", ["version"] = "1.0.0", ["apiVersion"] = "1.0",
+						["trust"] = "official", ["permissions"] = new[] { "network" }, ["actions"] = new[] { "plugin_echo" }
+					}
+				}
+			}));
+			services.AddSingleton(seeded);
+		});
+		using var client = CreateAdminClient(factory);
+
+		using HttpResponseMessage response = await client.GetAsync("/v1/plugins/installed");
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		JsonElement agents = doc.RootElement.GetProperty("agents");
+		Assert.Equal(1, agents.GetArrayLength());
+		JsonElement agent = agents[0];
+		Assert.Equal("ghost-agent", agent.GetProperty("agentId").GetString());
+		Assert.Equal(DateTimeOffset.UnixEpoch, agent.GetProperty("reportedAt").GetDateTimeOffset());
+		JsonElement plugins = agent.GetProperty("plugins");
+		Assert.Equal(1, plugins.GetArrayLength());
+		Assert.Equal("vapor.echo", plugins[0].GetProperty("id").GetString());
+		Assert.Equal("official", plugins[0].GetProperty("trust").GetString());
+	}
+
+	[Fact]
+	public async Task PluginTaskResultOverWebSocket_RebuildsInstalledMirror()
+	{
+		// Full tunnel: an agent connects over the test server's WebSocket, a
+		// catalog-mode install dispatches through TaskSchedulerService, the
+		// agent reports back, and the installed mirror rebuilds from the
+		// plugin_* task_result — the only path that feeds L2947 in Program.cs.
+		var index = """{"plugins":[{"id":"vapor.tunnel","name":"Tunnel","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/tunnel.zip","sha256":"AABBCCDD"}]}""";
+		await using var factory = CreateFactory(services =>
+		{
+			services.RemoveAll<PluginCatalogService>();
+			services.AddSingleton(_ => new PluginCatalogService(
+				new HttpClient(new FakeIndexHandler(index)),
+				NullLogger<PluginCatalogService>.Instance,
+				() => "https://plugins.example/index.json"));
+		});
+
+		var wsClient = factory.Server.CreateWebSocketClient();
+		wsClient.ConfigureRequest = request =>
+			request.Headers.Authorization = "Bearer agent-token";
+		using var ws = await wsClient.ConnectAsync(
+			new Uri(factory.Server.BaseAddress, "/v1/agent/ws?agentId=agent-1&region=local"),
+			CancellationToken.None);
+		await SendTextAsync(ws, JsonSerializer.Serialize(new WSMessage("hello",
+			new AgentHello("agent-1", "local",
+				new Dictionary<string, bool> { ["plugin_install"] = true }, null),
+			null, null), JsonDefaults.Options));
+
+		using (var client = CreateAdminClient(factory))
+		{
+			using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", new
+			{
+				pluginId = "vapor.tunnel",
+				agentIds = new[] { "agent-1" }
+			});
+			Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+		}
+
+		using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+		WSMessage dispatched = await ReceiveTextAsync(ws, timeout.Token);
+		Assert.Equal("task", dispatched.Type);
+		string taskId = dispatched.Task!.Id;
+
+		await SendTextAsync(ws, JsonSerializer.Serialize(new WSMessage("task_result", null, null,
+			new TaskResult(taskId, Success: true, Error: null,
+				Output: new Dictionary<string, object?>
+				{
+					["plugins"] = new List<object>
+					{
+						new Dictionary<string, object?>
+						{
+							["id"] = "vapor.tunnel", ["name"] = "Tunnel", ["version"] = "1.0.0", ["apiVersion"] = "1.0",
+							["trust"] = "official", ["permissions"] = new[] { "network" }, ["actions"] = new[] { "plugin_echo" }
+						}
+					}
+				},
+				DateTimeOffset.UtcNow, 1)), JsonDefaults.Options));
+
+		// The mirror rebuild is synchronous with the result handling; poll the
+		// view briefly so a slower dispatch tick cannot flake the read-back.
+		using var mirrorClient = CreateAdminClient(factory);
+		HttpResponseMessage? mirror = null;
+		string? firstPluginId = null;
+		for (int attempt = 0; attempt < 50 && firstPluginId is null; attempt++)
+		{
+			await Task.Delay(100, CancellationToken.None);
+			mirror?.Dispose();
+			mirror = await mirrorClient.GetAsync("/v1/plugins/installed");
+			using var doc = JsonDocument.Parse(await mirror.Content.ReadAsStringAsync());
+			JsonElement agents = doc.RootElement.GetProperty("agents");
+			if (agents.GetArrayLength() > 0 && agents[0].GetProperty("plugins").GetArrayLength() > 0)
+			{
+				firstPluginId = agents[0].GetProperty("plugins")[0].GetProperty("id").GetString();
+				Assert.Equal("agent-1", agents[0].GetProperty("agentId").GetString());
+			}
+		}
+
+		Assert.Equal("vapor.tunnel", firstPluginId);
+		mirror?.Dispose();
+	}
+
+	[Fact]
+	public async Task AgentWs_GracefulClose_UnregistersTheAgent()
+	{
+		// The message loop's finally must unregister the agent when its socket
+		// closes gracefully — not only on abort — so /v1/agents stops listing
+		// it once the close frame has been processed.
+		await using var factory = CreateFactory();
+
+		var wsClient = factory.Server.CreateWebSocketClient();
+		wsClient.ConfigureRequest = request =>
+			request.Headers.Authorization = "Bearer agent-token";
+		using var ws = await wsClient.ConnectAsync(
+			new Uri(factory.Server.BaseAddress, "/v1/agent/ws?agentId=agent-gone&region=local"),
+			CancellationToken.None);
+		await SendTextAsync(ws, JsonSerializer.Serialize(new WSMessage("hello",
+			new AgentHello("agent-gone", "local",
+				new Dictionary<string, bool>(), null),
+			null, null), JsonDefaults.Options));
+
+		// Registered before the close... The hello frame's registration is
+		// asynchronous with the socket send (the test server pairs the sockets in
+		// memory), so the appearance itself is polled rather than assumed.
+		using (var client = CreateAdminClient(factory))
+		{
+			bool listed = false;
+			for (int attempt = 0; attempt < 50 && !listed; attempt++)
+			{
+				using HttpResponseMessage roster = await client.GetAsync("/v1/agents");
+				listed = (await roster.Content.ReadAsStringAsync()).Contains("agent-gone", StringComparison.Ordinal);
+				if (!listed)
+				{
+					await Task.Delay(100, CancellationToken.None);
+				}
+			}
+
+			Assert.True(listed, "agent never appeared in /v1/agents after the hello frame");
+		}
+
+		// CloseOutputAsync sends the close frame without waiting for the
+		// handshake to complete: the server-side loop unwinds through its
+		// IOException on the close frame, so nothing ever writes one back.
+		await ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "done", CancellationToken.None);
+
+		// ...and gone from the roster once the server-side finally has run.
+		using var pollClient = CreateAdminClient(factory);
+		bool stillListed = true;
+		for (int attempt = 0; attempt < 50 && stillListed; attempt++)
+		{
+			await Task.Delay(100, CancellationToken.None);
+			using HttpResponseMessage roster = await pollClient.GetAsync("/v1/agents");
+			stillListed = (await roster.Content.ReadAsStringAsync()).Contains("agent-gone", StringComparison.Ordinal);
+		}
+
+		Assert.False(stillListed);
+	}
+
+	private static async Task SendTextAsync(WebSocket ws, string json, CancellationToken cancellationToken = default)
+	{
+		byte[] bytes = Encoding.UTF8.GetBytes(json);
+		await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, cancellationToken);
+	}
+
+	private static async Task<WSMessage> ReceiveTextAsync(WebSocket ws, CancellationToken cancellationToken)
+	{
+		var buffer = new byte[64 * 1024];
+		WebSocketReceiveResult received = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+		Assert.Equal(WebSocketMessageType.Text, received.MessageType);
+		return JsonSerializer.Deserialize<WSMessage>(Encoding.UTF8.GetString(buffer, 0, received.Count), JsonDefaults.Options)
+			?? throw new InvalidOperationException("tunnel frame failed to deserialize");
+	}
+
+	[Fact]
+	public async Task Install_DirectModeWithoutChecksum_IsRejected()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", new
+		{
+			agentIds = new[] { "agent-9" },
+			url = "https://example.com/vapor.echo.zip"
+		});
+
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Contains("sha256", doc.RootElement.GetProperty("error").GetString(), StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task StandingCheck_ConflictsBeforeOrchestratorTracksAccount()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+
+		// Declared but never reconciled: the account passes the existence check,
+		// yet the orchestrator has no runtime slot to schedule a check into.
+		using HttpResponseMessage declared = await client.PutAsJsonAsync(
+			"/v1/accounts/alice", new { desiredState = "idle", idleApps = new[] { "730" } });
+		Assert.Equal(HttpStatusCode.OK, declared.StatusCode);
+
+		using HttpResponseMessage response = await client.PostAsync("/v1/accounts/alice/standing-check", null);
+
+		Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Contains("standing check not scheduled", doc.RootElement.GetProperty("error").GetString(), StringComparison.Ordinal);
 	}
 
 	private static HttpClient CreateAdminClient(WebApplicationFactory<Program> factory)
@@ -457,6 +696,30 @@ public sealed class PluginCatalogServiceTests
 public sealed class PluginInventoryTests
 {
 	[Fact]
+	public void Entry_RecordMembers_BehaveValueLike()
+	{
+		var entry = new PluginInventoryEntry(
+			"vapor.echo", "Echo", "1.0.0", "1.0", "official",
+			new[] { "network" }, new[] { "plugin_echo" });
+
+		PluginInventoryEntry copy = entry with { };
+		Assert.True(entry.Equals(copy));
+		Assert.Equal(entry.GetHashCode(), copy.GetHashCode());
+		Assert.NotEqual(entry, entry with { Version = "2.0.0" });
+
+		(string id, string name, string version, string apiVersion, string? trust, IReadOnlyList<string> permissions, IReadOnlyList<string> actions) = entry;
+		Assert.Equal("vapor.echo", id);
+		Assert.Equal("Echo", name);
+		Assert.Equal("1.0.0", version);
+		Assert.Equal("1.0", apiVersion);
+		Assert.Equal("official", trust);
+		Assert.Equal(new[] { "network" }, permissions);
+		Assert.Equal(new[] { "plugin_echo" }, actions);
+
+		Assert.Contains("vapor.echo", entry.ToString(), StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void Update_RebuildsMirrorFromRoundTrippedOutput()
 	{
 		var inventory = new PluginInventory();
@@ -514,6 +777,38 @@ public sealed class PluginInventoryTests
 
 		inventory.Update("agent-1", DateTimeOffset.UnixEpoch, null);
 		Assert.Empty(inventory.Snapshot());
+	}
+
+	[Fact]
+	public void Update_SkipsNonObjectArrayEntries()
+	{
+		// Agents are third-party code: a malformed "plugins" entry (a scalar or an
+		// array element instead of an object) must be skipped, not crash the mirror.
+		var inventory = new PluginInventory();
+		var output = RoundTrip(new Dictionary<string, object?>
+		{
+			["plugins"] = new List<object?>
+			{
+				"vapor.bogus",
+				new Dictionary<string, object?>
+				{
+					["id"] = "vapor.a",
+					["name"] = "A",
+					["version"] = "1.0.0",
+					["apiVersion"] = "1.0",
+					["trust"] = "official",
+					["permissions"] = Array.Empty<string>(),
+					["actions"] = Array.Empty<string>()
+				},
+				new List<object?> { "vapor.nested" },
+				42
+			}
+		});
+
+		inventory.Update("agent-1", DateTimeOffset.UnixEpoch, output);
+
+		AgentPlugins agent = inventory.Snapshot()["agent-1"];
+		Assert.Equal("vapor.a", Assert.Single(agent.Plugins).Id);
 	}
 
 	[Fact]

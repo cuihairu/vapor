@@ -1,4 +1,6 @@
+using System.Reflection;
 using Vapor.ControlPlane;
+using Vapor.Protocol;
 using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
@@ -278,5 +280,113 @@ public sealed class EventBrokerTests
 		}
 
 		throw new InvalidOperationException($"Expected {count} events but stream completed early.");
+	}
+
+	// ── graceful completion: nothing in the product completes a subscription
+	// channel (shutdown relies on cancellation), so the completion arms are
+	// driven directly through the (private, per-key) channels below. ──
+
+	[Fact]
+	public async Task Subscribe_CompletesGracefullyAndCleansUpWhenTheChannelCompletes()
+	{
+		var broker = new EventBroker();
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		var received = new List<Protocol.Event>();
+
+		Task pump = Task.Run(async () =>
+		{
+			await foreach (Protocol.Event evt in broker.Subscribe(cts.Token, "job-complete"))
+			{
+				received.Add(evt);
+			}
+		});
+
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+		while (broker.SubscriberCount == 0 && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		broker.Publish("job-complete", "job.created", new Dictionary<string, object?> { ["action"] = "ping" });
+		CompleteChannels(broker, "_subscribers");
+		await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+		_ = Assert.Single(received);
+		Assert.Equal(0, broker.SubscriberCount);
+	}
+
+	[Fact]
+	public async Task SubscribeSessions_CompletesGracefullyAndCleansUpWhenTheChannelCompletes()
+	{
+		var broker = new EventBroker();
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		var received = new List<SessionEvent>();
+
+		Task pump = Task.Run(async () =>
+		{
+			await foreach (SessionEvent evt in broker.SubscribeSessions(cts.Token, "alice"))
+			{
+				received.Add(evt);
+			}
+		});
+
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+		while (broker.SessionSubscriberCount == 0 && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		broker.PublishSession("alice", "state_changed", "Connected");
+		CompleteChannels(broker, "_sessionSubscribers");
+		await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+		_ = Assert.Single(received);
+		Assert.Equal(0, broker.SessionSubscriberCount);
+	}
+
+	[Fact]
+	public async Task SubscribeAuthChallenges_CompletesGracefullyAndCleansUpWhenTheChannelCompletes()
+	{
+		var broker = new EventBroker();
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		var received = new List<AuthChallengeEvent>();
+
+		Task pump = Task.Run(async () =>
+		{
+			await foreach (AuthChallengeEvent evt in broker.SubscribeAuthChallenges(cts.Token, "alice"))
+			{
+				received.Add(evt);
+			}
+		});
+
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+		while (broker.AuthSubscriberCount == 0 && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		broker.PublishAuthChallenge("alice", "2fa_required", code: "123456");
+		CompleteChannels(broker, "_authSubscribers");
+		await pump.WaitAsync(TimeSpan.FromSeconds(5));
+
+		_ = Assert.Single(received);
+		Assert.Equal(0, broker.AuthSubscriberCount);
+	}
+
+	/// <summary>Completes every subscription channel behind one of the broker's private subscriber dictionaries.</summary>
+	private static void CompleteChannels(EventBroker broker, string fieldName)
+	{
+		System.Collections.IDictionary subs = (System.Collections.IDictionary)typeof(EventBroker)
+			.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)!
+			.GetValue(broker)!;
+		foreach (object? perKey in subs.Values)
+		{
+			System.Collections.IDictionary channels = (System.Collections.IDictionary)perKey!;
+			foreach (object channel in channels.Keys)
+			{
+				object writer = channel.GetType().GetProperty("Writer")!.GetValue(channel)!;
+				writer.GetType().GetMethod("TryComplete")!.Invoke(writer, [null]);
+			}
+		}
 	}
 }

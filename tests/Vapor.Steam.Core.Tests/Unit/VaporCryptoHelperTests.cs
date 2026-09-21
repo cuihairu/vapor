@@ -24,6 +24,19 @@ public sealed class VaporCryptoHelperTests : IDisposable
 	}
 
 	[Fact]
+	public void EnsureSafeForEnvironment_OutsideProduction_NoOpsBeforeAnyKeyCheck()
+	{
+		// The guard is production-only: outside production it returns before any
+		// key check — even with the default key still active.
+		var environment = new Dictionary<string, string?>
+		{
+			["DOTNET_ENVIRONMENT"] = "Development"
+		};
+
+		VaporCryptoHelper.EnsureSafeForEnvironment(key => environment.TryGetValue(key, out var value) ? value : null);
+	}
+
+	[Fact]
 	public void ConfigureFromEnvironment_WithCustomKey_DisablesDefaultKey()
 	{
 		var environment = new Dictionary<string, string?>

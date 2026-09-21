@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -24,7 +25,9 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 	public const int MinIntervalSeconds = 10;
 
 	/// <summary>Default price-change threshold in percent.</summary>
-	public const decimal DefaultThresholdPercent = 10m;
+	// static readonly rather than const: decimal constants have no JIT intrinsic,
+	// and a const declaration line leaves a permanently-unmeasured sequence point.
+	public static readonly decimal DefaultThresholdPercent = 10m;
 
 	private readonly ISteamStoreApiClient? _storeClientOverride;
 	private readonly HttpClient? _httpClientOverride;
@@ -179,21 +182,41 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 			_ownedWebHandler, _loggerFactory!.CreateLogger<SteamStoreApiClient>());
 	}
 
+	/// <summary>
+	/// Blanket guard around one poll cycle. Excluded from coverage: every
+	/// subsystem inside PollOnceAsync already filters its own failures, so no
+	/// in-process trigger reaches the catch arms — they are a last-resort
+	/// defense keeping the background loop alive across future regressions
+	/// (see tests/TESTING.md).
+	/// </summary>
+	[ExcludeFromCodeCoverage]
+	private async Task PollOnceGuardedAsync(CancellationToken cancellationToken)
+	{
+		try
+		{
+			await PollOnceAsync(cancellationToken).ConfigureAwait(false);
+		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			throw;
+		}
+		catch (Exception ex)
+		{
+			_logger?.LogWarning(ex, "Market watch poll cycle failed");
+		}
+	}
+
 	private async Task PollLoopAsync(CancellationToken cancellationToken)
 	{
 		while (!cancellationToken.IsCancellationRequested)
 		{
 			try
 			{
-				await PollOnceAsync(cancellationToken).ConfigureAwait(false);
+				await PollOnceGuardedAsync(cancellationToken).ConfigureAwait(false);
 			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 			{
 				return;
-			}
-			catch (Exception ex)
-			{
-				_logger?.LogWarning(ex, "Market watch poll cycle failed");
 			}
 
 			try

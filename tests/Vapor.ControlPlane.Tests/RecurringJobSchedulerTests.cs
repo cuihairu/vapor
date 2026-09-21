@@ -21,6 +21,22 @@ public sealed class RecurringJobSchedulerTests : IDisposable
 
 	public void Dispose() => _store.Dispose();
 
+	[Fact]
+	public async Task ExecuteAsync_PreCanceledToken_UnwindsThroughTheTimerLoop()
+	{
+		// The host calls ExecuteAsync with the application lifetime token; a
+		// pre-cancelled token drives the same unwind deterministically — control
+		// reaches the loop call, the 1s timer's await throws immediately, and the
+		// service exits with the cancellation.
+		var execute = typeof(RecurringJobScheduler).GetMethod(
+			"ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		Assert.NotNull(execute);
+
+		Task task = (Task)execute.Invoke(_scheduler, [new CancellationToken(canceled: true)])!;
+
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+	}
+
 	/// <summary>Truncates to millisecond precision — what SQLite persists.</summary>
 	private static DateTimeOffset Ms(DateTimeOffset value) => DateTimeOffset.FromUnixTimeMilliseconds(value.ToUnixTimeMilliseconds());
 
@@ -65,6 +81,51 @@ public sealed class RecurringJobSchedulerTests : IDisposable
 		// Feb 30 never exists — no future occurrence to schedule.
 		await Assert.ThrowsAsync<ArgumentException>(() => _store.CreateJob(
 			new CreateJobRequest("ping", null, ["alice"], null, null, new JobSchedule(Cron: "0 0 30 2 *")), CancellationToken.None));
+	}
+
+	[Fact]
+	public async Task TickAsync_DueRowWithoutSchedule_SkipsTheCorruptRow()
+	{
+		// A due row whose schedule_json is gone (hand-edited / migrated DB) must be
+		// left for manual inspection, never hot-looped into a child job. The shape
+		// is unreachable through the store API, so the row is poked directly.
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			Job job;
+			using (var store = new SqliteJobStore(dbPath))
+			{
+				JobWithTasks created = await store.CreateJob(
+					new CreateJobRequest("ping", null, ["alice"], null, null), CancellationToken.None);
+				job = created.Job;
+			}
+
+			long pastMs = DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeMilliseconds();
+			using (var raw = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+			{
+				raw.Open();
+				using var cmd = raw.CreateCommand();
+				cmd.CommandText = "UPDATE jobs SET status = 'Scheduled', schedule_next_run_ms = $due WHERE id = $id;";
+				cmd.Parameters.AddWithValue("$due", pastMs);
+				cmd.Parameters.AddWithValue("$id", job.Id);
+				Assert.Equal(1, cmd.ExecuteNonQuery());
+			}
+
+			var events = new ControlPlaneApiTests.RecordingEventBroker();
+			DateTimeOffset now = DateTimeOffset.UtcNow;
+			using var schedulerStore = new SqliteJobStore(dbPath);
+			using var scheduler = new RecurringJobScheduler(schedulerStore, events, NullLogger<RecurringJobScheduler>.Instance);
+			scheduler.Clock = () => now;
+
+			await scheduler.TickAsync(CancellationToken.None);
+
+			Assert.Equal(0, scheduler.TriggeredRuns);
+			Assert.Single(await schedulerStore.ListJobs(10, null, CancellationToken.None));
+		}
+		finally
+		{
+			File.Delete(dbPath);
+		}
 	}
 
 	[Fact]

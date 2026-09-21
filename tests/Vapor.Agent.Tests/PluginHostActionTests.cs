@@ -661,7 +661,7 @@ public sealed class PluginPackageInstallerTests
 		try
 		{
 			var installer = new PluginPackageInstaller(
-				root, () => new HttpClient(new FakePackageHandler(new byte[] { 1, 2, 3 }, declaredLength: PluginPackageInstaller.MaxPackageBytes + 1)),
+				root, () => new HttpClient(new FakePackageHandler(new byte[] { 1, 2, 3 }, declaredLength: PluginPackageInstaller.DefaultMaxPackageBytes + 1)),
 				NullLogger.Instance);
 			await using var manager = PluginTestPackages.CreateManager();
 
@@ -695,6 +695,115 @@ public sealed class PluginPackageInstallerTests
 
 			Assert.False(result.Success);
 			Assert.Contains("download failed", result.Error);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_StreamingBodyOverTheShrunkCapFails()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("stream-cap");
+		try
+		{
+			// The declared length matches the shrunken cap, so only the streamed
+			// byte count can catch the oversized package.
+			var installer = new PluginPackageInstaller(
+				root, () => new HttpClient(new FakePackageHandler(new byte[] { 1, 2, 3, 4 }, declaredLength: 2)), NullLogger.Instance)
+			{
+				MaxPackageBytes = 2
+			};
+			await using var manager = PluginTestPackages.CreateManager();
+
+			PluginInstallResult result = await installer.InstallAsync(
+				"http://plugins.example/small.zip", PluginTestPackages.Sha256Hex(new byte[] { 1, 2, 3, 4 }),
+				null, null, manager, CancellationToken.None);
+
+			Assert.False(result.Success);
+			Assert.Contains("exceeds", result.Error);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public void RetireDirectory_MoveFailureIsLeftBehind()
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The read-only-root trick uses Unix file modes.
+		}
+
+		string root = PluginTestPackages.NewPluginsRoot("retire-move");
+		try
+		{
+			string target = Path.Combine(root, "vapor.stuck");
+			Directory.CreateDirectory(target);
+			File.WriteAllText(Path.Combine(target, "plugin.json"), "{}");
+
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			// A read-only plugins root makes the rename-aside fail: Move needs a
+			// writable parent, not a writable directory.
+			File.SetUnixFileMode(root, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+			try
+			{
+				installer.RetireDirectory(target);
+
+				Assert.True(Directory.Exists(target), "failed move must leave the plugin directory in place");
+				Assert.Empty(Directory.EnumerateFileSystemEntries(root, "*.old-*"));
+			}
+			finally
+			{
+				File.SetUnixFileMode(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+			}
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public void RetireDirectory_DeleteFailureIsDeferred()
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The deferred-deletion trick uses Unix file modes.
+		}
+
+		string root = PluginTestPackages.NewPluginsRoot("retire-delete");
+		try
+		{
+			string target = Path.Combine(root, "vapor.locked");
+			Directory.CreateDirectory(target);
+			File.WriteAllText(Path.Combine(target, "locked.dll"), "payload");
+
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			// A read-only plugin directory renames fine (rename only needs a
+			// writable parent) but cannot be deleted recursively: unlinking its
+			// files needs the directory's write bit.
+			File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+			try
+			{
+				installer.RetireDirectory(target);
+
+				Assert.False(Directory.Exists(target), "the directory itself must still move aside");
+				string[] leftovers = Directory.GetDirectories(root, "*.old-*");
+				Assert.Single(leftovers);
+				Assert.True(File.Exists(Path.Combine(leftovers[0], "locked.dll")), "deletion of the files is deferred");
+			}
+			finally
+			{
+				// Restore so the best-effort cleanup below can actually run.
+				foreach (string leftover in Directory.GetDirectories(root, "*.old-*"))
+				{
+					File.SetUnixFileMode(leftover, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+				}
+			}
 		}
 		finally
 		{
@@ -993,6 +1102,54 @@ public sealed class PluginUninstallActionTests
 			Assert.Equal(true, result.Output!["removed"]);
 			Assert.Empty(manager.LoadedPlugins);
 			Assert.False(Directory.Exists(Path.Combine(root, PluginTestPackages.PluginId)));
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_DeleteFailureKeepsTheRetiredDirectory()
+	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The deferred-deletion trick uses Unix file modes.
+		}
+
+		string root = PluginTestPackages.NewPluginsRoot("uninstall-defer");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = PluginTestPackages.StageAsFile(root);
+			PluginInstallResult installed = await installer.InstallAsync(url, sha, null, null, manager, CancellationToken.None);
+			Assert.True(installed.Success, installed.Error);
+
+			string pluginDir = Path.Combine(root, PluginTestPackages.PluginId);
+			// A read-only plugin directory renames aside but cannot be deleted
+			// recursively; the unload must still succeed and the leftover must
+			// stay out of discovery's sight.
+			File.SetUnixFileMode(pluginDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+			try
+			{
+				var action = new PluginUninstallAction(root, manager, NullLogger.Instance);
+				ActionResult result = await action.ExecuteAsync(
+					new Dictionary<string, object?> { ["pluginId"] = PluginTestPackages.PluginId }, CancellationToken.None);
+
+				Assert.True(result.Success, result.Error);
+				Assert.Equal(true, result.Output!["removed"]);
+				Assert.Empty(manager.LoadedPlugins);
+				Assert.False(Directory.Exists(pluginDir), "the directory itself must move aside");
+				Assert.Single(Directory.GetDirectories(root, "*.old-*"));
+			}
+			finally
+			{
+				foreach (string leftover in Directory.GetDirectories(root, "*.old-*"))
+				{
+					File.SetUnixFileMode(leftover, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+				}
+			}
 		}
 		finally
 		{
