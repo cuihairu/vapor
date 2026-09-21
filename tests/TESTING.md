@@ -8,17 +8,17 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1349 tests)
+├── Vapor.Steam.Core.Tests/               (1373 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (677 tests)
+├── Vapor.ControlPlane.Tests/             (700 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
-├── Vapor.Plugins.Core.Tests/             (129 tests)
+├── Vapor.Plugins.Core.Tests/             (130 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (129 tests)
-├── Vapor.Agent.Tests/                    (93 tests)
+├── Vapor.Agent.Tests/                    (97 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (56 tests)
-├── Vapor.Plugins.Monitoring.Tests/       (35 tests)
+├── Vapor.Plugins.Monitoring.Tests/       (36 tests)
 ├── Vapor.Protocol.Tests/                 (43 tests)
 ├── Vapor.E2E.Tests/                      (11 tests,真实双进程)
 ├── Vapor.Plugins.TestPlugin/             插件基础设施测试用示例插件
@@ -29,17 +29,17 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1349 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action) |
-| Vapor.ControlPlane.Tests | 677 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
-| Vapor.Plugins.Core.Tests | 129 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
+| Vapor.Steam.Core.Tests | 1373 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action) |
+| Vapor.ControlPlane.Tests | 700 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
+| Vapor.Plugins.Core.Tests | 130 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
 | Vapor.Plugins.MobileAuthenticator.Tests | 129 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
-| Vapor.Agent.Tests | 93 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
+| Vapor.Agent.Tests | 97 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
 | Vapor.Plugins.MarketWatch.Tests | 56 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/轮询循环确定性停机/阈值 payload 值形状/插件宿主实战加载 |
-| Vapor.Plugins.Monitoring.Tests | 35 | 指标注册表/HTTP 指标服务/插件生命周期 |
+| Vapor.Plugins.Monitoring.Tests | 36 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
-| Vapor.KeyRotation.Tests | 27 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2549** | (2026-09-20 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
+| **合计** | **2603** | (2026-09-21 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -284,24 +284,26 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。
 
-### 当前基线（2026-09-20，行覆盖 99.6%）
+### 当前基线（2026-09-21，行覆盖 100.0%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中）：
 
 | 程序集 | 行覆盖 |
 |--------|--------|
-| Agent | 97.5%（P4 host action 三处 OS/结构性臂定性入册，见下） |
+| Agent | 100.0% |
 | MobileAuthenticator | 100.0% |
-| Monitoring | 100.0%（`MetricsHttpServer` 时序边沿 2 行，轮间波动命中归位） |
+| Monitoring | 100.0% |
 | Plugins.Core | 100.0% |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） |
 | Protocol | 100.0% |
-| ControlPlane | 99.7%（PluginStore REST/catalog/镜像新代码全覆盖，余 standing 编排分支等既有定性缺口） |
-| Steam.Core | 99.7%（代理链路 4 行边界缺口轮间命中归位；`UnescapeDataString` 坏 percent-encoding catch 在 .NET Core 恒不抛，定性防御性死分支；standing 客户端/action 全覆盖） |
-| MarketWatch | 98.9% |
-| KeyRotation | 98.1%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 2 行——测试进程内会终止 testhost，结构性不可测） |
-| **合计** | **99.6%** (15887/15947) |
+| ControlPlane | 100.0%（WS 循环正常出口 2 行防御性死分支定性入册，见下） |
+| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） |
+| MarketWatch | 100.0% |
+| KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） |
+| **合计** | **100.0%** (15880/15882) |
+
+> 分母中剩余 2 行为定性入册的防御性死分支（`Program` agent WS 循环的 try 收闭与尾部清理）：循环条件在 Receive 的异常出口之前不可达——对端 close 帧必先被 Receive 撞见抛 IOException、abort 走 OCE，`ws.State != Open` 防御谓词永假；谓词保留为纵深防御（防未来 Receive 实现语义变化），显示 100.0% 已四舍五入，门禁 99.5 留有充足余量。
 
 > 历史基线：2026-09-12 首次真实全解决方案基线为 74.3%（此前 44.6% 的初版系统性偏低：不同 testhost 生成的报告里同一源文件的 `filename` 前缀写法不一致，合并未归一化导致同一行被重复计入分母）。2026-09-13 覆盖率冲刺（逐文件提取未覆盖行并针对性补测）后达 95.9%。2026-09-14 第二轮冲刺后达 98.6%（Agent 91.9%→98.1%、ControlPlane 97.9%→99.5%、Plugins.Core 88.1%→99.1%、Monitoring 89.7%→97.2%）；同日第二轮半（fd1ae2e，+36 测试）删除第二轮归档的死代码（`VaporCryptoHelper` 防御 catch、`HttpCircuitBreaker` HalfOpen 存储态、`RecurringJobScheduler` missed 组合、`SteamTotp` 空 base64、`RedactingLoggerProvider.AppendPairs`）并新增 TracingTests/TestFixturesTests/SteamTimeSynchronizerTests，TestFixtures 故障 fixture 库亦获全覆盖，TestFixtures 68.3%→100%、Monitoring 97.2%→100%；回调泵同步 Sleep 改异步 Delay 后达 **99.5%**（57 行未覆盖）。2026-09-15 P7/P8/P9 三个功能阶段落地后新代码覆盖率债使合计回落至 98.5%（Steam.Core 97.8%、ControlPlane 98.8%）。
 >
@@ -350,6 +352,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-20 §38 P4 插件生态（用户指令「学 asf 支持挂卡,还有可以批量 dashboard 安装插件,最好能实现一个类似插件的 pluginStore」的插件半边；2477→**2542** 全绿：Agent 56→93（+37）、ControlPlane 642→670（+28））。**分发模型 = CP 下发指令、agent 自拉包**——CP 不中转二进制（全仓无大 payload 通道），CP 唯一新概念是索引源 JSON（`Vapor_PLUGIN_INDEX_URL`，60s 缓存）。四段落地：①**agent 侧 host action 通道**——`IHostAction`（无 session 参数，与 `AgentTaskExecutor` 在任务循环分流执行；target 不匹配 `agent:{本机}` 拒绝防误投）+ 三 action `plugin_install`/`plugin_uninstall`/`plugin_list`，输出统一携带全量已装清单（失败也带——镜像保持真实）；capabilities 合并 actionRegistry ∪ hostActions。②**包安装器**——zip 下载（file/http/https；http 手动 bounded copy 按字节限流而非墙钟——慢而合法的下载不被误杀）→ **sha256 强制**（无校验和指令拒绝执行,供应链底线）→ staging 解压（zip-slip 防护 + manifest 必须在包根）→ 清单 id/version 核对 → 卸旧（rename `.old-<ticks>` 后删,Windows 文件锁规避）→ 原子 Move → 热加载；校验全部通过才触碰插件根,失败零痕迹。③**CP 定向派发**——`agent:{id}` target 前缀约定,`DispatchOnce` 识别后按 id 直取 registry（绕过区域随机 Pick——`ClaimNextQueuedTask` 只按 region claim 不看 target,区域随机 Pick 会把安装任务发给错误 agent 的文件系统）;目标离线/能力缺失复用 dispatch_failed requeue 路径。④**PluginStore**——REST 五端点（catalog/installed/install 双模式/uninstall 路由参数/inventory-refresh 含 stale 镜像清理）+ `PluginInventory` 内存镜像（task_result 钩子按 `plugin_` 前缀整体覆盖;WS round-trip 后 output 值是 JsonElement——镜像解析只认 JsonElement Array 分支,测试须 round-trip 构造）+ admin.html 面板（目录卡片+agent 多选默认全选+一键安装+已装 chips+卸载+同步）。**测试 65 个新增**:Agent 37（执行器 4/安装器 18/install action 5/uninstall 7/list 3,含真实 TestPlugin.dll 打包真加载、http 下载 fake handler 三态、只读根降级、取消透传）;CP 28（REST 14/catalog 6/镜像 4/定向派发 3/dashboard 锚点 1,含 SqliteJobStore ":memory:" 全链 job 建立断言——target=="agent:{id}"、payload url/sha256 归一）。**覆盖率收敛**:Agent 78.3%→97.5%（`PluginInstallAction` 包装类首轮 0%——测试直接测了 installer 漏了 action 层;http 下载段/默认 HttpClient 工厂/坏 manifest/缺入口 DLL/显式目录条目全收）;ControlPlane 99.8%→99.7%（新端点臂收 catalog 坏 body/非 Array plugins/refresh 409/stale 清理）;合计 99.6%（15887/15947,门禁 99.5 过）。**定性入册**:installer staging 段 OCE rethrow（LoadAsync 无取消检查,不可稳定构造）、RetireDirectory/TryDeleteDirectory 失败 warn 臂（staging 前置要求 root 可写,Linux rename-then-delete 无锁窗口;uninstall 侧同类臂已用只读根法收掉）、内容超限 throw（需 >128MB 流）、uninstall 空 pluginId 400（路由参数空串不可达,防御性死分支）、`PluginInventoryEntry` record 合成成员（覆盖噪音）。**工具链教训**:手动 `dotnet test --collect "XPlat Code Coverage"` 不带 `--settings tests/coverlet.runsettings` 会把无关程序集全量计入（实测 Steam.Core 99.7%→82.7%、分母 15947→17303 幻涨）——单项目补覆盖率也必须带 settings。验证：全量覆盖率轮全绿、format 过、内联 JS 过、CI 终态见提交后监控。
 
 > 2026-09-20 §38 P4 Windows CI 修复 + 维护轮 property 扩面（2542→**2549** 全绿：ControlPlane 670→677,+7 property）。**①CI 修复（fix 提交）**：推送后 ci workflow 两 Windows job 红,Linux/docs/codeql 绿——6 个插件测试**主断言全过**,异常全在 finally 裸 `Directory.Delete`:collectible ALC 的 DLL 映射要等 GC 释放文件锁（与 P3 39 连败轮②同根因第二次现身——新文件又裸删踩坑）。修复三件:`PluginTestPackages.DeleteBestEffort`（catch IOException/UnauthorizedAccessException）收编 27 处 finally;hot-load replace 的 `.old-` 清理断言加 `!OperatingSystem.IsWindows()` guard（retire 删除本就是 best-effort 设计,Windows 锁残留是合法输出）;uninstall「原目录已让位」断言不动——rename-aside 不受映射文件影响（CI 堆栈证实）。**铁律入册:每轮新增加载真实 DLL 的测试文件,清理必须 day-one best-effort**。**②property 扩面（维护轮）**:新建 `PluginEcosystemPropertyTests` 7 个——`HostTaskTarget` 往返恒等与精确接受（For→TryParse ⟲、成功解析重组回原 target、null/空串/嵌套 `agent:agent:x`）;`Sha256Normalizer` 三性质（64-hex 字母表缩域生成器密集采样接受区 + 任意串接受谓词 + 幂等——local function 提取为 `internal static class Sha256Normalizer`,调用点 Program.cs 同步);`ParseIndex` 平行数组生成任意 catalog（字段透传+sha 小写归一+Ordinal 排序+稳定序）与任意 json 鲁棒性（只以 FormatException/ArgumentException/JsonException 拒绝,快照恒有序）。**FsCheck 2.16 实战教训**:默认 string 生成器**会产 null**——参数一律 `string?` 并防御;`IReadOnlyList<string>` 不自动生成（record 参数不可用,平行数组 + 空/ null 容错 helper 替代）;空数组取模即 DivideByZero（缩域 helper 必须判空）。CA1862 误报 oracle 断言里的 `ToLowerInvariant` 比较——`string.Equals(..., Ordinal)` 显式化。覆盖率合计 99.6%（15888/15947,门禁 99.5 过;Monitoring 100→99.4% 为时序分支抖动,分母不变）。验证:全量覆盖率轮全绿、format 过、CI 终态见提交后监控。
+
+> 2026-09-21 覆盖率 100% 收官轮（自主立项「推测试覆盖率到100%」跨会话收尾;2549→**2603** 全绿:Steam.Core 1349→1373、ControlPlane 677→700、Plugins.Core 129→130、Agent 93→97、Monitoring 35→36、KeyRotation 27→28;含 KeyRotation `Environment.Exit` 臂子进程测试与 `SessionManager` 泵 channel-close 测试,合计升至 **100.0%** 15880/15882,分母余 2 行定性死分支）。上轮残余 7 行缺口（多报告合并口径,复刻 coverage-summary 的 normalize+max 逻辑逐行定位）六处收尾:①**RJS/TSS `ExecuteAsync` wrapper 收闭括号**（2 行）——去 async 表达式体重构 `=> TimerLoopAsync(...)`,行为等价、调用行照常命中,wrapper 序列点消失;②**`SessionManager` 并发 TryAdd 竞态败者 else**（2 行）——提取 `HandleDuplicateCreateRace` + `[ExcludeFromCodeCoverage]`（顺序调用被方法开头 TryGetValue 短路,无进程内确定性触发器）,调用点折叠单行 `else { return ...; }` 使块入口序列点与（排除的）调用同行出分母;③**`SessionManager` 泵 try 收闭括号**——新增 `PumpSessionEvents_ExitsThroughChannelCompletion`:反射 complete `BotSession._eventChannel`,泵的 await-foreach 正常耗尽命中（先例 `_commandChannel`;通道 complete 后 ReadAllAsync 先投递缓冲再结束,启动顺序无关）;④**`BotSession.RunSteamCallbacksAsync` try 收闭括号**——先试测试法**失败**:mock `RunCallbacks` 回调内 Cancel 后控制流直达 `await Task.Delay(已取消 token)`（同步抛 OCE）——循环体内 RunCallbacks 在 Delay 之前,Cancel 后永不回到条件检查;条件退出窗口夹在 Delay 完成延续与条件检查之间,线程池调度不可拦截 → 整方法 `[ExcludeFromCodeCoverage]`+注释（先例 `RunTokenRefreshLoopAsync`;中途试制的 mock-Cancel 测试与既有 `TicksThenUnwindsOnCancellation` 同路径,已删）;⑤**`Program` agent WS lambda `finally` 关键字行**——该行序列点**不属于任何路径**（285 次异常进 finally 与 7 次正常完成都不命中）→ 重构为 `catch (Exception) { DisconnectAgent(); throw; }` + 尾部 `DisconnectAgent()`,行为严格等价（cleanup 每出口执行、异常原样传播）;⑥**KeyRotation `GetValue` 缺值臂**——`dotnet` 子进程驱动（进程内直调 `Environment.Exit(2)` 会终止 testhost,子进程断言退出码与 stderr 点名）。**机理入册四条**:⑴coverlet 的 `finally` 关键字行序列点恒不命中——try/finally 的可测形态是 catch-all+throw+尾部清理;⑵`Task.Delay(已取消token)` 同步抛 OCE——「mock 回调里 Cancel 制造循环条件退出」类设计必须先核对循环体内语句顺序（Cancel 后的第一个 await 会立即消费取消）;⑶async wrapper 表达式体化（`{ await X(); }` → `=> X()`）消除收闭括号序列点——X 只经 OCE 退出时该括号结构性不可达;⑷多报告合并口径的缺口定位必须复刻 normalize+max 逻辑（裸 filename 前缀写法不一致会造出幻影缺口,实测一份内联脚本误报 6396 行）。**最终定性**:`Program` 2968/2975（重构后暴露的 try 收闭+尾部清理）= WS 循环条件正常出口防御性死分支——对端 close 帧必先被 `WebSocketJson.Receive` 撞见抛 IOException、abort 走 OCE,`ws.State != Open` 谓词在异常出口之前永假,保留为纵深防御。验证:全量覆盖率轮两轮全绿（2603 测试,合计 **100.0%** 15880/15882,门禁 99.5 过）、format 过、CI 终态见提交后监控。
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
 - xUnit / Moq 框架程序集
