@@ -4,14 +4,14 @@
 
 ## 0. 现状与完成定义
 
-### 当前状态快照（2025-03-11）
+### 当前状态快照（2026-09-21）
 
-- **构建**: `dotnet build` 通过，0 错误 0 警告。
-- **测试**: 530 个测试全部通过（41 个测试文件，覆盖 Unit / Integration / Performance）。
-- **CI**: 多平台（Ubuntu / Windows / macOS）构建 + 测试门禁已就绪。
-- **已实现 Actions（15 个）**: Ping, Echo, Login, Idle, PlayGames, RedeemKey, GetInventory, SendTradeOffer, AcceptTradeOffer, DeclineTradeOffer, CancelTradeOffer, GetGameInfo, SearchGames, GetPrice, GetMarketListings。
-- **已实现基础设施**: ControlPlane（15+ API 端点 + SSE 事件流 + SQLite 持久化 + 审计日志持久化/查询 + Admin UI）、Agent（WebSocket 隧道 + 全部 Action 注册）、SessionEngine（BotSession 状态机 + SessionManager + SteamClientManager）、SteamWebHandler、SteamTradeClient、FileCredentialStore（v2 加密存储 + 备份恢复 + 版本迁移）+ AES-GCM 加密（兼容历史 AES-CBC 数据）。
-- **整体完成度**: ~72%。
+- **构建**: `dotnet build` 通过，0 错误 0 警告（CI 强制 ASF 风格严格门禁 + `dotnet format` 校验）。
+- **测试**: 2603 个测试全部通过（Unit / Integration / Performance / FsCheck property）；行覆盖 100.0%（全 11 程序集，gate ≥ 99.9，见 `tests/TESTING.md`）。
+- **CI**: 多平台（Ubuntu / Windows / macOS）构建 + 测试 + 覆盖率门禁 + CodeQL + docs 全绿。
+- **已实现 Actions（34 个）**: 登录/会话（Login, Idle, PlayGames, Echo, Ping）、Key 与许可（RedeemKey, AddLicense）、库存与 farming（GetInventory, GetCardDrops, LootInventory, FindDuplicates, SwapDuplicates, GetPlaytime, GetAchievements, UnlockAchievements, ResetAchievements）、交易（SendTradeOffer, AcceptTradeOffer, DeclineTradeOffer, CancelTradeOffer, GetTradeOffers）、市场（GetMarketListings, GetMyMarketListings, CreateMarketListing, CancelMarketListings, GetPrice, GetGameInfo, GetGameInfoBatch, SearchGames）、积分商店（GetPointsShopSummary, ClaimPointsShopItems）、诊断（CheckAccountStanding, CheckProxy）等。
+- **已实现基础设施**: ControlPlane（REST API + SSE 事件流 + SQLite 持久化 + 审计日志 + Admin UI）、Agent（WebSocket 隧道 + 断线重连退避 + 全部 Action 注册 + 插件加载/权限信任模型）、SessionEngine（BotSession 状态机 + SessionManager + Token 自动刷新 + SteamClientManager）、SteamWebHandler、SteamTradeClient、SteamMarketClient（挂单/撤单/挂单创建 + 费用感知定价）、MarketWatch（价格告警）、FileCredentialStore（v2 加密存储 + 备份恢复 + 版本迁移）+ AES-GCM 加密、插件生态（IEventPlugin + 配置扩展 + Monitoring 插件）。
+- **整体完成度**: GA 出口条件 5/5 达成（§14，2026-09-15 验收），P0–P8 全部收官，进入迭代增强阶段。
 
 ### GA Exit Criteria
 
@@ -41,7 +41,7 @@
 - [x] 支持输入格式：`123`、`123,456`、`id/123`，统一规范化（`PlayGamesPayloadParser`）。
 - [x] play/stop/idle 分支完整实现。
 
-### 2.2 RedeemKey 深化（⚠️ 部分完成）
+### 2.2 RedeemKey 深化（✅ 完成）
 
 - [x] 基础错误映射（AlreadyOwned、DuplicateRequest、RateLimitExceeded、InvalidParam、Timeout）。
 - [x] Key masking 安全日志。
@@ -63,7 +63,7 @@
   - `ISteamTradeClient` 接口提取 + `GetOwnSteamId`（steamlogin cookie 解析），Trade URL 支持 64 位 partner。
   - Action 层默认开启校验（`skip_verification` / `verify_state=false` 可显式跳过），Agent DI 注册共享限流器。
 
-### 2.4 会话可靠性增强（⚠️ 部分完成）
+### 2.4 会话可靠性增强（✅ 完成）
 
 - [x] Token 持久化（FileCredentialStore 存储 RefreshToken / AccessToken）。
 - [x] Agent 断线重连（指数退避 500ms → 10s）。
@@ -153,7 +153,7 @@
 - [x] MobileAuthenticatorPlugin（TOTP、确认哈希、时间同步、交易确认列表/响应，59 个测试）。
 - [x] MonitoringPlugin（Prometheus 文本端点 + get_metrics Action + 插件 Web 路由；动作/会话/缓存/运行时指标；Grafana 面板模板 + Prometheus 抓取配置，21 个测试）。
 
-### 5.3 P4 深化（进行中，四个方向）
+### 5.3 P4 深化（✅ 完成，四个方向）
 
 - [x] 方向 1：事件订阅 + 配置 API 正式化。
 	- [x] `IEventPlugin` 能力接口（`OnSessionEventAsync(SessionEvent, CancellationToken)`，复用 SessionManager 既有事件流）。
