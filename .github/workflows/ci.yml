@@ -115,6 +115,10 @@ jobs:
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v5
       with:
+        # Branch protection makes Codecov reject tokenless uploads for main
+        # ("Token required because branch is protected"); the repo token has
+        # been in the CODECOV_TOKEN secret all along but was never referenced.
+        token: ${{ secrets.CODECOV_TOKEN }}
         files: "**/TestResults/*/coverage.cobertura.xml"
         fail_ci_if_error: false
 
