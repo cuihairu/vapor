@@ -286,7 +286,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
-### 当前基线（2026-09-22，行覆盖 100.0% / 分支覆盖 96.4%）
+### 当前基线（2026-09-22，行覆盖 100.0% / 分支覆盖 96.7%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中；分支覆盖按分支行的 condition-coverage 统计，同一行多次观察取已覆盖条件数的最大值）：
 
@@ -294,18 +294,18 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 |--------|--------|----------|
 | Agent | 100.0% | 98.5% (191/194) |
 | MobileAuthenticator | 100.0% | 97.2% (311/320) |
-| Monitoring | 100.0% | 89.8% (97/108) |
+| Monitoring | 100.0% | 96.3% (104/108) |
 | Plugins.Core | 100.0% | 98.1% (253/258) |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
 | ControlPlane | 100.0% | 95.4% (1976/2072) |
-| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） | 97.1% (2929/3015) |
-| MarketWatch | 100.0% | 91.5% (130/142) |
+| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） | 97.4% (2938/3015) |
+| MarketWatch | 100.0% | 93.0% (132/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
-| **合计** | **100.0%** (15882/15882) | **96.4%** (5943/6165) |
+| **合计** | **100.0%** (15882/15882) | **96.7%** (5961/6165) |
 
-分支覆盖门禁：CI `--min-branch 96.43`（基线 5943/6165 的未舍入值为 96.431%，门禁取 96.43——当前过、丢一个条件 96.415% 即红；2026-09-22 分支缺口冲刺后设点）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
+分支覆盖门禁：CI `--min-branch 96.69`（基线 5961/6165 的未舍入值为 96.691%，门禁取 96.69——当前过、丢一个条件 96.675% 即红；2026-09-22 分支缺口冲刺第二轮后设点）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
 
 > 上轮（2026-09-21）定性入册的 2 行防御性死分支（`Program` agent WS 循环的 try 收闭与尾部清理）已于 2026-09-22 收口——「结构性不可达」实为测试竞速：正常出口臂由 `AgentWs_RequestAbortedDuringHeartbeat_UnregistersThroughLoopExit` 确定性覆盖（`RequestAborted` 经 `IStartupFilter` 换成测试可控 linked CTS，token 无视心跳进行中取消；详见日期日志）。分母自此无残余缺口，CI 门禁收紧至 100%——任何一行未覆盖（新增代码未带测试）即红。
 
@@ -368,6 +368,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-22 分支覆盖度量与门禁轮（用户指令「把测试覆盖率往100%推进」——行覆盖已精确 100%,推进剩余自由度:分支条件命中度）。coverage-summary.py 扩展双口径输出:行覆盖照旧;分支覆盖按分支行的 `condition-coverage="50% (1/2)"` 属性统计（同一行多次报告观察取已覆盖条件数最大值,并集语义与行覆盖的 max hits 一致）,新增 `--min-branch` 门禁旗标。基线:**行 100.0%（15882/15882）/ 分支 94.8%（5843/6165）**——行 100% 不蕴含分支 100%:一行执行过 ≠ 它的每个布尔子条件结果都被取到（如 `int.TryParse(env) && v > 0` 的坏值臂、`game?.Price` 的 null 臂）。两轮全量串行实测摘要**逐字节一致**（分支数据无时序抖动,与行覆盖门禁同款确定性）,据此设精确基线棘轮门禁:CI `--min 100 --min-branch 94.77`（未舍入 94.777% 过;丢一个条件 94.761% 即红;行门禁同款纪律——故意新增不达分支基线的防御臂须同步抬基线入册）。缺口普查:322 未命中条件分布 253 行,前五 `DesiredStateReconciler` 49、`Config` 33、`SteamStoreApiClient` 14、`SteamAccountStandingClient` 13、`MarketWatchPlugin` 12。定性两族:**可收** = env 解析臂组合（Config 的 `TryParse && 范围校验` 坏值臂,测试注入 env 即达）、JSON 形状组合臂（`TryGetProperty && GetBoolean` 短路组合）、守卫 null 臂（`?? throw` 家族）;**难收** = 编排循环条件组合（`WaitForNextTickAsync` 假返回臂=取消语义）、reconciler 状态组合（`spec.Version` null 臂跨状态机）——与行覆盖 100% 冲刺前同构,留后轮专项冲刺收可收族、难收族定性入册。验证:两轮全量串行全绿（10 段全 attempt 1）、双旗标门禁本地过、py_compile 过、CI 终态见提交后监控。
 
 > 2026-09-22 分支缺口专项冲刺（立项日同日收口,+约 60 测试全绿;分支 5843/6165=94.8% → **5943/6165=96.4%**,未命中条件 322 → 222）。立项三族全收:①**env 解析臂**——`Config.LoadFromEnvironment` 33 条全亮（ConfigEnvironmentTests 51 行 theory:垃圾值→parse-false 臂、越界值→guard-false 臂、合法值→直通;负 ReconcileIntervalSeconds 会在并发 boot 中击杀 PeriodicTimer,故挂 ProcessGlobalTracingCollection 串行;WEBHOOK 键因 CompositionRootSmokeTests 改同名进程 env 而刻意排除,注释在案）。②**JSON 形状组合臂**——SteamStoreApiClient 14、SteamAccountStandingClient 13、SteamMarketClient 6:`TryGetProperty ∧ TryGetInt*` 短路组合的 present-but-wrong-type 臂必须用**分数/溢出数字**点亮（1.5、2.5、3000000000、50.25）——STJ 的 `TryGetInt32/TryGetInt64` 对非 Number 类型是**抛 InvalidOperationException 而非返 false**,字符串/布尔喂不得;`GetString()` 对 JSON null 返 null、对 Number/True/False 抛,空串/null 臂用 JSON null 达。③**守卫 null 臂**——两个 GuardClauseTests 共 14 条（AchievementsClient/BadgesClient/ProfileGamesClient/RedisVaporCache/TradeRateLimiter ctor、SteamWebHandler null-config 回退、RedactingLoggerProvider;Plugins.Core 的 PluginManager/PluginEventDispatcher/DefaultPluginHostServices、事件分发器重复注册去重、插件清单坏版本号 0.0 回退、发现器缺目录/坏插件日志）。零散收口:null-Error 回退臂 12 条（send/accept/decline/cancel/getoffers/loot/createmarketlisting/checkproxy 八 action 的 `catch { Error=null }` 兜底文案路径）、字符串 "0" 过 TryParse 败 `> 0` 守卫臂 4 条（points shop 两 action/add_license/get_inventory）、`??`/`?.` 默认臂与「伪难收」复核改收（PlayGamesAction L57/74 true 臂=mock ISteamClientManager 验证 play 集合与 stop 空集转发、SteamTimeSynchronizer L64 带日志器成功同步臂、CheckAccountStanding 会话 cookie 解析 SteamID、GetGameInfo/GetMarketListings 降级组合）。**难收族定性入册（维持并细化,222 条中的存量主体）**:DesiredStateReconciler 49 条——L137 `WaitForNextTickAsync` false 臂结构性不可达（timer 方法局部、停机即弃,真取消走宿主停机路径已有测试）,其余为编排循环跨状态组合（RecordActionAsync 审计隔离、payload JSON/dict 双通道六条件解析、gift accept 三态、farm 统计组合）,需飞行中集成 fixture,维持「干净但集成型构造」留深化轮;SteamAchievementsClient L92/93 TryParse-false 臂在 SummaryRegex `\d+` 不变量下不可达（捕获组恒全数字）;SteamClientManager L40/48 反射臂依赖 SteamKit2 内部结构（集成壳族）;Program L3460 RemoteIpAddress null 臂 TestServer 恒设值（宿主族）。剩余缺口重镇:MarketWatchPlugin 12、MobileAuthenticator 9、Monitoring 11（多为插件循环/传输边界组合）。门禁棘轮:CI `--min-branch 94.77` → **96.43**（未舍入 96.431% 过;丢一个条件 96.415% 即红）。验证:全量串行绿（10 段全 attempt 1,2714 测试,Steam.Core 1415/ControlPlane 752/MobileAuthenticator 129）,format 门禁过,CI 终态见提交后监控。
+
+> 2026-09-22 分支缺口冲刺第二轮（收口轮续,逐轮棘轮:+9 测试全绿,分支 5943/6165=96.4% → **5961/6165=96.7%**,门禁 96.43 → **96.69**）。①补漏入基线:收口轮终轮因 Coverage 串行脚本 `--no-build` 用了撞车前的陈旧 Release DLL,PlayGamesAction 转发臂与 TimeSync 带日志同步臂测试在代码里但不在基线里——本轮重建后落账 +3。教训入 runbook:直接跑 collect-coverage-serial.sh 时改过测试必须显式 `dotnet build -c Release` 前置,`--no-build` 硬编码在脚本里。②Monitoring:MetricsRegistry.FormatValue 的 ±Inf/NaN 三臂五条件一条测试全收（`GaugeSet(double.PositiveInfinity/NegativeInfinity/NaN)` + RenderPrometheus 断言 `+Inf/-Inf/NaN` 文本）;MetricsHttpServer 单 token 请求行臂（`"GET\r\n"`——method 无 URL token 走空 URL 丢弃路径）与 ctor null payloadProvider 守卫。③MarketWatch 测试钩子 null-_loop 臂四条:InitializeAsync 前直调 RestartLoopForTestsAsync/StopLoopForTestsAsync,`_loop is not null` 与 `_loopCts` 的 null 臂走跳过路径。④Steam.Core ttl 三态臂六条:GetCardDrops/GetPlaytime 的 `ttlSeconds is > 0` 正数臂（现有测试只有 0 与缺省）,GetGameInfoBatch 经 ResolveTtlOverride 的负值回退臂与正值覆盖臂（带 MemoryVaporCache 走 FetchCachedAsync 缓存路径才达 staleTtl 三元）。⑤新入册定性:MetricsHttpServer L122 `parts.Length > 0` false 臂不可达（`Split(' ')` 永不返回空数组,防御冗余）;MonitoringPlugin L200 非 null 臂需 ISessionManager 宿主 stub、L248 logger null 臂在 LoggerFactory 流程下恒非 null 不可达;BotSession 10 条属会话引擎命令超时/取消竞态窗口,与 Reconciler 同族留深化轮。验证:全量串行绿（10 段全 attempt 1,2723 测试）,format 门禁过,CI 终态见提交后监控。
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
 - xUnit / Moq 框架程序集
