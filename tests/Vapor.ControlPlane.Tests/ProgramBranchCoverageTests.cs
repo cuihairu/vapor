@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -868,7 +869,7 @@ public sealed class ProgramBranchCoverageTests
 	public async Task AgentWs_ClientCloseFrame_TearsDownHandlerAndUnregisters()
 	{
 		// A close frame surfaces as an IOException from WebSocketJson.Receive: the
-		// handler must still fall through to its finally (unregister + disconnected
+		// handler must still run its exception cleanup (unregister + disconnected
 		// event) even though the server never completes the close handshake.
 		await using BranchFactory factory = new();
 		using var adminClient = factory.CreateClient();
@@ -902,13 +903,18 @@ public sealed class ProgramBranchCoverageTests
 	}
 
 	[Fact]
-	public async Task AgentWs_ConnectionAbortedDuringMessage_UnregistersThroughLoopExit()
+	public async Task AgentWs_RequestAbortedDuringHeartbeat_UnregistersThroughLoopExit()
 	{
-		// A heartbeat that outlives the connection lets the read loop evaluate its own
-		// condition after the abort (RequestAborted cancelled) and exit normally into
-		// the finally — the graceful-disconnect teardown, not the exception path.
-		var store = new SqliteJobStore(":memory:");
-		await using BranchFactory factory = new() { JobStore = new SlowHeartbeatStore(store) };
+		// The read loop's own condition (RequestAborted cancelled) is the graceful
+		// exit: the heartbeat deliberately outlives the abort and returns normally
+		// (SlowHeartbeatStore ignores the token), so the condition re-evaluates to
+		// false and teardown runs through the regular loop end — not the
+		// read-exception path. The abort is injected by swapping the endpoint's
+		// RequestAborted for a test-controlled linked token: TestServer's
+		// client-side Abort races the socket teardown and can surface as a read
+		// exception instead of a condition exit.
+		SlowHeartbeatStore slowStore = new(new SqliteJobStore(":memory:"));
+		await using BranchFactory factory = new() { JobStore = slowStore };
 		using var adminClient = factory.CreateClient();
 		adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 
@@ -920,10 +926,15 @@ public sealed class ProgramBranchCoverageTests
 		await Task.Delay(200);
 		await WebSocketJson.Send(ws, new WSMessage("task_heartbeat", null, null, null, new TaskHeartbeat("t-1", 0, DateTimeOffset.UtcNow)), CancellationToken.None);
 
-		// The server is now inside the (deliberately slow) heartbeat; aborting here
-		// cancels RequestAborted before the loop's condition is evaluated again.
-		await Task.Delay(150);
-		ws.Abort();
+		// Cancel only after the loop has consumed the heartbeat message and is
+		// inside the (deliberately slow, token-ignoring) heartbeat: cancelling
+		// earlier could still land inside Receive, whose OCE would take the
+		// exception path. From the signal on, the graceful exit is the only
+		// possible path — the heartbeat returns normally and the healthy socket
+		// means Receive is never entered again.
+		await slowStore.HeartbeatEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+		Assert.NotNull(factory.RequestAbortControl);
+		factory.RequestAbortControl.Cancel();
 
 		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(10);
 		while (DateTimeOffset.UtcNow < deadline)
@@ -1447,6 +1458,13 @@ internal sealed class SlowHeartbeatStore : IJobStore
 {
 	private readonly IJobStore _inner;
 
+	/// <summary>
+	/// Completed when HeartbeatTask is entered, so a test can cancel the request
+	/// only after the read loop has consumed the heartbeat message — cancelling
+	/// earlier could still land inside Receive and take the exception path.
+	/// </summary>
+	public TaskCompletionSource HeartbeatEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
 	public SlowHeartbeatStore(IJobStore inner)
 	{
 		_inner = inner;
@@ -1458,6 +1476,7 @@ internal sealed class SlowHeartbeatStore : IJobStore
 		// is to return normally after the abort so the read loop re-evaluates its
 		// condition (RequestAborted) and exits through the regular loop end — the
 		// graceful teardown path, not the exception path.
+		HeartbeatEntered.TrySetResult();
 		await Task.Delay(600).ConfigureAwait(false);
 		return await _inner.HeartbeatTask(taskId, attempt, CancellationToken.None).ConfigureAwait(false);
 	}
@@ -1489,6 +1508,16 @@ internal sealed class BranchFactory : WebApplicationFactory<Program>
 	/// <summary>Optional audit store override (exposed for assertions and fault injection).</summary>
 	public IAuditStore? AuditStore { get; internal set; }
 
+	/// <summary>
+	/// Handle onto the agent WebSocket request's abort signal: the middleware
+	/// below replaces the endpoint's RequestAborted with a linked source a test
+	/// can cancel deterministically from inside a store call. TestServer's
+	/// client-side <c>WebSocket.Abort()</c> races the socket teardown and can
+	/// surface as a read exception instead of a graceful condition exit. Null
+	/// until the first /v1/agent/ws request has passed the pipeline.
+	/// </summary>
+	public CancellationTokenSource? RequestAbortControl { get; private set; }
+
 	protected override void ConfigureWebHost(IWebHostBuilder builder)
 	{
 		BranchFactory self = this;
@@ -1504,6 +1533,33 @@ internal sealed class BranchFactory : WebApplicationFactory<Program>
 			services.AddSingleton<IJobStore>(sp => self.JobStore ?? new SqliteJobStore(":memory:"));
 			services.AddSingleton<IAuditStore>(sp => self.AuditStore ??= new SqliteAuditStore(":memory:"));
 			services.AddSingleton<IEventBroker>(self.Events);
+			services.AddSingleton<IStartupFilter>(new WsRequestAbortCapture(this));
 		});
+	}
+
+	/// <summary>
+	/// Swaps the agent WebSocket request's RequestAborted for a linked,
+	/// test-controlled source (captured on <see cref="BranchFactory"/>).
+	/// Injected as a startup filter so it wraps Program's pipeline instead of
+	/// replacing it — a <c>builder.Configure</c> middleware branch loses the
+	/// mapped endpoints (every WS upgrade 404s).
+	/// </summary>
+	private sealed class WsRequestAbortCapture(BranchFactory factory) : IStartupFilter
+	{
+		public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+		{
+			app.Use(async (ctx, nextMiddleware) =>
+			{
+				if (ctx.Request.Path.StartsWithSegments("/v1/agent/ws"))
+				{
+					CancellationTokenSource control = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+					factory.RequestAbortControl = control;
+					ctx.RequestAborted = control.Token;
+				}
+
+				await nextMiddleware();
+			});
+			next(app);
+		};
 	}
 }
