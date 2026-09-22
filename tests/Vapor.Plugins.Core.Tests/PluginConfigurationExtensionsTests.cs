@@ -158,6 +158,18 @@ public sealed class PluginConfigurationExtensionsTests : IDisposable
 	}
 
 	[Fact]
+	public void GetBool_NullConfiguredValue_FallsBack()
+	{
+		// A Dictionary<string, string> accepts null values, so TryGetValue can match
+		// with a null value; TryParseBool must treat that like any other unparsable
+		// entry and return the fallback.
+		_config["enabled"] = null!;
+
+		Assert.True(_config.GetBool("enabled", fallback: true));
+		Assert.False(_config.GetBool("enabled", fallback: false));
+	}
+
+	[Fact]
 	public void GetBool_EnvironmentVariableOverridesConfig()
 	{
 		_config["enabled"] = "true";

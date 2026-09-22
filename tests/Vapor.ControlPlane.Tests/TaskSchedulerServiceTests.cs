@@ -80,6 +80,76 @@ public sealed class TaskSchedulerServiceTests
 	}
 
 	[Fact]
+	public async Task DispatchOnce_AttemptsExhausted_WithTracingListener_ClosesDispatchActivity()
+	{
+		// Attach a listener so the dispatcher's ActivitySource produces a real
+		// Activity: the exhausted-attempts path must close it with an error
+		// status (every other test runs listener-less, where dispatch is null).
+		using var listener = new System.Diagnostics.ActivityListener
+		{
+			ShouldListenTo = source => string.Equals(source.Name, VaporTracing.SourceName, StringComparison.Ordinal),
+			Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) =>
+				System.Diagnostics.ActivitySamplingResult.AllData,
+		};
+		System.Diagnostics.ActivitySource.AddActivityListener(listener);
+		try
+		{
+			var registry = new AgentRegistry();
+			using var cts = new CancellationTokenSource();
+			registry.Register(
+				new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+				new NoopWebSocket(),
+				cts.Token);
+
+			var store = new FakeJobStore();
+			store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 10));
+			var events = new RecordingEventBroker();
+			var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+
+			await scheduler.DispatchOnce(CancellationToken.None);
+
+			Assert.Equal(new[] { "task-1" }, store.FailedTaskIds);
+		}
+		finally
+		{
+			listener.Dispose();
+		}
+	}
+
+	[Fact]
+	public async Task DispatchOnce_EnqueueRejected_WithTracingListener_ClosesDispatchActivity()
+	{
+		// Same as above for the requeue path: a live Activity must still be
+		// closed with an error status when the enqueue is rejected.
+		using var listener = new System.Diagnostics.ActivityListener
+		{
+			ShouldListenTo = source => string.Equals(source.Name, VaporTracing.SourceName, StringComparison.Ordinal),
+			Sample = (ref System.Diagnostics.ActivityCreationOptions<System.Diagnostics.ActivityContext> _) =>
+				System.Diagnostics.ActivitySamplingResult.AllData,
+		};
+		System.Diagnostics.ActivitySource.AddActivityListener(listener);
+		try
+		{
+			var registry = new AgentRegistry();
+			AddAgent(registry, CreateFullAgent("agent-1", "local", "login"));
+
+			var store = new FakeJobStore();
+			store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
+			var events = new RecordingEventBroker();
+			var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+
+			await scheduler.DispatchOnce(CancellationToken.None);
+
+			Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+			Assert.Equal("task.enqueue_failed", events.Events[0].Type);
+		}
+		finally
+		{
+			listener.Dispose();
+		}
+	}
+
+	[Fact]
 	public async Task StartStop_RunsAtLeastOneDispatchTick()
 	{
 		var registry = new AgentRegistry();

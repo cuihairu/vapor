@@ -55,6 +55,28 @@ public sealed class VaporCryptoHelperMethodTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SetEncryptionKeyFromFile_FileUriPrefix_IsStrippedBeforeReading()
+	{
+		// Docker/K8s secret mounts hand over "file:/path" URIs: the prefix must be
+		// stripped so the key material loads exactly as with the bare path.
+		VaporCryptoHelper.ResetForTests();
+		string path = Path.Combine(Path.GetTempPath(), "vapor-key-" + Guid.NewGuid().ToString("N"));
+		await File.WriteAllTextAsync(path, "raw vapor key file content with spaces !! not base64");
+		try
+		{
+			VaporCryptoHelper.SetEncryptionKeyFromFile("file:" + path);
+
+			string? encrypted = VaporCryptoHelper.Encrypt(ECryptoMethod.AES, "roundtrip");
+			Assert.NotNull(encrypted);
+			Assert.Equal("roundtrip", await VaporCryptoHelper.Decrypt(ECryptoMethod.AES, encrypted!));
+		}
+		finally
+		{
+			File.Delete(path);
+		}
+	}
+
+	[Fact]
 	public async Task SetEncryptionKeyFromFile_NonBase64Text_FallsBackToRawUtf8Key()
 	{
 		VaporCryptoHelper.ResetForTests();

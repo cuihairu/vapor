@@ -46,6 +46,18 @@ public sealed class TradeRateLimiterTests : IDisposable
 	}
 
 	[Fact]
+	public void LeaseConstructedWithoutRelease_DisposeSkipsCallbackAndIsIdempotent()
+	{
+		// A lease whose pending release callback was never armed (the internal test
+		// constructor allows null) disposes without invoking anything, and a second
+		// dispose stays a guarded no-op.
+		var lease = new TradeRateLease(null!);
+
+		lease.Dispose();
+		lease.Dispose();
+	}
+
+	[Fact]
 	public async Task Acquire_WhenConcurrencySlotHeld_ReturnsNullAfterTimeout()
 	{
 		using var limiter = CreateLimiter(new TradeRateLimiterOptions

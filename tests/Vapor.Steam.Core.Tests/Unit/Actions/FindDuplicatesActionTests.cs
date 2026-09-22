@@ -338,6 +338,133 @@ public sealed class FindDuplicatesActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_PaginatesUntilHasMoreFalse()
+	{
+		// A first page carrying HasMore + LastAssetId must be followed by a second
+		// request resuming at that asset id; the second page (HasMore=false) ends it.
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.SetupSequence(c => c.GetInventoryAsync(OwnSteamId, 753, 6, It.IsAny<ulong?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new InventoryResponse
+			{
+				Success = true,
+				Items = [new InventoryItem { AssetId = 1, AppId = 753, ClassId = 100, Tradable = true, MarketHashName = "Card A" }],
+				HasMore = true,
+				LastAssetId = 1
+			})
+			.ReturnsAsync(new InventoryResponse
+			{
+				Success = true,
+				Items = [new InventoryItem { AssetId = 2, AppId = 753, ClassId = 100, Tradable = true, MarketHashName = "Card A" }]
+			});
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(1, result.Output!["excess_count"]);
+		clientMock.Verify(c => c.GetInventoryAsync(OwnSteamId, 753, 6, 1UL, It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_HasMoreWithoutLastAssetId_StopsPaginating()
+	{
+		// HasMore=true but no cursor: the loop must exit on the missing
+		// startAssetId rather than re-fetching the same page forever.
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, 753, 6, null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new InventoryResponse
+			{
+				Success = true,
+				Items = [new InventoryItem { AssetId = 1, AppId = 753, ClassId = 100, Tradable = true }],
+				HasMore = true,
+				LastAssetId = null
+			});
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		clientMock.Verify(
+			c => c.GetInventoryAsync(OwnSteamId, 753, 6, It.IsAny<ulong?>(), It.IsAny<CancellationToken>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_MorePagesThanSafetyLimit_StopsAtMaxPagesPerApp()
+	{
+		// An inventory that always reports HasMore must be cut off by the page
+		// safety limit instead of looping forever.
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		var calls = 0;
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, 753, 6, It.IsAny<ulong?>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(() =>
+			{
+				calls++;
+				return new InventoryResponse
+				{
+					Success = true,
+					Items = [],
+					HasMore = true,
+					LastAssetId = (ulong)calls
+				};
+			});
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		clientMock.Verify(
+			c => c.GetInventoryAsync(OwnSteamId, 753, 6, It.IsAny<ulong?>(), It.IsAny<CancellationToken>()),
+			Times.Exactly(FindDuplicatesAction.MaxPagesPerApp));
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_KeepAsZeroNumber_Fails()
+	{
+		// {"keep":0} reaches the JsonElement-number arm but fails the >= 1 guard,
+		// taking the same reject path as an unsupported shape.
+		var (action, _) = CreateActionWithMock();
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>("""{"keep":0}""")!,
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("keep", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_KeepAsFractionalNumber_Fails()
+	{
+		// {"keep":1.5} is a JSON number so it reaches TryGetInt32, which rejects
+		// the fractional value — the parse-false arm of the number case.
+		var (action, _) = CreateActionWithMock();
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object?>>("""{"keep":1.5}""")!,
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("keep", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_KeepAsUnsupportedShape_Fails()
 	{
 		var (action, _) = CreateActionWithMock();

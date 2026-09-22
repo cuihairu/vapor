@@ -121,6 +121,67 @@ public sealed class MaFileParserTests
 	}
 
 	[Fact]
+	public void Parse_EncryptedSda_WithoutSessionKey_HasSessionStaysFalse()
+	{
+		// An encrypted shell whose decrypted guard blob carries no Session key at
+		// all: the TryGetProperty arm fails short and HasSession stays false.
+		string password = "hunter2";
+		byte[] salt = RandomNumberGenerator.GetBytes(8);
+		byte[] iv = RandomNumberGenerator.GetBytes(16);
+		string guardJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+		{
+			["shared_secret"] = SharedSecret,
+			["identity_secret"] = IdentitySecret,
+			["account_name"] = "no-session"
+		});
+
+		string json = JsonSerializer.Serialize(new Dictionary<string, object?>
+		{
+			["steamid"] = "76561198000000008",
+			["account_name"] = "no-session",
+			["encryption_iv"] = Convert.ToBase64String(iv),
+			["encryption_salt"] = Convert.ToBase64String(salt),
+			["Steamguard"] = EncryptSdaGuard(password, salt, iv, guardJson)
+		});
+
+		MaFileInfo info = MaFileParser.Parse(json, password);
+
+		Assert.False(info.HasSession);
+		Assert.Equal(SharedSecret, info.SharedSecret);
+	}
+
+	[Fact]
+	public void Parse_EncryptedSda_SessionObjectInsideGuard_HasSessionStaysFalse()
+	{
+		// A Session key that is a JSON object (not a string) fails the ValueKind
+		// arm of the guard: HasSession must stay false rather than throw.
+		string password = "hunter2";
+		byte[] salt = RandomNumberGenerator.GetBytes(8);
+		byte[] iv = RandomNumberGenerator.GetBytes(16);
+		string guardJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+		{
+			["shared_secret"] = SharedSecret,
+			["identity_secret"] = IdentitySecret,
+			["account_name"] = "object-session",
+			["Session"] = new Dictionary<string, object?> { ["SteamLogin"] = "76561198000000009%7C%7Ctoken" }
+		});
+
+		string json = JsonSerializer.Serialize(new Dictionary<string, object?>
+		{
+			["steamid"] = "76561198000000009",
+			["account_name"] = "object-session",
+			["encryption_iv"] = Convert.ToBase64String(iv),
+			["encryption_salt"] = Convert.ToBase64String(salt),
+			["Steamguard"] = EncryptSdaGuard(password, salt, iv, guardJson)
+		});
+
+		MaFileInfo info = MaFileParser.Parse(json, password);
+
+		Assert.False(info.HasSession);
+		Assert.Equal(SharedSecret, info.SharedSecret);
+	}
+
+	[Fact]
 	public void Parse_AccountNameOnly_NoSteamId_SteamIdDefaultsToEmpty()
 	{
 		// A flat maFile keyed by account name alone: the steamid null-fallback

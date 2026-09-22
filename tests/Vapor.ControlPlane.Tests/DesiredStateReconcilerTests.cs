@@ -1652,6 +1652,94 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.Equal([220U, 221U, 222U, 223U, 224U], DesiredStateReconciler.ExtractFarmQueue(output, spec));
 	}
 
+	// ── malformed-entry matrices for the private static report readers ──
+	// JSON round-trips (SQLite snapshots, agent payloads) surface JsonElement
+	// nodes and broken fields the dictionary-shaped fixtures never produce;
+	// these pin every defensive arm of the three entry readers.
+
+	private static System.Text.Json.JsonElement Json(string json) =>
+		System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(json);
+
+	private static (bool Ok, uint AppId, double Hours) ReadPlaytimeEntry(object? entry)
+	{
+		MethodInfo? info = typeof(DesiredStateReconciler).GetMethod("TryReadPlaytimeEntry", BindingFlags.NonPublic | BindingFlags.Static);
+		Assert.NotNull(info);
+		object?[] args = [entry, 0u, 0.0];
+		bool ok = (bool)info.Invoke(null, args)!;
+		return (ok, (uint)args[1]!, (double)args[2]!);
+	}
+
+	private static (bool Ok, uint AppId, int Remaining) ReadDropEntry(object? entry)
+	{
+		MethodInfo? info = typeof(DesiredStateReconciler).GetMethod("TryReadDropEntry", BindingFlags.NonPublic | BindingFlags.Static);
+		Assert.NotNull(info);
+		object?[] args = [entry, 0u, 0];
+		bool ok = (bool)info.Invoke(null, args)!;
+		return (ok, (uint)args[1]!, (int)args[2]!);
+	}
+
+	private static (bool Ok, int Total) ReadTotalDropsRemaining(IReadOnlyDictionary<string, object?> output)
+	{
+		MethodInfo? info = typeof(DesiredStateReconciler).GetMethod("TryReadTotalDropsRemaining", BindingFlags.NonPublic | BindingFlags.Static);
+		Assert.NotNull(info);
+		object?[] args = [output, 0];
+		bool ok = (bool)info.Invoke(null, args)!;
+		return (ok, (int)args[1]!);
+	}
+
+	[Fact]
+	public void TryReadPlaytimeEntry_JsonElementArms_RejectBrokenFields()
+	{
+		// Missing hours / missing app_id / non-number app_id → TryGetProperty
+		// or the ValueKind guard fails.
+		Assert.False(ReadPlaytimeEntry(Json("""{"app_id":231}""")).Ok);
+		Assert.False(ReadPlaytimeEntry(Json("""{"hours":1.5}""")).Ok);
+		Assert.False(ReadPlaytimeEntry(Json("""{"app_id":"232","hours":1}""")).Ok);
+		// Negative hours → the >= 0 guard fails.
+		Assert.False(ReadPlaytimeEntry(Json("""{"app_id":230,"hours":-1}""")).Ok);
+		// app_id beyond uint.MaxValue → NormalizeAppId rejects it.
+		Assert.False(ReadPlaytimeEntry(Json("""{"app_id":5000000000,"hours":1}""")).Ok);
+		// app_id at or below zero → same rejection.
+		Assert.False(ReadPlaytimeEntry(Json("""{"app_id":-5,"hours":1}""")).Ok);
+		// Well-formed entry still parses.
+		(bool Ok, uint AppId, double Hours) ok = ReadPlaytimeEntry(Json("""{"app_id":234,"hours":2.5}"""));
+		Assert.True(ok.Ok);
+		Assert.Equal(234u, ok.AppId);
+		Assert.Equal(2.5, ok.Hours);
+	}
+
+	[Fact]
+	public void TryReadDropEntry_JsonElementArms_RejectBrokenFields()
+	{
+		Assert.False(ReadDropEntry(Json("""{"app_id":241}""")).Ok);                         // missing drops_remaining
+		Assert.False(ReadDropEntry(Json("""{"drops_remaining":2}""")).Ok);                  // missing app_id
+		Assert.False(ReadDropEntry(Json("""{"app_id":"242","drops_remaining":2}""")).Ok);   // non-number app_id
+		Assert.False(ReadDropEntry(Json("""{"app_id":243,"drops_remaining":"2"}""")).Ok);   // non-number drops
+		Assert.False(ReadDropEntry(Json("""{"app_id":240,"drops_remaining":-1}""")).Ok);    // drops <= 0
+		Assert.False(ReadDropEntry(Json("""{"app_id":0,"drops_remaining":3}""")).Ok);       // app_id <= 0
+		(bool Ok, uint AppId, int Remaining) ok = ReadDropEntry(Json("""{"app_id":244,"drops_remaining":3}"""));
+		Assert.True(ok.Ok);
+		Assert.Equal(244u, ok.AppId);
+		Assert.Equal(3, ok.Remaining);
+	}
+
+	[Fact]
+	public void TryReadTotalDropsRemaining_Arms_RejectBrokenValues()
+	{
+		// A fractional JSON number cannot be an int → TryGetInt32 false; a
+		// negative total is rejected by the >= 0 guard.
+		Assert.False(ReadTotalDropsRemaining(new Dictionary<string, object?> { ["total_drops_remaining"] = Json("1.5") }).Ok);
+		Assert.False(ReadTotalDropsRemaining(new Dictionary<string, object?> { ["total_drops_remaining"] = Json("-2") }).Ok);
+		// A plain JsonElement number parses.
+		(bool Ok, int Total) ok = ReadTotalDropsRemaining(new Dictionary<string, object?> { ["total_drops_remaining"] = Json("7") });
+		Assert.True(ok.Ok);
+		Assert.Equal(7, ok.Total);
+		// A string survives the dictionary fallback path.
+		(bool Ok, int Total) fromString = ReadTotalDropsRemaining(new Dictionary<string, object?> { ["total_drops_remaining"] = "9" });
+		Assert.True(fromString.Ok);
+		Assert.Equal(9, fromString.Total);
+	}
+
 	private static AccountSpec NewSpec() =>
 		new AccountStore().Upsert("alice", true, AccountDesiredState.Farm, null, null, null, note: null);
 
@@ -1971,6 +2059,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		int intervalSeconds = 15,
 		int tradeRefreshSeconds = 600,
 		int standingRefreshSeconds = 0,
+		int boostRefreshSeconds = 1800,
 		IEventBroker? broker = null)
 	{
 		var cfg = new Config(
@@ -1990,7 +2079,8 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			ReconcileFarmRefreshSeconds: farmRefreshSeconds,
 			ReconcileTradeRefreshSeconds: tradeRefreshSeconds,
 			ReconcileStandingRefreshSeconds: standingRefreshSeconds,
-			ReconcileDryRun: dryRun);
+			ReconcileDryRun: dryRun,
+			ReconcileBoostRefreshSeconds: boostRefreshSeconds);
 
 		return new DesiredStateReconciler(
 			accounts,
@@ -2065,6 +2155,35 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 
 		Assert.Contains(broker.Published, p => p.Type == "account.standing_alert"
 			&& string.Equals(p.Payload!["account"], "alice"));
+	}
+
+	[Fact]
+	public async Task StandingAlert_MinimalAgentOutput_PublishesNullBanFlags()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var broker = new RecordingBroker();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, broker: broker, standingRefreshSeconds: 60);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		// An agent output carrying only the summary (no ban-flag keys at all)
+		// must still alert and quarantine — the missing flags surface as nulls
+		// in the event payload instead of breaking the publish.
+		jobs.Outputs["task-1-0"] = new Dictionary<string, object?> { ["standing"] = "banned" };
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		IReadOnlyDictionary<string, object?> alert = broker.Published
+			.Where(p => string.Equals(p.Type, "account.standing_alert", StringComparison.Ordinal))
+			.Select(p => p.Payload)
+			.Single(payload => payload is not null && string.Equals((string?)payload["account"], "alice", StringComparison.Ordinal))!;
+		Assert.Equal("banned", alert["standing"]);
+		Assert.Null(alert["economyBan"]);
+		Assert.Null(alert["vacBanned"]);
+		Assert.True(reconciler.GetOrchestrationView("alice")!.StandingQuarantined);
 	}
 
 	[Fact]
@@ -2837,6 +2956,525 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			DesiredStateReconciler.ExtractPendingGiftOffers(mixed, spec);
 		Assert.Single(dictOffers);
 		Assert.Equal(222UL, dictOffers[0].OfferId);
+	}
+
+	[Fact]
+	public void EvaluateTradeOffers_MalformedFieldArms_StaySafeOrAcceptGifts()
+	{
+		// A whitelist holding both canonical SteamId64 entries and a bare
+		// account number (below the SteamId64 base) — the bare one maps to 0
+		// and is filtered out of the effective set.
+		AccountStore accounts = new();
+		AccountSpec spec = accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64, 456]));
+
+		// Every short-circuit arm of the JsonElement reader, one broken field
+		// per entry: each malformed offer must stay out of the accept queue.
+		using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse("""
+			[
+				{"trade_offer_id":"abc","partner_steam_id":"456","items_to_give_count":0,"is_our_offer":false},
+				{"partner_steam_id":"456","items_to_give_count":0,"is_our_offer":false},
+				{"trade_offer_id":"112","items_to_give_count":0,"is_our_offer":false},
+				{"trade_offer_id":"113","partner_steam_id":"xyz","items_to_give_count":0,"is_our_offer":false},
+				{"trade_offer_id":"114","partner_steam_id":"456","items_to_give_count":1.5,"is_our_offer":false},
+				{"trade_offer_id":"115","partner_steam_id":"456","items_to_give_count":0,"is_our_offer":"true"}
+			]
+			"""))
+		{
+			List<DesiredStateReconciler.PendingGiftOffer> jsonOffers =
+				DesiredStateReconciler.EvaluateTradeOffers(
+					new Dictionary<string, object?> { ["received_offers"] = doc.RootElement.Clone() }, spec).Accepted;
+			// 115 survives: an unreadable is_our_offer reads as "not ours", and a
+			// whitelisted pure gift is acceptable by policy.
+			PendingGiftOfferAssert(jsonOffers, [115UL]);
+		}
+
+		// The dictionary reader breaks on the same axes (missing key, null
+		// value, unparseable text) — plus a missing is_our_offer key.
+		var dict = new Dictionary<string, object?>
+		{
+			["received_offers"] = new List<object?>
+			{
+				new Dictionary<string, object?> { ["trade_offer_id"] = null!, ["partner_steam_id"] = "456", ["items_to_give_count"] = 0, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["partner_steam_id"] = "456", ["items_to_give_count"] = 0, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "abc", ["partner_steam_id"] = "456", ["items_to_give_count"] = 0, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "116", ["items_to_give_count"] = 0, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "117", ["partner_steam_id"] = null!, ["items_to_give_count"] = 0, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "118", ["partner_steam_id"] = "xyz", ["items_to_give_count"] = 0, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "119", ["partner_steam_id"] = "456", ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "120", ["partner_steam_id"] = "456", ["items_to_give_count"] = null!, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "121", ["partner_steam_id"] = "456", ["items_to_give_count"] = "lots", ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "122", ["partner_steam_id"] = "456", ["items_to_give_count"] = 0 }
+			}
+		};
+		List<DesiredStateReconciler.PendingGiftOffer> dictOffers =
+			DesiredStateReconciler.EvaluateTradeOffers(dict, spec).Accepted;
+		// 120's unreadable give-count reads as int.MaxValue (asks items → skip);
+		// 122's missing flag reads as "not ours" → acceptable.
+		PendingGiftOfferAssert(dictOffers, [122UL]);
+
+		static void PendingGiftOfferAssert(List<DesiredStateReconciler.PendingGiftOffer> offers, ulong[] expected) =>
+			Assert.Equal(expected, offers.Select(o => o.OfferId));
+	}
+
+	[Fact]
+	public void EvaluateTradeOffers_IsOurOfferFlagArms_MissingTrueAndFalse()
+	{
+		AccountStore accounts = new();
+		AccountSpec spec = accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+
+		// The JsonElement reader's is_our_offer axis: a missing flag reads as
+		// "not ours" (the pure gift is acceptable), an explicit true is our own
+		// offer (skipped as our_offer), an explicit false stays acceptable.
+		using (System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse("""
+			[
+				{"trade_offer_id":"510","partner_steam_id":"456","items_to_give_count":0},
+				{"trade_offer_id":"511","partner_steam_id":"456","items_to_give_count":0,"is_our_offer":true},
+				{"trade_offer_id":"512","partner_steam_id":"456","items_to_give_count":0,"is_our_offer":false}
+			]
+			"""))
+		{
+			(List<DesiredStateReconciler.PendingGiftOffer> Accepted, List<DesiredStateReconciler.TradeOfferDecision> Decisions) json =
+				DesiredStateReconciler.EvaluateTradeOffers(
+					new Dictionary<string, object?> { ["received_offers"] = doc.RootElement.Clone() }, spec);
+			Assert.Equal([510UL, 512UL], json.Accepted.Select(o => o.OfferId));
+			Assert.Equal(new[] { "accept", "skip", "accept" }, json.Decisions.Select(d => d.Decision));
+			DesiredStateReconciler.TradeOfferDecision ours = Assert.Single(json.Decisions, d => d.Decision == "skip");
+			Assert.Equal(511UL, ours.OfferId);
+			Assert.Equal("our_offer", ours.Reason);
+		}
+
+		// The dictionary reader's same axis: the missing key and an explicit
+		// false stay gifts, an explicit true is skipped as our own offer, and
+		// a non-bool value ("true" survived some round-trip as text) reads as
+		// "not ours" — the gift stays acceptable.
+		var dict = new Dictionary<string, object?>
+		{
+			["received_offers"] = new List<object?>
+			{
+				new Dictionary<string, object?> { ["trade_offer_id"] = "610", ["partner_steam_id"] = "456", ["items_to_give_count"] = 0 },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "611", ["partner_steam_id"] = "456", ["items_to_give_count"] = 0, ["is_our_offer"] = true },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "612", ["partner_steam_id"] = "456", ["items_to_give_count"] = 0, ["is_our_offer"] = false },
+				new Dictionary<string, object?> { ["trade_offer_id"] = "613", ["partner_steam_id"] = "456", ["items_to_give_count"] = 0, ["is_our_offer"] = "true" }
+			}
+		};
+		(List<DesiredStateReconciler.PendingGiftOffer> Accepted, List<DesiredStateReconciler.TradeOfferDecision> Decisions) dictResult =
+			DesiredStateReconciler.EvaluateTradeOffers(dict, spec);
+		Assert.Equal([610UL, 612UL, 613UL], dictResult.Accepted.Select(o => o.OfferId));
+		DesiredStateReconciler.TradeOfferDecision dictOurs = Assert.Single(dictResult.Decisions, d => d.Decision == "skip");
+		Assert.Equal(611UL, dictOurs.OfferId);
+		Assert.Equal("our_offer", dictOurs.Reason);
+	}
+
+	[Fact]
+	public async Task LoginRetry_DispatchReasonCyclesFromAssignToRetry()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		// No session snapshot: a sessionless account walks the login-dispatch
+		// branch (a Connected snapshot would converge without a login job).
+		using var reconciler = CreateReconciler(accounts, agents, jobs, auditStore: audit, cooldownSeconds: 0);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Failed, "bad password");
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle the failure
+		await reconciler.ReconcileOnce(CancellationToken.None); // cooldown is zero → immediate retry
+
+		string[] reasons = audit.Entries
+			.Where(e => e.Details is not null
+				&& e.Details.TryGetValue("orchestrationAction", out object? act)
+				&& string.Equals((string?)act, "login_dispatched", StringComparison.Ordinal))
+			.Select(e => (string)e.Details!["reason"]!)
+			.ToArray();
+		Assert.Equal(new[] { "assign", "retry 2" }, reasons);
+	}
+
+	[Fact]
+	public async Task FarmQueueRefresh_DispatchReasonCyclesInitialToRefresh()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Farm, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit, farmRefreshSeconds: 0);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // dispatch 1: initial farm queue
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutputWithoutTotal();
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle: empty queue, nothing to do
+		await reconciler.ReconcileOnce(CancellationToken.None); // zero refresh window → immediate refresh
+
+		Assert.Equal("get_card_drops", jobs.Created[1].Action);
+		string[] reasons = audit.Entries
+			.Where(e => e.Details is not null
+				&& e.Details.TryGetValue("orchestrationAction", out object? act)
+				&& string.Equals((string?)act, "card_drops_dispatched", StringComparison.Ordinal))
+			.Select(e => (string)e.Details!["reason"]!)
+			.ToArray();
+		Assert.Equal(new[] { "initial farm queue", "farm queue refresh" }, reasons);
+	}
+
+	[Fact]
+	public async Task PlaytimeRefresh_DispatchReasonCyclesInitialToRefresh()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit, boostRefreshSeconds: 0);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // dispatch 1: initial playtime query
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 100));
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle: all targets met, nothing idled
+		await reconciler.ReconcileOnce(CancellationToken.None); // zero refresh window → immediate refresh
+
+		Assert.Equal("get_playtime", jobs.Created[1].Action);
+		string[] reasons = audit.Entries
+			.Where(e => e.Details is not null
+				&& e.Details.TryGetValue("orchestrationAction", out object? act)
+				&& string.Equals((string?)act, "playtime_dispatched", StringComparison.Ordinal))
+			.Select(e => (string)e.Details!["reason"]!)
+			.ToArray();
+		Assert.Equal(new[] { "initial playtime query", "playtime refresh" }, reasons);
+	}
+
+	[Fact]
+	public async Task TradeScanRefresh_DispatchReasonCyclesInitialToRefresh()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit, tradeRefreshSeconds: 0);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // dispatch 1: initial scan
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("333", "999", 0, IsOurs: false)); // outside whitelist → nothing to accept
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle
+		await reconciler.ReconcileOnce(CancellationToken.None); // zero refresh window → immediate refresh
+
+		Assert.Equal("get_trade_offers", jobs.Created[1].Action);
+		string[] reasons = audit.Entries
+			.Where(e => e.Details is not null
+				&& e.Details.TryGetValue("orchestrationAction", out object? act)
+				&& string.Equals((string?)act, "trade_offers_dispatched", StringComparison.Ordinal))
+			.Select(e => (string)e.Details!["reason"]!)
+			.ToArray();
+		Assert.Equal(new[] { "initial trade-offer scan", "trade-offer refresh" }, reasons);
+	}
+
+	[Fact]
+	public void SpecVersionNull_StillResetsRuntimeBookkeeping()
+	{
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		using var reconciler = CreateReconciler(new AccountStore(), agents, new FakeReconcileJobStore());
+		// A spec with no persisted version (never round-tripped through the
+		// store) must still reset the failure budget: Version?.Version is null
+		// and matches nothing.
+		AccountSpec spec = new("alice", true, AccountDesiredState.Online, Region: "us-east");
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		object runtime = Activator.CreateInstance(runtimeType, nonPublic: true)!;
+		runtimeType.GetField("SpecVersion")!.SetValue(runtime, 1);
+		runtimeType.GetField("LoginAttempts")!.SetValue(runtime, 2);
+		runtimeType.GetField("NextAttemptAt")!.SetValue(runtime, DateTimeOffset.UtcNow.AddHours(1));
+		runtimeType.GetField("FarmQueueCheckedAt")!.SetValue(runtime, DateTimeOffset.UtcNow);
+		runtimeType.GetField("TradeOffersToAccept")!.SetValue(runtime, new List<DesiredStateReconciler.PendingGiftOffer>());
+
+		InvokeInstance(reconciler, "ReconcileActiveAccountAsync", spec, runtime,
+			new Dictionary<string, ConnectedAgent>(), new Dictionary<string, int>(), CancellationToken.None);
+
+		Assert.Null(runtimeType.GetField("SpecVersion")!.GetValue(runtime));
+		Assert.Equal(0, runtimeType.GetField("LoginAttempts")!.GetValue(runtime));
+		Assert.Equal(DateTimeOffset.MinValue, runtimeType.GetField("NextAttemptAt")!.GetValue(runtime));
+		Assert.Equal(DateTimeOffset.MinValue, runtimeType.GetField("FarmQueueCheckedAt")!.GetValue(runtime));
+		Assert.Null(runtimeType.GetField("TradeOffersToAccept")!.GetValue(runtime));
+	}
+
+	[Fact]
+	public async Task BoostTargetsMet_WhileNotIdling_DispatchesNothing()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Pass 1 dispatches the refresh; pass 2 settles a report where every
+		// target is already met. The account never idled and no boost games are
+		// playing, so the stop branch (Idling || BoostPlayingApps) must not fire.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 100));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Single(jobs.Created);
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.False(view.Idling);
+		Assert.NotNull(view.BoostCheckedAt);
+	}
+
+	[Fact]
+	public async Task BoostTargetsMet_WhileBoostAppsStillPlaying_DispatchesStop()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = NewBoostStore("alice", [(220u, 100)]);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		// Pass 1 dispatches the refresh; pass 2 settles an all-targets-met
+		// report while nothing is idled and nothing plays — no stop yet.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = PlaytimeOutput((220, 100));
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		Assert.Single(jobs.Created);
+
+		// The session still plays boost apps although the Idling flag is long
+		// gone (leftover bookkeeping from an earlier cycle): the stop must fire
+		// on the playing set alone.
+		System.Collections.IDictionary runtimes = (System.Collections.IDictionary)typeof(DesiredStateReconciler)
+			.GetField("_runtime", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reconciler)!;
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		runtimeType.GetField("BoostPlayingApps")!.SetValue(runtimes["alice"]!, new List<uint> { 220 });
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(2, jobs.Created.Count);
+		Assert.Equal("play_games", jobs.Created[1].Action);
+		Assert.Equal("stop", jobs.Created[1].Payload!["action"]);
+		Assert.False(reconciler.GetOrchestrationView("alice")!.Idling);
+	}
+
+	[Fact]
+	public async Task FarmBudgetSkip_DrainsQueue_WithZeroCompletedApps()
+	{
+		ZeroPlayInFlightWindow();
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Farm, null, null, null, null,
+			farmPolicy: new FarmPolicy(PerGameHourBudget: double.Epsilon));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var audit = new FakeAuditStore();
+		var broker = new RecordingBroker();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, auditStore: audit, broker: broker);
+
+		// No game ever completes (both reports carry drops) and the zero-hour
+		// budget fuses each one out on its settle pass: the drain then fires
+		// with zero completed and both apps budget-skipped.
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = DropsOutput((220, 6), (620, 1));
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle drops → play 220
+
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = new Dictionary<string, object?>();
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle play 220 → budget-skip → play 620
+
+		jobs.Outcomes["task-3-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-3-0"] = new Dictionary<string, object?>();
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle play 620 → budget-skip → drain
+
+		Assert.Contains(audit.Entries, e => e.Details is not null
+			&& string.Equals(e.Details["orchestrationAction"], "farm_completed")
+			&& ((string)e.Details["reason"]!).StartsWith("queue drained: 0 completed, 2 budget-skipped", StringComparison.Ordinal));
+		IReadOnlyDictionary<string, object?> drained = broker.Published
+			.Where(p => string.Equals(p.Type, "account.farm_progress", StringComparison.Ordinal))
+			.Select(p => p.Payload)
+			.Single(payload => payload is not null && string.Equals((string?)payload["kind"], "queue_empty", StringComparison.Ordinal))!;
+		Assert.Equal(0, drained["completed"]);
+		Assert.Equal(2, drained["skipped"]);
+		Assert.Equal("play_games", jobs.Created[^1].Action); // the closing stop job
+	}
+
+	[Fact]
+	public async Task Standing_SecondBan_DoesNotRepeatQuarantineAlert()
+	{
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var broker = new RecordingBroker();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions, broker: broker, standingRefreshSeconds: 60);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = StandingOutput("banned");
+		await reconciler.ReconcileOnce(CancellationToken.None); // first ban → quarantine alert
+
+		Assert.True(reconciler.RequestStandingCheck("alice"));
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = StandingOutput("banned");
+		await reconciler.ReconcileOnce(CancellationToken.None); // dispatch the forced check
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle: still banned, already quarantined
+
+		Assert.Single(broker.Published, p => string.Equals(p.Type, "account.standing_alert", StringComparison.Ordinal));
+		Assert.True(reconciler.GetOrchestrationView("alice")!.StandingQuarantined);
+	}
+
+	[Fact]
+	public async Task GiftAccept_TaskFailed_MarksDeviation()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // scan
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle → accept dispatch
+
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Failed, "steam declined");
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle the failed accept
+
+		AccountOrchestrationView view = reconciler.GetOrchestrationView("alice")!;
+		Assert.Equal("gift offer 111 accept outcome: Failed steam declined", view.LastDeviation);
+	}
+
+	[Fact]
+	public async Task GiftAccept_TaskFailed_WithLostDecision_MarksUnavailableOfferDeviation()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // scan
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle → accept dispatch (AcceptingOffer set)
+
+		// The decision is lost before the settle (an assignment sweep or a
+		// spec bump cleared the bookkeeping): the failed accept must mark the
+		// deviation without an offer id — the empty interpolation slot reads
+		// as the double space between "offer" and "accept". The pending queue
+		// is cleared with it, so the settle pass drains nothing and the
+		// deviation survives to the view.
+		System.Collections.IDictionary runtimes = (System.Collections.IDictionary)typeof(DesiredStateReconciler)
+			.GetField("_runtime", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reconciler)!;
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		runtimeType.GetField("AcceptingOffer")!.SetValue(runtimes["alice"]!, null);
+		runtimeType.GetField("TradeOffersToAccept")!.SetValue(runtimes["alice"]!, null);
+
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Failed, "steam declined");
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle the failed accept
+
+		Assert.Equal("gift offer  accept outcome: Failed steam declined",
+			reconciler.GetOrchestrationView("alice")!.LastDeviation);
+	}
+
+	[Fact]
+	public async Task GiftAccept_AcceptedOfferLost_ChainsConfirmWithZeroOfferId()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null,
+			tradePolicy: new TradePolicy(AutoAcceptGifts: true, PartnerWhitelist: [Partner64]));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // scan
+		jobs.Outcomes["task-1-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-1-0"] = TradeOutput(("111", "456", 0, IsOurs: false));
+		await reconciler.ReconcileOnce(CancellationToken.None); // settle → accept dispatch (AcceptingOffer set)
+
+		// Simulate the decision being lost between dispatch and settle (an
+		// assignment sweep or a spec bump clears the bookkeeping): the settle
+		// must still chain the confirmation, with a zero offer id.
+		System.Collections.IDictionary runtimes = (System.Collections.IDictionary)typeof(DesiredStateReconciler)
+			.GetField("_runtime", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reconciler)!;
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		runtimeType.GetField("AcceptingOffer")!.SetValue(runtimes["alice"]!, null);
+
+		jobs.Outcomes["task-2-0"] = (JobTaskStatus.Finished, null);
+		jobs.Outputs["task-2-0"] = new Dictionary<string, object?> { ["requires_mobile_confirmation"] = true };
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		Assert.Equal(3, jobs.Created.Count);
+		Assert.Equal("confirm_trade_offer", jobs.Created[2].Action);
+		Assert.Equal("0", jobs.Created[2].Payload!["trade_offer_id"]);
+	}
+
+	[Fact]
+	public async Task GetFarmSummaries_ListsAccountsSorted()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Farm, null, null, null, null);
+		accounts.Upsert("bob", true, AccountDesiredState.Farm, null, null, null, null);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		sessions.Update("bob", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // both dispatch a card-drops refresh
+
+		IReadOnlyList<FarmAccountView> summaries = reconciler.GetFarmSummaries();
+		Assert.Equal(["alice", "bob"], summaries.Select(s => s.AccountName));
+		Assert.All(summaries, s => Assert.Null(s.FarmingAppId));
+	}
+
+	[Fact]
+	public async Task GetFarmSummaries_QueueRefreshedAt_FollowsFarmQueueCheckedAt()
+	{
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Farm, null, null, null, null);
+		accounts.Upsert("bob", true, AccountDesiredState.Farm, null, null, null, null);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		sessions.Update("bob", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None); // both accounts tracked (dispatch only, no stamp yet)
+
+		// Default bookkeeping (no refresh ever ran): the sentinel reads as null.
+		IReadOnlyList<FarmAccountView> before = reconciler.GetFarmSummaries();
+		Assert.All(before, s => Assert.Null(s.QueueRefreshedAt));
+
+		// A stamped queue refresh surfaces verbatim for its account only.
+		DateTimeOffset stamped = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(5);
+		System.Collections.IDictionary runtimes = (System.Collections.IDictionary)typeof(DesiredStateReconciler)
+			.GetField("_runtime", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reconciler)!;
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		runtimeType.GetField("FarmQueueCheckedAt")!.SetValue(runtimes["alice"]!, stamped);
+
+		IReadOnlyList<FarmAccountView> after = reconciler.GetFarmSummaries();
+		Assert.Equal(stamped, after.Single(s => s.AccountName == "alice").QueueRefreshedAt);
+		Assert.Null(after.Single(s => s.AccountName == "bob").QueueRefreshedAt);
 	}
 
 	[Fact]

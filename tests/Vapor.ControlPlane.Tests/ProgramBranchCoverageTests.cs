@@ -357,6 +357,148 @@ public sealed class ProgramBranchCoverageTests
 	}
 
 	[Fact]
+	public async Task AchievementsUnlock_MainTaskFailsWithoutError_UsesStatusFallback()
+	{
+		// The achievements write path shares the loot/accept 502 shape: a Failed
+		// main task with a null error must surface the status-text fallback.
+		await using BranchFactory factory = new() { JobStore = MakeScriptedStore(new Dictionary<string, object?> { ["ok"] = true }, failMainWithoutError: true) };
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/achievements/unlock", new { appId = 440, names = new[] { "PORTAL_BEAT_GAME" } });
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Contains("task ended as Failed", doc.RootElement.GetProperty("error").GetString());
+	}
+
+	[Fact]
+	public async Task Loot_MainTaskFailsWithoutError_UsesStatusFallback()
+	{
+		// A task that ends Failed with a null error must not surface a null in
+		// the 502 body: the status-text fallback names the outcome instead.
+		await using BranchFactory factory = new() { JobStore = MakeScriptedStore(new Dictionary<string, object?> { ["ok"] = true }, failMainWithoutError: true) };
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/loot", new { partnerSteamId = "76591198000000004" });
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Contains("task ended as Failed", doc.RootElement.GetProperty("error").GetString());
+	}
+
+	[Fact]
+	public async Task AcceptOffer_MainTaskFailsWithoutError_UsesStatusFallback()
+	{
+		await using BranchFactory factory = new() { JobStore = MakeScriptedStore(new Dictionary<string, object?> { ["ok"] = true }, failMainWithoutError: true) };
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/42/accept", new { partnerSteamId = "76561198000000001" });
+
+		Assert.Equal(HttpStatusCode.BadGateway, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Contains("task ended as Failed", doc.RootElement.GetProperty("error").GetString());
+	}
+
+	[Fact]
+	public async Task AcceptOffer_ConfirmFailsWithoutError_ReportsStatusFallbackInConfirmation()
+	{
+		// The confirmation task fails with a null error while the accept
+		// succeeded and demanded a mobile confirmation: the confirmation block
+		// must report the status fallback instead of a null error.
+		Dictionary<string, object?> output = new()
+		{
+			["requires_mobile_confirmation"] = true,
+			["trade_offer_id"] = "43591234567890"
+		};
+		await using BranchFactory factory = new()
+		{
+			JobStore = MakeScriptedStore(output, failConfirmWithoutError: true)
+		};
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "offline" });
+
+		using HttpResponseMessage resp = await client.PostAsJsonAsync("/v1/accounts/alice/trade-offers/42/accept", new { partnerSteamId = "76561198000000001" });
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		string body = await resp.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		JsonElement confirm = doc.RootElement.GetProperty("mobile_confirmation");
+		Assert.False(confirm.GetProperty("confirmed").GetBoolean());
+		Assert.Contains("task ended as Failed", confirm.GetProperty("error").GetString());
+	}
+
+	[Fact]
+	public async Task WriteAuditLog_NullDetailsAndMissingRemoteIp_FallBackToDefaults()
+	{
+		// A DefaultHttpContext has no remote IP: the "unknown" sentinel and the
+		// null remoteIp field must hold everywhere, and a null details payload
+		// serializes as an empty object rather than throwing.
+		// The top-level-statements Program lives in the global namespace (the
+		// named partial declaration only lifts it public), and its local
+		// functions are emitted under compiler-generated names
+		// (<<Main>$>g__WriteAuditLog|0_NN): match by name fragment + arity.
+		System.Reflection.BindingFlags probe =
+			System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+		Type statementsProgram = typeof(Program).Assembly.GetType("Program", throwOnError: false) ?? typeof(Program);
+		System.Reflection.MethodInfo writeAudit = statementsProgram.GetMethods(probe)
+			.First(m => m.Name.Contains("WriteAuditLog", StringComparison.Ordinal) && m.GetParameters().Length == 7);
+		System.Reflection.MethodInfo auditActor = statementsProgram.GetMethods(probe)
+			.First(m => m.Name.Contains("GetAuditActor", StringComparison.Ordinal) && m.GetParameters().Length == 1);
+
+		Microsoft.AspNetCore.Http.DefaultHttpContext noIp = new();
+		RecordingAuditStore recorded = new();
+		object?[] args = [Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, recorded, noIp, "test.action", null, null, null];
+		await ((System.Threading.Tasks.Task)writeAudit.Invoke(null, args)!).ConfigureAwait(true);
+		Assert.Equal("unknown", auditActor.Invoke(null, [noIp]));
+		Assert.Null(Assert.Single(recorded.Entries).RemoteIp);
+
+		// An empty X-Forwarded-For header fails IsNullOrEmpty and falls through
+		// to the connection address; a whitespace-only header passes the check
+		// and is taken verbatim (the filter is IsNullOrEmpty, not trim-based).
+		Microsoft.AspNetCore.Http.DefaultHttpContext withIp = new();
+		withIp.Connection.RemoteIpAddress = IPAddress.Loopback;
+		withIp.Request.Headers["X-Forwarded-For"] = "";
+		Assert.Equal(IPAddress.Loopback.ToString(), auditActor.Invoke(null, [withIp]));
+
+		Microsoft.AspNetCore.Http.DefaultHttpContext whitespaceIp = new();
+		whitespaceIp.Connection.RemoteIpAddress = IPAddress.Loopback;
+		whitespaceIp.Request.Headers["X-Forwarded-For"] = "   ";
+		Assert.Equal("   ", auditActor.Invoke(null, [whitespaceIp]));
+
+		// A usable X-Forwarded-For wins over the connection address.
+		Microsoft.AspNetCore.Http.DefaultHttpContext forwarded = new();
+		forwarded.Connection.RemoteIpAddress = IPAddress.Loopback;
+		forwarded.Request.Headers["X-Forwarded-For"] = "10.0.0.1";
+		Assert.Equal("10.0.0.1", auditActor.Invoke(null, [forwarded]));
+
+		// A connection that does carry an address flows verbatim into both the
+		// structured log line and the persisted entry (the "unknown" sentinel
+		// and the null remoteIp stay on the null-address side above), and a
+		// non-null details payload round-trips into the entry.
+		Microsoft.AspNetCore.Http.DefaultHttpContext withAddress = new();
+		withAddress.Connection.RemoteIpAddress = IPAddress.Loopback;
+		RecordingAuditStore recordedAddressed = new();
+		Dictionary<string, object?> details = new() { ["outcome"] = "recorded" };
+		object?[] addressed = [Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, recordedAddressed, withAddress, "test.action", "alice", "job-7", details];
+		await ((System.Threading.Tasks.Task)writeAudit.Invoke(null, addressed)!).ConfigureAwait(true);
+		AuditEntry entry = Assert.Single(recordedAddressed.Entries);
+		Assert.Equal(IPAddress.Loopback.ToString(), entry.RemoteIp);
+		Assert.Equal("alice", entry.AccountName);
+		Assert.Equal("job-7", entry.JobId);
+		Assert.Equal("recorded", entry.Details!["outcome"]);
+	}
+
+	[Fact]
 	public async Task Duplicates_ValidationBranches()
 	{
 		await using BranchFactory factory = new();
@@ -1227,15 +1369,19 @@ public sealed class ProgramBranchCoverageTests
 	private static ScriptedJobStore MakeScriptedStore(
 		Dictionary<string, object?> output,
 		Dictionary<string, object?>? confirmOutput = null,
-		string? confirmError = null)
+		string? confirmError = null,
+		bool failMainWithoutError = false,
+		bool failConfirmWithoutError = false)
 	{
-		return new ScriptedJobStore(output, confirmOutput, confirmError);
+		return new ScriptedJobStore(output, confirmOutput, confirmError, failMainWithoutError, failConfirmWithoutError);
 	}
 
 	private sealed class ScriptedJobStore(
 		Dictionary<string, object?> taskOutput,
 		Dictionary<string, object?>? confirmOutput,
-		string? confirmError) : IJobStore
+		string? confirmError,
+		bool failMainWithoutError = false,
+		bool failConfirmWithoutError = false) : IJobStore
 	{
 		private sealed record ScriptedTask(CreateJobRequest Request, JobTaskStatus Status, Dictionary<string, object?>? Output, string? Error);
 
@@ -1247,11 +1393,13 @@ public sealed class ProgramBranchCoverageTests
 			int n = Interlocked.Increment(ref _counter);
 			string jobId = $"scripted-job-{n}";
 			bool confirm = string.Equals(request.Action, AccountTaskRunner.ConfirmTradeOfferAction, StringComparison.Ordinal);
+			bool mainFail = failMainWithoutError;
+			bool confirmFail = failConfirmWithoutError || (confirm && confirmError is not null);
 			var scripted = new ScriptedTask(
 				request,
-				confirm && confirmError is not null ? JobTaskStatus.Failed : JobTaskStatus.Finished,
-				confirm ? (confirmError is null ? confirmOutput : null) : taskOutput,
-				confirm ? confirmError : null);
+				confirm ? (confirmFail ? JobTaskStatus.Failed : JobTaskStatus.Finished) : (mainFail ? JobTaskStatus.Failed : JobTaskStatus.Finished),
+				confirm ? (confirmFail ? null : confirmOutput) : (mainFail ? null : taskOutput),
+				confirm ? (failConfirmWithoutError ? null : confirmError) : null);
 			lock (_jobs)
 			{
 				_jobs[jobId] = scripted;
@@ -1296,6 +1444,21 @@ public sealed class ProgramBranchCoverageTests
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => Task.FromResult(false);
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
+	}
+
+	/// <summary>Captures every recorded entry (no failures, no persistence).</summary>
+	private sealed class RecordingAuditStore : IAuditStore
+	{
+		public List<AuditEntry> Entries { get; } = [];
+
+		public Task RecordAsync(AuditEntry entry, CancellationToken cancellationToken)
+		{
+			Entries.Add(entry);
+			return Task.CompletedTask;
+		}
+
+		public Task<IReadOnlyList<AuditEntry>> QueryAsync(AuditQuery query, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<AuditEntry>>([]);
+		public Task<int> CountAsync(AuditQuery query, CancellationToken cancellationToken) => Task.FromResult(0);
 	}
 
 	private sealed class ThrowingAuditStore : IAuditStore

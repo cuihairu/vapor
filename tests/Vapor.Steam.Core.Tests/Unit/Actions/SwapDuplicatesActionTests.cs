@@ -239,6 +239,114 @@ public sealed class SwapDuplicatesActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_SendFailureWithNullError_UsesFallbackMessage()
+	{
+		// The offer transport reports failure without an error text: the ??
+		// fallback must supply the default swap failure message.
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		SetupComplementaryInventories(clientMock);
+		clientMock
+			.Setup(c => c.SendTradeOfferAsync(
+				It.IsAny<ulong>(),
+				It.IsAny<IReadOnlyList<TradeAsset>>(),
+				It.IsAny<IReadOnlyList<TradeAsset>>(),
+				It.IsAny<string?>(),
+				It.IsAny<string?>(),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new TradeOfferResult { Success = false });
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString(), ["send"] = true },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Failed to send swap trade offer", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_SendSuccessWithoutTradeOfferId_ReportsNullId()
+	{
+		// Steam accepted the offer but returned no offer id yet: the output key
+		// must carry a null value rather than throw or fake an id.
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		SetupComplementaryInventories(clientMock);
+		clientMock
+			.Setup(c => c.SendTradeOfferAsync(
+				It.IsAny<ulong>(),
+				It.IsAny<IReadOnlyList<TradeAsset>>(),
+				It.IsAny<IReadOnlyList<TradeAsset>>(),
+				It.IsAny<string?>(),
+				It.IsAny<string?>(),
+				It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new TradeOfferResult { Success = true, RequiresMobileConfirmation = true });
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString(), ["send"] = true },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Null(result.Output!["trade_offer_id"]);
+		Assert.Equal(true, result.Output["requires_mobile_confirmation"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_MatchOutput_NameFallsBackFromMarketHashNameToNameToEmpty()
+	{
+		// DescribeAsset labels each side via MarketHashName ?? Name ?? "": give
+		// items carry only Name, receive items carry neither.
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetOwnSteamId())
+			.Returns(OwnSteamId);
+		clientMock
+			.Setup(c => c.GetInventoryAsync(OwnSteamId, 753, 6, null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new InventoryResponse
+			{
+				Success = true,
+				Items =
+				[
+					new InventoryItem { AssetId = 1, AppId = 753, ClassId = 100, Tradable = true, Name = "Fallback A" },
+					new InventoryItem { AssetId = 3, AppId = 753, ClassId = 100, Tradable = true, Name = "Fallback A" }
+				]
+			});
+		clientMock
+			.Setup(c => c.GetInventoryAsync(PartnerSteamId, 753, 6, null, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new InventoryResponse
+			{
+				Success = true,
+				Items =
+				[
+					new InventoryItem { AssetId = 10, AppId = 753, ClassId = 200, Tradable = true },
+					new InventoryItem { AssetId = 11, AppId = 753, ClassId = 200, Tradable = true }
+				]
+			});
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString() },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		var matches = Assert.IsType<Dictionary<string, object?>[]>(result.Output!["matches"]);
+		var match = Assert.Single(matches);
+		var give = Assert.IsType<Dictionary<string, object?>>(match["give"]);
+		var receive = Assert.IsType<Dictionary<string, object?>>(match["receive"]);
+		Assert.Equal("Fallback A", give["name"]);
+		Assert.Equal(string.Empty, receive["name"]);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_NoComplementaryDuplicates_Fails()
 	{
 		var (action, clientMock) = CreateActionWithMock();

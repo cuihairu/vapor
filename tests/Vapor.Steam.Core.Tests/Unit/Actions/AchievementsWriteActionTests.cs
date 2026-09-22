@@ -296,6 +296,27 @@ public sealed class ResetAchievementsActionTests
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_AllEntriesFailed_ReportsResetError()
+	{
+		// Every entry failed: the top-level result flips to failure and the
+		// "one or more achievements failed to reset" error replaces the null.
+		BotSession session = CreateSession(out var clientMock);
+		clientMock
+			.Setup(m => m.SetAchievementStatesAsync(It.IsAny<uint>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new AchievementWriteResult(false, SteamResult.OK,
+				new[] { new AchievementWriteEntry("ACH_ONE", false, "unknown achievement name") },
+				Verified: true));
+
+		ActionResult result = await _action.ExecuteAsync(
+			session, Json("""{ "app_id": "400", "names": ["ACH_ONE"], "confirm": true }"""), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("failed to reset", result.Error, StringComparison.Ordinal);
+		Assert.Equal(0, result.Output!["succeeded_count"]);
+		Assert.Equal(1, result.Output["failed_count"]);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_WithoutSteamClient_IsRejected()
 	{
 		BotSession session = CreateSession(out _, withClient: false);

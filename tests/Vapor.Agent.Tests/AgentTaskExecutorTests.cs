@@ -152,6 +152,31 @@ public class AgentTaskExecutorTests
 	}
 
 	[Fact]
+	public async Task PasswordWithRefreshToken_SnakeCaseCodeAliases_AreRecognized()
+	{
+		// In the password + refresh token branch the auth codes read the camelCase key
+		// first; supplying only the snake_case keys exercises the fallback arm of both
+		// null-coalescing chains.
+		var session = CreateStubSession();
+		var (manager, captured) = CreateMockedManager(session);
+		var payload = new Dictionary<string, object?>
+		{
+			["password"] = "s3cret",
+			["refreshToken"] = "rt-value",
+			["auth_code"] = "12",
+			["two_factor_code"] = "34"
+		};
+
+		var (success, _, _) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(payload: payload), manager.Object, NullLogger.Instance, CancellationToken.None);
+
+		Assert.True(success);
+		var credentials = Assert.Single(captured);
+		Assert.Equal("12", credentials.AuthCode);
+		Assert.Equal("34", credentials.TwoFactorCode);
+	}
+
+	[Fact]
 	public async Task AccessTokenAlongsideRefreshToken_IsForwarded()
 	{
 		var session = CreateStubSession();

@@ -179,6 +179,28 @@ public sealed class DataActionsTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SearchGames_CacheDisabledWithNullFetchResult_YieldsEmptyResults()
+	{
+		// With caching disabled the fetch flows straight through; a null response
+		// (loose mock: SearchGamesAsync was never stubbed) must hit the ?? []
+		// fallback and report zero results instead of throwing.
+		var clientMock = new Mock<ISteamStoreApiClient>(MockBehavior.Loose);
+		var action = new SearchGamesAction(
+			NullLogger<SearchGamesAction>.Instance,
+			_ => clientMock.Object);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["term"] = "portal", ["cache_ttl_seconds"] = 0 },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(0, result.Output!["total_count"]);
+		Assert.Empty(Assert.IsType<GameSearchResult[]>(result.Output!["results"]));
+		clientMock.Verify(c => c.SearchGamesAsync("portal", 20, "us", It.IsAny<CancellationToken>()), Times.Once);
+	}
+
+	[Fact]
 	public async Task SearchGames_WithoutTerm_ReturnsError()
 	{
 		var action = new SearchGamesAction(
@@ -236,6 +258,56 @@ public sealed class DataActionsTests : IDisposable
 			CancellationToken.None);
 
 		Assert.False(result.Success);
+	}
+
+	[Fact]
+	public async Task GetPrice_NullFormattedFinal_LogsRawFinalAndSucceeds()
+	{
+		// A price payload without the preformatted string falls back to the raw
+		// decimal in the summary log (FinalFormatted ?? Final) and still succeeds.
+		var clientMock = new Mock<ISteamStoreApiClient>(MockBehavior.Strict);
+		clientMock
+			.Setup(c => c.GetPriceAsync(620U, "us", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PriceOverview { Currency = "USD", Final = 9.99m, Initial = 19.99m, DiscountPercent = 50 });
+
+		var action = new GetPriceAction(
+			NullLogger<GetPriceAction>.Instance,
+			_ => clientMock.Object);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_id"] = "620" },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		var price = Assert.IsType<PriceOverview>(result.Output!["price"]);
+		Assert.Equal(9.99m, price.Final);
+		Assert.Null(price.FinalFormatted);
+	}
+
+	[Fact]
+	public async Task GetPrice_NullFormattedAndNullFinal_StillSucceeds()
+	{
+		// Both log operands null: the summary line carries a null and the action
+		// must still complete with the price payload.
+		var clientMock = new Mock<ISteamStoreApiClient>(MockBehavior.Strict);
+		clientMock
+			.Setup(c => c.GetPriceAsync(730U, "us", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PriceOverview { Currency = "USD", Initial = 19.99m, DiscountPercent = 0 });
+
+		var action = new GetPriceAction(
+			NullLogger<GetPriceAction>.Instance,
+			_ => clientMock.Object);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_id"] = "730" },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		var price = Assert.IsType<PriceOverview>(result.Output!["price"]);
+		Assert.Null(price.Final);
+		Assert.Null(price.FinalFormatted);
 	}
 
 	// --- GetMarketListingsAction ---

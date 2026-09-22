@@ -606,6 +606,56 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task BackgroundTokenRefresh_WhenAccessTokenMissing_RefreshesConnectedSession()
+	{
+		// A connected session whose store holds no access token at all: the null
+		// short-circuits the shouldRefresh check straight into a refresh attempt.
+		var credentialStoreMock = new Mock<ICredentialStore>(MockBehavior.Strict);
+		credentialStoreMock
+			.Setup(s => s.HasCredentialsAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+		credentialStoreMock
+			.Setup(s => s.GetRefreshTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync("refresh-token");
+		credentialStoreMock
+			.Setup(s => s.GetProxyAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+		credentialStoreMock
+			.Setup(s => s.GetAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync((StoredAccessToken?)null);
+
+		_steamClientManagerMock
+			.Setup(m => m.ConnectAsync(It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.UpdateLogOnDetailsAsync("test_account", "access-token", "refresh-token"))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()))
+			.Returns(Task.CompletedTask);
+		_steamClientManagerMock
+			.Setup(m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()))
+			.ReturnsAsync(true);
+
+		using var manager = new SessionManager(
+			_actionRegistryMock.Object,
+			_loggerMock.Object,
+			_steamClientManagerMock.Object,
+			credentialStoreMock.Object,
+			tokenRefreshCheckInterval: TimeSpan.FromMilliseconds(50),
+			tokenRefreshLeadTime: TimeSpan.FromMinutes(5));
+
+		var session = await manager.TryRestoreSessionAsync("test_account", CancellationToken.None);
+		Assert.NotNull(session);
+
+		await Task.Delay(250);
+
+		_steamClientManagerMock.Verify(
+			m => m.RefreshAccessTokenAsync("test_account", It.IsAny<CancellationToken>()),
+			Times.AtLeastOnce);
+	}
+
+	[Fact]
 	public async Task BackgroundTokenRefresh_WhenTokenIsFresh_DoesNotRefresh()
 	{
 		var credentialStoreMock = new Mock<ICredentialStore>(MockBehavior.Strict);

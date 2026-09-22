@@ -149,6 +149,80 @@ public sealed class SteamAchievementsPageContractTests
 	}
 
 	[Fact]
+	public void Parse_SummaryUnlockedCountOverflows_ClampsToZero()
+	{
+		// An 11-digit unlocked count overflows int.TryParse → clamped to 0; the
+		// summary total stays authoritative (15), so the row recount at the end
+		// never runs and the genuinely unlocked row is not counted.
+		const string html = """
+			<div id="topSummaryAchievements"><div>99999999999 of 15 (0%) achievements earned:</div></div>
+			<div id="personalAchieve" class="achievements_list ">
+				<div role="button" class="achieveRow">
+					<div class="achieveImgHolder"><img src="https://shared.akamai.steamstatic.com/community_assets/images/apps/400/portal_beat_game.jpg"></div>
+					<div class="achieveTxtHolder">
+						<div class="achieveTxt">
+							<h3 class="ellipsis">End of Story</h3>
+						</div>
+						<div class="achieveUnlockTime">
+							Unlocked May 12, 2010 @ 6:33pm<br/>
+						</div>
+					</div>
+				</div>
+			</div>
+			""";
+
+		var result = SteamAchievementsClient.ParseAchievementsPage(html);
+
+		Assert.Equal(0, result.UnlockedCount);
+		Assert.Equal(15, result.TotalCount);
+		var row = Assert.Single(result.Achievements);
+		Assert.Equal("PORTAL_BEAT_GAME", row.ApiName); // row parsed…
+		Assert.True(row.Unlocked); // …and genuinely unlocked, yet not recounted
+	}
+
+	[Fact]
+	public void Parse_SummaryTotalCountOverflows_ClampsToZeroWithoutRecount()
+	{
+		// The total overflow clamps to 0 — but with zero rows the recount guard
+		// (total == 0 && rows exist) must not run, keeping the clamped values.
+		const string html = """
+			<div id="topSummaryAchievements"><div>3 of 99999999999 (0%) achievements earned:</div></div>
+			""";
+
+		var result = SteamAchievementsClient.ParseAchievementsPage(html);
+
+		Assert.Equal(3, result.UnlockedCount);
+		Assert.Equal(0, result.TotalCount);
+		Assert.Empty(result.Achievements);
+	}
+
+	[Fact]
+	public void Parse_WhitespaceOnlyNameAndDescription_YieldNulls()
+	{
+		// A regex match whose text is whitespace-only must read as absent after
+		// the Trim: both fields null while the API name stays inferred from the icon.
+		const string html = """
+			<div id="topSummaryAchievements"><div>1 of 1 (100%) achievements earned:</div></div>
+			<div id="personalAchieve" class="achievements_list ">
+				<div role="button" class="achieveRow">
+					<div class="achieveImgHolder"><img src="https://shared.akamai.steamstatic.com/community_assets/images/apps/400/portal_beat_game.jpg"></div>
+					<div class="achieveTxtHolder"><div class="achieveTxt">
+						<h3 class="ellipsis">   </h3>
+						<h5 class="ellipsis">  </h5>
+					</div></div>
+				</div>
+			</div>
+			""";
+
+		var result = SteamAchievementsClient.ParseAchievementsPage(html);
+
+		var row = Assert.Single(result.Achievements);
+		Assert.Null(row.DisplayName);
+		Assert.Null(row.Description);
+		Assert.Equal("PORTAL_BEAT_GAME", row.ApiName);
+	}
+
+	[Fact]
 	public void Parse_RowWithoutIcon_IsSkippedInsteadOfCrashing()
 	{
 		// A row the icon regex cannot match (markup drift, ad slot, emoji-only

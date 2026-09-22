@@ -121,6 +121,26 @@ public sealed class MaFileImportCliTests : IDisposable
 	}
 
 	[Fact]
+	public async Task RunAsync_MaFileWithoutSteamId_ImportsUnderAccountName()
+	{
+		// A maFile carrying no steamid anywhere still imports: the account name alone
+		// keys the store entry (the import log renders "-" for the missing id).
+		string file = Path.Combine(_workDirectory, "nosteam.maFile");
+		await File.WriteAllTextAsync(file, $$"""{ "account_name": "nosteam", "shared_secret": "{{SharedSecret}}" }""");
+
+		int exitCode;
+		using (var store = CreateStore())
+		{
+			exitCode = await MaFileImportCli.RunAsync([file], store, NullLogger.Instance);
+		}
+
+		Assert.Equal(0, exitCode);
+
+		using var reloaded = CreateStore();
+		Assert.Equal(SharedSecret, await reloaded.GetSharedSecretAsync("nosteam"));
+	}
+
+	[Fact]
 	public async Task RunAsync_EncryptedFile_WithPasswordOption()
 	{
 		string file = Path.Combine(_workDirectory, "encrypted.maFile");

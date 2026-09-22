@@ -240,6 +240,28 @@ public sealed class GetPlaytimeActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_CacheReturningNull_YieldsEmptyPlaytimes()
+	{
+		// A cache layer that hands back null (loose mock: the SWR getter was never
+		// stubbed) must hit the `playtimes ?? []` fallback and report an empty
+		// report instead of throwing.
+		var (webHandler, fake) = CreateWebHandler();
+		var cacheMock = new Mock<IVaporCache>(MockBehavior.Loose);
+		var action = CreateAction(webHandler, cacheMock.Object);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(webHandler),
+			new Dictionary<string, object?> { ["steam_id"] = "76561198000000000" },
+			CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(0, result.Output!["games_count"]);
+		Assert.Equal(0.0, result.Output!["total_hours"]);
+		Assert.Empty(Assert.IsType<List<Dictionary<string, object?>>>(result.Output["playtimes"]));
+		Assert.Equal(0, fake.RequestCount); // nothing behind the cache was fetched
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_SecondCall_ServedFromCache()
 	{
 		var (webHandler, fake) = CreateWebHandler();

@@ -167,6 +167,69 @@ public sealed class PluginCapabilitiesTests
 		}
 	}
 
+	[Fact]
+	public void PluginLoadContext_DependencyNativeLibraryListedInDepsJson_LoadsFromPath()
+	{
+		// The non-null arm of LoadUnmanagedDll: a native library declared in the
+		// plugin's deps.json runtimeTargets resolves to a real file, so the
+		// context loads it via LoadUnmanagedDllFromPath instead of yielding a
+		// zero handle. A copy of a runtime-owned library is the only dlopen-able
+		// file we can rely on being present (Linux only — the rid is linux-*).
+		if (!OperatingSystem.IsLinux())
+		{
+			return;
+		}
+
+		var dir = Path.Combine(Path.GetTempPath(), "vapor-plc-native-" + Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(dir);
+		try
+		{
+			const string pluginDll = "Vapor.Plugins.TestPlugin.dll";
+			const string nativeRel = "runtimes/linux-x64/native/libvapor_probe_native.so";
+			string runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+			string sourceNative = Path.Combine(runtimeDir, "libSystem.Native.so");
+			Assert.True(File.Exists(sourceNative), $"runtime native library not found: {sourceNative}");
+			Directory.CreateDirectory(Path.Combine(dir, "runtimes", "linux-x64", "native"));
+			File.Copy(sourceNative, Path.Combine(dir, nativeRel), overwrite: true);
+			File.Copy(PluginStaging.TestPluginAssemblyPath, Path.Combine(dir, pluginDll), overwrite: true);
+			File.WriteAllText(Path.Combine(dir, "Vapor.Plugins.TestPlugin.deps.json"), """
+				{
+				  "runtimeTarget": { "name": ".NETCoreApp,Version=v10.0", "signature": "" },
+				  "targets": {
+				    ".NETCoreApp,Version=v10.0": {
+				      "Vapor.Plugins.TestPlugin/1.0.0": {
+				        "runtime": { "Vapor.Plugins.TestPlugin.dll": {} },
+				        "runtimeTargets": {
+				          "runtimes/linux-x64/native/libvapor_probe_native.so": { "rid": "linux-x64", "assetType": "native" }
+				        }
+				      }
+				    }
+				  },
+				  "libraries": {
+				    "Vapor.Plugins.TestPlugin/1.0.0": { "type": "project", "serviceable": false, "sha512": "" }
+				  }
+				}
+				""");
+
+			var loadContext = new PluginLoadContext(
+				"native-real-test", Path.Combine(dir, pluginDll));
+			var method = typeof(AssemblyLoadContext).GetMethod("LoadUnmanagedDll", BindingFlags.Instance | BindingFlags.NonPublic);
+			Assert.NotNull(method);
+
+			var handle = (IntPtr)method!.Invoke(loadContext, ["libvapor_probe_native.so"])!;
+
+			Assert.NotEqual(IntPtr.Zero, handle);
+			loadContext.Unload();
+		}
+		finally
+		{
+			// Day-one rule: ALC-locked files make cleanup best-effort by design.
+			try { Directory.Delete(dir, recursive: true); }
+			catch (IOException) { }
+			catch (UnauthorizedAccessException) { }
+		}
+	}
+
 	private static PluginDescriptor CreateDescriptor(string pluginId)
 	{
 		var manifest = new PluginManifest

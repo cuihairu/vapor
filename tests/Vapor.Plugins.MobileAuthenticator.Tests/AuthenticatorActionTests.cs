@@ -228,6 +228,27 @@ public class AuthenticatorActionTests
 	}
 
 	[Fact]
+	public async Task GetTradeConfirmations_NullConfirmationsList_SucceedsWithZeroCount()
+	{
+		// A successful listing may carry no confirmation list at all; the null-coalescing
+		// arm must treat it as empty rather than throw.
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null)
+		};
+
+		var action = new GetTradeConfirmationsAction(NullLogger<GetTradeConfirmationsAction>.Instance, _ => fakeClient);
+		using var session = TestSession.Create();
+		var payload = new Dictionary<string, object?> { ["identity_secret"] = IdentitySecret };
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(0, result.Output!["count"]);
+		Assert.Equal(IdentitySecret, fakeClient.LastIdentitySecret);
+	}
+
+	[Fact]
 	public async Task GetTradeConfirmations_MissingSecret_Fails()
 	{
 		var action = new GetTradeConfirmationsAction(NullLogger<GetTradeConfirmationsAction>.Instance, _ => new FakeMobileConfirmationClient());
@@ -720,6 +741,49 @@ public class AuthenticatorActionTests
 
 		Assert.False(result.Success);
 		Assert.Contains("rejected the confirmation list", result.Error);
+		Assert.Equal(0, fakeClient.RespondCalls);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_ListingFailureWithNullError_UsesFallbackMessage()
+	{
+		// A listing failure whose Error is null must fall back to the fixed message
+		// instead of surfacing a null error string.
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(false, null)
+		};
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("failed to list trade confirmations", result.Error);
+		Assert.Equal(0, fakeClient.RespondCalls);
+	}
+
+	[Fact]
+	public async Task ConfirmAll_NullConfirmationsList_SucceedsWithZeroTotals()
+	{
+		// A successful listing without a confirmation list responds to nothing and
+		// still reports success with zero totals.
+		var store = new FakeCredentialStore();
+		await store.SaveIdentitySecretAsync("test_account", IdentitySecret);
+		var fakeClient = new FakeMobileConfirmationClient
+		{
+			ListResult = new MobileConfirmationListResult(true, null)
+		};
+		var action = new ConfirmAllConfirmationsAction(NullLogger<ConfirmAllConfirmationsAction>.Instance, store, _ => fakeClient);
+		using var session = TestSession.Create();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(0, result.Output!["total"]);
+		Assert.Equal(0, result.Output["succeeded"]);
 		Assert.Equal(0, fakeClient.RespondCalls);
 	}
 

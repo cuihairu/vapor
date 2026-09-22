@@ -279,6 +279,7 @@ public sealed class SteamWebHandlerRequestTests
 			new Dictionary<string, string> { ["Retry-After"] = "5" });
 
 		Assert.True(Make(200).IsSuccess);
+		Assert.False(Make(100).IsSuccess); // informational 1xx are not success
 		Assert.True(Make(302).IsRedirect);
 		Assert.True(Make(403).IsClientError);
 		Assert.True(Make(503).IsServerError);

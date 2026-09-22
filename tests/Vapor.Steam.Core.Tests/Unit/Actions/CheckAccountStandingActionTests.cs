@@ -151,6 +151,29 @@ public sealed class CheckAccountStandingActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_NullWebHandlerWithFetchOverride_ReportsUnknownSteamId()
+	{
+		// With a fetch override the early "web handler not available" guard is
+		// bypassed; an absent steam_id then falls through the session-identity
+		// coalescing, whose null-handler short circuit yields no identity either.
+		var action = CreateAction(new AccountStanding(SteamId, VacBanned: false, 0, 0, 0, CommunityBanned: false, "none", Limited: false, 5));
+		var session = new BotSession(
+			"standing_account",
+			new AccountCredentials("standing_account", "password"),
+			new Mock<IActionRegistry>(MockBehavior.Loose).Object,
+			NullLogger<BotSession>.Instance,
+			steamClientManager: null,
+			steamWebHandler: null,
+			eventCallback: null);
+		_sessions.Add(session);
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("SteamID unknown", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_NoWebHandlerAndNoOverride_Fails()
 	{
 		var action = new CheckAccountStandingAction(NullLogger<CheckAccountStandingAction>.Instance);

@@ -165,6 +165,46 @@ public sealed class GetInventoryActionBranchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_SingleAppFailureWithNullError_UsesFallbackMessage()
+	{
+		// The transport reports failure without an error text: the ?? fallback
+		// must supply the default message instead of surfacing a null error.
+		var client = new FakeTradeClient();
+		client.InventoryHandler = (_, _, _, _) => new InventoryResponse { Success = false };
+		var (action, session) = CreateAction(client);
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["steam_id"] = OwnSteamId.ToString() },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Failed to get inventory", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_AppIds_NonNumericString_IsSkippedByGuard()
+	{
+		// The string "abc" fails uint.TryParse itself (the first guard condition,
+		// not just the > 0 check) and is skipped like any other unusable shape.
+		var client = new FakeTradeClient();
+		var requested = new List<uint>();
+		client.InventoryHandler = (_, app, _, _) =>
+		{
+			requested.Add(app);
+			return new InventoryResponse { Success = true, Items = [] };
+		};
+		var (action, session) = CreateAction(client);
+
+		Dictionary<string, object?> payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "steam_id": "76561198000000042", "app_ids": ["abc", "753"] }""")!;
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal([753u], requested);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_InventoryBeyondSafetyLimit_StopsPaginating()
 	{
 		var client = new FakeTradeClient();

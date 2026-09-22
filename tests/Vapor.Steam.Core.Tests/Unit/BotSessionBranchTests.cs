@@ -523,4 +523,227 @@ public sealed class BotSessionBranchTests : IDisposable
 		// The Dispose guard must swallow the ObjectDisposedException from Cancel().
 		session.Dispose();
 	}
+
+	// --- raw-command plumbing -----------------------------------------------
+
+	private static Channel<SessionCommand> GetCommandChannel(BotSession session) =>
+		(Channel<SessionCommand>)typeof(BotSession)
+			.GetField("_commandChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(session)!;
+
+	/// <summary>
+	/// Writes a hand-built command straight into the channel with no Completion:
+	/// the SingleReader unbounded FIFO plus a sentinel command awaited through
+	/// the public API act as a barrier — the sentinel can only complete once
+	/// every command written before it has been fully processed.
+	/// </summary>
+	private void WriteRawCommand(BotSession session, SessionCommand command)
+	{
+		GetCommandChannel(session).Writer.TryWrite(command);
+	}
+
+	private Mock<IAction> RegisterAction(string name, bool requiresLogin = false, int? timeoutSeconds = null)
+	{
+		var action = new Mock<IAction>();
+		action.Setup(a => a.Name).Returns(name);
+		action.Setup(a => a.Metadata).Returns(new ActionMetadata(name, name + " description", RequiresLogin: requiresLogin, TimeoutSeconds: timeoutSeconds));
+		_actionRegistryMock.Setup(r => r.Get(name)).Returns(action.Object);
+		return action;
+	}
+
+	private void RegisterSentinelAction()
+	{
+		var sentinel = RegisterAction("sentinel_ok");
+		sentinel
+			.Setup(a => a.ExecuteAsync(It.IsAny<BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ActionResult(true));
+	}
+
+	private async Task RunSentinelAsync(BotSession session)
+	{
+		var result = await session.ExecuteActionAsync("sentinel_ok", new Dictionary<string, object?>())
+			.WaitAsync(TimeSpan.FromSeconds(30));
+		Assert.True(result.Success);
+	}
+
+	private BotSession CreateStubSession()
+	{
+		// No transport: _steamClientManager stays null (stub login mode).
+		var session = new BotSession(
+			Account,
+			new AccountCredentials(Account, "password"),
+			_actionRegistryMock.Object,
+			_loggerMock.Object);
+		_sessions.Add(session);
+		session.Start();
+		return session;
+	}
+
+	private static async Task WaitForStateAsync(BotSession session, SessionState expected, int timeoutMs = 30000)
+	{
+		var start = Environment.TickCount64;
+		while (Environment.TickCount64 - start < timeoutMs && session.State != expected)
+		{
+			await Task.Delay(25);
+		}
+
+		Assert.Equal(expected, session.State);
+	}
+
+	// --- command-loop arms with Completion-less raw commands ------------------
+
+	[Fact]
+	public async Task ExecuteAction_ActionThrowsWithoutCompletion_LoopSurvivesAndRunsSentinel()
+	{
+		var session = CreateSession();
+		var throwing = RegisterAction("boom");
+		throwing
+			.Setup(a => a.ExecuteAsync(It.IsAny<BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+			.ThrowsAsync(new InvalidOperationException("action exploded"));
+		RegisterSentinelAction();
+
+		// Completion=null: the loop's catch must take the ?. no-op arm and keep reading.
+		WriteRawCommand(session, new SessionCommand(
+			Guid.NewGuid().ToString(), SessionCommandType.ExecuteAction, "boom", null, null, CancellationToken.None));
+		await RunSentinelAsync(session);
+	}
+
+	[Fact]
+	public async Task ExecuteAction_UnknownActionWithoutCompletion_LoopSurvivesAndRunsSentinel()
+	{
+		var session = CreateSession();
+		RegisterSentinelAction();
+
+		WriteRawCommand(session, new SessionCommand(
+			Guid.NewGuid().ToString(), SessionCommandType.ExecuteAction, "not_registered", null, null, CancellationToken.None));
+		await RunSentinelAsync(session);
+	}
+
+	[Fact]
+	public async Task ExecuteAction_RequiresLoginWhileDisconnectedWithoutCompletion_LoopSurvivesAndRunsSentinel()
+	{
+		var session = CreateSession(); // transport wired, never logged in → Disconnected
+		RegisterAction("gated", requiresLogin: true);
+		RegisterSentinelAction();
+
+		WriteRawCommand(session, new SessionCommand(
+			Guid.NewGuid().ToString(), SessionCommandType.ExecuteAction, "gated", null, null, CancellationToken.None));
+		await RunSentinelAsync(session);
+
+		// The gated action was refused, not executed; the session never left Disconnected.
+		Assert.Equal(SessionState.Disconnected, session.State);
+	}
+
+	[Fact]
+	public async Task ExecuteAction_SuccessWithoutCompletion_LoopSurvivesAndSentinelSucceeds()
+	{
+		var session = CreateSession();
+		var succeeding = RegisterAction("succeeds");
+		succeeding
+			.Setup(a => a.ExecuteAsync(It.IsAny<BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new ActionResult(true));
+		RegisterSentinelAction();
+
+		WriteRawCommand(session, new SessionCommand(
+			Guid.NewGuid().ToString(), SessionCommandType.ExecuteAction, "succeeds", null, null, CancellationToken.None));
+
+		// The success path's Completion?. no-op must not disturb the result relay:
+		// the sentinel still completes with Success.
+		await RunSentinelAsync(session);
+	}
+
+	[Fact]
+	public async Task ExecuteAction_TimeoutExpiresWithoutCompletion_ReportsAndUnwinds()
+	{
+		var session = CreateSession();
+		var slow = RegisterAction("slow", timeoutSeconds: 1);
+		slow
+			.Setup(a => a.ExecuteAsync(It.IsAny<BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+			.Returns(async (BotSession _, IReadOnlyDictionary<string, object?> _, CancellationToken ct) =>
+			{
+				await Task.Delay(TimeSpan.FromSeconds(30), ct);
+				return new ActionResult(true);
+			});
+		RegisterSentinelAction();
+
+		WriteRawCommand(session, new SessionCommand(
+			Guid.NewGuid().ToString(), SessionCommandType.ExecuteAction, "slow", null, null, CancellationToken.None));
+
+		// The 1s action budget fires while the action parks on the 30s delay; the
+		// timeout arm's Completion?. no-op must still unwind the action so the
+		// sentinel (queued behind it) can complete.
+		await RunSentinelAsync(session);
+	}
+
+	[Fact]
+	public async Task ExecuteAction_CommandTokenCanceledInsideActionWithoutCompletion_ReportsCanceled()
+	{
+		var session = CreateSession();
+		using var commandCts = new CancellationTokenSource();
+		var selfCanceling = RegisterAction("self_canceling");
+		selfCanceling
+			.Setup(a => a.ExecuteAsync(It.IsAny<BotSession>(), It.IsAny<IReadOnlyDictionary<string, object?>>(), It.IsAny<CancellationToken>()))
+			.Returns((BotSession _, IReadOnlyDictionary<string, object?> _, CancellationToken ct) =>
+			{
+				// Cancel the command token from inside the action body: the timeout
+				// filter stays false (no timeout armed) and the effective-token
+				// filter catches. Pre-canceling instead would trip the action-lock
+				// wait before the action ever runs.
+				commandCts.Cancel();
+				ct.ThrowIfCancellationRequested();
+				return Task.FromResult(new ActionResult(true));
+			});
+		RegisterSentinelAction();
+
+		WriteRawCommand(session, new SessionCommand(
+			Guid.NewGuid().ToString(), SessionCommandType.ExecuteAction, "self_canceling", null, null, commandCts.Token));
+		await RunSentinelAsync(session);
+	}
+
+	[Fact]
+	public async Task ProvideAuthCode_WithoutTransport_NullShortCircuitRetriesLoginToConnected()
+	{
+		// Stub-mode session: SetAuthCode's ?. no-ops on the null transport, yet
+		// the code still releases the wait and the auto-queued Login reaches
+		// Connected through the stub log-on path.
+		var session = CreateStubSession();
+		typeof(BotSession)
+			.GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.SetValue(session, SessionState.ConnectingWaitAuthCode);
+
+		session.ProvideAuthCode("12345");
+
+		await WaitForStateAsync(session, SessionState.Connected);
+	}
+
+	[Fact]
+	public async Task Provide2FACode_WithoutTransport_NullShortCircuitRetriesLoginToConnected()
+	{
+		var session = CreateStubSession();
+		typeof(BotSession)
+			.GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.SetValue(session, SessionState.ConnectingWait2FA);
+
+		session.Provide2FACode("ABC123");
+
+		await WaitForStateAsync(session, SessionState.Connected);
+	}
+
+	[Fact]
+	public async Task DisconnectCommandWithoutCompletion_LoopExitsRanToCompletion()
+	{
+		var session = CreateStubSession();
+		WriteRawCommand(session, new SessionCommand(
+			Guid.NewGuid().ToString(), SessionCommandType.Disconnect, null, null, null, CancellationToken.None));
+		var background = (Task)typeof(BotSession)
+			.GetField("_backgroundTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(session)!;
+
+		// The Disconnect case is the loop's only healthy exit: the task completing
+		// (rather than only cancelling) proves the Completion?. no-op arm ran.
+		await background.WaitAsync(TimeSpan.FromSeconds(30));
+
+		Assert.Equal(SessionState.Disconnected, session.State);
+		Assert.Equal(TaskStatus.RanToCompletion, background.Status);
+	}
 }

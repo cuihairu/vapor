@@ -170,4 +170,23 @@ public sealed class SteamProfileGamesClientTests
 		Assert.Equal(620U, only.AppId);
 		Assert.Equal(36.7, only.Hours);
 	}
+
+	[Fact]
+	public void MissingAndNonStringNames_ParseAsNull()
+	{
+		// A name absent entirely (TryGetProperty false) and a name of a
+		// non-string kind (the ValueKind check false) both degrade to a null
+		// name while the entry itself survives with its playtime.
+		const string html = """
+			<script>var rgGames = [{"appid":440,"hours_forever":"1.5"},{"appid":500,"name":42}];</script>
+			""";
+
+		var result = Parse(html);
+
+		Assert.Equal(2, result.Count);
+		Assert.All(result, game => Assert.Null(game.Name));
+		Assert.Equal(440U, result[0].AppId);
+		Assert.Equal(1.5, result[0].Hours);
+		Assert.Equal(500U, result[1].AppId);
+	}
 }

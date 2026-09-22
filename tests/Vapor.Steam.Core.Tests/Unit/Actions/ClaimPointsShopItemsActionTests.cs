@@ -138,6 +138,38 @@ public sealed class ClaimPointsShopItemsActionTests
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_NonNumericClrString_IsSkippedByGuard()
+	{
+		// A CLR string that fails uint.TryParse itself (the first guard condition,
+		// not just the > 0 check) is skipped without aborting the valid sibling.
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo>
+			{
+				new(91000, 753, 3, "free", 0, true, 0)
+			});
+		clientMock
+			.Setup(m => m.RedeemPointsShopItemAsync(It.IsAny<uint>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new RedeemPointsResult(SteamResult.OK, 1));
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1000, 1500, 500));
+		BotSession session = CreateSession(clientMock.Object);
+
+		var payload = new Dictionary<string, object?>
+		{
+			["definition_ids"] = new List<object?> { "abc", 91000 }
+		};
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(new uint[] { 91000 }, captured.Single());
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_DefinitionIds_SingleScalarValueWrapsIntoOneId()
 	{
 		var captured = new List<IReadOnlyCollection<uint>>();

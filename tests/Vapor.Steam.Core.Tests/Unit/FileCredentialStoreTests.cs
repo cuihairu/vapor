@@ -252,6 +252,53 @@ public sealed class FileCredentialStoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task GetAccessToken_TokenWithoutExpiry_ReturnsNull()
+	{
+		// A hand-edited store (or a future-writer artifact) holding an access token
+		// with no expiry timestamp: the HasValue arm fails and the token must not
+		// be handed out.
+		string account = "account-a";
+
+		using (var store = CreateStore())
+		{
+			await store.SaveAccessTokenAsync(account, new StoredAccessToken("no-expiry-token", DateTimeOffset.UtcNow.AddHours(1)));
+		}
+
+		string json = await File.ReadAllTextAsync(StorePath);
+		using (var doc = JsonDocument.Parse(json))
+		{
+			var output = new Dictionary<string, object?>();
+			foreach (var property in doc.RootElement.EnumerateObject())
+			{
+				output[property.Name] = property.Value.Clone();
+			}
+
+			var accounts = new Dictionary<string, object?>();
+			foreach (var accountProperty in doc.RootElement.GetProperty("accounts").EnumerateObject())
+			{
+				var fields = new Dictionary<string, object?>();
+				foreach (var field in accountProperty.Value.EnumerateObject())
+				{
+					if (!string.Equals(field.Name, "accessTokenExpiresAt", StringComparison.Ordinal))
+					{
+						fields[field.Name] = field.Value.Clone();
+					}
+				}
+
+				accounts[accountProperty.Name] = fields;
+			}
+
+			output["accounts"] = accounts;
+
+			await File.WriteAllTextAsync(StorePath, JsonSerializer.Serialize(output));
+		}
+
+		using var reloaded = CreateStore();
+
+		Assert.Null(await reloaded.GetAccessTokenAsync(account));
+	}
+
+	[Fact]
 	public async Task SharedSecret_RoundTripsAcrossStoreInstances()
 	{
 		string account = "account-a";

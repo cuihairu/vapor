@@ -161,6 +161,23 @@ public sealed class SteamBadgesClientTests
 	}
 
 	[Fact]
+	public void Parse_LinkedTitleOnlyViewDetails_YieldsNullNameKeepingDrop()
+	{
+		// Title that is nothing but the overlay text: the IsNullOrWhiteSpace
+		// guard passes (surrounding spaces), but after the "View details"
+		// Replace+Trim nothing remains — the name nulls out while the drop
+		// itself is still kept.
+		var html = Row(" View details ", "card_drop_info_dialog_440", "<span class=\"progress_info_bold\">3 card drops remaining</span>", titleAsLink: true);
+
+		var result = SteamBadgesClient.ParseBadgePage(html);
+
+		var drop = Assert.Single(result.CardDrops);
+		Assert.Equal(440U, drop.AppId);
+		Assert.Equal(3, drop.DropsRemaining);
+		Assert.Null(drop.Name);
+	}
+
+	[Fact]
 	public void Parse_MultipleRows_SplitsOnOuterBadgeRow()
 	{
 		var html = new System.Text.StringBuilder("<div class=\"profile_badges_body\">")

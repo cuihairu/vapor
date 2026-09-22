@@ -204,6 +204,48 @@ public sealed class CredentialStoreRotatorTests : IDisposable
 	}
 
 	[Fact]
+	public async Task Rotate_UndecryptableAccountsWithLogger_LogsPerAccountAndAbortErrors()
+	{
+		// The same wrong-key abort as the null-logger variant, but with a live
+		// logger so both diagnostic sites actually emit: the per-account failure
+		// inside the loop and the "Rotation aborted" summary that keeps the file
+		// untouched for operator resolution.
+		await WriteV2StoreAsync(new Dictionary<string, (string?, string?)>
+		{
+			["ghost"] = ("refresh-plain-value", null)
+		}, OldKey);
+		byte[] wrongKey = new byte[32];
+		wrongKey.AsSpan().Fill((byte)3);
+
+		var result = CredentialStoreRotator.Rotate(
+			_storePath, wrongKey, NewKey,
+			logger: Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+
+		Assert.False(result.Success);
+		Assert.Equal(new[] { "ghost" }, result.FailedAccounts);
+		Assert.Equal(0, result.RotatedAccounts);
+	}
+
+	[Fact]
+	public async Task Rotate_SuccessWithLogger_LogsRotationSummary()
+	{
+		// A live logger on the happy path emits the post-replace summary line
+		// (rotated/failed/backup counts), which the null-logger success tests skip.
+		await WriteV2StoreAsync(new Dictionary<string, (string?, string?)>
+		{
+			["account-a"] = ("refresh-plain-value", null)
+		}, OldKey);
+
+		var result = CredentialStoreRotator.Rotate(
+			_storePath, OldKey, NewKey,
+			logger: Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+
+		Assert.True(result.Success);
+		Assert.Equal(1, result.RotatedAccounts);
+		Assert.True(File.Exists(_storePath + ".bak.pre-rotate"));
+	}
+
+	[Fact]
 	public async Task Rotate_UndecryptableAccountsWithNullLogger_AbortsQuietly()
 	{
 		// An account that fails to decrypt with the old key aborts the rotation;

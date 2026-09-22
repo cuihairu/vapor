@@ -90,6 +90,26 @@ public sealed class BotSessionQrLoginTests : IDisposable
 	}
 
 	[Fact]
+	public async Task QrLogin_NotApprovedWithoutError_UsesFallbackMessage()
+	{
+		// A refusal that carries no Error text: the ?? fallback names the failure
+		// instead of surfacing a null error.
+		_transportMock
+			.Setup(t => t.BeginQrLoginAsync(Account, It.IsAny<Action<string>>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new QrLoginResult(false));
+		var session = CreateSession();
+		session.Start();
+
+		var result = await session.LoginAsync();
+
+		Assert.False(result.Success);
+		Assert.Equal("QR sign-in was not approved", result.Error);
+		Assert.Equal(SessionState.FatalError, session.State);
+		_transportMock.Verify(t => t.LoginAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+		await WaitForEventsAsync(e => e.EventType == "state_changed" && e.State == "FatalError");
+	}
+
+	[Fact]
 	public async Task QrLogin_ConnectFailure_FailsBeforeChallenge()
 	{
 		_transportMock

@@ -797,6 +797,26 @@ public sealed class SteamStoreApiClientTests
 		Assert.Equal(0, item.Price.DiscountPercent); // discount missing → default
 	}
 
+	[Theory]
+	[InlineData("""{ "id": 440, "type": "app", "price": {} }""")]
+	[InlineData("""{ "id": 440, "type": "app", "name": 42, "price": {} }""")]
+	public async Task SearchGamesAsync_ItemWithoutStringName_NameFallsBackToEmpty(string itemJson)
+	{
+		// A missing name (GetStringProperty null) and a non-string name (kind
+		// check false → null) both fall back to the empty-string default.
+		string json = $$"""{ "total": 1, "items": [ {{itemJson}} ] }""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var results = await client.SearchGamesAsync("team fortress");
+
+		var item = Assert.Single(results);
+		Assert.Equal(440U, item.AppId);
+		Assert.Equal(string.Empty, item.Name);
+		Assert.False(item.IsFree); // price block present
+	}
+
 	[Fact]
 	public async Task GetMarketListingsAsync_AssetAndCurrencyWrongShapes_FallBackToDefaults()
 	{

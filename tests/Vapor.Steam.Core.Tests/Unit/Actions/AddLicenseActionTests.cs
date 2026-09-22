@@ -153,6 +153,28 @@ public sealed class AddLicenseActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_SubIds_NonNumericString_IsSkippedByGuard()
+	{
+		// The string "abc" fails uint.TryParse itself (the first guard condition,
+		// not just the > 0 check) and is skipped like any other unusable shape.
+		_storeClientMock
+			.Setup(m => m.AddFreeLicenseAsync(88888u, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new StorePurchaseResult(true, StorePurchaseResult.Ok));
+
+		BotSession session = CreateSession(webHandler: CreateWebHandler());
+
+		Dictionary<string, object?> payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "sub_ids": ["abc", "88888"] }""")!;
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		var purchases = Assert.IsType<List<Dictionary<string, object?>>>(result.Output!["purchases"]);
+		Dictionary<string, object?> entry = Assert.Single(purchases);
+		Assert.Equal(88888u, entry["id"]);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_SubIds_PurchaseOk()
 	{
 		_storeClientMock

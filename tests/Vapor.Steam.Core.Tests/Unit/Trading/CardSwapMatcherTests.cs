@@ -18,7 +18,8 @@ public sealed class CardSwapMatcherTests
 		string name = "Card",
 		bool tradable = true,
 		DateTimeOffset? tradabilityDate = null,
-		uint appId = CardsApp) =>
+		uint appId = CardsApp,
+		int amount = 0) =>
 		new()
 		{
 			AssetId = assetId,
@@ -27,7 +28,8 @@ public sealed class CardSwapMatcherTests
 			InstanceId = classId + 50,
 			Tradable = tradable,
 			TradabilityDate = tradabilityDate,
-			MarketHashName = name
+			MarketHashName = name,
+			Amount = amount
 		};
 
 	// --- FindDuplicates ---
@@ -188,6 +190,21 @@ public sealed class CardSwapMatcherTests
 		SwapMatch match = Assert.Single(matches);
 		Assert.Equal(2UL, match.Give.ContextId);
 		Assert.Equal(2UL, match.Receive.ContextId);
+	}
+
+	[Fact]
+	public void MatchSwaps_PositiveStackAmounts_CarryIntoTheTradeAssets()
+	{
+		// Stackable items keep their real amount; the >0 ternary only substitutes
+		// 1 for amount-less entries, so a stack of 5 must trade as 5.
+		var own = new[] { Card(1, 100, "A", amount: 5), Card(2, 100, "A", amount: 5) };
+		var partner = new[] { Card(10, 200, "B", amount: 5), Card(11, 200, "B", amount: 5) };
+
+		var matches = CardSwapMatcher.MatchSwaps(own, partner, keep: 1, maxSwaps: 25);
+
+		SwapMatch match = Assert.Single(matches);
+		Assert.Equal(5, match.Give.Amount);
+		Assert.Equal(5, match.Receive.Amount);
 	}
 
 	[Fact]
