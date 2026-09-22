@@ -286,24 +286,26 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
-### 当前基线（2026-09-21，行覆盖 100.0%）
+### 当前基线（2026-09-22，行覆盖 100.0% / 分支覆盖 94.8%）
 
-合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中）：
+合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中；分支覆盖按分支行的 condition-coverage 统计，同一行多次观察取已覆盖条件数的最大值）：
 
-| 程序集 | 行覆盖 |
-|--------|--------|
-| Agent | 100.0% |
-| MobileAuthenticator | 100.0% |
-| Monitoring | 100.0% |
-| Plugins.Core | 100.0% |
-| Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） |
-| Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） |
-| Protocol | 100.0% |
-| ControlPlane | 100.0% |
-| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） |
-| MarketWatch | 100.0% |
-| KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） |
-| **合计** | **100.0%** (15882/15882) |
+| 程序集 | 行覆盖 | 分支覆盖 |
+|--------|--------|----------|
+| Agent | 100.0% | 98.5% (191/194) |
+| MobileAuthenticator | 100.0% | 97.2% (311/320) |
+| Monitoring | 100.0% | 89.8% (97/108) |
+| Plugins.Core | 100.0% | 94.6% (244/258) |
+| Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
+| Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
+| Protocol | 100.0% | （无分支行） |
+| ControlPlane | 100.0% | 93.8% (1943/2072) |
+| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） | 95.2% (2871/3015) |
+| MarketWatch | 100.0% | 91.5% (130/142) |
+| KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
+| **合计** | **100.0%** (15882/15882) | **94.8%** (5843/6165) |
+
+分支覆盖门禁：CI `--min-branch 94.77`（基线 5843/6165 的未舍入值为 94.777%，门禁取 94.77——当前过、丢一个条件 94.761% 即红；两轮全量串行实测摘要逐字节一致后设点，分支数据无时序抖动）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
 
 > 上轮（2026-09-21）定性入册的 2 行防御性死分支（`Program` agent WS 循环的 try 收闭与尾部清理）已于 2026-09-22 收口——「结构性不可达」实为测试竞速：正常出口臂由 `AgentWs_RequestAbortedDuringHeartbeat_UnregistersThroughLoopExit` 确定性覆盖（`RequestAborted` 经 `IStartupFilter` 换成测试可控 linked CTS，token 无视心跳进行中取消；详见日期日志）。分母自此无残余缺口，CI 门禁收紧至 100%——任何一行未覆盖（新增代码未带测试）即红。
 
@@ -362,6 +364,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-22 覆盖率精确 100% 收口轮（用户指令「把测试覆盖率提到并维持 100%,有缺口就补齐」;测试数不变,合计 **100.0%** 15882/15882——分母不变、残余 2 行转覆盖,**CI 门禁 99.9→100**）。上轮定性保留的「WS 循环条件正常出口防御性死分支」2 行（`Program` 2968 try 收闭 + 2975 尾部清理）本轮**推翻不可测定性**——该臂 09-16 就有测试（`SlowHeartbeatStore` 忽略 token 让心跳在 abort 后正常返回、循环条件再见假退出）,但 TestServer 客户端 `ws.Abort()` 的中止传播与 socket 拆除**竞速**:传播先到 → RequestAborted 取消 → 正常出口;拆除先到 → 下一次 `Receive` 抛异常 → 异常臂。两臂可观测行为等价（都注销 + disconnected 事件）,测试永远绿,cobertura 才暴露真相:09-21 收官轮报告尾部 0 命中 = 竞速翻车走了异常臂。**去竞态三件**:①`BranchFactory` 注入 `IStartupFilter`（ConfigureServices 注册）,把 `/v1/agent/ws` 请求的 `RequestAborted` 换成测试可控 linked CTS——**教训:`builder.Configure` 中间件在 minimal hosting 工厂下丢端点映射,WS 升级请求全 404（6 个 WS 测试当场红）,必须走 startup filter 包装 `next(app)`**;②`SlowHeartbeatStore` 加 `HeartbeatEntered` TCS——取消必须落在「Receive 已返回、token 无视心跳进行中」窗口,早了 OCE 从 Receive 抛出照旧走异常臂（重演上轮机理⑵:Cancel 后第一个 await 消费取消）;③测试等信号后 `Cancel()`,心跳正常返回、socket 健康 ⇒ 循环条件见假成为**唯一可能路径**（单类验证:2968/2975 各 hits=1,catch 臂 2 hits 不受影响）。测试更名 `AgentWs_RequestAbortedDuringHeartbeat_UnregistersThroughLoopExit` + 修正 close-frame 测试引用已删除 finally 的陈旧注释。**教训入册:「时序依赖的绿」不等于「覆盖了」——两臂可观测行为等价时,cobertura 是区分测试真正走了哪条臂的唯一证据;TestServer 确定性中止通道 = `HttpContext.RequestAborted` 可写 + linked CTS 替换 + IStartupFilter,`ws.Abort()` 是竞速通道**。验证:ProgramBranchCoverageTests 73 全绿、全量覆盖率轮全绿（2614 测试,合计 **100.0%** 15882/15882,门禁 100 过）、format 过、CI 终态见提交后监控。
 
 > 2026-09-22 本地覆盖率工具链对齐轮（test + docs 双提交,无产品/测试代码改动）：README 宣称的「全量覆盖率走串行收集」此前只对 CI 成立——`run-tests.sh --coverage` 本地仍用一次性 `--collect`（可靠性轮已证其会静默产出空/全零报告）,`run-tests.ps1 -Coverage` 更连 runsettings 都没带（§38 分母膨胀教训原样存在）。修复三件:①**`run-tests.sh`** 全量运行（无过滤器）自动委托 `collect-coverage-serial.sh`,显式 Release 构建守卫前置（串行脚本 `--no-build`——陈旧 DLL 幻差教训从 runbook 升级进脚本本身）,跑后 best-effort 打印 coverage-summary 文本摘要（与 CI 门禁同口径）;带过滤器保留单次收集路径（校验器「全零即坏」语义不适用于子集——未匹配项目本就零命中）。②**`run-tests.ps1 -Coverage` 原生移植串行循环**（Windows 不依赖 bash/python）:逐项目 `--no-build` 收集、坏报告删除重试 ≤3、E2E 免收集、VAPOR_TEST_REDIS 注入与恢复、exit code 经 script 作用域变量传出（函数进度输出会污染返回值管道的 PS 陷阱）;**cobertura 带 DOCTYPE,`[xml]` 直接转换默认禁止 DTD 会抛——必须 XmlReader + DtdProcessing=Ignore**;过滤器路径补上缺失的 runsettings。③**分支行计入口径统一**:coverlet 实际写 `branch="True"/"False"`（Pascal 大小写）,coverage-summary.py 与 sh 校验器里的大小写敏感过滤是**死代码**——但 PowerShell `-ne` 不区分大小写,移植时照抄会「真排除」分支行,三处口径就此分叉;定案保留含分支行的**更严口径**（基线 15882 即此口径,且与标准工具的 line coverage 定义一致）,删除三处死过滤、口径入注;门禁行为不变（两口径合并结果同为 100.0% = 15882/15882,修复前的门禁实际就在执行含分支行口径）。验证:`run-tests.sh --coverage` 全量端到端演练（构建 3:18 → 10 段串行全 attempt 1 → 摘要 100.0% → 报告列出,退出码 0）、过滤器路径冒烟全绿、`bash -n`/`py_compile` 过;本机无 pwsh,ps1 逐行审读 + 关键假设对照 coverlet 实际产物核验（分支值大小写、class/line XPath 结构、DOCTYPE）。
+
+> 2026-09-22 分支覆盖度量与门禁轮（用户指令「把测试覆盖率往100%推进」——行覆盖已精确 100%,推进剩余自由度:分支条件命中度）。coverage-summary.py 扩展双口径输出:行覆盖照旧;分支覆盖按分支行的 `condition-coverage="50% (1/2)"` 属性统计（同一行多次报告观察取已覆盖条件数最大值,并集语义与行覆盖的 max hits 一致）,新增 `--min-branch` 门禁旗标。基线:**行 100.0%（15882/15882）/ 分支 94.8%（5843/6165）**——行 100% 不蕴含分支 100%:一行执行过 ≠ 它的每个布尔子条件结果都被取到（如 `int.TryParse(env) && v > 0` 的坏值臂、`game?.Price` 的 null 臂）。两轮全量串行实测摘要**逐字节一致**（分支数据无时序抖动,与行覆盖门禁同款确定性）,据此设精确基线棘轮门禁:CI `--min 100 --min-branch 94.77`（未舍入 94.777% 过;丢一个条件 94.761% 即红;行门禁同款纪律——故意新增不达分支基线的防御臂须同步抬基线入册）。缺口普查:322 未命中条件分布 253 行,前五 `DesiredStateReconciler` 49、`Config` 33、`SteamStoreApiClient` 14、`SteamAccountStandingClient` 13、`MarketWatchPlugin` 12。定性两族:**可收** = env 解析臂组合（Config 的 `TryParse && 范围校验` 坏值臂,测试注入 env 即达）、JSON 形状组合臂（`TryGetProperty && GetBoolean` 短路组合）、守卫 null 臂（`?? throw` 家族）;**难收** = 编排循环条件组合（`WaitForNextTickAsync` 假返回臂=取消语义）、reconciler 状态组合（`spec.Version` null 臂跨状态机）——与行覆盖 100% 冲刺前同构,留后轮专项冲刺收可收族、难收族定性入册。验证:两轮全量串行全绿（10 段全 attempt 1）、双旗标门禁本地过、py_compile 过、CI 终态见提交后监控。
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
 - xUnit / Moq 框架程序集
