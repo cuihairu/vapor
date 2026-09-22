@@ -103,6 +103,23 @@ public sealed class ProxyOptionsTests
 	}
 
 	[Fact]
+	public void ToWebProxy_UnbracketsIpv6Host_RebracketsForUri()
+	{
+		// Parse stores the unbracketed literal; ToWebProxy must re-bracket it for URI form.
+		var proxied = Assert.IsType<WebProxy>(ProxyOptions.Parse("http://[::1]:8080").ToWebProxy());
+
+		Assert.NotNull(proxied.Address);
+		Assert.Contains("[::1]", proxied.Address!.ToString(), StringComparison.Ordinal);
+		Assert.Null(proxied.Credentials);
+	}
+
+	[Fact]
+	public void ToString_WithoutCredentials_OmitsCredentialSegment()
+	{
+		Assert.Equal("http://proxy.example.com:80", ProxyOptions.Parse("http://proxy.example.com").ToString());
+	}
+
+	[Fact]
 	public void DefaultPorts_FollowSchemeConventions()
 	{
 		Assert.Equal(80, ProxyOptions.DefaultPort(ProxyScheme.Http));

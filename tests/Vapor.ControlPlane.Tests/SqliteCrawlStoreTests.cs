@@ -276,6 +276,16 @@ public sealed class SqliteCrawlStoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task UpsertPlan_WithCron_RoundTripsCron()
+	{
+		await _store.UpsertPlanAsync(SamplePlan(cron: "0 3 * * *"));
+
+		CrawlPlan? stored = await _store.GetPlanAsync("plan-1");
+		Assert.NotNull(stored);
+		Assert.Equal("0 3 * * *", stored!.Cron);
+	}
+
+	[Fact]
 	public async Task CountResults_EmptyStore_ReturnsZero()
 	{
 		Assert.Equal(0, await _store.CountResultsAsync(new CrawlResultQuery()));

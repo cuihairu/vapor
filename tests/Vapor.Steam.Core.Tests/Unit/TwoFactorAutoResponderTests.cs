@@ -46,6 +46,25 @@ public sealed class TwoFactorAutoResponderTests
 	}
 
 	[Fact]
+	public async Task WithoutSharedSecret_DefaultConstructor_UsesOptionalFallbacks()
+	{
+		// Constructed without logger or cooldown: both optional parameters fall back
+		// (NullLogger instance + the default 60s cooldown) and the skip path still works.
+		_credentials
+			.Setup(c => c.GetSharedSecretAsync("alice", It.IsAny<CancellationToken>()))
+			.ReturnsAsync((string?)null);
+		var responder = new TwoFactorAutoResponder(
+			_sessionManager.Object,
+			_credentials.Object,
+			new SteamTimeSynchronizer(_ => Task.FromResult(1_700_000_000L)));
+
+		bool answered = await responder.TryAnswerAsync("alice");
+
+		Assert.False(answered);
+		Assert.Equal(1, responder.SkippedNoSecretCount);
+	}
+
+	[Fact]
 	public async Task WithSharedSecret_AnswersChallengeLocally()
 	{
 		BotSession session = CreateSession("alice");

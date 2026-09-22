@@ -255,6 +255,29 @@ public sealed class NotificationTests
 	}
 
 	[Fact]
+	public async Task ThrowingSink_WithoutJobId_LogsNonePlaceholder()
+	{
+		var broker = new EventBroker();
+		var sink = new RecordingSink { Handler = _ => Task.FromException(new HttpRequestException("sink down")) };
+		using var service = new NotificationService(broker, new[] { sink }, NullLogger<NotificationService>.Instance);
+
+		await StartAsync(broker, service);
+		try
+		{
+			// A broker event with no job id: the failure log line falls back to "<none>".
+			broker.Publish(null, "session.state_changed", new Dictionary<string, object?> { ["accountName"] = "alice" });
+			await sink.WaitForCallAsync();
+		}
+		finally
+		{
+			await service.StopAsync(CancellationToken.None);
+		}
+
+		Assert.Equal(1, sink.Calls);
+		Assert.Empty(sink.Received);
+	}
+
+	[Fact]
 	public async Task SessionAndChallengeEvents_AreDeliveredWithCategoryAndState()
 	{
 		var broker = new EventBroker();

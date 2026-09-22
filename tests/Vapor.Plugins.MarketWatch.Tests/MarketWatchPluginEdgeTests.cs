@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Plugins.Core;
@@ -286,6 +287,94 @@ public sealed class MarketWatchPluginEdgeTests
 
 		// The alert itself still counted; the transport crash never surfaced.
 		Assert.Equal(1, plugin.Store.Snapshot()[0].AlertCount);
+	}
+
+	[Fact]
+	public async Task PollOnce_LoggerSuppressed_AllDiagnosticShortCircuitsStayQuiet()
+	{
+		var client = new ScriptedStoreClient(new PriceOverview { Currency = "USD", Final = 100m, Initial = 100m });
+		var config = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+		{
+			["market.webhook_url"] = "http://webhook.test/alerts"
+		};
+		await using var plugin = new MarketWatchPlugin(client, new HttpClient(new ThrowingHandler()));
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+		await plugin.StopLoopForTestsAsync();
+
+		// Suppress the logger: every `_logger?.` diagnostic site must short-circuit instead
+		// of formatting, on every path (baseline, alert, fetch failure, webhook failure).
+		typeof(MarketWatchPlugin).GetField("_logger", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.SetValue(plugin, null);
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+		await plugin.PollOnceAsync(CancellationToken.None); // price baseline
+
+		client.PriceFailures[570] = new InvalidOperationException("source down");
+		await plugin.PollOnceAsync(CancellationToken.None); // price fetch failure
+
+		client.PriceFailures.Remove(570);
+		client.NextPrice = new PriceOverview { Currency = "USD", Final = 10m, Initial = 100m };
+		await plugin.PollOnceAsync(CancellationToken.None); // alert + crashing webhook
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "730", ["kind"] = "free" });
+		client.GameInfoFailures[730] = new InvalidOperationException("source down");
+		await plugin.PollOnceAsync(CancellationToken.None); // free fetch failure
+
+		client.GameInfoFailures.Remove(730);
+		client.NextGameInfo = new GameInfo { AppId = 730, Name = "Paid Game", IsFree = false };
+		await plugin.PollOnceAsync(CancellationToken.None); // free baseline (paid)
+
+		client.NextGameInfo = new GameInfo { AppId = 730, Name = "Paid Game", IsFree = true };
+		await plugin.PollOnceAsync(CancellationToken.None); // free edge + crashing webhook
+
+		Assert.Equal(1, plugin.Store.Snapshot().Single(w => w.AppId == 570).AlertCount);
+		Assert.Equal(1, plugin.Store.Snapshot().Single(w => w.AppId == 730).AlertCount);
+	}
+
+	[Fact]
+	public async Task PollOnce_WebhookNonSuccessStatus_LoggedAndSwallowed()
+	{
+		var client = new ScriptedStoreClient(new PriceOverview { Currency = "USD", Final = 100m, Initial = 100m });
+		var config = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+		{
+			["market.webhook_url"] = "http://webhook.test/alerts"
+		};
+		await using var plugin = new MarketWatchPlugin(
+			client, new HttpClient(new FixedStatusHandler(HttpStatusCode.InternalServerError)));
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+		await plugin.StopLoopForTestsAsync();
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+		await plugin.PollOnceAsync(CancellationToken.None); // baseline, no webhook
+		client.NextPrice = new PriceOverview { Currency = "USD", Final = 10m, Initial = 100m };
+		await plugin.PollOnceAsync(CancellationToken.None); // alert + webhook answers 500
+
+		// The 500 is logged as a warning, never surfaced, and the alert still counted.
+		Assert.Equal(1, plugin.Store.Snapshot()[0].AlertCount);
+	}
+
+	[Fact]
+	public async Task StopLoopForTests_AfterStart_AwaitsRunningLoop()
+	{
+		// The started-loop arm: _loopCts and _loop are both live, so stop must cancel,
+		// await the swallow-all loop body and clear the fields. Manual PollOnceAsync
+		// keeps driving the store afterwards (the loop is not restarted here).
+		var client = new ScriptedStoreClient();
+		await using var plugin = await CreateInitializedAsync(client);
+
+		await plugin.StopLoopForTestsAsync();
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+		client.NextPrice = new PriceOverview { Currency = "USD", Final = 20m, Initial = 20m };
+		await plugin.PollOnceAsync(CancellationToken.None);
+		Assert.Equal(20m, plugin.Store.Snapshot()[0].LastPrice);
+	}
+
+	/// <summary>Webhook transport that always answers with a fixed status code.</summary>
+	private sealed class FixedStatusHandler(HttpStatusCode statusCode) : HttpMessageHandler
+	{
+		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+			Task.FromResult(new HttpResponseMessage(statusCode));
 	}
 
 	[Fact]
