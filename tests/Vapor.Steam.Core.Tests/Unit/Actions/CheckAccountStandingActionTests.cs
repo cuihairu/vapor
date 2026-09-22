@@ -259,6 +259,29 @@ public sealed class CheckAccountStandingActionTests : IDisposable
 			() => action.ExecuteAsync(session, Payload(), cts.Token));
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_WithoutPayloadSteamId_ResolvesFromSessionCookie()
+	{
+		// steam_id absent: the own id comes from the session's login cookie.
+		var standing = new AccountStanding(SteamId, VacBanned: false, 0, 0, 0, CommunityBanned: false, "none", Limited: false, 5);
+		var action = new CheckAccountStandingAction(NullLogger<CheckAccountStandingAction>.Instance)
+		{
+			FetchOverride = (id, _) =>
+			{
+				Assert.Equal(SteamId, id);
+				return Task.FromResult(standing);
+			}
+		};
+		var session = CreateSession();
+		session.SteamWebHandler!.SetSessionCookies(
+			"session-123",
+			$"{SteamId.ToString(System.Globalization.CultureInfo.InvariantCulture)}%7C%7Ctoken");
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+	}
+
 	private static CheckAccountStandingAction CreateAction(AccountStanding standing) =>
 		new(NullLogger<CheckAccountStandingAction>.Instance)
 		{

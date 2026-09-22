@@ -170,6 +170,57 @@ public sealed class SteamAccountStandingClientTests
 	}
 
 	[Fact]
+	public async Task GetStandingAsync_PlayerEntryMissingAllBanFields_FallsBackToDefaults()
+	{
+		// Every TryGetProperty left arm false in one payload.
+		var (client, _) = Create(bansBody: """{"players":[{}]}""");
+
+		var standing = await client.GetStandingAsync(SteamId);
+
+		Assert.False(standing.VacBanned);
+		Assert.Equal(0, standing.NumberOfVacBans);
+		Assert.Equal(0, standing.NumberOfGameBans);
+		Assert.Equal(0, standing.DaysSinceLastBan);
+		Assert.False(standing.CommunityBanned);
+		Assert.Equal("unknown", standing.EconomyBan);
+	}
+
+	[Fact]
+	public async Task GetStandingAsync_BanFieldsWrongShapes_FallBackToDefaults()
+	{
+		// Every right-hand shape check false without throwing: strings where
+		// bool literals are expected (kind check), numbers too fractional or
+		// too large for the TryGetInt32 slots, a numeric economy tag.
+		var (client, _) = Create(bansBody: """
+			{"players":[{"VACBanned":"true","NumberOfVACBans":1.5,"NumberOfGameBans":3000000000,
+			"DaysSinceLastBan":2.5,"CommunityBanned":"no","EconomyBan":7}]}
+			""");
+
+		var standing = await client.GetStandingAsync(SteamId);
+
+		Assert.False(standing.VacBanned);
+		Assert.Equal(0, standing.NumberOfVacBans);
+		Assert.Equal(0, standing.NumberOfGameBans);
+		Assert.Equal(0, standing.DaysSinceLastBan);
+		Assert.False(standing.CommunityBanned);
+		Assert.Equal("unknown", standing.EconomyBan);
+	}
+
+	[Fact]
+	public void Constructor_NullDependencies_ThrowsWithParamName()
+	{
+		Assert.Equal("webHandler", Assert.Throws<ArgumentNullException>(
+			() => new SteamAccountStandingClient(null!, null!)).ParamName);
+		Assert.Equal("logger", Assert.Throws<ArgumentNullException>(
+			() => new SteamAccountStandingClient(
+				new SteamWebHandler(
+					new SteamWebHandlerConfig { RateLimitIntervalMs = 0, MaxRetries = 1, EnableCircuitBreaker = false },
+					NullLogger<SteamWebHandler>.Instance,
+					new FakeHttpMessageHandler()),
+				null!)).ParamName);
+	}
+
+	[Fact]
 	public async Task GetStandingAsync_RequestsCarryKeyAndSteamId()
 	{
 		var (client, fake) = Create();

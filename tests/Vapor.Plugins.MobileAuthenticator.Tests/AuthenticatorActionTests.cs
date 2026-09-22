@@ -137,6 +137,25 @@ public class AuthenticatorActionTests
 	}
 
 	[Fact]
+	public async Task SyncSteamTime_Succeeds_WithLogger_EmitsSyncLog()
+	{
+		// Same success path with a logger attached: the sync log line is the
+		// only behavior difference, so assert the run still succeeds.
+		var local = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		var synchronizer = new SteamTimeSynchronizer(
+			_ => Task.FromResult(local.ToUnixTimeSeconds() + 5),
+			new FixedTimeProvider(local),
+			NullLogger.Instance);
+		var action = new SyncSteamTimeAction(synchronizer, NullLogger<SyncSteamTimeAction>.Instance);
+
+		var result = await action.ExecuteAsync(null!, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(5L, result.Output!["offset_seconds"]);
+		Assert.True(synchronizer.HasSynced);
+	}
+
+	[Fact]
 	public async Task SyncSteamTime_QueryFailure_ReturnsError()
 	{
 		var synchronizer = new SteamTimeSynchronizer(_ => Task.FromException<long>(new HttpRequestException("down")));

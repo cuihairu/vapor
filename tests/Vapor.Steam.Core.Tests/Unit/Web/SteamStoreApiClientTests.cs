@@ -660,4 +660,178 @@ public sealed class SteamStoreApiClientTests
 
 		Assert.Null(await client.AddFreeLicenseAsync(42666));
 	}
+
+	[Fact]
+	public void Constructor_NullWebHandler_ThrowsWithParamName()
+	{
+		Assert.Equal("webHandler", Assert.Throws<ArgumentNullException>(
+			() => new SteamStoreApiClient(null!, NullLogger<SteamStoreApiClient>.Instance)).ParamName);
+	}
+
+	[Fact]
+	public async Task GetPriceAsync_WhenGameInfoUnavailable_ReturnsNull()
+	{
+		var (client, fake) = Create();
+		fake.Responder = _ => new HttpResponseMessage(HttpStatusCode.InternalServerError);
+
+		Assert.Null(await client.GetPriceAsync(620));
+	}
+
+	[Fact]
+	public async Task GetGameInfoAsync_SparseData_FallsBackOnEveryOptionalField()
+	{
+		// Every TryGetProperty left arm false: no steam_appid (falls back to the
+		// requested id), no is_free (paid), no recommendations, no developers /
+		// publishers, no release_date, no price block.
+		string json = """{ "555": { "success": true, "data": { "type": "demo" } } }""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var game = await client.GetGameInfoAsync(555);
+
+		Assert.NotNull(game);
+		Assert.Equal(555U, game!.AppId);
+		Assert.Equal(string.Empty, game.Name);
+		Assert.False(game.IsFree);
+		Assert.True(game.RequiresPurchase);
+		Assert.Null(game.RecommendationsTotal);
+		Assert.Null(game.Developer);
+		Assert.Null(game.Publisher);
+		Assert.Null(game.ReleaseDate);
+		Assert.Null(game.Price);
+	}
+
+	[Fact]
+	public async Task GetGameInfoAsync_RecommendationShapes_AreTolerated()
+	{
+		// recommendations present but total fractional — the TryGetInt64 shape
+		// check reads false without throwing and the count stays unknown.
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, """
+		{
+			"620": {
+				"success": true,
+				"data": {
+					"name": "Portal 2", "steam_appid": 620, "is_free": false,
+					"recommendations": { "total": 1.5 },
+					"developers": [],
+					"publishers": [null],
+					"release_date": { "coming_soon": true }
+				}
+			}
+		}
+		""");
+
+		var game = await client.GetGameInfoAsync(620);
+
+		Assert.NotNull(game);
+		Assert.Null(game!.RecommendationsTotal);
+		Assert.Null(game.Developer); // empty array → no joined values
+		Assert.Null(game.Publisher); // null entries add nothing → no joined values
+		Assert.Null(game.ReleaseDate); // date key missing inside the block
+	}
+
+	[Fact]
+	public async Task GetGameInfoAsync_PriceOverviewWrongShapes_FallBackToDefaults()
+	{
+		// price_overview as a non-object (kind check arm), currency null (?? "USD"
+		// arm), discount_percent as a string (TryGetInt32 false arm).
+		string json = """
+		{
+			"620": {
+				"success": true,
+				"data": {
+					"name": "Portal 2", "steam_appid": 620, "is_free": false,
+					"price_overview": 5
+				}
+			}
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var game = await client.GetGameInfoAsync(620);
+
+		Assert.NotNull(game);
+		Assert.Null(game!.Price);
+
+		fake.Responder = _ => Json(HttpStatusCode.OK, """
+		{
+			"620": {
+				"success": true,
+				"data": {
+					"name": "Portal 2", "steam_appid": 620, "is_free": false,
+					"price_overview": { "currency": null, "initial": 1999, "final": 999, "discount_percent": 50.25 }
+				}
+			}
+		}
+		""");
+
+		game = await client.GetGameInfoAsync(620);
+
+		Assert.NotNull(game);
+		Assert.Equal("USD", game!.Price!.Currency);
+		Assert.Equal(0, game.Price.DiscountPercent);
+		Assert.Equal(19.99m, game.Price.Initial);
+	}
+
+	[Fact]
+	public async Task SearchGamesAsync_ItemWithoutId_FallsBackToZeroAppId()
+	{
+		string json = """
+		{ "total": 1, "items": [ { "type": "app", "name": "Mystery", "price": {} } ] }
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var results = await client.SearchGamesAsync("mystery");
+
+		var item = Assert.Single(results);
+		Assert.Equal(0U, item.AppId);
+		Assert.False(item.IsFree); // price block present
+		Assert.NotNull(item.Price);
+		Assert.Equal("USD", item.Price!.Currency); // currency missing → default
+		Assert.Equal(0, item.Price.DiscountPercent); // discount missing → default
+	}
+
+	[Fact]
+	public async Task GetMarketListingsAsync_AssetAndCurrencyWrongShapes_FallBackToDefaults()
+	{
+		// asset present but id non-numeric (TryParse false) and instanceid
+		// missing (TryGetProperty false); converted_currencyid fractional
+		// (TryGetInt32 false arm of GetIntOrNull).
+		string json = """
+		{
+			"success": true,
+			"start": 0,
+			"pagesize": 10,
+			"total_rowcount": 1,
+			"listinginfo": {
+				"1001": {
+					"listingid": "1001",
+					"asset": { "appid": 730, "contextid": "2", "id": "not-a-number", "classid": "111", "amount": "1" },
+					"converted_price": 1234,
+					"converted_fee": 50,
+					"converted_currencyid": 2001.5
+				}
+			}
+		}
+		""";
+
+		var (client, fake) = Create();
+		fake.Responder = _ => Json(HttpStatusCode.OK, json);
+
+		var page = await client.GetMarketListingsAsync(730);
+
+		Assert.NotNull(page);
+		var listing = Assert.Single(page!.Listings);
+		Assert.Equal(0UL, listing.AssetId);
+		Assert.Equal(111UL, listing.ClassId);
+		Assert.Equal(0UL, listing.InstanceId);
+		Assert.Null(listing.CurrencyId);
+		Assert.Equal(12.84m, listing.TotalPrice);
+	}
 }

@@ -131,6 +131,28 @@ public sealed class AddLicenseActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_SubIds_StringZero_IsSkippedByGuard()
+	{
+		// The string "0" parses as a number but fails the > 0 guard — skipped,
+		// leaving the valid sibling as the only purchase.
+		_storeClientMock
+			.Setup(m => m.AddFreeLicenseAsync(88888u, It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new StorePurchaseResult(true, StorePurchaseResult.Ok));
+
+		BotSession session = CreateSession(webHandler: CreateWebHandler());
+
+		Dictionary<string, object?> payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "sub_ids": ["0", "88888"] }""")!;
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		var purchases = Assert.IsType<List<Dictionary<string, object?>>>(result.Output!["purchases"]);
+		Dictionary<string, object?> entry = Assert.Single(purchases);
+		Assert.Equal(88888u, entry["id"]);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_SubIds_PurchaseOk()
 	{
 		_storeClientMock

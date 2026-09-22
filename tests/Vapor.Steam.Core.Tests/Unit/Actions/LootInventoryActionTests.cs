@@ -441,6 +441,79 @@ public sealed class LootInventoryActionTests : IDisposable
 		Assert.Equal(new[] { 730u }, scannedApps.Skip(7).ToArray());
 	}
 
+	// --- null-fallback / tradability arms ---
+
+	[Fact]
+	public async Task ExecuteAsync_SendFailsWithoutError_FallsBackToGenericMessage()
+	{
+		var (action, client) = CreateActionWithMock();
+		client.OwnSteamIdProvider = () => OwnSteamId;
+		client.InventoryHandler = (_, _, _, _) => new InventoryResponse
+		{
+			Success = true,
+			Items = [new InventoryItem { AssetId = 1, Tradable = true }]
+		};
+		client.SendHandler = (_, _, _, _, _) => new TradeOfferResult { Success = false, Error = null };
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString() },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Failed to send trade offer", result.Error);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_SuccessWithoutTradeOfferId_OutputCarriesNullId()
+	{
+		var (action, client) = CreateActionWithMock();
+		client.OwnSteamIdProvider = () => OwnSteamId;
+		client.InventoryHandler = (_, _, _, _) => new InventoryResponse
+		{
+			Success = true,
+			Items = [new InventoryItem { AssetId = 1, Tradable = true }]
+		};
+		client.SendHandler = (_, _, _, _, _) => new TradeOfferResult { Success = true, TradeOfferId = null };
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString() },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Null(result.Output!["trade_offer_id"]);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_PastTradabilityDate_IsTradableNow()
+	{
+		// An item whose tradability date has already passed counts as tradable
+		// (the date check is <= now); only future dates are excluded.
+		var (action, client) = CreateActionWithMock();
+		client.OwnSteamIdProvider = () => OwnSteamId;
+		client.InventoryHandler = (_, _, _, _) => new InventoryResponse
+		{
+			Success = true,
+			Items =
+			[
+				new InventoryItem { AssetId = 1, AppId = 730, Tradable = true, Amount = 1, TradabilityDate = DateTimeOffset.UtcNow.AddHours(-1) }
+			]
+		};
+		client.SendHandler = (_, _, _, _, _) => new TradeOfferResult { Success = true, TradeOfferId = 5 };
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerSteamId.ToString() },
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(1, result.Output!["item_count"]);
+	}
+
 	private (ulong Partner, TradeAsset[] Give, TradeAsset[] Receive, string? Token, string? Message)? sentArgs;
 
 	private (LootInventoryAction Action, FakeTradeClient Client) CreateActionWithMock()

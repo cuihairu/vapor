@@ -171,6 +171,21 @@ public sealed class GetTradeOffersActionTests : IDisposable
 		Assert.Equal("circuit breaker is open", result.Error);
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_WhenClientFailsWithoutError_FallsBackToGenericMessage()
+	{
+		var (action, clientMock) = CreateActionWithMock();
+		clientMock
+			.Setup(c => c.GetTradeOffersAsync(It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new TradeOffersResponse { Success = false, Error = null });
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Failed to get trade offers", result.Error);
+	}
+
 	private (GetTradeOffersAction Action, Mock<ISteamTradeClient> ClientMock) CreateActionWithMock()
 	{
 		var clientMock = new Mock<ISteamTradeClient>(MockBehavior.Loose);

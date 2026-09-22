@@ -347,6 +347,27 @@ public sealed class CreateMarketListingActionTests : IDisposable
 		["seller_proceeds_cents"] = 91
 	};
 
+	[Fact]
+	public async Task ExecuteAsync_RejectionWithoutMessage_FallsBackToGenericError()
+	{
+		// Steam replies with no success flag and no message: the rejection
+		// surfaces via the message-null fallback arm.
+		var payload = RealPayload();
+		var fake = new MarketFakeHandler
+		{
+			PostResponder = () => new HttpResponseMessage(HttpStatusCode.OK)
+			{
+				Content = new StringContent("{ }", System.Text.Encoding.UTF8, "application/json")
+			}
+		};
+		var (action, _, session) = CreateAction(agentSwitchOn: true, fake);
+
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("market listing rejected by Steam", result.Error);
+	}
+
 	private static Dictionary<string, object?> RealPayload()
 	{
 		var payload = DryRunPayload();

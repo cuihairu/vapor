@@ -86,6 +86,26 @@ public sealed class GetMyMarketListingsActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_MinimalListing_NullableFieldsStayNull()
+	{
+		// A listing carrying only the required keys: the optional fields read as
+		// nulls in the output dictionary instead of being dropped.
+		var (action, fake) = CreateActionWithFake();
+		fake.Responder = _ => JsonResponse("""{ "mylistings": [ { "listingid": "9", "price": 50 } ], "total_count": 1 }""");
+		var session = CreateSession(CreateWebHandler());
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.True(result.Success);
+		var listings = Assert.IsType<List<Dictionary<string, object?>>>(result.Output!["listings"]);
+		var listing = Assert.Single(listings);
+		Assert.Equal("9", listing["listing_id"]);
+		Assert.Null(listing["market_hash_name"]);
+		Assert.Null(listing["class_id"]);
+		Assert.Null(listing["time_created"]);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_PayloadStartAndCount_ArePassedThrough()
 	{
 		var (action, fake) = CreateActionWithFake();

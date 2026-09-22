@@ -326,6 +326,82 @@ public sealed class SteamMarketClientTests
 		await Assert.ThrowsAsync<ArgumentException>(() => client.CancelListingAsync(string.Empty));
 	}
 
+	// --- sellitem fallback + shape arms ---
+
+	[Fact]
+	public void Constructor_NullDependencies_ThrowWithParamName()
+	{
+		Assert.Equal("webHandler", Assert.Throws<ArgumentNullException>(
+			() => new SteamMarketClient(null!, NullLogger<SteamMarketClient>.Instance)).ParamName);
+		Assert.Equal("logger", Assert.Throws<ArgumentNullException>(
+			() => new SteamMarketClient(
+				new SteamWebHandler(
+					new SteamWebHandlerConfig { RateLimitIntervalMs = 0, MaxRetries = 1, EnableCircuitBreaker = false },
+					NullLogger<SteamWebHandler>.Instance),
+				null!)).ParamName);
+	}
+
+	[Fact]
+	public async Task CreateListing_RejectionWithoutMessage_FallsBackToNoMessageLog()
+	{
+		// success key absent entirely: the TryGetProperty false arm of the
+		// sellitem parse and the message-less rejection log both fire.
+		var (client, fake) = CreateWithSession();
+		fake.Responder = _ => Json("{}");
+
+		var result = await client.CreateListingAsync(730, "6", "35471234567", 1, 91);
+
+		Assert.NotNull(result);
+		Assert.False(result.Success);
+		Assert.Null(result.Message);
+		Assert.False(result.RequiresConfirmation);
+	}
+
+	[Fact]
+	public void ParseSellItemResponse_NumericConfirmationFlags_ReadAsBooleans()
+	{
+		// GetBoolValue accepts numbers: 1 reads true, 0 reads false, and a
+		// fractional number fails TryGetInt32 — also false, without throwing.
+		using var doc = JsonDocument.Parse("""
+			{ "success": true, "requires_confirmation": 1, "needs_mobile_confirmation": 0, "needs_email_confirmation": 0.5 }
+			""");
+
+		var result = SteamMarketClient.ParseSellItemResponse(doc.RootElement);
+
+		Assert.True(result.Success);
+		Assert.True(result.RequiresConfirmation);
+		Assert.False(result.NeedsMobileConfirmation);
+		Assert.False(result.NeedsEmailConfirmation);
+	}
+
+	[Fact]
+	public void Parse_AppIdFallsThroughDescriptionToAssetTableJoin()
+	{
+		// No game_appid on the entry and no inline asset_description: the app id
+		// comes from the assets table joined by asset id, and the context/name
+		// fall back the same way.
+		const string json = """
+			{
+				"mylistings": [
+					{
+						"listingid": "80",
+						"price": 100,
+						"assetid": "9001",
+						"asset": { "id": "9001", "contextid": "6" }
+					}
+				],
+				"assets": { "753": { "6": { "9001": { "appid": 753, "market_hash_name": "Steam Community Key" } } } }
+			}
+			""";
+
+		var page = Parse(json);
+
+		var listing = Assert.Single(page.Listings);
+		Assert.Equal(753u, listing.AppId);
+		Assert.Equal("6", listing.ContextId);
+		Assert.Equal("Steam Community Key", listing.MarketHashName);
+	}
+
 	// --- CreateListing ---
 
 	[Fact]

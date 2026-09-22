@@ -126,6 +126,23 @@ public sealed class CheckProxyActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_FailedProbeWithoutError_FallsBackToGenericMessage()
+	{
+		// Probe completes but reports neither an exit IP nor an error: the
+		// result.Error ?? fallback arm fires.
+		var action = new CheckProxyAction(NullLogger<CheckProxyAction>.Instance)
+		{
+			ProbeOverride = (_, _) => Task.FromResult(new ProxyProbeResult(null, false, null, null))
+		};
+		var session = CreateSession(proxy: "socks5://gw.example.com:1080");
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("proxy probe did not complete", result.Error);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_WhenProbeThrows_MapsToFailureWithoutThrowing()
 	{
 		var action = new CheckProxyAction(NullLogger<CheckProxyAction>.Instance)

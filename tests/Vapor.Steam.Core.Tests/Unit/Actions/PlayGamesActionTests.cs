@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Moq;
 using Vapor.Steam.Core.Actions;
+using Vapor.Steam.Core.Steam;
 using Xunit;
 
 namespace Vapor.Steam.Core.Tests.Unit.Actions;
@@ -111,11 +112,50 @@ public sealed class PlayGamesActionTests : IDisposable
 		Assert.Contains("Unknown action", result.Error ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private BotSession CreateSession(string accountName)
+	[Fact]
+	public async Task ExecuteAsync_NoActionDefaultsToPlay()
+	{
+		// Payload with games but no explicit action: the action falls back to
+		// "play" (the ?? default arm).
+		var session = CreateSession("acct-1");
+		var payload = new Dictionary<string, object?> { ["games"] = "730" };
+
+		var result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal("play", result.Output!["action"]?.ToString());
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_WithClientManager_ForwardsGamesOnPlayAndEmptyOnStop()
+	{
+		// With a client manager attached, both the play list and the stop
+		// empty-set are forwarded to SteamClientManager.PlayGames.
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		var forwarded = new List<HashSet<uint>>();
+		clientMock
+			.Setup(m => m.PlayGames(Capture.In(forwarded)));
+		var session = CreateSession("acct-1", clientMock.Object);
+
+		await _action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["action"] = "play", ["games"] = "730,570" },
+			CancellationToken.None);
+		await _action.ExecuteAsync(
+			session,
+			new Dictionary<string, object?> { ["action"] = "stop" },
+			CancellationToken.None);
+
+		Assert.Equal(2, forwarded.Count);
+		Assert.Equal(new uint[] { 570, 730 }, forwarded[0].OrderBy(v => v).ToArray());
+		Assert.Empty(forwarded[1]);
+	}
+
+	private BotSession CreateSession(string accountName, ISteamClientManager? clientManager = null)
 	{
 		var credentials = new AccountCredentials(accountName, "password");
 		var registry = new Mock<IActionRegistry>(MockBehavior.Loose);
-		var session = new BotSession(accountName, credentials, registry.Object, _sessionLoggerMock.Object, null);
+		var session = new BotSession(accountName, credentials, registry.Object, _sessionLoggerMock.Object, clientManager);
 		_sessions.Add(session);
 		return session;
 	}

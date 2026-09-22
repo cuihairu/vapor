@@ -837,6 +837,152 @@ public sealed class TradeOfferActionExecutionTests : IDisposable
 		Assert.True(action.Metadata.RequiresLogin);
 	}
 
+	// --- null-Error fallback arms (result.Error ?? "Failed to ...") ---
+
+	[Fact]
+	public async Task Send_ClientFailureWithoutError_ReturnsFallbackMessage()
+	{
+		var client = new FakeTradeClient
+		{
+			SendHandler = (_, _, _, _, _) => new TradeOfferResult { Success = false, Error = null }
+		};
+		var action = CreateSendAction(client);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?> { ["partner_steam_id"] = PartnerParam },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Failed to send trade offer", result.Error);
+	}
+
+	[Fact]
+	public async Task Send_SuccessWithoutTradeOfferId_OutputCarriesNullId()
+	{
+		var client = new FakeTradeClient
+		{
+			InventoryHandler = (_, _, _, _) => new InventoryResponse
+			{
+				Success = true,
+				Items = [new InventoryItem { AssetId = 123, AppId = 730, Tradable = true }]
+			},
+			SendHandler = (_, _, _, _, _) => new TradeOfferResult { Success = true, TradeOfferId = null }
+		};
+		var action = CreateSendAction(client);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?>
+			{
+				["partner_steam_id"] = PartnerParam,
+				["items_to_give"] = new List<Dictionary<string, object?>>
+				{
+					new() { ["asset_id"] = "123", ["app_id"] = "730", ["context_id"] = "2" }
+				}
+			},
+			CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Null(result.Output!["trade_offer_id"]);
+		Assert.Equal(true, result.Output["ownership_verified"]);
+	}
+
+	[Fact]
+	public async Task Accept_ClientFailureWithoutError_ReturnsFallbackMessage()
+	{
+		var client = new FakeTradeClient
+		{
+			AcceptHandler = (_, _) => new TradeOfferResult { Success = false, Error = null }
+		};
+		var action = CreateAcceptAction(client);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?> { ["trade_offer_id"] = "100", ["partner_steam_id"] = PartnerParam, ["verify_state"] = false },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Failed to accept trade offer", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Accept_LoadOfferFailsWithoutError_MentionsNoOfferReturned()
+	{
+		var client = new FakeTradeClient
+		{
+			GetOfferHandler = _ => new TradeOfferResult { Success = false, Error = null }
+		};
+		var action = CreateAcceptAction(client);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?> { ["trade_offer_id"] = "100", ["partner_steam_id"] = PartnerParam },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Unable to load trade offer 100 for state verification (no offer returned)", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Decline_ClientFailureWithoutError_ReturnsFallbackMessage()
+	{
+		var client = new FakeTradeClient
+		{
+			DeclineHandler = _ => new TradeOfferResult { Success = false, Error = null }
+		};
+		var action = CreateDeclineAction(client);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?> { ["trade_offer_id"] = "200", ["verify_state"] = false },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Failed to decline trade offer", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Cancel_LoadOfferFailsWithoutError_MentionsNoOfferReturned()
+	{
+		var client = new FakeTradeClient
+		{
+			GetOfferHandler = _ => new TradeOfferResult { Success = false, Error = null }
+		};
+		var action = CreateCancelAction(client);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?> { ["trade_offer_id"] = "300" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Unable to load trade offer 300 for state verification (no offer returned)", result.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task Cancel_ClientFailureWithoutError_ReturnsFallbackMessage()
+	{
+		var client = new FakeTradeClient
+		{
+			GetOfferHandler = _ => new TradeOfferResult
+			{
+				Success = true,
+				TradeOffer = new TradeOffer { TradeOfferId = 300, IsOurOffer = true, State = TradeOfferState.Active }
+			},
+			CancelHandler = _ => new TradeOfferResult { Success = false, Error = null }
+		};
+		var action = CreateCancelAction(client);
+
+		var result = await action.ExecuteAsync(
+			CreateSession(withWebHandler: true),
+			new Dictionary<string, object?> { ["trade_offer_id"] = "300" },
+			CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Contains("Failed to cancel trade offer", result.Error, StringComparison.Ordinal);
+	}
+
 	// --- helpers ---
 
 	private static SendTradeOfferAction CreateSendAction(

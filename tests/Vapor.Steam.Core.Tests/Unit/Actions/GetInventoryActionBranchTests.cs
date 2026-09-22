@@ -50,6 +50,28 @@ public sealed class GetInventoryActionBranchTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_AppIds_StringZero_IsSkippedByGuard()
+	{
+		// The string "0" parses as a number but fails the > 0 guard — skipped,
+		// leaving the valid sibling as the only scanned app.
+		var client = new FakeTradeClient();
+		var requested = new List<uint>();
+		client.InventoryHandler = (_, app, _, _) =>
+		{
+			requested.Add(app);
+			return new InventoryResponse { Success = true, Items = [] };
+		};
+		var (action, session) = CreateAction(client);
+
+		Dictionary<string, object?> payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "steam_id": "76561198000000042", "app_ids": ["0", "753"] }""")!;
+		var result = await action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal([753u], requested);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_ClassicPath_DefaultsAndOverrides()
 	{
 		var client = new FakeTradeClient();

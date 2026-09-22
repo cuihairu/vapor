@@ -12,6 +12,33 @@ public sealed class GetPointsShopSummaryActionTests
 	private readonly GetPointsShopSummaryAction _action = new(NullLogger<GetPointsShopSummaryAction>.Instance);
 
 	[Fact]
+	public async Task ExecuteAsync_DefinitionIds_StringZero_IsSkippedByGuard()
+	{
+		// The string "0" parses as a number but fails the > 0 guard — skipped
+		// without aborting the lookup of the valid sibling.
+		var captured = new List<IReadOnlyCollection<uint>>();
+		var clientMock = new Mock<ISteamClientManager>(MockBehavior.Loose);
+		clientMock
+			.Setup(m => m.GetPointsShopSummaryAsync(It.IsAny<CancellationToken>()))
+			.ReturnsAsync(new PointsShopSummary(1500, 2000, 500));
+		clientMock
+			.Setup(m => m.QueryPointsShopItemsAsync(Capture.In(captured), It.IsAny<CancellationToken>()))
+			.ReturnsAsync((IReadOnlyList<PointsShopItemInfo>)new List<PointsShopItemInfo>
+			{
+				new(91000, 753, 3, "free", 0, true, 0)
+			});
+		BotSession session = CreateSession(clientMock.Object);
+
+		Dictionary<string, object?> payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(
+			"""{ "definition_ids": ["0", "91000"] }""")!;
+
+		ActionResult result = await _action.ExecuteAsync(session, payload, CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal(new uint[] { 91000 }, captured.Single());
+	}
+
+	[Fact]
 	public void Name_MatchesActionName()
 	{
 		Assert.Equal("get_points_shop_summary", _action.Name);
