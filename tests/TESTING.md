@@ -273,7 +273,8 @@ dotnet test --filter "FullyQualifiedName~ConcurrencyTests"
 ### 生成代码覆盖率报告
 
 ```bash
-# 推荐（整个解决方案，coverlet.collector，输出到 */TestResults/*/coverage.cobertura.xml）
+# 推荐（整个解决方案，coverlet.collector，输出到 */TestResults/*/coverage.cobertura.xml；
+# 全量运行自动走串行收集 + 逐报告校验，见下节）
 ./scripts/run-tests.sh -c
 
 # HTML 报告（可选，需要 ReportGenerator）
@@ -283,7 +284,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 ## 代码覆盖率
 
-9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。
+9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
 ### 当前基线（2026-09-21，行覆盖 100.0%）
 
@@ -359,6 +360,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-21 CI 修复轮（覆盖率收官提交后 ci workflow 4 job 红:两 Windows build-test + Release ubuntu + coverage;codeql/docs/format/integration-redis/docker-build 绿）。三族:①**EventBroker channel-complete 双测试的 3s 定时 CTS 是测试自身引爆器**——async iterator（`SubscribeSessions`/`SubscribeAuthChallenges`）到首次 `MoveNextAsync` 才执行订阅注册,消费泵又跑在 `Task.Run` 里;CI 负载下排队超 3s 后定时器先于注册触发,`WaitToReadAsync` 直接抛 OCE（本地主线程消费的 6 处同款 CTS 无排队窗口,安全不动）。修法:去定时（完成信号本就是退出路径）+ 注册轮询与 WaitAsync 预算 30s。②**SQLite 临时 db 文件锁 4 处裸删**——`Microsoft.Data.Sqlite` 默认池化,Dispose 归池后句柄仍短暂持有,`File.Delete` 抢跑抛 `IOException`（文件被「另一进程」占用,实为同进程池内连接;负载下池 cleaner 排队变慢,窗口暴露）。同文件已有 2 处 best-effort 先例（586/673 带 pooling 注释）与 CompositionRoot 的 `DisposeDbFileAsync` 重试先例,其余 4 处裸删统一补齐 catch IOException——与 ALC DLL 文件锁铁律同族:**测试清理触碰「被池/被映射」资源必须 day-one best-effort**。③**泵 channel-complete 测试 CI 超时**（`PumpSessionEvents_ExitsThroughChannelCompletion`,10s WaitAsync;本地 2 核 15 轮压测零复现）——与 fd1ae2e「park 信号有效但整条链在饥饿下爬行超 10s」同量级,预算 10s→30s（只覆盖池调度,健康路径不等待）。**教训入册:测试内 Task.Run 消费者 + async iterator 订阅的组合,定时 CTS 是炸药不是兜底**;临时文件清理先例必须全文件审计,不能只对新增文件执行铁律。验证:ControlPlane 700 全绿 + 泵测试 15 轮 2 核压测零复现、format 过、CI 终态见提交后监控。
 
 > 2026-09-22 覆盖率精确 100% 收口轮（用户指令「把测试覆盖率提到并维持 100%,有缺口就补齐」;测试数不变,合计 **100.0%** 15882/15882——分母不变、残余 2 行转覆盖,**CI 门禁 99.9→100**）。上轮定性保留的「WS 循环条件正常出口防御性死分支」2 行（`Program` 2968 try 收闭 + 2975 尾部清理）本轮**推翻不可测定性**——该臂 09-16 就有测试（`SlowHeartbeatStore` 忽略 token 让心跳在 abort 后正常返回、循环条件再见假退出）,但 TestServer 客户端 `ws.Abort()` 的中止传播与 socket 拆除**竞速**:传播先到 → RequestAborted 取消 → 正常出口;拆除先到 → 下一次 `Receive` 抛异常 → 异常臂。两臂可观测行为等价（都注销 + disconnected 事件）,测试永远绿,cobertura 才暴露真相:09-21 收官轮报告尾部 0 命中 = 竞速翻车走了异常臂。**去竞态三件**:①`BranchFactory` 注入 `IStartupFilter`（ConfigureServices 注册）,把 `/v1/agent/ws` 请求的 `RequestAborted` 换成测试可控 linked CTS——**教训:`builder.Configure` 中间件在 minimal hosting 工厂下丢端点映射,WS 升级请求全 404（6 个 WS 测试当场红）,必须走 startup filter 包装 `next(app)`**;②`SlowHeartbeatStore` 加 `HeartbeatEntered` TCS——取消必须落在「Receive 已返回、token 无视心跳进行中」窗口,早了 OCE 从 Receive 抛出照旧走异常臂（重演上轮机理⑵:Cancel 后第一个 await 消费取消）;③测试等信号后 `Cancel()`,心跳正常返回、socket 健康 ⇒ 循环条件见假成为**唯一可能路径**（单类验证:2968/2975 各 hits=1,catch 臂 2 hits 不受影响）。测试更名 `AgentWs_RequestAbortedDuringHeartbeat_UnregistersThroughLoopExit` + 修正 close-frame 测试引用已删除 finally 的陈旧注释。**教训入册:「时序依赖的绿」不等于「覆盖了」——两臂可观测行为等价时,cobertura 是区分测试真正走了哪条臂的唯一证据;TestServer 确定性中止通道 = `HttpContext.RequestAborted` 可写 + linked CTS 替换 + IStartupFilter,`ws.Abort()` 是竞速通道**。验证:ProgramBranchCoverageTests 73 全绿、全量覆盖率轮全绿（2614 测试,合计 **100.0%** 15882/15882,门禁 100 过）、format 过、CI 终态见提交后监控。
+
+> 2026-09-22 本地覆盖率工具链对齐轮（test + docs 双提交,无产品/测试代码改动）：README 宣称的「全量覆盖率走串行收集」此前只对 CI 成立——`run-tests.sh --coverage` 本地仍用一次性 `--collect`（可靠性轮已证其会静默产出空/全零报告）,`run-tests.ps1 -Coverage` 更连 runsettings 都没带（§38 分母膨胀教训原样存在）。修复三件:①**`run-tests.sh`** 全量运行（无过滤器）自动委托 `collect-coverage-serial.sh`,显式 Release 构建守卫前置（串行脚本 `--no-build`——陈旧 DLL 幻差教训从 runbook 升级进脚本本身）,跑后 best-effort 打印 coverage-summary 文本摘要（与 CI 门禁同口径）;带过滤器保留单次收集路径（校验器「全零即坏」语义不适用于子集——未匹配项目本就零命中）。②**`run-tests.ps1 -Coverage` 原生移植串行循环**（Windows 不依赖 bash/python）:逐项目 `--no-build` 收集、坏报告删除重试 ≤3、E2E 免收集、VAPOR_TEST_REDIS 注入与恢复、exit code 经 script 作用域变量传出（函数进度输出会污染返回值管道的 PS 陷阱）;**cobertura 带 DOCTYPE,`[xml]` 直接转换默认禁止 DTD 会抛——必须 XmlReader + DtdProcessing=Ignore**;过滤器路径补上缺失的 runsettings。③**分支行计入口径统一**:coverlet 实际写 `branch="True"/"False"`（Pascal 大小写）,coverage-summary.py 与 sh 校验器里的大小写敏感过滤是**死代码**——但 PowerShell `-ne` 不区分大小写,移植时照抄会「真排除」分支行,三处口径就此分叉;定案保留含分支行的**更严口径**（基线 15882 即此口径,且与标准工具的 line coverage 定义一致）,删除三处死过滤、口径入注;门禁行为不变（两口径合并结果同为 100.0% = 15882/15882,修复前的门禁实际就在执行含分支行口径）。验证:`run-tests.sh --coverage` 全量端到端演练（构建 3:18 → 10 段串行全 attempt 1 → 摘要 100.0% → 报告列出,退出码 0）、过滤器路径冒烟全绿、`bash -n`/`py_compile` 过;本机无 pwsh,ps1 逐行审读 + 关键假设对照 coverlet 实际产物核验（分支值大小写、class/line XPath 结构、DOCTYPE）。
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
 - xUnit / Moq 框架程序集
