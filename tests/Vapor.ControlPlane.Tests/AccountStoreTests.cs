@@ -68,6 +68,33 @@ public sealed class AccountStoreTests
 		Assert.Null(spec.IdleApps);
 	}
 
+	[Fact]
+	public void Upsert_WhitespaceOnlyIdleApps_NormalizesToNull()
+	{
+		var store = new AccountStore();
+
+		// Every entry is dropped as whitespace, so the surviving list is empty and collapses to null.
+		AccountSpec spec = store.Upsert("alice", enabled: true, AccountDesiredState.Idle, new[] { "   ", " " }, null, null, null);
+
+		Assert.Null(spec.IdleApps);
+	}
+
+	[Fact]
+	public void Upsert_ExistingAccount_MarketListingsOptInCarriedPerUpdate()
+	{
+		var store = new AccountStore();
+		AccountSpec initial = store.Upsert("alice", enabled: true, AccountDesiredState.Idle, null, null, null, null);
+		Assert.False(initial.MarketListingsEnabled);
+
+		// The opt-in rides per update and null keeps the current value.
+		AccountSpec optedIn = store.Upsert("alice", enabled: true, AccountDesiredState.Idle, null, null, null, null, marketListingsEnabled: true);
+		Assert.True(optedIn.MarketListingsEnabled);
+		Assert.Equal(2, optedIn.Version!.Version);
+
+		AccountSpec carried = store.Upsert("alice", enabled: true, AccountDesiredState.Idle, null, null, null, null);
+		Assert.True(carried.MarketListingsEnabled);
+	}
+
 	[Theory]
 	[InlineData("abc")]
 	[InlineData("73.0")]

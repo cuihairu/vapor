@@ -263,6 +263,37 @@ public sealed class SqliteCrawlStoreTests : IDisposable
 		Assert.Equal(due, (await _store.GetPlanAsync("plan-1"))!.NextRunAt);
 	}
 
+	[Fact]
+	public async Task AddResult_NullJobId_RoundTripsAsNullAndLimitZeroUsesDefaultPage()
+	{
+		await _store.AddResultAsync(MakeResult("run-1", jobId: null));
+
+		// Limit <= 0 falls back to the default page size; the null job id survives the round trip.
+		IReadOnlyList<CrawlResultRow> results = await _store.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1", Limit: 0));
+
+		CrawlResultRow row = Assert.Single(results);
+		Assert.Null(row.JobId);
+	}
+
+	[Fact]
+	public async Task CountResults_EmptyStore_ReturnsZero()
+	{
+		Assert.Equal(0, await _store.CountResultsAsync(new CrawlResultQuery()));
+	}
+
+	[Fact]
+	public async Task UpsertPlan_NullOverrideValue_ReadsBackAsEmptyString()
+	{
+		CrawlPlan plan = SamplePlan() with { Overrides = new Dictionary<uint, string> { [730] = null! } };
+
+		await _store.UpsertPlanAsync(plan);
+
+		CrawlPlan? stored = await _store.GetPlanAsync("plan-1");
+		Assert.NotNull(stored);
+		Assert.NotNull(stored!.Overrides);
+		Assert.Equal(string.Empty, stored.Overrides![730]);
+	}
+
 	private static CrawlResultRow MakeResult(
 		string runId,
 		uint appId = 570,
@@ -270,13 +301,14 @@ public sealed class SqliteCrawlStoreTests : IDisposable
 		bool ok = true,
 		string? error = null,
 		long fetchedAtMs = 1000,
-		JsonElement? data = null) => new(
+		JsonElement? data = null,
+		string? jobId = "job-1") => new(
 		Id: 0,
 		PlanId: "plan-1",
 		RunId: runId,
 		AppId: appId,
 		Account: account,
-		JobId: "job-1",
+		JobId: jobId,
 		Ok: ok,
 		Error: error,
 		Data: data,

@@ -35,6 +35,19 @@ public sealed class SqliteAuditStoreTests : IDisposable
 	}
 
 	[Fact]
+	public async Task RecordAsync_BlankActor_NormalizedToUnknownAndLimitZeroUsesDefaultPage()
+	{
+		await _store.RecordAsync(NewEntry("job.created") with { Actor = "   " }, _cts.Token);
+
+		IReadOnlyList<AuditEntry> entries = await _store.QueryAsync(new AuditQuery(), _cts.Token);
+		Assert.Equal("unknown", Assert.Single(entries).Actor);
+
+		// Limit <= 0 falls back to the default page size instead of an empty result set.
+		IReadOnlyList<AuditEntry> paged = await _store.QueryAsync(new AuditQuery(Limit: 0), _cts.Token);
+		Assert.Single(paged);
+	}
+
+	[Fact]
 	public void Constructor_BlankDbPath_Throws()
 	{
 		Assert.Throws<ArgumentException>(() => new SqliteAuditStore("   "));

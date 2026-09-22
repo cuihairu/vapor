@@ -23,4 +23,14 @@ public sealed class SessionTrackerTests
 
 		Assert.Equal("Connected", tracker.Get("  alice ")!.State);
 	}
+
+	[Fact]
+	public void Update_ExplicitUpdatedAt_IsPreservedVerbatim()
+	{
+		var tracker = new SessionTracker();
+
+		tracker.Update("alice", "state_changed", "Connected", "hello", DateTimeOffset.UnixEpoch);
+
+		Assert.Equal(DateTimeOffset.UnixEpoch, tracker.Get("alice")!.UpdatedAt);
+	}
 }

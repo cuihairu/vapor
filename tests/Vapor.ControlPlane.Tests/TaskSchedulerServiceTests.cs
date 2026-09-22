@@ -59,6 +59,27 @@ public sealed class TaskSchedulerServiceTests
 	}
 
 	[Fact]
+	public async Task DispatchOnce_ZeroRetryDelay_RequeuesWithoutDelay()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig() with { TaskDispatchRetryDelayMs = 0 });
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		// A zero retry delay disables the timed requeue (null delay) but the task still requeues.
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+	}
+
+	[Fact]
 	public async Task StartStop_RunsAtLeastOneDispatchTick()
 	{
 		var registry = new AgentRegistry();

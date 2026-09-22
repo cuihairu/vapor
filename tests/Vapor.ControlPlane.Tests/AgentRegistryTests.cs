@@ -23,6 +23,21 @@ public sealed class AgentRegistryTests
 	}
 
 	[Fact]
+	public void Pick_NoAgentInRegion_ReturnsNull()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-a", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		// Same agent, same action — only the region differs, so the candidate filter drops it.
+		Assert.Null(registry.Pick("eu-west", "ping"));
+		Assert.NotNull(registry.Pick("local", "ping"));
+	}
+
+	[Fact]
 	public void PickWithActionReturnsFirstCapableAgentInRegion()
 	{
 		var registry = new AgentRegistry();

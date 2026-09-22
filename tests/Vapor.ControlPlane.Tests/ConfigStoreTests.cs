@@ -41,4 +41,19 @@ public sealed class ConfigStoreTests
 
 		Assert.Equal(new[] { "ALICE", "bob" }, accounts.Select(a => a.AccountName).ToArray());
 	}
+
+	[Fact]
+	public void SetAccount_ExistingAccount_IncrementsVersionInPlace()
+	{
+		var store = new ConfigStore();
+		store.SetAccount("alice", enabled: true, region: null, labels: null, settings: null, updatedBy: null);
+
+		AccountConfig updated = store.SetAccount("ALICE", enabled: false, region: "us-east", labels: null, settings: null, updatedBy: "bob");
+
+		Assert.Equal(2, updated.Version!.Version);
+		Assert.False(updated.Enabled);
+		Assert.Equal("us-east", updated.Region);
+		Assert.Equal("bob", updated.Version.UpdatedBy);
+		Assert.Single(store.ListAccounts());
+	}
 }

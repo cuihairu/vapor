@@ -720,6 +720,26 @@ public sealed class PluginInventoryTests
 	}
 
 	[Fact]
+	public void Update_EntryWithoutIdentityKeys_FallsBackToEmptyStrings()
+	{
+		var inventory = new PluginInventory();
+
+		inventory.Update("agent-a", DateTimeOffset.UnixEpoch, RoundTrip(new Dictionary<string, object?>
+		{
+			["plugins"] = new object[] { new Dictionary<string, object?>() }
+		}));
+
+		IReadOnlyDictionary<string, AgentPlugins> snapshot = inventory.Snapshot();
+		AgentPlugins agent = Assert.Single(snapshot.Values);
+		PluginInventoryEntry entry = Assert.Single(agent.Plugins);
+		Assert.Equal(string.Empty, entry.Id);
+		Assert.Equal(string.Empty, entry.Name);
+		Assert.Equal(string.Empty, entry.Version);
+		Assert.Equal(string.Empty, entry.ApiVersion);
+		Assert.Null(entry.Trust);
+	}
+
+	[Fact]
 	public void Update_RebuildsMirrorFromRoundTrippedOutput()
 	{
 		var inventory = new PluginInventory();

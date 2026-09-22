@@ -129,6 +129,50 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task TriggerScheduledJob_NullJsonColumns_ChildCollapsesToEmptyCollections()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		JobWithTasks template = await store.CreateJob(
+			new CreateJobRequest("ping", "us-east", ["alice"], null, null, new JobSchedule(IntervalSeconds: 60)),
+			cts.Token);
+
+		// JSON 'null' in the template row drives every Deserialize to null — the store
+		// must fall back to empty collections instead of handing nulls to Job.
+		RawExec(store,
+			"UPDATE jobs SET targets_json = $t, meta_json = $m, payload_json = $p WHERE id = $id",
+			("$t", "null"), ("$m", "null"), ("$p", "null"), ("$id", template.Job.Id));
+
+		Job? child = await store.TriggerScheduledJob(
+			template.Job.Id, DateTimeOffset.UtcNow.AddSeconds(60), extraMeta: null, cts.Token);
+
+		Assert.NotNull(child);
+		Assert.NotNull(child!.Targets);
+		Assert.Empty(child.Targets);
+		// The null template meta falls back to empty, then the trigger merges in its own marker.
+		Assert.NotNull(child.Meta);
+		Assert.Equal(new[] { "scheduledFrom" }, child.Meta!.Keys.ToArray());
+		Assert.Equal("us-east", child.Region);
+	}
+
+	[Fact]
+	public async Task TriggerScheduledJob_BlankTemplateRegion_ChildRegionIsNull()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		JobWithTasks template = await store.CreateJob(
+			new CreateJobRequest("ping", null, ["alice"], null, null, new JobSchedule(IntervalSeconds: 60)),
+			cts.Token);
+
+		Job? child = await store.TriggerScheduledJob(
+			template.Job.Id, DateTimeOffset.UtcNow.AddSeconds(60), extraMeta: null, cts.Token);
+
+		Assert.NotNull(child);
+		Assert.Null(child!.Region);
+		Assert.Equal(new[] { "alice" }, child.Targets);
+	}
+
+	[Fact]
 	public async Task TriggerScheduledJob_UnknownTemplate_ReturnsNull()
 	{
 		using var store = new SqliteJobStore(":memory:");
