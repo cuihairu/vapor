@@ -286,7 +286,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
-### 当前基线（2026-09-22，行覆盖 100.0% / 分支覆盖 97.3%）
+### 当前基线（2026-09-22，行覆盖 100.0% / 分支覆盖 97.7%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中；分支覆盖按分支行的 condition-coverage 统计，同一行多次观察取已覆盖条件数的最大值）：
 
@@ -294,18 +294,18 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 |--------|--------|----------|
 | Agent | 100.0% | 98.5% (191/194) |
 | MobileAuthenticator | 100.0% | 98.4% (315/320) |
-| Monitoring | 100.0% | 96.3% (104/108) |
+| Monitoring | 100.0% | 97.2% (105/108) |
 | Plugins.Core | 100.0% | 98.8% (255/258) |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
-| ControlPlane | 100.0% | 96.5% (2000/2072) |
-| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） | 97.5% (2940/3015) |
-| MarketWatch | 100.0% | 97.9% (139/142) |
+| ControlPlane | 100.0% | 96.8% (2006/2072) |
+| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） | 97.9% (2952/3015) |
+| MarketWatch | 100.0% | 100.0% (142/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
-| **合计** | **100.0%** (15882/15882) | **97.3%** (6000/6165) |
+| **合计** | **100.0%** (15882/15882) | **97.7%** (6022/6165) |
 
-分支覆盖门禁：CI `--min-branch 97.32`（基线 6000/6165 的未舍入值为 97.324%，门禁取 97.32——当前过、丢一个条件 97.307% 即红；2026-09-22 分支缺口冲刺第五轮后设点。设点时一度心算成 96.837 抬到 96.83，CI 门禁红、设点者被自家门禁拦下，以此条勘误留档；此后百分比一律工具计算）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
+分支覆盖门禁：CI `--min-branch 97.68`（基线 6022/6165 的未舍入值为 97.681%，门禁取 97.68——当前过、丢一个条件 97.664% 即红；2026-09-22 分支缺口冲刺第六轮后设点。设点时一度心算成 96.837 抬到 96.83，CI 门禁红、设点者被自家门禁拦下，以此条勘误留档；此后百分比一律工具计算）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
 
 > 上轮（2026-09-21）定性入册的 2 行防御性死分支（`Program` agent WS 循环的 try 收闭与尾部清理）已于 2026-09-22 收口——「结构性不可达」实为测试竞速：正常出口臂由 `AgentWs_RequestAbortedDuringHeartbeat_UnregistersThroughLoopExit` 确定性覆盖（`RequestAborted` 经 `IStartupFilter` 换成测试可控 linked CTS，token 无视心跳进行中取消；详见日期日志）。分母自此无残余缺口，CI 门禁收紧至 100%——任何一行未覆盖（新增代码未带测试）即红。
 
@@ -375,6 +375,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-22 分支缺口冲刺第四轮（收口轮续,逐轮棘轮:+14 测试全绿,分支 5967/6165=96.8% → **5988/6165=97.1%**,门禁 96.78 → **97.12**）。ControlPlane stores+杂项批:①AccountStore 非空 `marketListingsEnabled` 逐次携带臂 + 全空白 idleApps 归一化空臂（空白项在 trim 前被 continue 跳过,存活列表为空 → null,与已有的空数组臂互补）;ConfigStore SetAccount 二次调用版本递增臂。②SqliteJobStore 一测四臂:RawExec 把模板行 targets/meta/payload 三列 UPDATE 成 JSON `'null'`,`TriggerScheduledJob` 的三个 `Deserialize ?? []` 回退臂 + 子任务非空 region 臂一网收——child.Meta 会被 trigger 自动合并 `scheduledFrom` 标记,断言 Keys 而非 Empty;干净触发测试另补 Region null 折叠臂。③SqliteCrawlStore:MakeResult 参数化 jobId,null 往返一测收写(`?? DBNull`)+读(IsDBNull)双臂、`Limit: 0` 收分页默认臂;空库 CountResults;override JSON null 值 `GetString() ?? ""` 空串臂。④SqliteAuditStore:空白 actor → "unknown" 归一化 + `Limit: 0` 默认页。⑤杂项:SessionTracker 显式 updatedAt、AgentRegistry region 不匹配过滤、NotificationService sink 抛异常 + AccountName null 的隔离日志臂、TaskSchedulerService `TaskDispatchRetryDelayMs = 0` 无延迟 requeue、PluginInventory 缺 id/name/version/apiVersion 键空串回退 ×4。定性入册:审计/抓取两 store 计数的 `result is long` false 臂(COUNT(*) 恒返 long,结构性不可达)、AccountStore version-null 臂(Build 恒造 Version,不可注入)、SqliteCrawlStore claim mutex 竞态败者臂(mutex 临界区内不可注入)、NotificationSinks lastError-null 臂(重试循环至少一轮且每轮必设 lastError 或提前 return)。验证:全量串行绿（10 段全 attempt 1,2744 测试）,format 门禁过,CI 终态见提交后监控。
 
 > 2026-09-22 分支缺口冲刺第五轮（收口轮续,逐轮棘轮:+8 测试全绿,分支 5988/6165=97.1% → **6000/6165=97.3%**,门禁 97.12 → **97.32**）。MarketWatch 93.0% → 97.9%（132→142 收 139）为本轮主力:①`_logger?.` null 短路臂一条测试六场景全收——NullLoggerFactory 产出的 logger 恒非 null,唯一进法是反射置私有字段 `_logger=null`（`GetField("_logger", NonPublic|Instance)!.SetValue`）,price baseline / fetch 失败 / alert+crashing webhook / free fetch 失败 / free baseline(paid) / free edge 六条诊断路径的 null 臂一网打尽;②webhook 非 2xx 臂:`FixedStatusHandler(HttpStatusCode)` 让 HttpClient 返回 500,`!IsSuccessStatusCode` true 臂走 LogWarning 且异常吞掉不冒泡;③活跃 loop stop await 臂:CreateInitializedAsync 后再 StopLoopForTestsAsync,`_loop is not null` true 臂走真 await 路径（与第二轮 Initialize 前直调的 null 臂互补）。ControlPlane 96.4% → 96.5%（+3 全中）:NotificationService `broker.Publish(null, …)` 无 jobId → sink 异常隔离日志 "none" 占位臂;SqliteJobStore RawExec 把 targets_json UPDATE 成 JSON `'null'`,GetJob 的 `Deserialize ?? []` 空目标回退臂;SqliteCrawlStore cron 字段 upsert/读回往返臂。Steam.Core 97.4% → 97.5%（+2）:ProxyOptions ToWebProxy IPv6 去括号存储/重加括号构 URI 双臂（`Assert.IsType<WebProxy>` cast 后断言 Address 含 `[::1]`）;TwoFactorAutoResponder 省略 logger/cooldown 可选参的 ctor 回退臂（NullLogger 实例+默认 60s cooldown）。残余臂定性:MarketWatch 剩 3——L163/170 `_loopCts?.Cancel()/Dispose()` 的 **null 臂**需裸实例（未 Initialize）直调 StopLoopForTestsAsync（初始化过的实例 cts 恒非 null,现有两测试只分别覆盖了 `_loop` null 臂与 cts 非 null 臂）;L353 webhook 非 2xx 的另一 `_logger?.` 臂——500 场景已加但实测未命中,疑 staging 拷贝副本的全 0 命中噪声记录混入,留下轮单项目覆盖率核实。Steam.Core 剩 75:ProxyOptions:159 ToString 无凭据臂测试已到位仍剩 1 条件（疑条件映射行号漂移,下轮细查）,ValueStopwatch:29 default 实例 Elapsed 臂可收未收。存量维持:Reconciler 编排组合、BotSession 竞态窗口、Program 宿主值、SteamKit2 反射壳、COUNT(*) `is long` false 臂（恒 long,结构性不可达）等族不变。验证:全量串行绿（10 段全 attempt 1,2752 测试）,format 门禁过,CI 终态见提交后监控。
+
+> 2026-09-22 分支缺口冲刺第六轮（收口轮续,逐轮棘轮:+26 测试全绿,分支 6000/6165=97.3% → **6022/6165=97.7%**,门禁 97.32 → **97.68**）。MarketWatch 97.9% → **100%（142/142 收满,首个分支全绿业务程序集）**:未 Initialize 的裸实例直调 StopLoopForTestsAsync 收 `_loopCts?.Cancel()/Dispose()` 双 null 臂——上轮留下轮核实的 L353 `_logger?.` 臂经「500 webhook+反射置 null logger」复测确认一并命中,3 条全清。ControlPlane 96.5% → 96.8%（+6）:CronRecurringRun 光标推进臂（cron 计划两轮 RunTick 后 NextRunAt 前移）;GetJobReplies 队列注入任意 JobWithTasks 快照收「终态 job 无任务合成 failed shard」臂与「Failed 任务 Error null 回退状态文本」臂;errors 数组元素缺失/非字符串 error 字段双臂（持久化 Error=null 不抛）。Monitoring 96.3% → 97.2%（+1）:GatedThrowingListSessionManager——gate TCS 扣住首个事件直到测试反射置 `_logger=null` 后再 Open(),使泵的 logger-null 诊断短路口确定性走 null 臂而非 logging 臂（修正上轮定性方向:Initialize 内恒先赋 logger,唯一进法是事后反射置 null,可达但需时序控制）。Steam.Core 97.5% → 97.9%（+12）:ValueStopwatch default 实例 Elapsed 臂;ProxyOptions ToString IPv6 主机重括号臂;HttpCircuitBreaker openDuration:null 的 30s 回退臂;TradeRateLimiter 未 acquire 直 Dispose 的 null release 臂;CardSwapMatcher 名称回退链（Name→MarketHashName→""）与过期可交易日立即 tradable 臂;MaFileParser guard 内 Session 标记臂与仅 account_name 无 SteamId 空串回退臂;MemoryVaporCache SWR factory 返 null 的 `is T` false 臂与未完成 in-flight fill 复用臂;FileCredentialStore ctor null 目录回退+AccessToken 缺失/未知账号双 null 臂+根文档 JSON `'null'` 空库臂;CredentialStoreRotator null 根空转成功臂与 wrong-key+null logger 静默中止臂。**本轮最大教训（testhost 挂死 15 分钟）**:SessionManager.SubscribeAllEvents 把调用者 token 直传 Channel.ReadAllAsync——manager.Dispose() 只 cancel 内部 CTS、不影响外部传入的 token,CancellationToken.None 的枚举在 Dispose 后仍永久挂起;测试必须自持 CTS 并显式 Cancel（`SubscribeAllEvents_WhenCallerCancels_EnumerationEndsWithCancellation`）。定性入册（结构性不可达）:RedisVaporCache `(string?)key ?? ""` 空 key 臂（真 Redis 枚举恒非 null）;TradeRateLimiter release 空集合臂（Count<Max 守卫保证非空才到达）;SensitiveDataRedactor 可选正则组零宽匹配恒 Success 臂;SessionManager TryAdd-false 后 TryGetValue-false 臂（需竞态窗口内 Remove,不可注入）与 NewState-null 事件臂（BotSession 全事件 NewState 恒非 null,无生产者）;CrawlRunWorker 非 Object 元素臂（无 app_id 先 continue）;MetricsHttpServer SocketException 写失败臂（需真实网络故障）。验证:全量串行绿（10 段全 attempt 1,2778 测试）,format 门禁过,CI 终态见提交后监控。
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
 - xUnit / Moq 框架程序集
