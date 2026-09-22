@@ -286,7 +286,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
-### 当前基线（2026-09-22，行覆盖 100.0% / 分支覆盖 96.8%）
+### 当前基线（2026-09-22，行覆盖 100.0% / 分支覆盖 97.1%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中；分支覆盖按分支行的 condition-coverage 统计，同一行多次观察取已覆盖条件数的最大值）：
 
@@ -299,13 +299,13 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
-| ControlPlane | 100.0% | 95.4% (1976/2072) |
+| ControlPlane | 100.0% | 96.4% (1997/2072) |
 | Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） | 97.4% (2938/3015) |
 | MarketWatch | 100.0% | 93.0% (132/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
-| **合计** | **100.0%** (15882/15882) | **96.8%** (5967/6165) |
+| **合计** | **100.0%** (15882/15882) | **97.1%** (5988/6165) |
 
-分支覆盖门禁：CI `--min-branch 96.78`（基线 5967/6165 的未舍入值为 96.788%，门禁取 96.78——当前过、丢一个条件 96.772% 即红；2026-09-22 分支缺口冲刺第三轮后设点。设点时一度心算成 96.837 抬到 96.83，CI 门禁红、设点者被自家门禁拦下，以此条勘误）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
+分支覆盖门禁：CI `--min-branch 97.12`（基线 5988/6165 的未舍入值为 97.129%，门禁取 97.12——当前过、丢一个条件 97.113% 即红；2026-09-22 分支缺口冲刺第四轮后设点。设点时一度心算成 96.837 抬到 96.83，CI 门禁红、设点者被自家门禁拦下，以此条勘误留档；此后百分比一律工具计算）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
 
 > 上轮（2026-09-21）定性入册的 2 行防御性死分支（`Program` agent WS 循环的 try 收闭与尾部清理）已于 2026-09-22 收口——「结构性不可达」实为测试竞速：正常出口臂由 `AgentWs_RequestAbortedDuringHeartbeat_UnregistersThroughLoopExit` 确定性覆盖（`RequestAborted` 经 `IStartupFilter` 换成测试可控 linked CTS，token 无视心跳进行中取消；详见日期日志）。分母自此无残余缺口，CI 门禁收紧至 100%——任何一行未覆盖（新增代码未带测试）即红。
 
@@ -372,6 +372,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-22 分支缺口冲刺第二轮（收口轮续,逐轮棘轮:+9 测试全绿,分支 5943/6165=96.4% → **5961/6165=96.7%**,门禁 96.43 → **96.69**）。①补漏入基线:收口轮终轮因 Coverage 串行脚本 `--no-build` 用了撞车前的陈旧 Release DLL,PlayGamesAction 转发臂与 TimeSync 带日志同步臂测试在代码里但不在基线里——本轮重建后落账 +3。教训入 runbook:直接跑 collect-coverage-serial.sh 时改过测试必须显式 `dotnet build -c Release` 前置,`--no-build` 硬编码在脚本里。②Monitoring:MetricsRegistry.FormatValue 的 ±Inf/NaN 三臂五条件一条测试全收（`GaugeSet(double.PositiveInfinity/NegativeInfinity/NaN)` + RenderPrometheus 断言 `+Inf/-Inf/NaN` 文本）;MetricsHttpServer 单 token 请求行臂（`"GET\r\n"`——method 无 URL token 走空 URL 丢弃路径）与 ctor null payloadProvider 守卫。③MarketWatch 测试钩子 null-_loop 臂四条:InitializeAsync 前直调 RestartLoopForTestsAsync/StopLoopForTestsAsync,`_loop is not null` 与 `_loopCts` 的 null 臂走跳过路径。④Steam.Core ttl 三态臂六条:GetCardDrops/GetPlaytime 的 `ttlSeconds is > 0` 正数臂（现有测试只有 0 与缺省）,GetGameInfoBatch 经 ResolveTtlOverride 的负值回退臂与正值覆盖臂（带 MemoryVaporCache 走 FetchCachedAsync 缓存路径才达 staleTtl 三元）。⑤新入册定性:MetricsHttpServer L122 `parts.Length > 0` false 臂不可达（`Split(' ')` 永不返回空数组,防御冗余）;MonitoringPlugin L200 非 null 臂需 ISessionManager 宿主 stub、L248 logger null 臂在 LoggerFactory 流程下恒非 null 不可达;BotSession 10 条属会话引擎命令超时/取消竞态窗口,与 Reconciler 同族留深化轮。验证:全量串行绿（10 段全 attempt 1,2723 测试）,format 门禁过,CI 终态见提交后监控。
 
 > 2026-09-22 分支缺口冲刺第三轮（收口轮续,逐轮棘轮:+6 测试全绿,分支 5961/6165=96.7% → **5967/6165=96.8%**,门禁 96.69 → **96.78**;行覆盖自愈回 15882/15882）。①**两个概率覆盖臂确定性化——本轮最大收获**:SessionManager L107 TryAdd-false 臂与 L126 竞态行原靠 4-Task×40 轮的线程池调度碰撞概率命中(上一轮 CI 绿是碰上,干净 rebuild 后实证 miss,行覆盖跌到 15881/15882,--min 100 红险现形),改为 Barrier 同放行 16 个真线程——TryAdd 原子性保证至多一个赢家、其余必撞 else,5 轮叠乘,三次复现 hits 60+;MaFileParser 错密码测试(随机 salt/iv)以 255/256 概率走 CryptographicException 臂,本轮撞上 1/256 尾巴实证翻车(L105/107 暗掉),改为运行时探测 padding 必非法的 salt(逐候选以与产品同参 KDF/AES 试解密,每候选 255/256 合格,512 次上限)——确定性触发。②MobileAuthenticator 四条:MobileConfirmationClient 无 message 回退臂 ×2(`{"success":false}` 无 message 键→固定兜底文案)与 type String("Market"→"market")/未知形状(true→null) theory ×2。③Plugins.Core 两条:PluginEventDispatcher Remove 遍历非匹配首元素臂(先 add 两个再移除第二个);PluginLoadContext L41 LoadFromAssemblyPath 臂——staging 只拷 dll 不拷 deps.json,resolver 恒返 null,测试内手写最小 deps.json(runtimeTarget+targets+libraries)使 resolver 真实解析出路径。④**基线修正**:上一轮 Steam.Core 2938 中 1 条系撞车中间态陈旧 DLL 虚高(与第二轮 PlayGames/TimeSync +3 同源),干净 rebuild 锚定 2937,本轮 L107 false 臂补回 2938——「串行轮前必须显式 build」教训的又一实证。⑤定性维持:PluginLoadContext L47 非 null 臂(需真实 native dll)、PluginLoader L187(私有 ctor fixture)。验证:全量串行绿（10 段全 attempt 1,2730 测试）,format 门禁过,CI 终态见提交后监控。
+> 2026-09-22 分支缺口冲刺第四轮（收口轮续,逐轮棘轮:+14 测试全绿,分支 5967/6165=96.8% → **5988/6165=97.1%**,门禁 96.78 → **97.12**）。ControlPlane stores+杂项批:①AccountStore 非空 `marketListingsEnabled` 逐次携带臂 + 全空白 idleApps 归一化空臂（空白项在 trim 前被 continue 跳过,存活列表为空 → null,与已有的空数组臂互补）;ConfigStore SetAccount 二次调用版本递增臂。②SqliteJobStore 一测四臂:RawExec 把模板行 targets/meta/payload 三列 UPDATE 成 JSON `'null'`,`TriggerScheduledJob` 的三个 `Deserialize ?? []` 回退臂 + 子任务非空 region 臂一网收——child.Meta 会被 trigger 自动合并 `scheduledFrom` 标记,断言 Keys 而非 Empty;干净触发测试另补 Region null 折叠臂。③SqliteCrawlStore:MakeResult 参数化 jobId,null 往返一测收写(`?? DBNull`)+读(IsDBNull)双臂、`Limit: 0` 收分页默认臂;空库 CountResults;override JSON null 值 `GetString() ?? ""` 空串臂。④SqliteAuditStore:空白 actor → "unknown" 归一化 + `Limit: 0` 默认页。⑤杂项:SessionTracker 显式 updatedAt、AgentRegistry region 不匹配过滤、NotificationService sink 抛异常 + AccountName null 的隔离日志臂、TaskSchedulerService `TaskDispatchRetryDelayMs = 0` 无延迟 requeue、PluginInventory 缺 id/name/version/apiVersion 键空串回退 ×4。定性入册:审计/抓取两 store 计数的 `result is long` false 臂(COUNT(*) 恒返 long,结构性不可达)、AccountStore version-null 臂(Build 恒造 Version,不可注入)、SqliteCrawlStore claim mutex 竞态败者臂(mutex 临界区内不可注入)、NotificationSinks lastError-null 臂(重试循环至少一轮且每轮必设 lastError 或提前 return)。验证:全量串行绿（10 段全 attempt 1,2744 测试）,format 门禁过,CI 终态见提交后监控。
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
 - xUnit / Moq 框架程序集
