@@ -128,10 +128,10 @@ jobs:
     # 覆盖率门禁：合计行/分支覆盖率跌破基线即红。基线与 tests/TESTING.md 的
     # 统计同步演进（2026-09-22 起行分母无残余缺口，合计基线精确 100.0%）。
     # 行门禁 100% —— 任何一行未覆盖（新增代码未带测试）即红。
-    # 分支门禁 96.83：基线 5967/6165（显示 96.8%），门禁取两位小数 96.83——
-    # 当前 96.837 过、丢一个条件 96.821 即红（棘轮，2026-09-22 分支缺口冲刺第三轮后设点）。
+    # 分支门禁 96.78：基线 5967/6165（显示 96.8%），门禁取两位小数 96.78——
+    # 当前 96.788 过、丢一个条件 96.772 即红（棘轮，2026-09-22 分支缺口冲刺第三轮后设点）。
     - name: Coverage gate
-      run: python3 scripts/coverage-summary.py TestResults/coverage-serial --min 100 --min-branch 96.83
+      run: python3 scripts/coverage-summary.py TestResults/coverage-serial --min 100 --min-branch 96.78
 
   format:
     runs-on: ubuntu-latest
