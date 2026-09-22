@@ -45,11 +45,12 @@ import xml.etree.ElementTree as ET
 
 try:
 	root = ET.parse(sys.argv[1]).getroot()
+	# 分支行照常计入（hits 就是整行命中数），与 coverage-summary.py 的合并
+	# 口径一致；曾有的 `!= "true"` 过滤是死代码——coverlet 写 branch="True"。
 	covered = any(
 		int(line.get("hits", "0")) > 0
 		for cls in root.iter("class")
 		for line in cls.iter("line")
-		if line.get("branch") != "true"
 	)
 	sys.exit(0 if covered else 1)
 except Exception:

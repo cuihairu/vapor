@@ -16,6 +16,7 @@ NC='\033[0m' # No Color
 
 # 默认值
 COVERAGE=false
+COVERAGE_SERIAL=false
 VERBOSE=false
 FILTER=""
 
@@ -76,7 +77,14 @@ else
     TEST_CMD="$TEST_CMD --verbosity minimal"
 fi
 
-if [ "$COVERAGE" = true ]; then
+# 全量覆盖率（无过滤器）走串行收集脚本：一次性 `dotnet test Vapor.sln --collect`
+# 会间歇性静默产出坏报告（空报告 / 全零报告），串行 + 逐报告校验 + 重试才可信
+# （见 collect-coverage-serial.sh 头注与 tests/TESTING.md 2026-09-22 可靠性轮）。
+# 带过滤器的运行只跑匹配子集，覆盖率仅作现场排查参考，保留单次收集路径
+# （校验器「全零即坏」的语义不适用于子集运行——未匹配项目本就零命中）。
+if [ "$COVERAGE" = true ] && [ -z "$FILTER" ]; then
+    COVERAGE_SERIAL=true
+elif [ "$COVERAGE" = true ]; then
     # tests/coverlet.runsettings 排除源生成器产物（obj/**/*.g.cs）；
     # 结构性集成壳在源码里挂 [ExcludeFromCodeCoverage]（见 tests/TESTING.md）。
     TEST_CMD="$TEST_CMD --collect 'XPlat Code Coverage' --settings tests/coverlet.runsettings"
@@ -98,11 +106,27 @@ if [ "$COVERAGE" = true ]; then
 fi
 
 # 执行测试
-echo -e "${YELLOW}运行测试...${NC}"
-set +e
-eval $TEST_CMD
-TEST_EXIT_CODE=$?
-set -e
+if [ "$COVERAGE_SERIAL" = true ]; then
+    # 串行收集脚本以 --no-build 跑 Release DLL——先显式构建，既保证新鲜度
+    # （陈旧 DLL 会让「验证通过」与改动无关），也保留 dotnet test 原有的隐式构建体验。
+    echo -e "${YELLOW}构建 Release...${NC}"
+    if ! dotnet build Vapor.sln --configuration Release --nologo -v q; then
+        echo -e "${RED}构建失败${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}串行收集覆盖率（逐报告校验 + 重试）...${NC}"
+    set +e
+    ./scripts/collect-coverage-serial.sh -- RunConfiguration.MaxCpuCount=2
+    TEST_EXIT_CODE=$?
+    set -e
+else
+    echo -e "${YELLOW}运行测试...${NC}"
+    set +e
+    eval $TEST_CMD
+    TEST_EXIT_CODE=$?
+    set -e
+fi
 
 if [ $TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}测试通过!${NC}"
@@ -113,6 +137,13 @@ fi
 if [ "$COVERAGE" = true ] && [ $TEST_EXIT_CODE -eq 0 ]; then
     echo ""
     echo -e "${YELLOW}处理覆盖率报告...${NC}"
+
+    # 串行收集轮：先用 coverage-summary.py 给出行级汇总（与 CI 门禁同一套
+    # 口径），失败不阻塞——文本摘要只是本地的便利设施。
+    if [ "$COVERAGE_SERIAL" = true ] && command -v python3 &> /dev/null; then
+        python3 scripts/coverage-summary.py TestResults/coverage-serial || true
+        echo ""
+    fi
 
     # 查找覆盖率文件（coverlet.collector 每个测试项目生成一份 cobertura 报告）
     COVERAGE_FILES=$(find . -path "*/TestResults/*/coverage.cobertura.xml" | tr '\n' ' ')

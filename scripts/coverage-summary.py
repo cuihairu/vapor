@@ -41,9 +41,10 @@ for path in files:
         asm = package.get("name")
         for cls in package.iter("class"):
             filename = normalize(asm, cls.get("filename") or "")
+            # 分支行照常计入行覆盖：其 hits 就是整行命中数，含分支行的 100%
+            # 口径更严，也是基线 15882 的统计口径。曾有的 `== "true"` 过滤
+            # 是死代码——coverlet 实际写 branch="True"/"False"（Pascal 大小写）。
             for line in cls.iter("line"):
-                if line.get("branch") == "true":
-                    continue
                 key = (asm, filename, int(line.get("number")))
                 hits_by_line[key] = max(hits_by_line.get(key, 0), int(line.get("hits")))
 

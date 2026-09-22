@@ -63,8 +63,19 @@ if ($Verbose) {
     $testCmd += " --verbosity minimal"
 }
 
+# 全量覆盖率（无过滤器）走下方串行收集循环：一次性 `dotnet test Vapor.sln --collect`
+# 会间歇性静默产出坏报告（空报告 / 全零报告），串行 + 逐报告校验 + 重试才可信
+# （见 tests/TESTING.md 2026-09-22 可靠性轮；Linux 侧委托 collect-coverage-serial.sh，
+# 此处原生移植，Windows 不依赖 bash/python）。
+# 带过滤器的运行只跑匹配子集，覆盖率仅作现场排查参考，保留单次收集路径
+# （必须带 runsettings，否则测试程序集分母会把覆盖率拉低——见 tests/TESTING.md）。
+$serialCoverage = $false
 if ($Coverage) {
-    $testCmd += " --collect 'XPlat Code Coverage'"
+    if ($Filter -eq "") {
+        $serialCoverage = $true
+    } else {
+        $testCmd += " --collect 'XPlat Code Coverage' --settings tests/coverlet.runsettings"
+    }
 }
 
 if ($Filter -ne "") {
@@ -84,10 +95,138 @@ if ($Coverage) {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
+# 校验单份 cobertura 报告：能解析且至少一行 hits>0 即有效（分支行照常计入，
+# 与 coverage-summary.py 合并口径一致——coverlet 实际写 branch="True"，
+# 大小写敏感的过滤在 sh/py 校验器里是死代码，而 PowerShell -ne 不区分大小写、
+# 会真的排除分支行，故统一不过滤）。
+# cobertura 报告带 DOCTYPE，[xml] 直接转换默认禁止 DTD 会抛异常，
+# 必须走 XmlReader 并显式 DtdProcessing=Ignore。
+# 「全零即坏」语义与 collect-coverage-serial.sh 的校验器一致（只适用于全量运行）。
+function Test-CoverageReport {
+    param([string]$Path)
+    try {
+        $settings = [System.Xml.XmlReaderSettings]::new()
+        $settings.DtdProcessing = [System.Xml.DtdProcessing]::Ignore
+        $settings.XmlResolver = $null
+        $doc = [System.Xml.XmlDocument]::new()
+        $reader = [System.Xml.XmlReader]::Create($Path, $settings)
+        try {
+            $doc.Load($reader)
+        } finally {
+            $reader.Dispose()
+        }
+        foreach ($class in $doc.SelectNodes("//class")) {
+            foreach ($line in $class.SelectNodes(".//line")) {
+                if ([int]$line.GetAttribute("hits") -gt 0) {
+                    return $true
+                }
+            }
+        }
+        return $false
+    } catch {
+        return $false
+    }
+}
+
+# 逐项目串行收集覆盖率，逐报告校验，坏报告删除后重试（≤3 次）。
+# 语义镜像 scripts/collect-coverage-serial.sh：
+#   - 每项目独立 results-directory，attempt 日志落 $root/$name.attempt$attempt.log
+#   - Vapor.E2E.Tests 免收集不校验（真实子进程继承 profiler 环境会毁掉收集会话，
+#     报告结构性为空；见脚本头注）
+#   - 每段注入 VAPOR_TEST_REDIS（有意让覆盖率轮顺带跑集成测试；结束后恢复原值）
+#   - exit code 经 $script:SerialExitCode 传出，避免函数进度输出污染返回值管道
+function Invoke-SerialCoverage {
+    # 正斜杠路径：Windows 与 Linux pwsh 双平台通用（反斜杠在 Linux 是文件名字符）。
+    $root = "TestResults/coverage-serial"
+    if (Test-Path $root) {
+        Remove-Item -Recurse -Force $root
+    }
+    New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+    $script:SerialExitCode = 0
+    $oldRedis = $env:VAPOR_TEST_REDIS
+    $env:VAPOR_TEST_REDIS = "localhost:6379"
+    try {
+        foreach ($proj in Get-ChildItem -Path "tests/*/*.Tests.csproj") {
+            $name = $proj.BaseName
+            $isE2E = $name -eq "Vapor.E2E.Tests"
+            $attempt = 0
+            while ($true) {
+                $attempt++
+                Write-Output "=== $name (attempt $attempt)"
+                $dir = Join-Path $root "$name/TestResults"
+                $log = Join-Path $root "$name.attempt$attempt.log"
+                $dotnetArgs = @(
+                    "test", $proj.FullName,
+                    "--configuration", "Release",
+                    "--no-build",
+                    "--nologo",
+                    "--settings", "tests/coverlet.runsettings",
+                    "--results-directory", $dir
+                )
+                if (-not $isE2E) {
+                    $dotnetArgs += @("--collect", "XPlat Code Coverage")
+                }
+                # `--` 之后的 token 全部作为 runsettings 内联参数解析，必须放最后。
+                $dotnetArgs += @("--", "RunConfiguration.MaxCpuCount=2")
+                & dotnet @dotnetArgs *> $log
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "PROJECT FAILED: $name (see $log)"
+                    $script:SerialExitCode = 1
+                    return
+                }
+                if ($isE2E) {
+                    # 见头注：无报告预期，测试通过即唯一标准。
+                    break
+                }
+                $valid = $false
+                Get-ChildItem -Path $dir -Filter "coverage.cobertura.xml" -Recurse -ErrorAction SilentlyContinue |
+                    ForEach-Object {
+                        if (Test-CoverageReport $_.FullName) {
+                            $valid = $true
+                        } else {
+                            Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
+                            Write-Output "  dropped corrupt coverage report: $($_.FullName)"
+                        }
+                    }
+                if ($valid) {
+                    break
+                }
+                if ($attempt -ge 3) {
+                    Write-Error "NO VALID COVERAGE REPORT after $attempt attempts: $name"
+                    $script:SerialExitCode = 1
+                    return
+                }
+            }
+        }
+    } finally {
+        if ($null -ne $oldRedis) {
+            $env:VAPOR_TEST_REDIS = $oldRedis
+        } else {
+            Remove-Item Env:VAPOR_TEST_REDIS -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 # 执行测试
-Write-Warning "运行测试..."
-$result = Invoke-Expression $testCmd
-$exitCode = $LASTEXITCODE
+if ($serialCoverage) {
+    # 串行循环以 --no-build 跑 Release DLL——先显式构建，保证新鲜度
+    # （陈旧 DLL 会让「验证通过」与改动无关），也保留隐式构建的体验。
+    Write-Warning "构建 Release..."
+    dotnet build Vapor.sln --configuration Release --nologo -v q
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "构建失败"
+        exit 1
+    }
+
+    Write-Warning "串行收集覆盖率（逐报告校验 + 重试）..."
+    Invoke-SerialCoverage
+    $exitCode = $script:SerialExitCode
+} else {
+    Write-Warning "运行测试..."
+    $result = Invoke-Expression $testCmd
+    $exitCode = $LASTEXITCODE
+}
 
 if ($exitCode -eq 0) {
     Write-Success "测试通过!"
