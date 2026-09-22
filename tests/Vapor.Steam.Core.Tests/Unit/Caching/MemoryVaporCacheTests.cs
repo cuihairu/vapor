@@ -449,6 +449,41 @@ public sealed class MemoryVaporCacheTests
 		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
 	}
 
+	[Fact]
+	public async Task StaleWhileRevalidate_FactoryReturnsNull_YieldsNull()
+	{
+		// The synchronous fill path resolves to a null value: the `is T typed`
+		// arm fails and the caller sees null instead of a cast failure.
+		using var cache = Create();
+
+		var value = await cache.GetOrSetStaleWhileRevalidateAsync<FakePayload>(
+			"swr-null", _ => Task.FromResult<FakePayload?>(null), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(30));
+
+		Assert.Null(value);
+	}
+
+	[Fact]
+	public async Task StaleWhileRevalidate_ReusesUncompletedInFlightFill()
+	{
+		// A fill already running for the key (registered by GetOrSetAsync and not
+		// yet completed) is adopted as-is: the SWR caller awaits the same task and
+		// never invokes its own factory.
+		using var cache = Create();
+		var gate = new TaskCompletionSource<FakePayload>(TaskCreationOptions.RunContinuationsAsynchronously);
+		int factoryCalls = 0;
+
+		Task<FakePayload?> first = cache.GetOrSetAsync<FakePayload>("swr-share", async _ => await gate.Task.ConfigureAwait(false));
+		Task<FakePayload?> shared = cache.GetOrSetStaleWhileRevalidateAsync<FakePayload>(
+			"swr-share", _ => { factoryCalls++; return Task.FromResult<FakePayload?>(new FakePayload { Value = "own" }); },
+			TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(30));
+
+		gate.SetResult(new FakePayload { Value = "shared" });
+
+		Assert.Equal("shared", (await first)!.Value);
+		Assert.Equal("shared", (await shared)!.Value);
+		Assert.Equal(0, factoryCalls);
+	}
+
 	private sealed class FakePayload
 	{
 		public string Value { get; init; } = string.Empty;

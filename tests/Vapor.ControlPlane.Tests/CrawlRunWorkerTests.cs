@@ -194,6 +194,97 @@ public sealed class CrawlRunWorkerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task CronRecurringRun_AdvancesNextRunCursorFromCron()
+	{
+		// The cron arm of the recurring predicate: a plan carrying a cron is
+		// recurring even with IntervalSeconds = 0, and its cursor advances to
+		// the next cron occurrence instead of clearing like a one-shot.
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 }, cron: "0 3 * * *");
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None);
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+		_jobs.Outputs[jobId] = BatchOutput(new uint[] { 570 });
+		await worker.RunTickAsync(CancellationToken.None);
+
+		var plan = await _crawl.GetPlanAsync("plan-1");
+		Assert.NotNull(plan!.NextRunAt); // cursor stays due (next 03:00), never cleared
+	}
+
+	[Fact]
+	public async Task TerminalJobWithNoTasks_SynthesizesFailedShard()
+	{
+		// A terminal job whose task list is empty: the poll synthesizes a failed
+		// task ("job has no tasks") whose non-null error then flows into the
+		// per-app failure rows.
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		JobWithTasks dispatched = _jobs.CreatedJobs.Single();
+		_jobs.GetJobReplies.Enqueue(dispatched with { Job = dispatched.Job with { Status = JobStatus.Failed }, Tasks = [] });
+
+		await worker.RunTickAsync(CancellationToken.None); // poll
+
+		var rows = await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1"));
+		CrawlResultRow row = Assert.Single(rows);
+		Assert.False(row.Ok);
+		Assert.Equal("job has no tasks", row.Error);
+	}
+
+	[Fact]
+	public async Task TerminalFailedTaskWithoutError_FallsBackToStatusText()
+	{
+		// A failed task carrying no error string: the shard-wide failure rows
+		// use the "crawl task ended with status {Status}" fallback text.
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None); // dispatch
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Failed, null);
+
+		await worker.RunTickAsync(CancellationToken.None); // poll
+
+		var rows = await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1"));
+		CrawlResultRow row = Assert.Single(rows);
+		Assert.False(row.Ok);
+		Assert.Equal($"crawl task ended with status {JobTaskStatus.Failed}", row.Error);
+	}
+
+	[Fact]
+	public async Task ErrorRows_MissingOrNonStringError_PersistNullErrorText()
+	{
+		// Error entries whose "error" property is absent or not a string must
+		// persist with a null error text instead of throwing on the read.
+		_accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, null, null);
+		await SeedOneShotPlanAsync(appIds: new uint[] { 570, 730 });
+
+		var worker = CreateWorker();
+		await worker.RunTickAsync(CancellationToken.None);
+		string jobId = _jobs.CreatedJobs.Single().Job.Id;
+		_jobs.Outcomes[jobId] = (JobTaskStatus.Finished, null);
+		_jobs.Outputs[jobId] = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+		{
+			["games"] = Array.Empty<JsonElement>(),
+			["errors"] = new object[]
+			{
+				new { app_id = 570 },                 // no "error" property at all
+				new { app_id = 730, error = 123 }     // "error" present but not a string
+			}
+		});
+		await worker.RunTickAsync(CancellationToken.None);
+
+		var rows = await _crawl.QueryResultsAsync(new CrawlResultQuery(PlanId: "plan-1"));
+		Assert.Equal(2, rows.Count);
+		Assert.All(rows, r => { Assert.False(r.Ok); Assert.Null(r.Error); });
+	}
+
+	[Fact]
 	public async Task EmptyPool_SkipsRunWithEventAndClearsCursor()
 	{
 		await SeedOneShotPlanAsync(accounts: "ghost-account");

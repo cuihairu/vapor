@@ -185,4 +185,40 @@ public sealed class CredentialStoreRotatorTests : IDisposable
 		Assert.Equal("rotation failed", full.Message);
 		Assert.Same(inner, full.InnerException);
 	}
+
+	[Fact]
+	public async Task Rotate_NullAccountsRoot_RotatesNothingThroughSuccessPath()
+	{
+		// A JSON "null" document deserializes to no accounts; the rotation then
+		// walks the full success path (backup + atomic replace) with an empty
+		// map, and the null-logger arms of every diagnostic site stay quiet.
+		await File.WriteAllTextAsync(_storePath, "null");
+
+		var result = CredentialStoreRotator.Rotate(_storePath, OldKey, NewKey, logger: null);
+
+		Assert.True(result.Success);
+		Assert.Equal(0, result.TotalAccounts);
+		Assert.Equal(0, result.RotatedAccounts);
+		Assert.Empty(result.FailedAccounts);
+		Assert.True(File.Exists(_storePath + ".bak.pre-rotate"));
+	}
+
+	[Fact]
+	public async Task Rotate_UndecryptableAccountsWithNullLogger_AbortsQuietly()
+	{
+		// An account that fails to decrypt with the old key aborts the rotation;
+		// with a null logger both the per-account error and the abort warning
+		// are skipped instead of thrown.
+		await WriteV2StoreAsync(new Dictionary<string, (string?, string?)>
+		{
+			["ghost"] = ("refresh-plain-value", null)
+		}, OldKey);
+		byte[] wrongKey = new byte[32];
+		wrongKey.AsSpan().Fill((byte)3);
+
+		var result = CredentialStoreRotator.Rotate(_storePath, wrongKey, NewKey, logger: null);
+
+		Assert.False(result.Success);
+		Assert.Equal(new[] { "ghost" }, result.FailedAccounts);
+	}
 }

@@ -370,6 +370,44 @@ public sealed class MarketWatchPluginEdgeTests
 		Assert.Equal(20m, plugin.Store.Snapshot()[0].LastPrice);
 	}
 
+	[Fact]
+	public async Task StopLoopForTests_OnBareInstance_SkipsNullLoopAndCts()
+	{
+		// A plugin that was never initialized has neither loop nor CTS: every
+		// nullable step of the stop hook must be skipped (the null arms that the
+		// initialized-instance tests can never reach).
+		var client = new ScriptedStoreClient();
+		await using var plugin = new MarketWatchPlugin(client, new HttpClient());
+
+		await plugin.StopLoopForTestsAsync();
+	}
+
+	[Fact]
+	public async Task PollOnce_LoggerSuppressed_NonSuccessWebhook_StaysQuiet()
+	{
+		// The remaining webhook-diagnosis combination: a non-2xx response while
+		// the logger is suppressed — the warning must short-circuit on the null
+		// logger and the alert must still count.
+		var client = new ScriptedStoreClient(new PriceOverview { Currency = "USD", Final = 100m, Initial = 100m });
+		var config = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+		{
+			["market.webhook_url"] = "http://webhook.test/alerts"
+		};
+		await using var plugin = new MarketWatchPlugin(
+			client, new HttpClient(new FixedStatusHandler(HttpStatusCode.InternalServerError)));
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, new StubServiceProvider(), config), CancellationToken.None);
+		await plugin.StopLoopForTestsAsync();
+		typeof(MarketWatchPlugin).GetField("_logger", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.SetValue(plugin, null);
+
+		await ExecuteAsync(plugin, "market_watch_add", new Dictionary<string, object?> { ["app_id"] = "570" });
+		await plugin.PollOnceAsync(CancellationToken.None); // baseline, no webhook
+		client.NextPrice = new PriceOverview { Currency = "USD", Final = 10m, Initial = 100m };
+		await plugin.PollOnceAsync(CancellationToken.None); // alert + 500 webhook, quiet
+
+		Assert.Equal(1, plugin.Store.Snapshot()[0].AlertCount);
+	}
+
 	/// <summary>Webhook transport that always answers with a fixed status code.</summary>
 	private sealed class FixedStatusHandler(HttpStatusCode statusCode) : HttpMessageHandler
 	{

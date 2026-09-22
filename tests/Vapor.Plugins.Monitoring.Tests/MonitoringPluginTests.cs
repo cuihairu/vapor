@@ -269,6 +269,35 @@ public class MonitoringPluginTests
 	}
 
 	[Fact]
+	public async Task SessionPump_ListSessionsThrows_WithSuppressedLogger_StaysQuiet()
+	{
+		// Same sampling failure, but with the plugin logger reflected to null: the
+		// diagnostic short-circuit arm must keep the pump alive without formatting.
+		// The gated stub holds its first event back until the logger is already
+		// suppressed, so the short-circuit (not the logging) arm is deterministic.
+		var manager = new GatedThrowingListSessionManager();
+		var services = new StubServiceProvider(new Dictionary<Type, object>
+		{
+			[typeof(ISessionManager)] = manager
+		});
+
+		var plugin = new MonitoringPlugin();
+		await plugin.InitializeAsync(new StubPluginContext(plugin.Info, services), CancellationToken.None);
+		try
+		{
+			typeof(MonitoringPlugin).GetField("_logger", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+				.SetValue(plugin, null);
+
+			manager.Open();
+			await WaitForConditionAsync(() => manager.Observed >= 1);
+		}
+		finally
+		{
+			await plugin.ShutdownAsync(CancellationToken.None);
+		}
+	}
+
+	[Fact]
 	public async Task Plugin_LoadsThroughPluginManager()
 	{
 		var root = Path.Combine(Path.GetTempPath(), "vapor-monitoring-plugin-tests", Guid.NewGuid().ToString("N"));
@@ -465,6 +494,45 @@ public class MonitoringPluginTests
 		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
 			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
 		{
+			Observed++;
+			yield return new SessionEvent(SessionEventType.StateChanged, "acct", SessionState.Connected);
+			await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// ThrowingListSessionManager whose first event is held back until Open() — lets a
+	/// test suppress the plugin logger before the (failing) first gauge sample runs.
+	/// </summary>
+	private sealed class GatedThrowingListSessionManager : ISessionManager
+	{
+		private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public int Observed { get; private set; }
+
+		public void Open() => _gate.TrySetResult();
+
+		public Task<BotSession> GetOrCreateSessionAsync(string accountName, AccountCredentials credentials, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
+		public Task<BotSession?> GetSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public Task RemoveSessionAsync(string accountName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+		public IReadOnlyList<BotSession> ListSessions() => throw new InvalidOperationException("list exploded");
+
+		public void SetEventCallback(SessionEventDelegate? callback)
+		{
+		}
+
+		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
+			Task.FromResult<BotSession?>(null);
+
+		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
+			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+		{
+			await _gate.Task.ConfigureAwait(false);
 			Observed++;
 			yield return new SessionEvent(SessionEventType.StateChanged, "acct", SessionState.Connected);
 			await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);

@@ -95,6 +95,52 @@ public sealed class MaFileParserTests
 	}
 
 	[Fact]
+	public void Parse_EncryptedSda_SessionStringInsideGuard_MarksSession()
+	{
+		// Some SDA builds carry the session token as a plain string inside the
+		// encrypted guard blob (not a Session object); the string-kind arm must
+		// mark the file as having a session.
+		string password = "hunter2";
+		byte[] salt = RandomNumberGenerator.GetBytes(8);
+		byte[] iv = RandomNumberGenerator.GetBytes(16);
+		string guardJson = JsonSerializer.Serialize(new Dictionary<string, object?>
+		{
+			["shared_secret"] = SharedSecret,
+			["identity_secret"] = IdentitySecret,
+			["device_id"] = "android:zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+			["account_name"] = "carol",
+			["Session"] = "blob-session-token"
+		});
+
+		string json = BuildEncryptedSda(password, salt, iv, guardJson, steamId: "76561198000000003", accountName: "carol");
+
+		MaFileInfo info = MaFileParser.Parse(json, password);
+
+		Assert.True(info.HasSession);
+		Assert.Equal("carol", info.AccountName);
+	}
+
+	[Fact]
+	public void Parse_AccountNameOnly_NoSteamId_SteamIdDefaultsToEmpty()
+	{
+		// A flat maFile keyed by account name alone: the steamid null-fallback
+		// arm yields an empty SteamId rather than throwing.
+		string json = $$"""
+			{
+				"account_name": "solo",
+				"shared_secret": "{{SharedSecret}}",
+				"identity_secret": "{{IdentitySecret}}"
+			}
+			""";
+
+		MaFileInfo info = MaFileParser.Parse(json);
+
+		Assert.Equal("solo", info.AccountName);
+		Assert.Equal(string.Empty, info.SteamId);
+		Assert.False(info.HasSession);
+	}
+
+	[Fact]
 	public void Parse_EncryptedSda_WithoutPassword_Throws()
 	{
 		string json = BuildEncryptedSda("hunter2", RandomNumberGenerator.GetBytes(8), RandomNumberGenerator.GetBytes(16),

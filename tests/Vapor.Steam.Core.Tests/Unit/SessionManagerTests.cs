@@ -278,6 +278,22 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SubscribeAllEvents_WhenCallerCancels_EnumerationEndsWithCancellation()
+	{
+		// The channel has no producer-side completion, so a parked consumer's read
+		// loop only ends when the *caller's* token cancels — ReadAllAsync receives
+		// that token directly, surfacing OperationCanceledException to the enumerator.
+		using var cts = new CancellationTokenSource();
+		var enumerator = _manager.SubscribeAllEvents(cts.Token).GetAsyncEnumerator();
+		var read = enumerator.MoveNextAsync().AsTask();
+		await Task.Delay(50); // let the consumer park inside ReadAllAsync
+
+		cts.Cancel();
+
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read);
+	}
+
+	[Fact]
 	public async Task SubscribeAllEvents_ReceivesEventsFromSessions()
 	{
 		// Arrange

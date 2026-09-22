@@ -34,6 +34,18 @@ public sealed class TradeRateLimiterTests : IDisposable
 	}
 
 	[Fact]
+	public void Dispose_WithoutAnyAcquire_NullReleaseIsSafe()
+	{
+		// Disposing before a concurrency slot was ever acquired: the pending
+		// release callback is still null and must be skipped, not invoked.
+		using var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 5,
+			Window = TimeSpan.FromMinutes(5)
+		});
+	}
+
+	[Fact]
 	public async Task Acquire_WhenConcurrencySlotHeld_ReturnsNullAfterTimeout()
 	{
 		using var limiter = CreateLimiter(new TradeRateLimiterOptions

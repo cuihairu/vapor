@@ -21,6 +21,17 @@ public sealed class HttpCircuitBreakerTests
 	}
 
 	[Fact]
+	public void Constructor_NullOpenDuration_FallsBackToDefaultThirtySeconds()
+	{
+		// The optional openDuration parameter falls back to 30s when omitted;
+		// every other test pins the explicit value.
+		var breaker = new HttpCircuitBreaker(failureThreshold: 3, openDuration: null);
+
+		Assert.Equal(3, breaker.FailureThreshold);
+		Assert.Equal(TimeSpan.FromSeconds(30), breaker.OpenDuration);
+	}
+
+	[Fact]
 	public void ConsecutiveFailures_UpToThreshold_Open()
 	{
 		var breaker = Create(threshold: 3);

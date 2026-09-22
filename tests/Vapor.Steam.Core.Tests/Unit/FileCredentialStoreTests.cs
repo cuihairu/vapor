@@ -561,4 +561,45 @@ public sealed class FileCredentialStoreTests : IDisposable
 
 		Assert.Null(await store.GetProxyAsync("nobody"));
 	}
+
+	[Fact]
+	public void Constructor_NullDataDirectory_FallsBackToUserProfileDefault()
+	{
+		// Constructing without a data directory must resolve the ~/.vapor
+		// default lazily without touching the filesystem (no read happens until
+		// the first operation, so this stays hermetic).
+		using var store = new FileCredentialStore(NullLogger<FileCredentialStore>.Instance, null);
+	}
+
+	[Fact]
+	public async Task GetAccessToken_UnknownAccount_ReturnsNullWithoutLookup()
+	{
+		using var store = CreateStore();
+
+		Assert.Null(await store.GetAccessTokenAsync("nobody"));
+	}
+
+	[Fact]
+	public async Task GetAccessToken_AccountWithoutAccessToken_ReturnsNull()
+	{
+		// The account row exists (a refresh token was saved) but no access token
+		// was ever stored: the AccessToken-null arm must return null.
+		using var store = CreateStore();
+		await store.SaveRefreshTokenAsync("refresh-only", "rt");
+
+		Assert.Null(await store.GetAccessTokenAsync("refresh-only"));
+	}
+
+	[Fact]
+	public async Task Load_NullRootDocument_StartsWithEmptyStore()
+	{
+		// A JSON "null" file takes the legacy-v1 branch where the root map
+		// deserializes to null; the `?? new Dictionary` fallback must produce an
+		// empty (migratable) store rather than throwing.
+		await File.WriteAllTextAsync(StorePath, "null");
+		using var store = CreateStore();
+
+		Assert.Null(await store.GetAccessTokenAsync("anyone"));
+		Assert.Null(await store.GetSharedSecretAsync("anyone"));
+	}
 }

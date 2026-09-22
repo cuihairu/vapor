@@ -120,6 +120,16 @@ public sealed class ProxyOptionsTests
 	}
 
 	[Fact]
+	public void ToString_Ipv6Host_RebracketsForDisplay()
+	{
+		// The host is stored unbracketed; ToString must add the brackets back
+		// whenever it contains a colon, credential-free or not.
+		Assert.Equal("socks5://[::1]:1080", ProxyOptions.Parse("socks5://[::1]").ToString());
+		Assert.Equal("socks5://john:<redacted>@[2001:db8::1]:1080",
+			ProxyOptions.Parse("socks5://john:s3cret@[2001:db8::1]:1080").ToString());
+	}
+
+	[Fact]
 	public void DefaultPorts_FollowSchemeConventions()
 	{
 		Assert.Equal(80, ProxyOptions.DefaultPort(ProxyScheme.Http));

@@ -9,6 +9,9 @@ public sealed class CardSwapMatcherTests
 	// A card identity: same app + class + instance across copies.
 	private const uint CardsApp = 753;
 
+	// Fixed anchor for tradability-date arms (past dates are tradable, future dates locked).
+	private static readonly DateTimeOffset _now = new(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
+
 	private static InventoryItem Card(
 		ulong assetId,
 		ulong classId,
@@ -208,5 +211,44 @@ public sealed class CardSwapMatcherTests
 		// keep=0 turns that copy into excess and the pair materializes.
 		SwapMatch match = Assert.Single(CardSwapMatcher.MatchSwaps(own, partner, keep: 0, maxSwaps: 25));
 		Assert.Equal(1UL, match.Give.AssetId);
+	}
+
+	[Fact]
+	public void FindDuplicates_NameFallback_MarketHashNameToNameToEmpty()
+	{
+		// The group label is Items[0].MarketHashName ?? Items[0].Name ?? "": the
+		// middle arm names the group via Name when MarketHashName is absent, and
+		// the final arm degrades to the empty string when both are absent.
+		DateTimeOffset? noDate = null;
+		var items = new[]
+		{
+			new InventoryItem { AssetId = 1, AppId = CardsApp, ClassId = 100, InstanceId = 150, Tradable = true, TradabilityDate = noDate, Name = "Fallback Name" },
+			new InventoryItem { AssetId = 2, AppId = CardsApp, ClassId = 100, InstanceId = 150, Tradable = true, TradabilityDate = noDate },
+			new InventoryItem { AssetId = 3, AppId = CardsApp, ClassId = 200, InstanceId = 250, Tradable = true, TradabilityDate = noDate },
+			new InventoryItem { AssetId = 4, AppId = CardsApp, ClassId = 200, InstanceId = 250, Tradable = true, TradabilityDate = noDate }
+		};
+
+		var groups = CardSwapMatcher.FindDuplicates(items, keep: 1);
+
+		Assert.Equal(2, groups.Count);
+		Assert.Equal("Fallback Name", groups.Single(g => g.ClassId == 100UL).Name);
+		Assert.Equal(string.Empty, groups.Single(g => g.ClassId == 200UL).Name);
+	}
+
+	[Fact]
+	public void FindDuplicates_PastTradabilityDate_IsTradableNow()
+	{
+		// Tradable with an already-lapsed tradability date counts as tradable now
+		// (the date arm passes), unlike a future date which is trade-locked.
+		var items = new[]
+		{
+			Card(1, 100, "A", tradabilityDate: _now.AddMinutes(-5)),
+			Card(2, 100, "A", tradabilityDate: _now.AddMinutes(-5))
+		};
+
+		DuplicateGroup group = Assert.Single(CardSwapMatcher.FindDuplicates(items, keep: 1));
+
+		Assert.Equal(2, group.TotalTradable);
+		Assert.Single(group.ExcessItems);
 	}
 }
