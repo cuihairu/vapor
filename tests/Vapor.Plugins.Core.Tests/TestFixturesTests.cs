@@ -54,9 +54,24 @@ public class TestFixturesTests
 	[Fact]
 	public async Task EventFixturePlugin_AcceptsSessionEvents()
 	{
-		await new EventFixturePlugin().OnSessionEventAsync(
+		var plugin = new EventFixturePlugin();
+		await plugin.InitializeAsync(EmptyContext(), CancellationToken.None);
+		await plugin.OnSessionEventAsync(
 			new Vapor.Steam.Core.SessionEvent(Vapor.Steam.Core.SessionEventType.Connected, "alice"),
 			CancellationToken.None);
+		await plugin.ShutdownAsync(CancellationToken.None);
+	}
+
+	[Fact]
+	public async Task ThrowingShutdownPlugin_ShutdownAlwaysThrows()
+	{
+		// The manager tests hit this through PluginStaging, whose copies carry no
+		// PDBs; the direct call pins the fixture contract and keeps the throw
+		// arm visible to coverage collection.
+		var plugin = new ThrowingShutdownPlugin();
+		await plugin.InitializeAsync(EmptyContext(), CancellationToken.None);
+		await Assert.ThrowsAsync<InvalidOperationException>(
+			() => plugin.ShutdownAsync(CancellationToken.None));
 	}
 
 	[Fact]

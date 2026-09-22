@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <!-- Declarative coverage-run signal for tests that must adapt to
+           instrumentation (see PluginUnloadTests). Detecting coverlet
+           assemblies via GetAssemblies is unreliable: the collector's
+           DataCollector runs in the separate datacollector process and the
+           testhost-side core module is not guaranteed to be loaded (or
+           observable) when a test checks. -->
+      <VAPOR_COVERAGE_RUN>1</VAPOR_COVERAGE_RUN>
+    </EnvironmentVariables>
+  </RunConfiguration>
   <DataCollectionRunSettings>
     <DataCollectors>
       <DataCollector friendlyName="XPlat code coverage">

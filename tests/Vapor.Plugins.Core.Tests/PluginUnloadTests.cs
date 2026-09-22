@@ -162,7 +162,7 @@ public class PluginUnloadTests : IDisposable
 		// coverage collection is active (--collect "XPlat Code Coverage"). The reclaim
 		// assertion only holds for non-instrumented runs; skip it there — the unload
 		// lifecycle itself is exercised by the other tests in this class either way.
-		if (IsCoverageInstrumented())
+		if (IsCoverageRun())
 		{
 			return;
 		}
@@ -186,7 +186,14 @@ public class PluginUnloadTests : IDisposable
 		Assert.False(tracker.IsAlive, "plugin load context should be collected after unload");
 	}
 
-	private static bool IsCoverageInstrumented() =>
+	// Declared by tests/coverlet.runsettings, which every coverage collection
+	// in this repo goes through. The old probe (AppDomain.GetAssemblies for
+	// coverlet.core/coverlet.collector) silently stopped matching: the XPlat
+	// DataCollector runs in the separate datacollector process and the
+	// testhost-side core module is not guaranteed to be observable when this
+	// test checks, so the skip gate fired only sometimes.
+	private static bool IsCoverageRun() =>
+		Environment.GetEnvironmentVariable("VAPOR_COVERAGE_RUN") == "1" ||
 		AppDomain.CurrentDomain.GetAssemblies().Any(a =>
 			a.GetName().Name is "coverlet.core" or "coverlet.collector");
 

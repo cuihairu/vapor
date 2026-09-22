@@ -101,8 +101,11 @@ jobs:
       run: dotnet build -c Release -p:ContinuousIntegrationBuild=true --nologo
 
     # --blame-hang 同 build-test：coverage 的 job 级上限是 60 分钟，失速燃烧代价更高。
+    # 逐项目串行收集（scripts/collect-coverage-serial.sh）：一次性全量跑法会间歇性
+    # 产出某个项目的空（231 字节）cobertura 报告——并行 testhost 下 collector 刷盘
+    # 竞态——静默丢掉该程序集的全部命中，门禁数字幻跌。串行实测未复发。
     - name: Test with coverage
-      run: dotnet test -c Release -p:ContinuousIntegrationBuild=true --no-build --nologo --collect "XPlat Code Coverage" --settings tests/coverlet.runsettings --blame-hang --blame-hang-timeout 12m -- RunConfiguration.MaxCpuCount=2
+      run: ./scripts/collect-coverage-serial.sh -p:ContinuousIntegrationBuild=true --blame-hang --blame-hang-timeout 12m -- RunConfiguration.MaxCpuCount=2
 
     - name: Upload test results on failure
       if: failure()
@@ -127,7 +130,7 @@ jobs:
     # 门禁 99.9% —— 跌破即真实的测试/代码回退（新增代码出现 >2 行未覆盖
     # 缺口），而非时序噪声。
     - name: Coverage gate
-      run: python3 scripts/coverage-summary.py tests --min 99.9
+      run: python3 scripts/coverage-summary.py TestResults/coverage-serial --min 99.9
 
   format:
     runs-on: ubuntu-latest
