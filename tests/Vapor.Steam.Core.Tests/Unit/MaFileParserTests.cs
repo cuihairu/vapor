@@ -109,7 +109,15 @@ public sealed class MaFileParserTests
 	[Fact]
 	public void Parse_EncryptedSda_WithWrongPassword_Throws()
 	{
-		string json = BuildEncryptedSda("hunter2", RandomNumberGenerator.GetBytes(8), RandomNumberGenerator.GetBytes(16),
+		// A wrong password usually trips PKCS7 padding validation (255/256 of the
+		// keyspace), but the garbage plaintext also validates as well-padded with
+		// probability ~1/256 — the run then surfaces through the JsonException arm
+		// instead and the CryptographicException lines go dark (observed once in a
+		// coverage round). Pick a salt at run time whose garbage plaintext is
+		// provably badly padded, probed with the exact product KDF/cipher shape, so
+		// the decrypt-failure arm stays deterministic.
+		string json = BuildEncryptedSda(
+			"hunter2", SaltWhoseWrongPasswordFailsPadding(), RandomNumberGenerator.GetBytes(16),
 			JsonSerializer.Serialize(new Dictionary<string, object?> { ["shared_secret"] = SharedSecret }),
 			steamId: "76561198000000005", accountName: "erin");
 
@@ -245,18 +253,7 @@ public sealed class MaFileParserTests
 	/// <summary>Builds an SDA-style password-encrypted maFile exactly the way SDA writes it.</summary>
 	private static string BuildEncryptedSda(string password, byte[] salt, byte[] iv, string guardJson, string steamId, string accountName)
 	{
-		byte[] key = Rfc2898DeriveBytes.Pbkdf2(password, salt, 50_000, HashAlgorithmName.SHA1, 32);
-		string cipherBase64;
-		using (var aes = Aes.Create())
-		{
-			aes.Key = key;
-			aes.IV = iv;
-			aes.Mode = CipherMode.CBC;
-			aes.Padding = PaddingMode.PKCS7;
-			using var encryptor = aes.CreateEncryptor();
-			byte[] plain = Encoding.UTF8.GetBytes(guardJson);
-			cipherBase64 = Convert.ToBase64String(encryptor.TransformFinalBlock(plain, 0, plain.Length));
-		}
+		string cipherBase64 = EncryptSdaGuard(password, salt, iv, guardJson);
 
 		return JsonSerializer.Serialize(new Dictionary<string, object?>
 		{
@@ -267,5 +264,54 @@ public sealed class MaFileParserTests
 			["Steamguard"] = cipherBase64,
 			["Session"] = Convert.ToBase64String(Encoding.UTF8.GetBytes("{}"))
 		});
+	}
+
+	/// <summary>Encrypts a Steamguard blob exactly the way MaFileParser decrypts it.</summary>
+	private static string EncryptSdaGuard(string password, byte[] salt, byte[] iv, string guardJson)
+	{
+		byte[] key = Rfc2898DeriveBytes.Pbkdf2(password, salt, 50_000, HashAlgorithmName.SHA1, 32);
+		using var aes = Aes.Create();
+		aes.Key = key;
+		aes.IV = iv;
+		aes.Mode = CipherMode.CBC;
+		aes.Padding = PaddingMode.PKCS7;
+		using var encryptor = aes.CreateEncryptor();
+		byte[] plain = Encoding.UTF8.GetBytes(guardJson);
+		return Convert.ToBase64String(encryptor.TransformFinalBlock(plain, 0, plain.Length));
+	}
+
+	/// <summary>
+	/// Searches for a salt under which decrypting with the wrong password fails
+	/// PKCS7 validation (the CryptographicException arm). Each candidate fails
+	/// with probability 255/256, so the first candidate virtually always
+	/// qualifies; the probe mirrors MaFileParser's derivation exactly.
+	/// </summary>
+	private static byte[] SaltWhoseWrongPasswordFailsPadding()
+	{
+		string guardJson = JsonSerializer.Serialize(new Dictionary<string, object?> { ["shared_secret"] = SharedSecret });
+		byte[] iv = RandomNumberGenerator.GetBytes(16);
+		for (int attempt = 0; attempt < 512; attempt++)
+		{
+			byte[] salt = RandomNumberGenerator.GetBytes(8);
+			string cipher = EncryptSdaGuard("hunter2", salt, iv, guardJson);
+			byte[] wrongKey = Rfc2898DeriveBytes.Pbkdf2("wrong", salt, 50_000, HashAlgorithmName.SHA1, 32);
+			using var aes = Aes.Create();
+			aes.Key = wrongKey;
+			aes.IV = iv;
+			aes.Mode = CipherMode.CBC;
+			aes.Padding = PaddingMode.PKCS7;
+			using var decryptor = aes.CreateDecryptor();
+			try
+			{
+				byte[] cipherBytes = Convert.FromBase64String(cipher);
+				decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
+			}
+			catch (CryptographicException)
+			{
+				return salt;
+			}
+		}
+
+		throw new InvalidOperationException("no salt produced a badly-padded wrong-password decrypt in 512 tries");
 	}
 }

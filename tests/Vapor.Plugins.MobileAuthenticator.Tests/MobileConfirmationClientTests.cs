@@ -293,6 +293,51 @@ public class MobileConfirmationClientTests
 		public override DateTimeOffset GetUtcNow() => _now;
 	}
 
+	[Fact]
+	public async Task GetConfirmationsAsync_FailureWithoutMessage_UsesFallbackText()
+	{
+		// Rejection with no "message" key: the null message falls back to the
+		// generic rejection text.
+		var http = new StubHttpHandler { Response = JsonResponse("""{ "success": false }""") };
+		var client = new MobileConfirmationClient(CreateWebHandler(http, $"{SteamId}%7C%7Ctoken"), CreateSynchronizer());
+
+		var result = await client.GetConfirmationsAsync(IdentitySecret, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Steam rejected the confirmation list request", result.Error);
+	}
+
+	[Fact]
+	public async Task RespondAsync_FailureWithoutMessage_UsesFallbackText()
+	{
+		var http = new StubHttpHandler { Response = JsonResponse("""{ "success": false }""") };
+		var client = new MobileConfirmationClient(CreateWebHandler(http, $"{SteamId}%7C%7Ctoken"), CreateSynchronizer());
+
+		var result = await client.RespondAsync(IdentitySecret, 111UL, 222UL, ConfirmationOperation.Allow, CancellationToken.None);
+
+		Assert.False(result.Success);
+		Assert.Equal("Steam rejected the confirmation operation", result.Error);
+	}
+
+	[Theory]
+	[InlineData("\"type\": \"Market\"", "market")]
+	[InlineData("\"type\": true", null)]
+	public async Task GetConfirmationsAsync_StringOrUnknownTypeShapes_MapToTypeNames(string typeJson, string? expected)
+	{
+		// type arrives as a JSON string (mapped through lowercasing) or an
+		// unexpected kind (mapped to null).
+		var http = new StubHttpHandler
+		{
+			Response = JsonResponse($$"""{ "success": true, "conf": [ { "id": "111", "nonce": "222", "creator_id": "333", "headline": "Trade", "summary": "items", {{typeJson}} } ] }""")
+		};
+		var client = new MobileConfirmationClient(CreateWebHandler(http, $"{SteamId}%7C%7Ctoken"), CreateSynchronizer());
+
+		var result = await client.GetConfirmationsAsync(IdentitySecret, CancellationToken.None);
+
+		Assert.True(result.Success);
+		Assert.Equal(expected, Assert.Single(result.Confirmations!).Type);
+	}
+
 	private sealed class StubHttpHandler : HttpMessageHandler
 	{
 		public HttpResponseMessage Response { get; set; } = JsonResponse("{}");

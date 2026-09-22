@@ -46,6 +46,24 @@ public sealed class PluginEventDispatcherTests
 	}
 
 	[Fact]
+	public async Task Remove_PastNonMatchingSubscriber_WalksTheList()
+	{
+		// A removal must compare against every entry, not just the first: the
+		// walk past a non-matching subscriber still finds and removes the target.
+		await using var dispatcher = new PluginEventDispatcher(NullLoggerFactory.Instance);
+
+		var first = new RecordingEventPlugin();
+		var second = new RecordingEventPlugin();
+		dispatcher.Add(first);
+		dispatcher.Add(second);
+
+		Assert.True(dispatcher.Remove(second));
+		Assert.Equal(1, dispatcher.SubscriberCount);
+		Assert.True(dispatcher.Remove(first));
+		Assert.Equal(0, dispatcher.SubscriberCount);
+	}
+
+	[Fact]
 	public async Task FailingSubscriber_DoesNotAffectOthers()
 	{
 		await using var dispatcher = new PluginEventDispatcher(NullLoggerFactory.Instance);

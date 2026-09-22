@@ -58,16 +58,36 @@ public class SessionManagerTests : IDisposable
 	{
 		// Both callers can miss the TryGetValue fast path and race into TryAdd; the
 		// loser must dispose its own session and return the winner. The race window
-		// is the synchronous stretch between the two dictionary probes, so loop
-		// concurrent attempts (each round recreated after removal) until the slow
-		// path is exercised; every result must still be the same winning session.
+		// is the synchronous stretch between the two dictionary probes (no await to
+		// park inside), so raw threads released from a barrier all enter it together:
+		// by the time the winner's TryAdd lands, the other threads have already
+		// passed the lookup and must lose. Task-pool rounds left this to scheduling
+		// luck (a whole 40-round run once missed the slow path), which a 100% line
+		// gate cannot tolerate.
 		var credentials = new AccountCredentials("race_account", "password");
-		for (int round = 0; round < 40; round++)
+		const int racers = 16;
+		for (int round = 0; round < 5; round++)
 		{
-			var sessions = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ =>
-				_manager.GetOrCreateSessionAsync("race_account", credentials, CancellationToken.None)));
+			var barrier = new Barrier(racers);
+			var results = new BotSession[racers];
+			var threads = Enumerable.Range(0, racers).Select(i => new Thread(() =>
+			{
+				barrier.SignalAndWait();
+				results[i] = _manager.GetOrCreateSessionAsync("race_account", credentials, CancellationToken.None)
+					.GetAwaiter().GetResult();
+			})).ToArray();
 
-			Assert.All(sessions, session => Assert.Same(sessions[0], session));
+			foreach (var thread in threads)
+			{
+				thread.Start();
+			}
+
+			foreach (var thread in threads)
+			{
+				thread.Join();
+			}
+
+			Assert.All(results, session => Assert.Same(results[0], session));
 			await _manager.RemoveSessionAsync("race_account", CancellationToken.None);
 		}
 	}

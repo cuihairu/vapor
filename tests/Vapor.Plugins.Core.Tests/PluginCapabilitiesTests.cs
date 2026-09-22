@@ -102,6 +102,71 @@ public sealed class PluginCapabilitiesTests
 		loadContext.Unload();
 	}
 
+	[Fact]
+	public void PluginLoadContext_UnresolvedManagedAssembly_ReturnsNullToHostFallback()
+	{
+		// An assembly outside the plugin's dependency graph resolves to no path:
+		// the context must yield null so the host fallback takes over.
+		var loadContext = new PluginLoadContext("managed-probe-test", PluginStaging.TestPluginAssemblyPath);
+		var method = typeof(AssemblyLoadContext).GetMethod("Load", BindingFlags.Instance | BindingFlags.NonPublic);
+		Assert.NotNull(method);
+
+		Assert.Null(method!.Invoke(loadContext, [new AssemblyName("vapor_no_such_managed_dependency")]));
+
+		loadContext.Unload();
+	}
+
+	[Fact]
+	public void PluginLoadContext_DependencyListedInDepsJson_LoadsFromPluginDirectory()
+	{
+		// With a deps.json beside the entry assembly the resolver maps a listed
+		// dependency to a real path, so the load context serves the assembly itself
+		// instead of falling back to the host. The staging helper copies only the
+		// DLL, so the dependency graph is authored here — minimal but shaped exactly
+		// like the emitted one (runtimeTarget + targets + libraries).
+		var dir = Path.Combine(Path.GetTempPath(), "vapor-plc-deps-" + Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(dir);
+		try
+		{
+			const string pluginDll = "Vapor.Plugins.TestPlugin.dll";
+			File.Copy(PluginStaging.TestPluginAssemblyPath, Path.Combine(dir, pluginDll), overwrite: true);
+			File.WriteAllText(Path.Combine(dir, "Vapor.Plugins.TestPlugin.deps.json"), """
+				{
+				  "runtimeTarget": { "name": ".NETCoreApp,Version=v10.0", "signature": "" },
+				  "targets": {
+				    ".NETCoreApp,Version=v10.0": {
+				      "Vapor.Plugins.TestPlugin/1.0.0": {
+				        "runtime": { "Vapor.Plugins.TestPlugin.dll": {} }
+				      }
+				    }
+				  },
+				  "libraries": {
+				    "Vapor.Plugins.TestPlugin/1.0.0": { "type": "project", "serviceable": false, "sha512": "" }
+				  }
+				}
+				""");
+
+			var loadContext = new PluginLoadContext(
+				"managed-resolve-test", Path.Combine(dir, pluginDll));
+			var method = typeof(AssemblyLoadContext).GetMethod("Load", BindingFlags.Instance | BindingFlags.NonPublic);
+			Assert.NotNull(method);
+
+			var loaded = (Assembly?)method!.Invoke(loadContext, [new AssemblyName("Vapor.Plugins.TestPlugin")]);
+			Assert.NotNull(loaded);
+			Assert.Equal("Vapor.Plugins.TestPlugin", loaded!.GetName().Name);
+			loadContext.Unload();
+		}
+		finally
+		{
+			// The collectible context may still hold the file mapping; cleanup is
+			// best-effort by design (day-one rule — never fail a green test over a
+			// temp file the OS will reclaim).
+			try { Directory.Delete(dir, recursive: true); }
+			catch (IOException) { }
+			catch (UnauthorizedAccessException) { }
+		}
+	}
+
 	private static PluginDescriptor CreateDescriptor(string pluginId)
 	{
 		var manifest = new PluginManifest
