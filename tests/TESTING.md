@@ -14,9 +14,9 @@ tests/
 │   └── Performance/                      并发与压力
 ├── Vapor.ControlPlane.Tests/             (700 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
-├── Vapor.Plugins.Core.Tests/             (130 tests)
+├── Vapor.Plugins.Core.Tests/             (136 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (129 tests)
-├── Vapor.Agent.Tests/                    (97 tests)
+├── Vapor.Agent.Tests/                    (102 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (56 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (36 tests)
 ├── Vapor.Protocol.Tests/                 (43 tests)
@@ -31,15 +31,15 @@ tests/
 |----------|------|----------|
 | Vapor.Steam.Core.Tests | 1373 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action) |
 | Vapor.ControlPlane.Tests | 700 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
-| Vapor.Plugins.Core.Tests | 130 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 |
+| Vapor.Plugins.Core.Tests | 136 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 129 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
-| Vapor.Agent.Tests | 97 | 重连退避策略、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
+| Vapor.Agent.Tests | 102 | 重连退避策略(含不变量 property:曲线单调/上下界/重试谓词单调/构造器往返/四违约臂)、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
 | Vapor.Plugins.MarketWatch.Tests | 56 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/轮询循环确定性停机/阈值 payload 值形状/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 36 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2603** | (2026-09-21 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2614** | (2026-09-21 基线;另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -123,7 +123,8 @@ tests/
 | VaporCryptoRoundTripPropertyTests | 3 | FsCheck property:AES-GCM 任意明文×任意密钥往返恒等、错钥认证失败(NPE 永不静默回原文)、随机 nonce 密文互异且均可解 |
 | CredentialStoreRotatorTests | 5 | 密钥轮换 |
 | RedactingLoggerProviderTests / SensitiveDataRedactorTests | 17 | 日志脱敏(12+5:嵌套异常/结构化 scope/非泛型枚举臂/计数与索引器/空值归一) |
-| AgentReconnectPolicyTests | 4 | Agent 重连策略 |
+| AgentReconnectPolicyTests | 4 | Agent 重连策略(默认值/退避曲线/重试上限/FromEnvironment 覆写) |
+| AgentReconnectPolicyPropertyTests | 5 | FsCheck property:任意合法配置下退避曲线单调非减、初值下界与 max 上界、重试谓词对失败数单调(unlimited 恒假)、构造器四参往返、单约束违约必抛 ArgumentOutOfRange(totality) |
 
 #### 数据与 Web 客户端
 | 测试类 | 数量 | 说明 |
@@ -205,7 +206,7 @@ tests/
 
 ### Agent(93 个测试)
 
-重连退避策略(25)、任务执行器(15,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、插件 host action(37:IHostAction 执行器 4——跨 agent target 拒绝/无会话执行/异常包装/取消透传;包安装器 18——zip-slip/根 manifest/URL 与校验和预检/校验和不符零痕迹/清单 id-version 核对/替换热重载/下载失败/PluginsRoot 属性/取消透传/64 位非 hex/无根 manifest 全链/坏 manifest JSON/入口 DLL 缺失/显式目录条目/http 下载成功/声明长度超限/默认 HttpClient 工厂失败臂;install action 5——元数据/url-sha256 必填与 sha_256 别名/宿主未初始化/成功全清单输出/失败仍带镜像;uninstall action 7——元数据/pluginId 必填/幂等 removed=false/卸载热卸载/宿主未初始化/缺失目录早退/只读根降级;list action 3——元数据/空清单/带元数据清单)、maFile 离线导入 CLI(9,含幽灵路径点名)、WS URI 构造(4)、追踪注入(1)
+重连退避策略(30,含不变量 property 5——曲线单调非减/初值下界与 max 上界/重试谓词单调且 unlimited 恒假/构造器四参往返/单约束违约必抛 ArgumentOutOfRange;生成器陷阱两处:swap 法造 max<initial 会撞 max==initial 合法域,大 factor 上减 1 可能仍 ≥1——违约臂都必须构造出严格越界的值)、任务执行器(15,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、插件 host action(37:IHostAction 执行器 4——跨 agent target 拒绝/无会话执行/异常包装/取消透传;包安装器 18——zip-slip/根 manifest/URL 与校验和预检/校验和不符零痕迹/清单 id-version 核对/替换热重载/下载失败/PluginsRoot 属性/取消透传/64 位非 hex/无根 manifest 全链/坏 manifest JSON/入口 DLL 缺失/显式目录条目/http 下载成功/声明长度超限/默认 HttpClient 工厂失败臂;install action 5——元数据/url-sha256 必填与 sha_256 别名/宿主未初始化/成功全清单输出/失败仍带镜像;uninstall action 7——元数据/pluginId 必填/幂等 removed=false/卸载热卸载/宿主未初始化/缺失目录早退/只读根降级;list action 3——元数据/空清单/带元数据清单)、maFile 离线导入 CLI(9,含幽灵路径点名)、WS URI 构造(4)、追踪注入(1)
 
 ### E2E(11 个测试)
 
@@ -501,7 +502,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 ## 测试维护
 
 - 定期更新测试以匹配代码变更
-- 保持测试覆盖率稳步提升（当前 99.7%，CI 覆盖率门禁 99.5%，见上方基线表）
+- 保持测试覆盖率稳步提升（当前基线 100.0%，CI 覆盖率门禁 ≥99.9%，见上方基线表；全量收集走 `scripts/collect-coverage-serial.sh`，理由见日志）
 - 新功能必须包含测试
 - 修复 bug 时添加回归测试
 - 定期审查和重构测试代码
