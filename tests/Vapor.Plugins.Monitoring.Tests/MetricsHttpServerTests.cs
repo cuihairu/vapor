@@ -27,6 +27,37 @@ public class MetricsHttpServerTests : IDisposable
 		Assert.Throws<ArgumentException>(() => new MetricsHttpServer("   ", 0, "/metrics", () => "x\n"));
 	}
 
+	[Fact]
+	public void Constructor_NullPayloadProvider_ThrowsWithParamName()
+	{
+		var ex = Assert.Throws<ArgumentNullException>(() => new MetricsHttpServer("127.0.0.1", 0, "/metrics", null!));
+		Assert.Equal("payloadProvider", ex.ParamName);
+	}
+
+	[Fact]
+	public async Task SingleTokenRequestLine_ConnectionClosedWithoutResponse()
+	{
+		// "GET\r\n" — a request line with a method but no URL token: the parser
+		// yields an empty URL, drops the request without a response, and the
+		// endpoint keeps serving subsequent clients.
+		var server = StartServer(() => "x\n");
+
+		using (var client = new TcpClient())
+		{
+			await client.ConnectAsync(IPAddress.Loopback, server.Port);
+			using var stream = client.GetStream();
+			var bytes = "GET\r\n"u8.ToArray();
+			await stream.WriteAsync(bytes);
+			await stream.FlushAsync();
+		}
+
+		await Task.Delay(100);
+
+		using var httpClient = new HttpClient();
+		var response = await httpClient.GetAsync($"http://127.0.0.1:{server.Port}/metrics");
+		Assert.True(response.IsSuccessStatusCode);
+	}
+
 	[Theory]
 	[InlineData(-1)]
 	[InlineData(65536)]

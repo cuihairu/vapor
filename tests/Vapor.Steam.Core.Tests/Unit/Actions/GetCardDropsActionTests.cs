@@ -113,6 +113,26 @@ public sealed class GetCardDropsActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_PositiveCacheTtl_BuildsOverrideWindow()
+	{
+		// A positive cache_ttl_seconds is the arm between disable (0) and the
+		// default: the override window is computed and the fetch succeeds.
+		var (webHandler, fake) = CreateWebHandler();
+		ServePagedBadges(fake);
+		var action = CreateAction(webHandler);
+		var payload = new Dictionary<string, object?>
+		{
+			["steam_id"] = "76561197960265728",
+			["cache_ttl_seconds"] = 90
+		};
+
+		var result = await action.ExecuteAsync(CreateSession(webHandler), payload, CancellationToken.None);
+
+		Assert.True(result.Success, result.Error);
+		Assert.Equal("76561197960265728", result.Output!["steam_id"]);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_WithoutSteamId_ResolvesOwnSteamIdFromCookies()
 	{
 		var (webHandler, fake) = CreateWebHandler();

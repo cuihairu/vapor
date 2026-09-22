@@ -349,6 +349,30 @@ public sealed class GetGameInfoBatchActionTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ExecuteAsync_TtlOverrideArms_NegativeFallsBackPositiveOverrides()
+	{
+		// cache_ttl_seconds = -5 fails the "is > 0" guard (no override, no
+		// disable) so the fetch falls back to the default window; +90 exercises
+		// the override arm — both stale-window branches of the cached path.
+		var client = ClientReturning((730, "CS2"), (570, "Dota 2"));
+		using var cache = new MemoryVaporCache();
+		var action = CreateAction(client, cache);
+
+		var negative = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_ids"] = "730", ["cache_ttl_seconds"] = -5 },
+			CancellationToken.None);
+		var positive = await action.ExecuteAsync(
+			CreateSession(),
+			new Dictionary<string, object?> { ["app_ids"] = "570", ["cache_ttl_seconds"] = 90 },
+			CancellationToken.None);
+
+		Assert.True(negative.Success, negative.Error);
+		Assert.True(positive.Success, positive.Error);
+		Assert.Equal(2, cache.Count);
+	}
+
+	[Fact]
 	public async Task ExecuteAsync_ForceRefresh_BypassesCacheAndRepopulates()
 	{
 		var clientMock = new Mock<ISteamStoreApiClient>(MockBehavior.Strict);

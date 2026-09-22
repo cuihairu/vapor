@@ -111,6 +111,19 @@ public sealed class MarketWatchPluginTests
 	}
 
 	[Fact]
+	public async Task TestHooks_BeforeInitialize_TolerateNullLoop()
+	{
+		// Before InitializeAsync both _loop and _loopCts are null: the hooks must
+		// skip their cancel/await branches instead of throwing. Restart ends up
+		// starting a fresh loop, so the trailing stop drains it again.
+		var client = new FakeStoreClient(new PriceOverview { Currency = "USD", Final = 100m, Initial = 100m });
+		await using var plugin = new MarketWatchPlugin(client, new HttpClient(new StubHttpHandler()));
+
+		await plugin.RestartLoopForTestsAsync(TimeSpan.FromHours(1));
+		await plugin.StopLoopForTestsAsync();
+	}
+
+	[Fact]
 	public async Task PollOnce_BuildsBaselineThenAlertsWithWebhook()
 	{
 		var handler = new StubHttpHandler();

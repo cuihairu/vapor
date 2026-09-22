@@ -116,4 +116,19 @@ public class MetricsRegistryTests
 
 		Assert.Contains("fraction 1.5", text, StringComparison.Ordinal);
 	}
+
+	[Fact]
+	public void RenderPrometheus_NonFiniteValues_UsePrometheusTextFormat()
+	{
+		var registry = new MetricsRegistry();
+		registry.GaugeSet("inf_gauge", "Positive infinity gauge.", double.PositiveInfinity);
+		registry.GaugeSet("neg_inf_gauge", "Negative infinity gauge.", double.NegativeInfinity);
+		registry.GaugeSet("nan_gauge", "Not a number gauge.", double.NaN);
+
+		var text = registry.RenderPrometheus();
+
+		Assert.Contains("inf_gauge +Inf", text, StringComparison.Ordinal);
+		Assert.Contains("neg_inf_gauge -Inf", text, StringComparison.Ordinal);
+		Assert.Contains("nan_gauge NaN", text, StringComparison.Ordinal);
+	}
 }
