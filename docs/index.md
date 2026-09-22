@@ -86,13 +86,13 @@ Vapor reuses the proven ASF concepts — bot sessions, actions, farming — but 
 
 | Section | Contents |
 |---------|----------|
-| **Getting Started** | [Local run](running.md) · [Docker & Compose](docker.md) · [Production deployment](production.md) |
+| **Getting Started** | [Walkthrough](getting-started.md) · [Local run](running.md) · [Docker & Compose](docker.md) · [Production deployment](production.md) |
 | **Design** | [Architecture](architecture.md) · [Session engine](session-engine.md) · [Plugins](plugins.md) · [Feature matrix](feature-matrix.md) · [Performance](performance.md) |
-| **Reference** | [Data dictionary](data-dictionary.md) · [Testing](testing.md) · [Releasing](releasing.md) · [Troubleshooting](troubleshooting.md) |
+| **Reference** | [REST API](api.md) · [Actions catalog](actions.md) · [Data dictionary](data-dictionary.md) · [Testing](testing.md) · [Releasing](releasing.md) · [Troubleshooting](troubleshooting.md) |
 
 ## Status
 
-Vapor is currently **alpha** — breaking changes are expected. Quality gates: 3-OS × dual-configuration CI matrix, 2,263 tests at 99.6% line coverage, strict static analysis (0-warning build), coverage gate and property-based tests. See [releasing](releasing.md) for the versioning policy.
+Vapor is currently **alpha** — breaking changes are expected. Quality gates: 3-OS × dual-configuration CI matrix, 2,614 tests at 100.0% line coverage, strict static analysis (0-warning build), coverage gate and property-based tests. See [releasing](releasing.md) for the versioning policy.
 
 ## License
 

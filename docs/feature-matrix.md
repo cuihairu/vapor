@@ -86,9 +86,9 @@
 
 | 能力 | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
-| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(34 `/v1` 端点 + OpenAPI) |
+| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(50 条 `/v1` 路由 / 58 个操作 + OpenAPI) |
 | Web UI | ✅(ASF-ui) | ✅ | ✅ | ➖ | ✅(只读 dashboard + 全功能管理台 admin + 游戏数据字典页,静态托管,零构建链) |
-| 插件系统 | ✅ | ✅ | ➖ | ➖ | ✅(ALC 隔离 + SemVer + 信任/权限) |
+| 插件系统 | ✅ | ✅ | ➖ | ➖ | ✅(ALC 隔离 + SemVer + 信任/权限 + 运行时 PluginStore:目录源→agent 定向安装/卸载/热加载,ASF 插件需手动放置) |
 | 多节点舰队(CP 集中调度) | ❌(单进程) | ❌ | ❌ | ❌ | ✅(**独有**) |
 | 可观测性(metrics/tracing/审计) | ⚠️ | ➖ | ➖ | ➖ | ✅(Prometheus + OTel + 审计) |
 | 凭证加密存储 | ✅ | ✅ | ✅ | ✅ | ✅(AES + 密钥管理 + shared/identity secret 加密) |
@@ -105,6 +105,7 @@
 > **2026-09-14**:P7-3 挂单创建落地——`create_market_listing` + `POST /v1/accounts/{name}/market/listings` + `MarketFeeCalculator`(Steam 5%+发行商 10% 按卖方所得计费、买/卖两侧换算,契约与官方 economy_v2.js/market_multisell.js 四源互证),send 缺省 dry run 只出定价方案,实撤需账户 `marketListingsEnabled` + agent `AGENT_MARKET_LISTINGS_ENABLED` 双开关;价格仅来自调用方,market 类确认复用既有闭环。P7 市场闭环三期全部完成。见 `todo.md` §12。
 > **2026-09-15**:P8 积分商店认领落地——`get_points_shop_summary` + `claim_points_shop_items` + `GET/POST /v1/accounts/{name}/points-shop/*`(SteamKit2 LoyaltyRewards unified service,语义对齐 ASF RP 命令):免费定义默认认领、付费需 `force=true` 且缺省整批前置拒绝、defid 仅来自调用方显式输入(不做扫描全部可认领的自动化)。矩阵最后一个非后置非定位外缺口收口,§3.6 仅余后置的成就管理。见 `todo.md` §13。
 > **2026-09-18**:成就解锁/管理落地(§33,P1 成就读取 + P2 写入通道 + P3 admin 面板),§3.6 最后一个后置项闭环。写入为显式单发 REST(显式 names 清单,无全量隐式路径;reset 双 confirm),布尔置位划线——成就/stat 数值编辑维持「明确不采用」。见 `todo.md` §33。
+> **2026-09-22**:矩阵回填两处滞后——①§3.7 插件系统行补运行时 PluginStore(§37:目录源→agent 定向安装/卸载/热加载 + admin 面板,ASF 插件需手动放置);②REST API 行 34→50 条 `/v1` 路由(58 个操作;§31 admin 写端点 + §33 成就 + §35/§36 编排 + §37 插件生态五端点累计)。见 `todo.md` §37。
 
 ### P6-1 卡牌 farming 闭环(GA 出口条件,平台杠杆最大)✅ 全部完成
 

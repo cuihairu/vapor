@@ -164,6 +164,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`int.MaxValue / 15`, ~$1.43M) where the int fee multiplies previously
   overflowed unchecked and could wrap the buyer price negative.
 
+### Documentation
+
+- New docs: a zero-to-farming walkthrough (`docs/getting-started.md`),
+  a REST API reference covering all 50 `/v1` endpoints
+  (`docs/api.md`) and an actions catalog with payload/output fields for
+  every job action (`docs/actions.md`).
+- README rewritten as a proper front page: capability highlights,
+  architecture diagram, quick start, complete documentation index.
+- Feature matrix backfilled (runtime PluginStore, endpoint count 34→50);
+  docs index quality numbers refreshed (2,614 tests at 100.0%); mkdocs
+  nav includes the new pages.
+
 ## [0.1.0-alpha.2] - 2026-09-17
 
 ### Changed
