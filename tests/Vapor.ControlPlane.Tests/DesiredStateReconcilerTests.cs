@@ -2093,6 +2093,25 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			NullLogger<DesiredStateReconciler>.Instance);
 	}
 
+	[Fact]
+	public async Task ReconcileLoop_ExitsThroughExhaustedTimer_AfterDispose()
+	{
+		// The loop's third exit — WaitForNextTickAsync returning false — had no
+		// trigger on the service's private timer (no Dispose channel, see
+		// TESTING.md round 12). Inverted out, it is deterministic with a real
+		// owned timer: let one live tick fire, then dispose mid-loop. BCL
+		// contract: in-flight and future waits return false after Dispose.
+		var reconciler = CreateReconciler(NewAccounts(), NewRegistry(), new FakeReconcileJobStore(), intervalSeconds: 15);
+		using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(5));
+		using var cts = new CancellationTokenSource();
+
+		Task loop = reconciler.RunReconcileLoopAsync(timer, cts.Token);
+		await Task.Delay(30); // at least one live tick drives ReconcileOnce through the try arm
+		timer.Dispose();
+
+		await loop; // returns (not hangs, not faults) — the exhausted-timer arm ran
+	}
+
 	// ── §38 P2 standing check loop ──
 
 	private static Dictionary<string, object?> StandingOutput(string summary, string economy = "none") => new()

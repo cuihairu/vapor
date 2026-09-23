@@ -134,6 +134,15 @@ public sealed class DesiredStateReconciler : BackgroundService
 		}
 
 		using PeriodicTimer timer = new(TimeSpan.FromSeconds(_cfg.ReconcileIntervalSeconds));
+		// The loop body is inverted out (internal for tests) so the exhausted-timer
+		// exit arm — WaitForNextTickAsync returning false after Dispose, a BCL
+		// contract — is deterministically reachable with a real timer; on the
+		// service's private one it had no Dispose channel and was a dead probe.
+		await RunReconcileLoopAsync(timer, stoppingToken).ConfigureAwait(false); // timer disposal stays here — ownership and timing unchanged
+	}
+
+	internal async Task RunReconcileLoopAsync(PeriodicTimer timer, CancellationToken stoppingToken)
+	{
 		while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
 		{
 			try
