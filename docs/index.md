@@ -92,7 +92,7 @@ Vapor reuses the proven ASF concepts — bot sessions, actions, farming — but 
 
 ## Status
 
-Vapor is currently **alpha** — breaking changes are expected. Quality gates: 3-OS × dual-configuration CI matrix, 2,614 tests at 100.0% line coverage, strict static analysis (0-warning build), coverage gate and property-based tests. See [releasing](releasing.md) for the versioning policy.
+Vapor is currently **alpha** — breaking changes are expected. Quality gates: 3-OS × dual-configuration CI matrix, 2,879 tests at 100.0% line and branch coverage, strict static analysis (0-warning build), coverage gate and property-based tests. See [releasing](releasing.md) for the versioning policy.
 
 ## License
 
