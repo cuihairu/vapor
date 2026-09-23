@@ -110,16 +110,16 @@ jobs:
     # 覆盖率门禁：合计行/分支覆盖率跌破基线即红。基线与 tests/TESTING.md 的
     # 统计同步演进（2026-09-23 起行分母无残余缺口，合计基线精确 100.0%）。
     # 行门禁 100% —— 任何一行未覆盖（新增代码未带测试）即红。
-    # 分支门禁 99.98：基线 6134/6135，门禁取两位小数 99.98——
-    # 当前 99.9837 过、丢最后一个条件（Reconciler:137，已定性结构性死位）99.9674 即红
-    # （棘轮，2026-09-23 分支缺口冲刺第十二轮后设点）。
+    # 分支门禁 100：基线 6135/6135 精确满覆盖——任何分支位未覆盖（新增代码
+    # 未带测试或回归吞测）即红（棘轮，2026-09-23 分支缺口冲刺第十三轮后设点，
+    # 全解决方案分支探测位清零）。
     # Gate BEFORE the failure-upload: if it ran after "Upload test results",
     # a gate failure would skip the later steps entirely. Placed here, a gate
     # failure marks the job failed and the upload's `if: failure()` fires,
     # so the cobertura files land in the artifact and the missing-line
     # forensics are actually retrievable (2026-09-23 flake had no artifacts).
     - name: Coverage gate
-      run: python3 scripts/coverage-summary.py TestResults/coverage-serial --min 100 --min-branch 99.98
+      run: python3 scripts/coverage-summary.py TestResults/coverage-serial --min 100 --min-branch 100
 
     - name: Upload test results on failure
       if: failure()
