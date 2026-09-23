@@ -37,19 +37,26 @@ internal sealed class SteamAuthTokenProvider : ISteamAuthTokenProvider
 
 	public SteamAuthTokenProvider(SteamClient steamClient)
 	{
-		var ctor = typeof(SteamAuthentication).GetConstructor(
+		_authentication = ResolveAuthenticationCtor(typeof(SteamAuthentication)).Invoke([steamClient]);
+		_generateAccessTokenMethod = ResolveGenerateAccessTokenMethod(typeof(SteamAuthentication));
+	}
+
+	// Reflection resolution against SteamKit2's package shape, extracted as a
+	// Type-parameterized seam so the version-drift fail-fast arms are
+	// deterministically testable (call with any type lacking the member).
+	internal static ConstructorInfo ResolveAuthenticationCtor(Type type) =>
+		type.GetConstructor(
 			BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
 			binder: null,
 			types: [typeof(SteamClient)],
 			modifiers: null)
-			?? throw new InvalidOperationException("SteamAuthentication constructor was not found.");
+		?? throw new InvalidOperationException("SteamAuthentication constructor was not found.");
 
-		_authentication = ctor.Invoke([steamClient]);
-		_generateAccessTokenMethod = typeof(SteamAuthentication).GetMethod(
+	internal static MethodInfo ResolveGenerateAccessTokenMethod(Type type) =>
+		type.GetMethod(
 			name: nameof(GenerateAccessTokenForAppAsync),
 			bindingAttr: BindingFlags.Instance | BindingFlags.Public)
-			?? throw new InvalidOperationException("GenerateAccessTokenForAppAsync method was not found.");
-	}
+		?? throw new InvalidOperationException("GenerateAccessTokenForAppAsync method was not found.");
 
 	/// <summary>
 	/// The underlying SteamKit2 authentication service (created via its internal

@@ -65,6 +65,28 @@ public class SteamClientManagerTests : IDisposable
 	}
 
 	[Fact]
+	public void SteamAuthTokenProvider_ResolveAuthenticationCtor_MissingMember_ThrowsWithClearMessage()
+	{
+		// The version-drift fail-fast arm: a type without a SteamClient-taking
+		// constructor cannot satisfy the lookup, and the provider must die with
+		// a clear message instead of an opaque NRE.
+		var ex = Assert.Throws<InvalidOperationException>(
+			() => SteamAuthTokenProvider.ResolveAuthenticationCtor(typeof(string)));
+
+		Assert.Equal("SteamAuthentication constructor was not found.", ex.Message);
+	}
+
+	[Fact]
+	public void SteamAuthTokenProvider_ResolveGenerateAccessTokenMethod_MissingMember_ThrowsWithClearMessage()
+	{
+		// Same drift arm for the method lookup.
+		var ex = Assert.Throws<InvalidOperationException>(
+			() => SteamAuthTokenProvider.ResolveGenerateAccessTokenMethod(typeof(string)));
+
+		Assert.Equal("GenerateAccessTokenForAppAsync method was not found.", ex.Message);
+	}
+
+	[Fact]
 	public async Task GetLogOnDetailsAsync_WithNonExistentAccount_ReturnsNull()
 	{
 		// Act

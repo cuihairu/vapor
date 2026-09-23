@@ -230,7 +230,8 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		else
 		{
 			session.Dispose();
-			return _sessions.TryGetValue(accountName, out var existingSession) ? existingSession : null;
+			_sessions.TryGetValue(accountName, out var existingSession); // TryAdd-false is the dictionary's atomic promise the key existed; a concurrent Remove that sneaks in yields default — the same null the caller saw before
+			return existingSession!;
 		}
 
 		return session;
