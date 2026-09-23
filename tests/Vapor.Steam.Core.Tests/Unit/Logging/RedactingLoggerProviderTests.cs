@@ -75,6 +75,44 @@ public sealed class RedactingLoggerProviderTests
 		}
 	}
 
+	/// <summary>
+	/// A sink that invokes the formatter with a <c>null</c> state: the redacting
+	/// formatter escapes to any inner provider typed as
+	/// <c>Func&lt;object?, Exception?, string&gt;</c>, and the provider contract
+	/// does not forbid a sink from passing null — the defensive <c>??</c> arm in
+	/// <c>RedactingFormatter</c> exists precisely for such callers.
+	/// </summary>
+	private sealed class NullStateSinkProvider : ILoggerProvider
+	{
+		public string? FormatterResultForNullState { get; private set; }
+
+		public ILogger CreateLogger(string categoryName)
+		{
+			return new NullStateSinkLogger(this);
+		}
+
+		public void Dispose()
+		{
+		}
+
+		private sealed class NullStateSinkLogger(NullStateSinkProvider owner) : ILogger
+		{
+			public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+			public bool IsEnabled(LogLevel logLevel) => true;
+
+			void ILogger.Log<TState>(
+				LogLevel logLevel,
+				EventId eventId,
+				TState state,
+				Exception? exception,
+				Func<TState, Exception?, string> formatter)
+			{
+				owner.FormatterResultForNullState = formatter(default!, exception);
+			}
+		}
+	}
+
 	private static ILogger CreateLogger(CapturingProvider capturing)
 	{
 		var provider = new RedactingLoggerProvider(capturing);
@@ -109,6 +147,21 @@ public sealed class RedactingLoggerProviderTests
 		Assert.DoesNotContain("hunter2", entry.Message, StringComparison.Ordinal);
 		Assert.DoesNotContain("rt-xyz", entry.Message, StringComparison.Ordinal);
 		Assert.Contains("login", entry.Message, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void Log_WhenSinkInvokesFormatterWithNullState_FallsBackToEmptyString()
+	{
+		var sink = new NullStateSinkProvider();
+		var provider = new RedactingLoggerProvider(sink);
+		var logger = provider.CreateLogger("Test");
+
+		// The plain-string overload routes through the non-structured inner.Log
+		// call, handing the redacting formatter to the sink; the sink then invokes
+		// it with a null state, which must degrade to string.Empty — never NRE.
+		logger.Log(LogLevel.Information, default, "stateless", null, static (state, _) => state);
+
+		Assert.Equal(string.Empty, sink.FormatterResultForNullState);
 	}
 
 	[Fact]

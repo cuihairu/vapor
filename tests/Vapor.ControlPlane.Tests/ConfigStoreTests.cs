@@ -1,3 +1,4 @@
+using System.Reflection;
 using Vapor.ControlPlane;
 using Vapor.Protocol;
 using Xunit;
@@ -54,6 +55,26 @@ public sealed class ConfigStoreTests
 		Assert.False(updated.Enabled);
 		Assert.Equal("us-east", updated.Region);
 		Assert.Equal("bob", updated.Version.UpdatedBy);
+		Assert.Single(store.ListAccounts());
+	}
+
+	[Fact]
+	public void SetAccount_ExistingConfigWithoutVersion_RestartsVersionAtOne()
+	{
+		// Defensive-arm contract: SetAccount is the only writer and always stamps
+		// a Version, so the `existing?.Version?.Version ?? 0` fallback is only
+		// reachable for a record that entered the dictionary without one —
+		// inject it directly so the guard behavior stays pinned.
+		var store = new ConfigStore();
+		Dictionary<string, AccountConfig> accounts = (Dictionary<string, AccountConfig>)typeof(ConfigStore)
+			.GetField("_accounts", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(store)!;
+		accounts["legacy"] = new AccountConfig("legacy", Enabled: true, Version: null);
+
+		AccountConfig updated = store.SetAccount("legacy", enabled: false, region: null, labels: null, settings: null, updatedBy: "op");
+
+		Assert.Equal(1, updated.Version!.Version);
+		Assert.False(updated.Enabled);
 		Assert.Single(store.ListAccounts());
 	}
 }

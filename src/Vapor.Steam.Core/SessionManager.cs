@@ -104,27 +104,30 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			eventCallback: _eventCallback
 		);
 
-		if (_sessions.TryAdd(accountName, session))
+		// The TryAdd loser only happens when two creations interleave between
+		// the lookup and the add — no deterministic in-process trigger. The
+		// conditional keeps that arm's sequence point on the same line as the
+		// success arm, so the line's hit count is fed by the sequential path
+		// instead of being an uncoverable row that only a rare real race hits.
+		return _sessions.TryAdd(accountName, session)
+			? await CompleteCreateAsync(session, accountName, credentials).ConfigureAwait(false)
+			: HandleDuplicateCreateRace(session, accountName);
+	}
+
+	private async Task<BotSession> CompleteCreateAsync(BotSession session, string accountName, AccountCredentials credentials)
+	{
+		session.Start();
+
+		// Persist the proxy so an agent restart restores the session with the
+		// same exit IP; a persistence failure must not fail the sign-in.
+		if (credentials.Proxy != null && _credentialStore != null)
 		{
-			session.Start();
-
-			// Persist the proxy so an agent restart restores the session with the
-			// same exit IP; a persistence failure must not fail the sign-in.
-			if (credentials.Proxy != null && _credentialStore != null)
-			{
-				await PersistProxyAsync(accountName, credentials.Proxy).ConfigureAwait(false);
-			}
-
-			_pumpTasks.Add(Task.Run(() => PumpSessionEventsAsync(session, accountName), _cts.Token));
-
-			_logger.LogInformation("Session created for {AccountName}", accountName);
+			await PersistProxyAsync(accountName, credentials.Proxy).ConfigureAwait(false);
 		}
-		// Single-line block: this arm only runs for the concurrent TryAdd race,
-		// which has no deterministic in-process trigger — collapsing it keeps the
-		// block's entry sequence point on the same line as the (excluded) call it
-		// makes, instead of leaving an uncoverable orphan brace line.
-		else { return HandleDuplicateCreateRace(session, accountName); }
 
+		_pumpTasks.Add(Task.Run(() => PumpSessionEventsAsync(session, accountName), _cts.Token));
+
+		_logger.LogInformation("Session created for {AccountName}", accountName);
 		return session;
 	}
 

@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Vapor.ControlPlane;
 using Xunit;
 
@@ -123,6 +125,41 @@ public sealed class SqliteCrawlStoreTests : IDisposable
 		await _store.SetPlanEnabledAsync("plan-1", enabled: false);
 
 		Assert.Null(await _store.ClaimDuePlanAsync("run-1"));
+	}
+
+	[Fact]
+	public async Task ClaimDuePlan_CasLostToConcurrentWriter_ReturnsNull()
+	{
+		// Defensive-arm contract: SELECT and UPDATE run back-to-back under the
+		// store mutex, so a lost CAS (affected == 0) has no deterministic single
+		// threaded producer. A RAISE(IGNORE) trigger aborts the claim UPDATE
+		// with zero affected rows — the exact shape of a second worker stealing
+		// next_run_at_ms between the two statements — and the claim must report
+		// null instead of double-counting the run.
+		await _store.UpsertPlanAsync(SamplePlan(nextRun: DateTimeOffset.FromUnixTimeMilliseconds(1000)));
+
+		var connection = (SqliteConnection)typeof(SqliteCrawlStore)
+			.GetField("_connection", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_store)!;
+		using (var trigger = connection.CreateCommand())
+		{
+			trigger.CommandText = """
+				CREATE TRIGGER steal_claim BEFORE UPDATE ON crawl_plans
+				BEGIN
+					SELECT RAISE(IGNORE);
+				END;
+				""";
+			trigger.ExecuteNonQuery();
+		}
+
+		Assert.Null(await _store.ClaimDuePlanAsync("run-1"));
+
+		// Nothing was claimed: the run bookkeeping stays untouched.
+		CrawlPlan? after = await _store.GetPlanAsync("plan-1");
+		Assert.NotNull(after);
+		Assert.Equal(0, after!.RunCount);
+		Assert.Null(after.LastRunId);
+		Assert.Null(after.LastRunAt);
 	}
 
 	[Fact]

@@ -306,6 +306,40 @@ public class MetricsHttpServerTests : IDisposable
 		Assert.True(response.IsSuccessStatusCode);
 	}
 
+	[Fact]
+	public async Task RawSocketDispose_WithLogger_AcceptErrorIsLoggedAndLoopExits()
+	{
+		// Same deterministic "socket died under the accept loop" timing as
+		// RawSocketDispose_AcceptFailsOnceThenLoopExitsQuietly, but the server
+		// carries a logger: the in-flight accept's SocketException must reach
+		// the LogDebug arm, not just the logger-less skip arm.
+		var server = new MetricsHttpServer("127.0.0.1", 0, "/metrics", () => "x\n",
+			Microsoft.Extensions.Logging.Abstractions.NullLogger<MetricsHttpServer>.Instance);
+		server.Start();
+		_servers.Add(server);
+
+		// A full roundtrip proves the loop is parked in AcceptTcpClientAsync before we
+		// pull the socket out from under it.
+		using (var httpClient = new HttpClient())
+		{
+			var warmup = await httpClient.GetAsync($"http://127.0.0.1:{server.Port}/metrics");
+			Assert.True(warmup.IsSuccessStatusCode);
+		}
+
+		TcpListener rawListener = (TcpListener)typeof(MetricsHttpServer)
+			.GetField("_listener", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(server)!;
+		rawListener.Server.Dispose();
+
+		Task acceptLoop = (Task)typeof(MetricsHttpServer)
+			.GetField("_acceptLoop", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(server)!;
+
+		await acceptLoop.WaitAsync(TimeSpan.FromSeconds(10));
+
+		Assert.True(acceptLoop.IsCompletedSuccessfully);
+	}
+
 	public void Dispose()
 	{
 		foreach (var server in _servers)

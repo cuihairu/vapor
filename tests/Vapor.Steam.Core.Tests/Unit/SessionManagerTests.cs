@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Reflection;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -815,6 +817,43 @@ public class SessionManagerTests : IDisposable
 
 		await collectTask.WaitAsync(TimeSpan.FromSeconds(10));
 		Assert.NotEmpty(eventList);
+	}
+
+	[Fact]
+	public async Task PumpSessionEvents_EventWithoutNewState_ForwardsEmptyStateToCallback()
+	{
+		// The pump line formats evt.NewState?.ToString() ?? "". An event that
+		// omits NewState is a legal producer shape (the record defaults it to
+		// null), so the callback must receive the empty string rather than throw.
+		// The pump path uses evt.Type.ToString() ("Error"), distinct from the
+		// session's own snake_case callback path, so this invocation is isolated.
+		var seen = new ConcurrentQueue<(string Account, string EventType, string State)>();
+		_manager.SetEventCallback((account, eventType, state, _) =>
+		{
+			seen.Enqueue((account, eventType, state));
+			return Task.CompletedTask;
+		});
+
+		var session = await _manager.GetOrCreateSessionAsync(
+			"ns_account", new AccountCredentials("ns_account", "password"), CancellationToken.None);
+
+		// Emit the stateless event through the session channel the pump reads —
+		// same reflection seam the command-channel tests use.
+		var channel = (Channel<SessionEvent>)typeof(BotSession)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(session)!;
+		channel.Writer.TryWrite(new SessionEvent(SessionEventType.Error, "ns_account"));
+
+		var deadline = DateTime.UtcNow.AddSeconds(10);
+		while (DateTime.UtcNow < deadline && seen.IsEmpty)
+		{
+			await Task.Delay(25);
+		}
+
+		var evt = Assert.Single(seen);
+		Assert.Equal("ns_account", evt.Account);
+		Assert.Equal("Error", evt.EventType);
+		Assert.Equal(string.Empty, evt.State);
 	}
 
 	// --- TryRestoreSessionAsync edge paths ---

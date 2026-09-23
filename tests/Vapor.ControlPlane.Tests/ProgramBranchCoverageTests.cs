@@ -499,6 +499,49 @@ public sealed class ProgramBranchCoverageTests
 	}
 
 	[Fact]
+	public void GetAuthorization_QueryKeyWithEmptyValueCollection_YieldsEmpty()
+	{
+		// Defensive-arm contract: an ASP.NET query collection never yields a key
+		// with an empty value bundle, so the `token.Count > 0` guard on the
+		// ?authorization= fallback has no natural false side. Drive it directly
+		// with that impossible shape so the guard stays pinned (see
+		// tests/TESTING.md).
+		System.Reflection.BindingFlags probe =
+			System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+		Type statementsProgram = typeof(Program).Assembly.GetType("Program", throwOnError: false) ?? typeof(Program);
+		System.Reflection.MethodInfo getAuthorization = statementsProgram.GetMethods(probe)
+			.First(m => m.Name.Contains("GetAuthorization", StringComparison.Ordinal) && m.GetParameters().Length == 1);
+
+		var ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+		ctx.Request.Query = new EmptyValueQueryCollection();
+
+		Microsoft.Extensions.Primitives.StringValues result =
+			(Microsoft.Extensions.Primitives.StringValues)getAuthorization.Invoke(null, [ctx])!;
+
+		Assert.True(result == Microsoft.Extensions.Primitives.StringValues.Empty);
+	}
+
+	/// <summary>A query collection whose only key maps to no values at all — the
+	/// shape the <c>token.Count &gt; 0</c> guard in <c>GetAuthorization</c> exists for.</summary>
+	private sealed class EmptyValueQueryCollection : Microsoft.AspNetCore.Http.IQueryCollection
+	{
+		public Microsoft.Extensions.Primitives.StringValues this[string key] => default;
+		public ICollection<string> Keys { get; } = new[] { "authorization" };
+		public int Count => 0;
+		public bool ContainsKey(string key) => string.Equals(key, "authorization", StringComparison.Ordinal);
+		public bool TryGetValue(string key, out Microsoft.Extensions.Primitives.StringValues value)
+		{
+			value = default;
+			return string.Equals(key, "authorization", StringComparison.Ordinal);
+		}
+		public IEnumerator<KeyValuePair<string, Microsoft.Extensions.Primitives.StringValues>> GetEnumerator()
+		{
+			yield return new("authorization", default(Microsoft.Extensions.Primitives.StringValues));
+		}
+		System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+	}
+
+	[Fact]
 	public async Task Duplicates_ValidationBranches()
 	{
 		await using BranchFactory factory = new();

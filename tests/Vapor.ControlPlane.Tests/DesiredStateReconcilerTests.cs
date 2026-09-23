@@ -3203,6 +3203,65 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.Null(runtimeType.GetField("TradeOffersToAccept")!.GetValue(runtime));
 	}
 
+	// ── defensive-arm contracts: ActiveJobId/ActiveJobAction are always written
+	// as a pair by every dispatch site, and FarmStatsStartedAt is only stamped
+	// once the clock window is positive — so the settle fallback and the
+	// negative-elapsed guard below cannot be reached through the reconcile
+	// flow. They are driven directly (a runtime whose action half of the pair is
+	// missing, and a stats clock stamped in the future) so the guards stay
+	// pinned if those invariants ever change (see tests/TESTING.md). ──
+
+	[Fact]
+	public async Task SettleJob_MissingActionHalfOfPair_FallsBackToLoginAccounting()
+	{
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(new AccountStore(), agents, jobs);
+		var spec = new AccountSpec("alice", true, AccountDesiredState.Online, Region: "us-east");
+
+		// "login" is none of the special settle actions, so the fallback lands in
+		// the login outcome branch: a Failed task must hit the failure budget.
+		JobWithTasks created = await jobs.CreateJob(
+			new CreateJobRequest("login", "us-east", ["alice"], null, null), CancellationToken.None);
+		foreach (JobTask task in created.Tasks)
+		{
+			jobs.Outcomes[task.Id] = (JobTaskStatus.Failed, "boom");
+		}
+
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		object runtime = Activator.CreateInstance(runtimeType, nonPublic: true)!;
+		runtimeType.GetField("ActiveJobId")!.SetValue(runtime, created.Job.Id);
+		// ActiveJobAction stays null — the `?? LoginAction` fallback must supply it.
+
+		InvokeInstance(reconciler, "SettleActiveJobAsync", spec, runtime,
+			new Dictionary<string, ConnectedAgent>(), new Dictionary<string, int>(), CancellationToken.None);
+
+		Assert.Equal(1, runtimeType.GetField("LoginAttempts")!.GetValue(runtime));
+		Assert.Null(runtimeType.GetField("ActiveJobId")!.GetValue(runtime));
+		Assert.Null(runtimeType.GetField("ActiveJobAction")!.GetValue(runtime));
+		Assert.Contains("job login failed", (string?)runtimeType.GetField("LastDeviation")!.GetValue(runtime));
+	}
+
+	[Fact]
+	public void CardsPerHour_StatsClockInFuture_ReportsNoRate()
+	{
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		object runtime = Activator.CreateInstance(runtimeType, nonPublic: true)!;
+		System.Reflection.MethodInfo cardsPerHour = typeof(DesiredStateReconciler).GetMethod(
+			"CardsPerHour", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+		runtimeType.GetField("FarmStatsStartedAt")!.SetValue(runtime, DateTimeOffset.UtcNow.AddMinutes(-30));
+		runtimeType.GetField("FarmCardsCollected")!.SetValue(runtime, 60);
+		double? positive = (double?)cardsPerHour.Invoke(null, [runtime]);
+		Assert.NotNull(positive);
+		Assert.Equal(120.0, positive);
+
+		// A stats clock stamped in the future (clock skew) yields a negative
+		// window: the guard must report no rate instead of a bogus one.
+		runtimeType.GetField("FarmStatsStartedAt")!.SetValue(runtime, DateTimeOffset.UtcNow.AddHours(2));
+		Assert.Null((double?)cardsPerHour.Invoke(null, [runtime]));
+	}
+
 	[Fact]
 	public async Task BoostTargetsMet_WhileNotIdling_DispatchesNothing()
 	{

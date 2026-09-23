@@ -500,6 +500,23 @@ public class MonitoringPluginTests
 		}
 	}
 
+	[Fact]
+	public void StartSessionPump_BeforeInitialize_LoggerlessGuardSkipsQuietly()
+	{
+		// Defensive-arm contract: InitializeAsync is the only StartSessionPump
+		// caller and always assigns _logger first, so the `_logger?.` null skip
+		// has no natural producer. A plugin that has never been initialized has
+		// both _logger and _sessionManager null — the guard must skip quietly
+		// and must not spawn a pump task.
+		var plugin = new MonitoringPlugin();
+
+		typeof(MonitoringPlugin).GetMethod("StartSessionPump", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+			.Invoke(plugin, []);
+
+		Assert.Null(typeof(MonitoringPlugin).GetField("_sessionPump", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(plugin));
+		Assert.Null(typeof(MonitoringPlugin).GetField("_sessionPumpCts", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(plugin));
+	}
+
 	/// <summary>
 	/// ThrowingListSessionManager whose first event is held back until Open() — lets a
 	/// test suppress the plugin logger before the (failing) first gauge sample runs.

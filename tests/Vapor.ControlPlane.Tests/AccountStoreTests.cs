@@ -1,3 +1,4 @@
+using System.Reflection;
 using Vapor.Protocol;
 using Xunit;
 
@@ -457,5 +458,43 @@ public sealed class AccountStoreTests
 		store.Upsert("bob", enabled: true, AccountDesiredState.Offline, null, null, null, null);
 
 		Assert.Equal(new[] { "alice", "bob", "carol" }, store.List().Select(a => a.AccountName));
+	}
+
+	// ── defensive-arm contracts: every store write goes through Build (which
+	// always stamps Version), so the `existing.Version?.Version ?? 0` fallback
+	// arms can only be reached by records that entered the dictionary without
+	// one. A restored/legacy spec lacking its version is exactly the shape the
+	// guard exists for — inject it directly so the behavior stays pinned (see
+	// tests/TESTING.md). ──
+
+	private static Dictionary<string, AccountSpec> AccountsField(AccountStore store) =>
+		(Dictionary<string, AccountSpec>)typeof(AccountStore)
+			.GetField("_accounts", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(store)!;
+
+	[Fact]
+	public void Upsert_ExistingSpecWithoutVersion_RestartsVersionAtOne()
+	{
+		var store = new AccountStore();
+		AccountsField(store)["legacy"] = new AccountSpec("legacy", true, AccountDesiredState.Idle, Version: null);
+
+		AccountSpec updated = store.Upsert("legacy", enabled: true, AccountDesiredState.Online, null, null, null, null);
+
+		Assert.Equal(1, updated.Version!.Version);
+		Assert.Equal(AccountDesiredState.Online, updated.DesiredState);
+		Assert.Single(store.List());
+	}
+
+	[Fact]
+	public void SetEnabled_ExistingSpecWithoutVersion_RestartsVersionAtOne()
+	{
+		var store = new AccountStore();
+		AccountsField(store)["legacy"] = new AccountSpec("legacy", true, AccountDesiredState.Idle, Version: null);
+
+		AccountSpec? updated = store.SetEnabled("legacy", enabled: false);
+
+		Assert.NotNull(updated);
+		Assert.Equal(1, updated!.Version!.Version);
+		Assert.False(updated.Enabled);
 	}
 }

@@ -185,6 +185,26 @@ public sealed class CheckProxyActionTests : IDisposable
 			() => action.ExecuteAsync(session, new Dictionary<string, object?>(), cts.Token));
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_WithoutProbeOverride_LiveProbeReportsCancellationAsProbeFailure()
+	{
+		// No ProbeOverride: the ?? right arm binds the live ProbeAsync method group.
+		// The pre-cancelled token makes the probe's first GetAsync throw before any
+		// network I/O is attempted; ProbeAsync's internal catch folds that into a
+		// failed probe result, so the action completes with success=false.
+		var action = new CheckProxyAction(NullLogger<CheckProxyAction>.Instance);
+		var session = CreateSession(proxy: "socks5://gw.example.com:1080");
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		var result = await action.ExecuteAsync(session, new Dictionary<string, object?>(), cts.Token);
+
+		Assert.False(result.Success);
+		Assert.NotNull(result.Output);
+		Assert.Equal(false, result.Output["steamReachable"]);
+		Assert.Contains("exit-ip probe failed", (string?)result.Output["error"]);
+	}
+
 	private BotSession CreateSession(string? proxy)
 	{
 		var session = new BotSession(
