@@ -97,9 +97,7 @@ public sealed class SteamAccountStandingClient
 			NumberOfGameBans: player.TryGetProperty("NumberOfGameBans", out var nGame) && nGame.TryGetInt32(out int nGameBans) ? nGameBans : 0,
 			DaysSinceLastBan: player.TryGetProperty("DaysSinceLastBan", out var days) && days.TryGetInt32(out int d) ? d : 0,
 			CommunityBanned: player.TryGetProperty("CommunityBanned", out var comm) && comm.ValueKind == JsonValueKind.True,
-			// GetString() is contractually non-null for a String token (STJ), so no
-			// coalesce: the ?? arm would be an unreachable probe.
-			EconomyBan: player.TryGetProperty("EconomyBan", out var econ) && econ.ValueKind == JsonValueKind.String ? econ.GetString()! : "unknown");
+			EconomyBan: player.TryGetProperty("EconomyBan", out var econ) && econ.ValueKind == JsonValueKind.String ? econ.GetString()! : "unknown"); // STJ: GetString() is non-null for a String token — the ?? arm would be an unreachable probe
 	}
 
 	private async Task<(int? Level, bool? Limited)> TryFetchLevelAsync(string apiKey, ulong steamId, CancellationToken cancellationToken)

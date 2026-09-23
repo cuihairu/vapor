@@ -169,10 +169,7 @@ public static partial class SensitiveDataRedactor
 				}
 
 				var prefix = match.Groups["prefix"].Value;
-				// No Success check: the suffix group sits on the main pattern path
-				// (optional zero-width), so it always participates; and a group that
-				// did not match has Value == "" per .NET, making the guard a tautology.
-				var suffix = match.Groups["suffix"].Value;
+				var suffix = match.Groups["suffix"].Value; // on the main pattern path, so always participates; unmatched groups read as "" per .NET — a Success guard would be a tautology
 				return prefix + RedactedValue + suffix;
 			});
 	}

@@ -2990,9 +2990,7 @@ static StringValues GetAuthorization(HttpContext ctx)
 
 	if (ctx.Request.Query.TryGetValue("authorization", out var token) && token.Count > 0 && !string.IsNullOrWhiteSpace(token[0]))
 	{
-		// The guard above already ruled out a null/whitespace token[0]; the ??
-		// arm would be an unreachable probe.
-		var raw = token[0]!.Trim();
+		var raw = token[0]!.Trim(); // the guard above already ruled out a null/whitespace token[0] — the ?? arm would be an unreachable probe
 		if (raw.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
 		{
 			return new StringValues(raw);

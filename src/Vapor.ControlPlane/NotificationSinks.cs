@@ -188,9 +188,7 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 		}
 
 		Interlocked.Increment(ref _failed);
-		// Non-null by loop invariant: success returns inside the loop, every
-		// failure path assigns lastError, and the OCE rethrow never reaches here.
-		throw lastError!;
+		throw lastError!; // non-null by loop invariant: success returns inside the loop, every failure path assigns lastError, and the OCE rethrow never reaches here
 	}
 
 	private static Dictionary<string, object?> BuildEnvelope(NotificationEvent n) => new()

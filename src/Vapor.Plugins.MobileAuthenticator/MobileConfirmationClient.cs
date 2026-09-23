@@ -234,9 +234,7 @@ public sealed class MobileConfirmationClient : IMobileConfirmationClient
 				3 => "market",
 				_ => code.ToString(System.Globalization.CultureInfo.InvariantCulture)
 			},
-			// GetString() is contractually non-null for a String token (STJ); the ?.
-			// null arm would be an unreachable probe.
-			JsonValueKind.String => element.GetString()!.Trim().ToLowerInvariant(),
+			JsonValueKind.String => element.GetString()!.Trim().ToLowerInvariant(), // STJ: GetString() is non-null for a String token — the ?. null arm would be an unreachable probe
 			_ => null
 		};
 	}

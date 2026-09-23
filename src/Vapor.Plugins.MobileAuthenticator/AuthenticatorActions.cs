@@ -187,9 +187,7 @@ public sealed class SyncSteamTimeAction : IAction
 		{
 			["offset_seconds"] = _timeSynchronizer.OffsetSeconds,
 			["steam_time"] = _timeSynchronizer.GetCurrentSteamTime(),
-			// Reachable only after a successful SyncAsync, which always assigns
-			// LastSyncedAt before returning (sole assignment site), so no ?. probe.
-			["synced_at"] = _timeSynchronizer.LastSyncedAt!.Value.ToString("O")
+			["synced_at"] = _timeSynchronizer.LastSyncedAt!.Value.ToString("O") // reachable only after a successful SyncAsync, whose sole assignment site always sets LastSyncedAt — no ?. probe
 		});
 	}
 }
