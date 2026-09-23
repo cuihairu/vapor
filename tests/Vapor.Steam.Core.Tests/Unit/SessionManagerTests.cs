@@ -296,6 +296,23 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SubscribeAllEvents_WhenChannelCompletes_EnumerationFinishes()
+	{
+		// Producer-side completion is the other legal loop exit: completing the
+		// underlying channel ends ReadAllAsync normally, so the enumerator must
+		// report Completion (false, no throw) instead of hanging or cancelling.
+		var channel = (Channel<SessionEvent>)typeof(SessionManager)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_manager)!;
+		channel.Writer.Complete();
+
+		var enumerator = _manager.SubscribeAllEvents(CancellationToken.None).GetAsyncEnumerator();
+		var read = await enumerator.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+
+		Assert.False(read);
+	}
+
+	[Fact]
 	public async Task SubscribeAllEvents_ReceivesEventsFromSessions()
 	{
 		// Arrange

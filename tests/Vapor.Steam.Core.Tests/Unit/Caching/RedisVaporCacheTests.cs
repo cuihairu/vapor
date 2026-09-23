@@ -420,6 +420,51 @@ public sealed class RedisVaporCacheTests
 	}
 
 	[Fact]
+	public void RemoveByPrefix_ScanYieldsNullKey_CoalescesToEmptyString()
+	{
+		// The scan coalesces a null key to the empty string before it can touch
+		// the index; real RESP traffic never yields that shape, and the fake
+		// server is the only way to present it to the coalescing guard.
+		var redis = new FakeRedis();
+		redis.Multiplexer.Setup(m => m.GetEndPoints(It.IsAny<bool>())).Returns([new DnsEndPoint("redis.test", 6379)]);
+		redis.Multiplexer.Setup(m => m.GetServer(It.IsAny<EndPoint>(), It.IsAny<object>())).Returns(redis.Server.Object);
+		redis.Server.Setup(s => s.IsConnected).Returns(true);
+		redis.Server.Setup(s => s.Keys(It.IsAny<int>(), It.IsAny<RedisValue>(), It.IsAny<int>(), It.IsAny<long>(), It.IsAny<int>(), It.IsAny<CommandFlags>()))
+			.Returns([default(RedisKey)]);
+		redis.Database.Setup(d => d.KeyDelete(It.IsAny<RedisKey[]>(), It.IsAny<CommandFlags>()))
+			.Returns(1);
+		redis.Database.Setup(d => d.SetRemove(It.IsAny<RedisKey>(), It.IsAny<RedisValue[]>(), It.IsAny<CommandFlags>()))
+			.Callback((RedisKey index, RedisValue[] values, CommandFlags _) =>
+				redis.SetRemovals.Add((index.ToString()!, values.Select(v => v.ToString()!).ToArray())))
+			.Returns(1);
+		using var cache = redis.CreateCache();
+
+		Assert.Equal(1, cache.RemoveByPrefix("user:"));
+
+		var removal = Assert.Single(redis.SetRemovals);
+		Assert.Equal([""], removal.Values);
+	}
+
+	[Fact]
+	public void Clear_IndexMembersCoalesceNullsToEmptyString()
+	{
+		// Clear deletes exactly the indexed keys; a null member (never produced
+		// by real RESP traffic) must coalesce to the empty string rather than
+		// throw or skip the whole batch, alongside the well-formed members.
+		var redis = new FakeRedis();
+		redis.Database.Setup(d => d.SetMembers(It.IsAny<RedisKey>(), It.IsAny<CommandFlags>()))
+			.Returns([RedisValue.Null, "t:keep"]);
+		redis.Database.Setup(d => d.KeyDelete(It.IsAny<RedisKey[]>(), It.IsAny<CommandFlags>()))
+			.Callback((RedisKey[] keys, CommandFlags _) => redis.BatchDeletes.Add(keys.Select(k => k.ToString() ?? "").ToArray()))
+			.Returns(2);
+		using var cache = redis.CreateCache();
+
+		cache.Clear();
+
+		Assert.Equal([["", "t:keep"]], redis.BatchDeletes);
+	}
+
+	[Fact]
 	public void RemoveByPrefix_WhenNoServerReportsConnected_FallsBackToFirstEndpoint()
 	{
 		// Every endpoint reports disconnected: the scan must still run against the

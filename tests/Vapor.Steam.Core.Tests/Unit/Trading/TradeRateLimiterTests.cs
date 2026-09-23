@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Reflection;
 using Vapor.Steam.Core.Trading;
 using Xunit;
 
@@ -13,6 +15,25 @@ public sealed class TradeRateLimiterTests : IDisposable
 	public void Dispose()
 	{
 		_now = _now.AddYears(100); // expire any pending waits logically
+	}
+
+	[Fact]
+	public void PeekEarliest_EmptyWindow_FallsBackToCurrentTime()
+	{
+		// Lease bookkeeping only ever calls PeekEarliest with a non-empty window,
+		// but the empty-window arm is a real guard: driving it directly with an
+		// empty queue must yield the fall-back clock reading instead of throwing.
+		using var limiter = CreateLimiter(new TradeRateLimiterOptions
+		{
+			MaxOperationsPerWindow = 5,
+			Window = TimeSpan.FromMinutes(5)
+		});
+
+		var method = typeof(TradeRateLimiter).GetMethod(
+			"PeekEarliest", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		var result = (DateTimeOffset)method.Invoke(limiter, [new Queue<DateTimeOffset>()])!;
+
+		Assert.Equal(_now, result);
 	}
 
 	[Fact]
