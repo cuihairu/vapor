@@ -195,7 +195,11 @@ public sealed class ProgramBranchCoverageTests
 	[Fact]
 	public async Task Inventory_ValidationAndPendingResponses()
 	{
-		AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(300);
+		// Window must dwarf scheduler pauses: if the whole window is burned
+		// before the first poll, the loop body never runs and its line hits
+		// vanish (2026-09-23 CI flake). 2s at 25ms polls is 80 polls for a
+		// never-finishing fake — same 202, far less pause-sensitive.
+		AccountTaskRunner.WaitWindow = TimeSpan.FromSeconds(2);
 		AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(25);
 		try
 		{
