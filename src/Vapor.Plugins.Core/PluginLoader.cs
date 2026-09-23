@@ -184,8 +184,10 @@ internal static class PluginLoader
 
 		try
 		{
-			return (IPlugin)(Activator.CreateInstance(pluginType)
-				?? throw new PluginException($"Plugin '{info.Id}': failed to create instance of '{pluginType.FullName}'"));
+			// Activator.CreateInstance(Type) returns null only for type-less COM
+			// scenarios; a plain .NET type either constructs or throws (the
+			// MissingMethodException below), so there is nothing to coalesce.
+			return (IPlugin)Activator.CreateInstance(pluginType)!;
 		}
 		catch (MissingMethodException ex)
 		{

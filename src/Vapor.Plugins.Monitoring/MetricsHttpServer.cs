@@ -119,7 +119,9 @@ public sealed class MetricsHttpServer : IDisposable
 			}
 
 			var parts = requestLine.Split(' ');
-			var method = parts.Length > 0 ? parts[0] : string.Empty;
+			// string.Split always yields at least one element, so the leading
+			// element access needs no length guard.
+			var method = parts[0];
 			var rawUrl = parts.Length > 1 ? parts[1] : string.Empty;
 			var path = rawUrl;
 			var queryIndex = rawUrl.IndexOf('?', StringComparison.Ordinal);

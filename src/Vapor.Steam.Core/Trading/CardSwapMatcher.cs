@@ -138,6 +138,9 @@ public static class CardSwapMatcher
 			return false;
 		}
 
-		return item.TradabilityDate is null || item.TradabilityDate <= DateTimeOffset.UtcNow;
+		// .Value is safe here: the is-null arm already ruled out a missing date, and
+		// the non-lifted comparison keeps coverlet from minting an unreachable
+		// HasValue-false probe for a nullable that cannot be null on this path.
+		return item.TradabilityDate is null || item.TradabilityDate.Value <= DateTimeOffset.UtcNow;
 	}
 }

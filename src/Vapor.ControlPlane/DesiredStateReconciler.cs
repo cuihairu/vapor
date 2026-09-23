@@ -1175,7 +1175,10 @@ public sealed class DesiredStateReconciler : BackgroundService
 			return json.ValueKind == System.Text.Json.JsonValueKind.True;
 		}
 
-		return string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase) || value is true;
+		// The `|| value is true` arm was redundant: a boxed bool ToString()s to
+		// exactly "True"/"False", which the ordinal-ignore-case equality above
+		// already classifies. No other type stringifies to either token.
+		return string.Equals(value.ToString(), "true", StringComparison.OrdinalIgnoreCase);
 	}
 
 
