@@ -118,7 +118,10 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 			using var cmd = _connection.CreateCommand();
 			BuildQueryCommand(cmd, query, 0, 0, withPaging: false);
 			object? result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-			return result is long count ? (int)count : 0;
+			// The command is always SELECT COUNT(*), which SQLite returns as a boxed
+			// long (0 rows -> 0, never NULL), so the is-long fallback would be an
+			// unreachable probe.
+			return (int)(long)result!;
 		}
 		finally
 		{

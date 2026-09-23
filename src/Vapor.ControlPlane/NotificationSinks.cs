@@ -188,7 +188,9 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 		}
 
 		Interlocked.Increment(ref _failed);
-		throw lastError ?? new HttpRequestException("webhook delivery failed");
+		// Non-null by loop invariant: success returns inside the loop, every
+		// failure path assigns lastError, and the OCE rethrow never reaches here.
+		throw lastError!;
 	}
 
 	private static Dictionary<string, object?> BuildEnvelope(NotificationEvent n) => new()
