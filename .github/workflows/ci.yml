@@ -150,6 +150,13 @@ jobs:
       with:
         show-progress: false
 
+    # Test-count consistency (TESTING.md detail vs annex vs stats vs tree) is
+    # checked on every push: a test-adding round that forgets the doc sync
+    # goes red here, same "new code without tests goes red" philosophy as the
+    # coverage gate.三犯教训的机械化收口(见 todo.md 维护轮九/十)。
+    - name: Verify TESTING.md test-count consistency
+      run: python3 scripts/verify-testing-docs.py
+
     - name: Setup .NET
       uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
       with:
