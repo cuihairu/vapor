@@ -638,6 +638,24 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 - Auth: none. Body: none.
 - 200: `text/plain; version=0.0.4; charset=utf-8` (Prometheus exposition).
 
+#### `GET /v1/system/status`
+- Purpose: aggregated internal status view — one read-only report combining control-plane self health, proxy probe history, connected agents and account desired-vs-actual state. The dashboard "内部状态总览" panel renders this report.
+- Auth: admin. Body: none.
+- 200: `SystemStatusReport`:
+  - `overall` — `{ status: "healthy"|"degraded"|"unhealthy", reasons: string[] }`. Unhealthy when the job store is unreachable; degraded when the last reconcile pass failed, declared accounts exist while no agent is connected, or auth challenges are pending; otherwise healthy.
+  - `controlPlane` —
+    - `db` — `{ available: bool, latencyMs: long, error?: string }`; one `GetTaskStatusCounts` round-trip doubles as the liveness probe and its wall time is the latency.
+    - `jobs` — task counts by status: `{ queued, running, finished, failed, canceled }`.
+    - `scheduler` — `{ lastTickAt?: timestamp, dispatchNoCapableAgent, dispatchEnqueueFailed, dispatchAttemptsExhausted }`; `lastTickAt` is the dispatch loop heartbeat (omitted before the first tick).
+    - `reconciler` — `{ lastPassAt?: timestamp, lastPassDurationMs?: long, lastPassFailed: bool, loginsDispatched, playsDispatched, cardDropsDispatched, playtimesDispatched, tradeAcceptsDispatched, rebalances, unassignments, throttledSkips, noAgentSkips, dryRunDeviations }`.
+    - `recurringJobs` — `{ triggered, overlapSkipped, missedDropped, missedCatchUps }`.
+    - `plugins` — `{ agentsReporting, entries, byTrust: { "<trust>": count } }`.
+  - `proxies` — `{ probesOk, probesFailed, proxyDisabled, recent: [ { account, success, proxy?, exitIp?, latencyMs?, error?, checkedAt } ] }`. Aggregated from recent `check_proxy` task outputs (last 100 jobs). There is no control-plane proxy pool registry — proxies are per-account agent-side configuration; the `proxy` value, when present, is the agent-side masked endpoint. Disabled-proxy and not-yet-finished tasks count toward the tallies but are not listed.
+  - `agents` — `{ connected: int, regions: string[], entries: [ { id, region, connectedAt, capabilities } ] }`.
+  - `accounts` — `{ total, byDesiredState: { "<state>": count }, mismatches: [ { account, desiredState, actualSessionState?, assignedAgent? } ], sessionsTracked, pendingChallenges, challengeTypes: { "<type>": count } }`. A mismatch means the declared desired state and the latest session snapshot disagree (missing snapshot counts as "no session"; `unknown` session states are never treated as positive evidence of a live session).
+  - Redaction: credentials, proxy passwords (already masked agent-side) and Steam Guard / 2FA challenge **codes** never appear — challenges contribute counters only.
+- Errors: 401.
+
 ---
 
 ## 5. Audit actions reference (written by these endpoints)

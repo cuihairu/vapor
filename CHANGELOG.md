@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Aggregated internal status view (`GET /v1/system/status` + dashboard
+  "内部状态总览" panel): one admin-only read-only report combining
+  control-plane self health (DB availability/latency, job queue depth,
+  scheduler heartbeat, reconciler last-pass outcome, recurring-job and plugin
+  counters), proxy probe history from recent `check_proxy` tasks, connected
+  agents and account desired-vs-actual state (mismatch list, pending auth
+  challenges as counters only), with a derived overall verdict
+  (`healthy`/`degraded`/`unhealthy` + reasons). Credentials and challenge
+  codes never appear in the response; the dashboard panel refreshes off the
+  existing SSE streams with a 2 s debounce instead of adding polling.
+
 - Plugin ecosystem (todo §38 P4): plugins install at runtime through three new
   agent host actions — `plugin_install` (download url + mandatory sha256 →
   checksum → staging unpack with zip-slip protection and manifest-at-root
