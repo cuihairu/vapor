@@ -388,7 +388,7 @@ public class EdgeCaseTests : IDisposable
 	#region CancellationToken 边界测试
 
 	[Fact]
-	public async Task ExecuteAction_WithCancelledToken_ThrowsOperationCanceledException()
+	public async Task ExecuteAction_WithCancelledToken_SurfacesCancellation()
 	{
 		// Arrange
 		var accountName = "test_account";
@@ -414,9 +414,23 @@ public class EdgeCaseTests : IDisposable
 		cts.Cancel();
 
 		// Act & Assert
-		await Assert.ThrowsAnyAsync<OperationCanceledException>(
-			() => session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token)
-		);
+		// 预取消 token 的浮现方式取决于调用线程与命令泵的调度竞速，两种结果都是取消语义的正确体现：
+		// ① 调用线程抢先：WaitAsync 在泵完成命令前观察到 token，抛 OperationCanceledException（排队中取消）；
+		// ② 泵抢先：Task.WaitAsync 对已成功完成的任务跳过 token 检查直接返回结果，
+		//    HandleExecuteAction 的 OCE catch 把执行中取消转成结构化 "canceled" 结果（非异常路径，有意设计）。
+		// 伪成功不可能：mock 动作在取消 token 上 Task.Delay 必抛 OCE，不可能产生 Success=true。
+		try
+		{
+			var result = await session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
+
+			// 分支②：泵已处理命令，执行中取消被转成 canceled 结果
+			Assert.False(result.Success);
+			Assert.Equal("canceled", result.Error);
+		}
+		catch (OperationCanceledException)
+		{
+			// 分支①：排队窗口内取消，WaitAsync 按 token 语义抛出
+		}
 	}
 
 	[Fact]
