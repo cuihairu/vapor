@@ -8,11 +8,11 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1496 tests)
+├── Vapor.Steam.Core.Tests/               (1504 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (860 tests)
+├── Vapor.ControlPlane.Tests/             (866 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
 ├── Vapor.Plugins.Core.Tests/             (147 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (137 tests)
@@ -30,8 +30,8 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1496 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action) |
-| Vapor.ControlPlane.Tests | 860 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)及纯函数 property 扩面 |
+| Vapor.Steam.Core.Tests | 1504 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action)、脱敏/日志消毒纯函数 property 扩面(控制字符三律/proxy URI 凭据/JSON 键敏感) |
+| Vapor.ControlPlane.Tests | 866 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域) |
 | Vapor.Plugins.Core.Tests | 147 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 137 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
 | Vapor.Agent.Tests | 105 | 重连退避策略(含不变量 property:曲线单调/上下界/重试谓词单调/构造器往返/四违约臂)、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
@@ -40,7 +40,7 @@ tests/
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2931** | (2026-09-24 实测(TRX Passed 计数;ControlPlane 860 本轮实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2945** | (2026-09-24 实测(TRX Passed 计数;ControlPlane 866 与 Steam.Core 1504 本轮实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -51,9 +51,9 @@ tests/
 
 ## 测试分类
 
-> 章节总数与文末「附录：逐类测试计数」均为 2026-09-24 专项盘点 TRX 实测（合计 2879；2026-09-24 内部状态轮 +43 与维护轮 property 扩面 +9 后 ControlPlane 860,合计 2931——ControlPlane 部分为本轮实测,其余项目沿用盘点基线）。逐类明细已与附录对齐（2026-09-24 重构轮：存量计数刷新 51 行、合并行正名 6 组、23 个漂移期新增类补行——新增类说明均从测试源码逐文件提炼,非反推）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
+> 章节总数与文末「附录：逐类测试计数」均为 2026-09-24 专项盘点 TRX 实测（合计 2879；2026-09-24 内部状态轮 +43、维护轮九 property +9、维护轮十二 property +14(ScheduleClock 6/脱敏器 8)后 ControlPlane 866、Steam.Core 1504,合计 2945——ControlPlane 与 Steam.Core 部分为本轮实测,其余项目沿用盘点基线）。逐类明细已与附录对齐（2026-09-24 重构轮：存量计数刷新 51 行、合并行正名 6 组、23 个漂移期新增类补行——新增类说明均从测试源码逐文件提炼,非反推）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
 
-### Steam.Core(1496 个测试)
+### Steam.Core(1504 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -135,6 +135,7 @@ tests/
 | VaporCryptoRoundTripPropertyTests | 3 | FsCheck property:AES-GCM 任意明文×任意密钥往返恒等、错钥认证失败(NPE 永不静默回原文)、随机 nonce 密文互异且均可解 |
 | CredentialStoreRotatorTests | 10 | 密钥轮换 |
 | RedactingLoggerProviderTests / SensitiveDataRedactorTests | 30 | 日志脱敏(14+16:嵌套异常/结构化 scope/非泛型枚举臂/计数与索引器/空值归一) |
+| SensitiveDataRedactorPropertyTests | 8 | 维护轮 FsCheck property:SanitizeLogValue 恰删控制字符三律(输出无控制字符/幂等/无控制字符输入恒等)、Redact 任意输入不抛、proxy URI 凭据段消失且占位符就位、JSON 敏感键任意大小写与分隔变体归 redacted、JSON 良性值往返、RedactValue 键敏感二分 |
 | AgentReconnectPolicyTests | 4 | Agent 重连策略(默认值/退避曲线/重试上限/FromEnvironment 覆写;同名 property 类属 Agent 项目,见 Agent 章) |
 
 #### 数据与 Web 客户端
@@ -176,7 +177,7 @@ tests/
 | SteamTotpPropertyTests | 6 | FsCheck property:**RFC 6238 oracle 交叉验证**(本地手写规范实现,任意 secret×时间恒等)、输出确定性 + 恒 5 字符无混淆字母表、同 30s 窗口任意偏移同码、SecondsRemaining 周期性与值域、DecodeSecret 任意合法 base64 往返 + 坏输入按参数名拒绝 |
 | SteamTimeSynchronizerTests | 9 | Steam 服务器时间同步 |
 
-### ControlPlane(860 个测试)
+### ControlPlane(866 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
@@ -192,6 +193,7 @@ tests/
 | AccountTaskRunnerTests | 3 | 账户任务运行器(TaskRunResult record 合成成员/克隆等值) |
 | NotificationTests | 23 | 通知规则/webhook 签名/派发隔离/无 sink 快速返回/有限流 broker 三泵自然排空 |
 | ScheduleClockTests | 16 | 周期计划时钟(interval/cron/触发点计数) |
+| ScheduleClockPropertyTests | 6 | 维护轮 FsCheck property:interval 精确秒算术、ticks 公式计数、半开区间可加性(interval 网格 split 相对再锚定语义/cron 任意 split 绝对点集)、cron NextRun 严格后继、Validate 接受域封闭分类 |
 | SqliteCrawlStoreTests | 21 | 抓取存储(守卫/同事务防御性 CAS) |
 | RecurringJobSchedulerTests + RecurringJobSchedulerRetireTests | 16 | 周期任务触发/missed/overlap/退役(12+4) |
 | ControlPlaneApiTests | 13 | REST API(鉴权/任务/SSE/计划 job、QR 挑战归类与 URL 透传、坏 JSON 体 400 边界) |
@@ -595,7 +597,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 
 > 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（2026-09-24 十项目 `--logger trx` 全量重跑——盘点轮先跑七项目,复测轮补 Protocol/E2E/KeyRotation 三项目;合计与统计表一致：2879）。再生成方式见脚本头注释。本表是逐类计数的权威源;明细区已于 2026-09-24 重构对齐（计数/类集合/说明）,若与本表冲突以本表为准。
 
-### Vapor.Steam.Core.Tests（1496 个测试）
+### Vapor.Steam.Core.Tests（1504 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
@@ -633,6 +635,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | LoginActionTests | 17 |
 | CancelMarketListingsActionTests | 17 |
 | SensitiveDataRedactorTests | 16 |
+| SensitiveDataRedactorPropertyTests | 8 |
 | TradeActionValidationTests | 15 |
 | SteamBadgesClientTests | 15 |
 | GetPlaytimeActionTests | 15 |
@@ -711,7 +714,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | BotSessionProxyTests | 2 |
 | LoginFlowTests | 1 |
 
-### Vapor.ControlPlane.Tests（860 个测试）
+### Vapor.ControlPlane.Tests（866 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
@@ -728,6 +731,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | SqliteCrawlStoreTests | 21 |
 | PluginApiTests | 20 |
 | ScheduleClockTests | 16 |
+| ScheduleClockPropertyTests | 6 |
 | DashboardStaticTests | 14 |
 | ControlPlaneApiTests | 13 |
 | TaskSchedulerServiceTests | 12 |
