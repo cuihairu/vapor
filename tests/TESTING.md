@@ -50,7 +50,7 @@ tests/
 
 ## 测试分类
 
-> 章节总数为 2026-09-23 r13 实测（TRX Passed 计数,合计 2879）;各类明细括号内计数是历次盘点快照,仅当再次专项盘点时刷新。
+> 章节总数与文末「附录：逐类测试计数」均为 2026-09-23 专项盘点 TRX 实测（合计 2879）。**下方逐类明细是更早盘点的快照——不止计数,类集合本身也已漂移**（2026-09-21 之后的成就/standing/代理/games tab 轮新增类如 ProxyOptionsTests、SteamAccountStandingClientTests、ConfigEnvironmentTests、AchievementStatsBitmapTests 等不在明细区,存量类多数计数上行）。权威逐类数据以附录为准;明细区保留其叙述性说明（哪类测什么）,下次明细区重构时以附录数字为骨架合并更新。
 
 ### Steam.Core(1496 个测试)
 
@@ -546,3 +546,234 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 - 修复 bug 时添加回归测试
 - 定期审查和重构测试代码
 
+
+## 附录：逐类测试计数（2026-09-23 r13 后 TRX 实测）
+
+> 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（七项目 `--logger trx` 重跑,项目总数与串行轮一致：2879）。再生成方式见脚本头注释。本表是逐类计数的权威源;上方明细区的括号数字与类集合为历次盘点快照,若与本表冲突以本表为准。
+
+### Vapor.Steam.Core.Tests（1496 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| TradeOfferActionExecutionTests | 47 |
+| SteamStoreApiClientTests | 42 |
+| SessionManagerTests | 42 |
+| ModelsTests | 41 |
+| RedisVaporCacheTests | 38 |
+| FileCredentialStoreTests | 37 |
+| DataActionsTests | 37 |
+| TradeOfferStateMachineTests | 35 |
+| RedeemKeyActionTests | 34 |
+| ProxyOptionsTests | 32 |
+| SteamMarketClientTests | 27 |
+| GetGameInfoBatchActionTests | 27 |
+| BotSessionTests | 27 |
+| SwapDuplicatesActionTests | 26 |
+| SteamClientManagerTests | 25 |
+| BotSessionBranchTests | 25 |
+| VaporCryptoHelperMethodTests | 24 |
+| MemoryVaporCacheTests | 24 |
+| LootInventoryActionTests | 23 |
+| IdleActionTests | 23 |
+| EdgeCaseTests | 23 |
+| FindDuplicatesActionTests | 22 |
+| CreateMarketListingActionTests | 22 |
+| AddLicenseActionTests | 20 |
+| TradeRateLimiterTests | 19 |
+| SessionWorkflowTests | 19 |
+| CheckAccountStandingActionTests | 19 |
+| ActionRegistryTests | 18 |
+| SteamWebHandlerRequestTests | 17 |
+| PayloadReaderTests | 17 |
+| MaFileParserTests | 17 |
+| LoginActionTests | 17 |
+| CancelMarketListingsActionTests | 17 |
+| SensitiveDataRedactorTests | 16 |
+| TradeActionValidationTests | 15 |
+| SteamBadgesClientTests | 15 |
+| GetPlaytimeActionTests | 15 |
+| EchoActionTests | 15 |
+| ClaimPointsShopItemsActionTests | 15 |
+| SteamTransportContractTests | 14 |
+| SteamTotpTests | 14 |
+| RedactingLoggerProviderTests | 14 |
+| GetCardDropsActionTests | 14 |
+| TradeAssetValidatorTests | 13 |
+| SteamAccountStandingClientTests | 13 |
+| VaporCryptoHelperEncryptionTests | 12 |
+| SteamProfileGamesClientTests | 12 |
+| SteamAchievementsPageContractTests | 12 |
+| PlayGamesPayloadParserTests | 12 |
+| PingActionTests | 12 |
+| GetPointsShopSummaryActionTests | 12 |
+| GetInventoryActionTests | 12 |
+| GetInventoryActionBranchTests | 12 |
+| CardSwapMatcherTests | 12 |
+| UnlockAchievementsActionTests | 11 |
+| RedisVaporCacheIntegrationTests | 11 |
+| RedisCacheEntryTests | 11 |
+| MarketFeeCalculatorTests | 11 |
+| CheckProxyActionTests | 11 |
+| GetAchievementsActionTests | 10 |
+| CredentialStoreRotatorTests | 10 |
+| AchievementStatsBitmapTests | 10 |
+| UserStatsProtocolRecordsTests | 9 |
+| SteamTimeSynchronizerTests | 9 |
+| PlayGamesActionTests | 9 |
+| HttpCircuitBreakerTests | 9 |
+| GetTradeOffersActionTests | 9 |
+| ConcurrencyTests | 9 |
+| TwoFactorAutoResponderTests | 8 |
+| TradeModelsEdgeTests | 8 |
+| SteamWebHandlerResilienceTests | 8 |
+| ResetAchievementsActionTests | 8 |
+| GuardClauseTests | 8 |
+| GetMyMarketListingsActionTests | 8 |
+| BotSessionQrLoginTests | 8 |
+| TradeParsingPropertyTests | 7 |
+| TradeAssetValidatorPropertyTests | 7 |
+| TradeAssetParsingPropertyTests | 7 |
+| PayloadReaderPropertyTests | 7 |
+| SteamTotpPropertyTests | 6 |
+| VaporCryptoHelperTests | 5 |
+| TradeUrlParamsTests | 5 |
+| SteamMarketMyListingsContractTests | 5 |
+| SessionManagerProxyTests | 5 |
+| SessionManagerLifecycleTests | 5 |
+| MarketFeeCalculatorPropertyTests | 5 |
+| CardSwapMatcherPropertyTests | 5 |
+| WebRequestMetricsTests | 4 |
+| SteamWebApiKeyFetcherTests | 4 |
+| SteamStoreApiContractTests | 4 |
+| SendTradeOfferActionTests | 4 |
+| ProxyOptionsPropertyTests | 4 |
+| AgentReconnectPolicyTests | 4 |
+| ActionRegistryExecutionObserverTests | 4 |
+| AcceptTradeOfferActionTests | 4 |
+| VaporCryptoRoundTripPropertyTests | 3 |
+| SteamProfileGamesContractTests | 3 |
+| SteamBadgesPageContractTests | 3 |
+| GameModelsTests | 3 |
+| ExceptionContractTests | 3 |
+| ValueStopwatchTests | 2 |
+| TradeUrlParamsExtendedTests | 2 |
+| TokenRefreshTests | 2 |
+| SteamCacheTtlTests | 2 |
+| SteamAchievementsClientTests | 2 |
+| RedeemKeyFlowTests | 2 |
+| DeclineTradeOfferActionTests | 2 |
+| CancelTradeOfferActionTests | 2 |
+| CacheBenchmarks | 2 |
+| BotSessionProxyTests | 2 |
+| LoginFlowTests | 1 |
+
+### Vapor.ControlPlane.Tests（808 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| DesiredStateReconcilerTests | 141 |
+| AccountApiTests | 120 |
+| ProgramBranchCoverageTests | 79 |
+| ConfigEnvironmentTests | 52 |
+| AccountStoreTests | 50 |
+| CrawlApiTests | 40 |
+| CrawlRunWorkerTests | 33 |
+| SqliteJobStoreTests | 32 |
+| NotificationTests | 23 |
+| SqliteCrawlStoreTests | 21 |
+| PluginApiTests | 20 |
+| ScheduleClockTests | 16 |
+| DashboardStaticTests | 14 |
+| ControlPlaneApiTests | 13 |
+| TaskSchedulerServiceTests | 12 |
+| RecurringJobSchedulerTests | 12 |
+| EventBrokerTests | 11 |
+| CrawlShardPlannerTests | 11 |
+| SqliteAuditStoreTests | 9 |
+| TradePolicyPropertyTests | 8 |
+| AuthTests | 8 |
+| AgentRegistryTests | 8 |
+| WsProtocolReplayTests | 7 |
+| PluginInventoryTests | 7 |
+| PluginEcosystemPropertyTests | 7 |
+| ApiLatencyBenchmarks | 7 |
+| PluginCatalogServiceTests | 6 |
+| AuditApiTests | 6 |
+| TracingTests | 5 |
+| ConfigStoreTests | 5 |
+| RecurringJobSchedulerRetireTests | 4 |
+| ControlPlaneBenchmarks | 4 |
+| SessionTrackerTests | 3 |
+| HostTargetedDispatchTests | 3 |
+| AuthChallengeTrackerTests | 3 |
+| AccountTaskRunnerTests | 3 |
+| CompositionRootSmokeTests | 2 |
+| WebSocketJsonTests | 1 |
+| ResourceFootprintBenchmarks | 1 |
+| ExceptionContractTests | 1 |
+
+### Vapor.Plugins.Core.Tests（147 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| PluginConfigurationExtensionsTests | 21 |
+| PluginTrustTests | 18 |
+| PluginApiTests | 18 |
+| PluginEventDispatcherTests | 14 |
+| PluginManifestTests | 13 |
+| PluginLoadTests | 11 |
+| PluginCapabilitiesTests | 10 |
+| PluginUnloadTests | 9 |
+| PluginLoaderTests | 8 |
+| TestFixturesTests | 7 |
+| GuardClauseTests | 6 |
+| TestPluginSurfaceTests | 5 |
+| PluginDiscoveryTests | 5 |
+| PluginManagerConcurrencyTests | 1 |
+| PluginExceptionTests | 1 |
+
+### Vapor.Plugins.MobileAuthenticator.Tests（137 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| AuthenticatorActionTests | 45 |
+| AuthenticatorActionEdgeCaseTests | 44 |
+| MobileConfirmationClientTests | 21 |
+| MobileConfirmationClientParseTests | 10 |
+| ConfirmationHashGeneratorTests | 8 |
+| SteamDeviceIdTests | 3 |
+| MobileAuthenticatorPluginTests | 3 |
+| ConfirmationHashGeneratorPropertyTests | 3 |
+
+### Vapor.Plugins.MarketWatch.Tests（62 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| MarketWatchPluginEdgeTests | 29 |
+| MarketWatchStoreTests | 18 |
+| MarketWatchPluginTests | 13 |
+| PluginHostLoadTests | 2 |
+
+### Vapor.Plugins.Monitoring.Tests（42 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| MetricsHttpServerTests | 20 |
+| MonitoringPluginTests | 12 |
+| MetricsRegistryTests | 10 |
+
+### Vapor.Agent.Tests（105 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| AgentReconnectPolicyTests | 25 |
+| PluginPackageInstallerTests | 21 |
+| AgentTaskExecutorTests | 18 |
+| MaFileImportCliTests | 10 |
+| PluginUninstallActionTests | 8 |
+| PluginInstallActionTests | 5 |
+| AgentReconnectPolicyPropertyTests | 5 |
+| HostActionExecutorTests | 4 |
+| AgentWebSocketUriTests | 4 |
+| PluginListActionTests | 3 |
+| TracingTests | 2 |
