@@ -50,57 +50,66 @@ tests/
 
 ## 测试分类
 
-> 章节总数与文末「附录：逐类测试计数」均为 2026-09-23 专项盘点 TRX 实测（合计 2879）。**下方逐类明细是更早盘点的快照——不止计数,类集合本身也已漂移**（2026-09-21 之后的成就/standing/代理/games tab 轮新增类如 ProxyOptionsTests、SteamAccountStandingClientTests、ConfigEnvironmentTests、AchievementStatsBitmapTests 等不在明细区,存量类多数计数上行）。权威逐类数据以附录为准;明细区保留其叙述性说明（哪类测什么）,下次明细区重构时以附录数字为骨架合并更新。
+> 章节总数与文末「附录：逐类测试计数」均为 2026-09-24 专项盘点 TRX 实测（合计 2879）。逐类明细已与附录对齐（2026-09-24 重构轮：存量计数刷新 51 行、合并行正名 6 组、23 个漂移期新增类补行——新增类说明均从测试源码逐文件提炼,非反推）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
 
 ### Steam.Core(1496 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
-| RedeemKeyActionTests | 33 | Key 激活(含遮罩与边界/null 响应/良性码/不可重试与瞬态错误重试/可选字段透出) |
+| RedeemKeyActionTests | 34 | Key 激活(含遮罩与边界/null 响应/良性码/不可重试与瞬态错误重试/可选字段透出) |
 | IdleActionTests | 23 | 空闲动作 |
 | PlayGamesPayloadParserTests | 12 | 输入规范化(`123`/`123,456`/`id/123`) |
-| PlayGamesActionTests | 7 | 挂机游玩 |
-| DataActionsTests | 34 | 数据动作(游戏信息/价格/市场/搜索 + 无 web handler/坏 app_id/商店客户端工厂故障) |
+| PlayGamesActionTests | 9 | 挂机游玩 |
+| DataActionsTests | 37 | 数据动作(游戏信息/价格/市场/搜索 + 无 web handler/坏 app_id/商店客户端工厂故障) |
 | EchoActionTests / PingActionTests | 27 | 回显/心跳 |
 | ActionRegistryTests + ActionRegistryExecutionObserverTests | 22 | 注册表(18 + 执行观察者 4) |
-| SendTradeOffer / AcceptTradeOffer / DeclineTradeOffer / CancelTradeOffer ActionTests | 12 | 交易动作(4/4/2/2) |
-| LootInventoryActionTests | 20 | loot(可交易过滤/默认社区 app 753-6/app_ids 覆盖与 game context 2/分页/mobile 确认标志/空库存/失败语义/上限/值形状/限流/无登录态) |
-| FindDuplicatesActionTests | 17 | 重复卡分析(keep 语义与非法值/untradable 不计/excess asset ids/空结果成功/库存失败/无 SteamID/无 web handler/上限/值形状) |
-| SwapDuplicatesActionTests | 23 | 1:1 换卡报价(默认 dry_run 不发送/send=true 对称报价与 mobile 标志/自换拒绝/无互补失败/对方库存失败标明 partner 侧/双侧分页/参数范围/trade_url/失败语义/限流/值形状) |
-| GetInventoryActionTests + GetInventoryActionBranchTests | 21 | 库存读取(12 + 9:steam_id 缺省 cookie 反解/app_ids 多 app 扫描 + loot context 规则/tradable 与 marketable 过滤/上限/JSON 往返/单 app 旧输出兼容/坏 steamid/cookie 无身份/classic 路径覆盖/分页去重/值形状) |
-| GetCardDropsActionTests | 13 | 卡牌剩余掉落查询(排序/错误/steam_id 缺省 cookie 反解/缓存 SWR/force_refresh/名称与元数据/默认真实客户端装配) |
-| GetTradeOffersActionTests | 8 | 报价列表读取(active_only 透传/输出映射/失败语义) |
-| AddLicenseActionTests | 18 | 免费 license 认领(app 走 client 协议/sub 走商店 checkout/已拥有视为成功/双 ID 混合/去重/JSON 往返 payload/边界/混合值形状) |
-| GetGameInfoBatchActionTests | 26 | 批量应用详情(≤200 app/批、缓存层共享、List 混合数值解析、空列表 400、工厂异常面) |
+| SendTradeOfferActionTests / AcceptTradeOfferActionTests / DeclineTradeOfferActionTests / CancelTradeOfferActionTests | 12 | 交易动作四动作(4/4/2/2:创建/接受/拒绝/取消) |
+| LootInventoryActionTests | 23 | loot(可交易过滤/默认社区 app 753-6/app_ids 覆盖与 game context 2/分页/mobile 确认标志/空库存/失败语义/上限/值形状/限流/无登录态) |
+| FindDuplicatesActionTests | 22 | 重复卡分析(keep 语义与非法值/untradable 不计/excess asset ids/空结果成功/库存失败/无 SteamID/无 web handler/上限/值形状) |
+| SwapDuplicatesActionTests | 26 | 1:1 换卡报价(默认 dry_run 不发送/send=true 对称报价与 mobile 标志/自换拒绝/无互补失败/对方库存失败标明 partner 侧/双侧分页/参数范围/trade_url/失败语义/限流/值形状) |
+| GetInventoryActionTests + GetInventoryActionBranchTests | 24 | 库存读取(12 + 9:steam_id 缺省 cookie 反解/app_ids 多 app 扫描 + loot context 规则/tradable 与 marketable 过滤/上限/JSON 往返/单 app 旧输出兼容/坏 steamid/cookie 无身份/classic 路径覆盖/分页去重/值形状) |
+| GetCardDropsActionTests | 14 | 卡牌剩余掉落查询(排序/错误/steam_id 缺省 cookie 反解/缓存 SWR/force_refresh/名称与元数据/默认真实客户端装配) |
+| GetTradeOffersActionTests | 9 | 报价列表读取(active_only 透传/输出映射/失败语义) |
+| AddLicenseActionTests | 20 | 免费 license 认领(app 走 client 协议/sub 走商店 checkout/已拥有视为成功/双 ID 混合/去重/JSON 往返 payload/边界/混合值形状) |
+| GetGameInfoBatchActionTests | 27 | 批量应用详情(≤200 app/批、缓存层共享、List 混合数值解析、空列表 400、工厂异常面) |
 | LoginActionTests | 17 | 登录动作 |
-| TradeOfferActionExecutionTests | 40 | 交易动作执行流(fake trade client 全分支) |
+| TradeOfferActionExecutionTests | 47 | 交易动作执行流(fake trade client 全分支) |
 | MarketFeeCalculatorTests | 11 | 市场手续费计算(买家/卖家定价换算) |
 | MarketFeeCalculatorPropertyTests | 5 | FsCheck property:手续费数学(拆分恒等 Buyer=Seller+费+费/费 ≥1/20 分起比例精确/买家价严格单调)+ FromBuyerPrice 极大性(落点 ≤ 目标且 seller+1 必超——**抓获 walker 起点低估 3 分的系统缺陷**)+ 域二分完备(3 分以下 null 以上必有)+ 上限守卫(AOORE 不 wrap——**int 乘法溢出边界**) |
-| GetMyMarketListingsActionTests | 7 | 账户自己的市场挂单(start/count 分页) |
-| CreateMarketListingActionTests | 21 | 创建挂单(参数校验/默认干跑/EmailConfirmation 域上报/amount 与 buyer 下限) |
-| CancelMarketListingsActionTests | 16 | 批量撤单(负价格区间/pacing 间隔/取消透传/min_price 过滤) |
-| GetPointsShopSummaryActionTests | 10 | 积分余额与奖励定义查询(definition_ids/free_only) |
-| ClaimPointsShopItemsActionTests | 13 | 兑换积分奖励(metadata 契约/force 语义/lookup 失败前置短路) |
+| GetMyMarketListingsActionTests | 8 | 账户自己的市场挂单(start/count 分页) |
+| CreateMarketListingActionTests | 22 | 创建挂单(参数校验/默认干跑/EmailConfirmation 域上报/amount 与 buyer 下限) |
+| CancelMarketListingsActionTests | 17 | 批量撤单(负价格区间/pacing 间隔/取消透传/min_price 过滤) |
+| GetPointsShopSummaryActionTests | 12 | 积分余额与奖励定义查询(definition_ids/free_only) |
+| ClaimPointsShopItemsActionTests | 15 | 兑换积分奖励(metadata 契约/force 语义/lookup 失败前置短路) |
 | GetAchievementsActionTests | 10 | 成就列表读取(社区页解析/steam_id 缺省 cookie 反解/显式传参与 cookie 缺失/失败语义/internal 工厂元数据/无 webHandler/非数字 steam_id) |
-| UnlockAchievementsActionTests / ResetAchievementsActionTests | 18 | 成就解锁/重置(位图载荷门控/显式 names 双格式与不可用形状/reset 双 confirm/transport 抛异常与无响应/无 client/逐条结果与 verified 透传) |
+| UnlockAchievementsActionTests / ResetAchievementsActionTests | 19 | 成就解锁/重置(位图载荷门控/显式 names 双格式与不可用形状/reset 双 confirm/transport 抛异常与无响应/无 client/逐条结果与 verified 透传) |
+| GetPlaytimeActionTests | 15 | 游戏时长读取(games tab fixture 驱动真实 client/小时降序+零小时尾按 appid/games 过滤只回查询 appid/steam_id 缺省 cookie 反解/非数字 steam_id 拒绝/cache_ttl 正值覆盖窗口/force_refresh 绕过缓存/ttl=0 每次都拉/缓存 miss 落空表回退且零请求/元数据 RequiresLogin) |
+| CheckAccountStandingActionTests | 19 | 账号状态查询 action(FetchOverride seam/steam_id 覆盖会话身份/垃圾 SteamID 不解析为 0/clean-restricted-banned 分类矩阵/失败信息透传含 Web API key/无 web handler 短路/取消重抛 OCE/cookie 兜底自身 ID/工厂 seam 走真实 client happy path) |
+| CheckProxyActionTests | 11 | 代理探测 action(ProbeOverride seam/无代理短路 proxyEnabled=false/payload 代理覆盖配置代理/畸形代理抛解析错误/成功输出仅带遮掩端点/探测失败映射 success=false+error/无 error 回退通用文案/探测异常不外泄/取消重抛 OCE/活探测把取消折叠为失败结果) |
 
 #### 会话与核心组件
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | BotSessionTests | 27 | 会话状态机 |
-| BotSessionQrLoginTests | 7 | QR 扫码登录会话流(批准后 refresh token 走 token 登录、挑战 URL 上浮与轮转重发、拒绝/超时/连接失败映射、stub 模式) |
-| BotSessionBranchTests | 14 | 会话分支加固(命令循环崩溃/action 取消与超时 unwind/QR park 信号取消/QR 事件上浮/懒启动) |
-| SessionManagerTests | 37 | 会话管理器(恢复回调/事件订阅/无凭证库/重复恢复恢复同一会话/登录失败清会话/后台 token 刷新跳过与故障吸收) |
-| SteamClientManagerTests | 22 | Steam 客户端管理器 |
+| BotSessionQrLoginTests | 8 | QR 扫码登录会话流(批准后 refresh token 走 token 登录、挑战 URL 上浮与轮转重发、拒绝/超时/连接失败映射、stub 模式) |
+| BotSessionBranchTests | 25 | 会话分支加固(命令循环崩溃/action 取消与超时 unwind/QR park 信号取消/QR 事件上浮/懒启动) |
+| SessionManagerTests | 42 | 会话管理器(恢复回调/事件订阅/无凭证库/重复恢复恢复同一会话/登录失败清会话/后台 token 刷新跳过与故障吸收) |
+| SteamClientManagerTests | 25 | Steam 客户端管理器 |
 | SteamTransportContractTests | 14 | 传输层契约(SteamResult 线上编码镜像 + 接口可替换性) |
 | ModelsTests | 41 | 数据模型和枚举 |
 | EdgeCaseTests | 23 | 边界和异常场景 |
 | SessionWorkflowTests(集成) | 19 | 完整工作流(含事件订阅确定性投递:stub 登录+断开双 StateChanged) |
 | ConcurrencyTests(性能) | 9 | 并发和压力 |
 | CacheBenchmarks(性能) | 2 | 缓存吞吐基准(打印数字为准,见 docs/performance.md) |
-| TwoFactorAutoResponderTests | 7 | 2FA 自动应答(本地 TOTP 闭环 + 无活跃会话跳过) |
+| TwoFactorAutoResponderTests | 8 | 2FA 自动应答(本地 TOTP 闭环 + 无活跃会话跳过) |
 | TokenRefreshTests / LoginFlowTests / RedeemKeyFlowTests | 5 | 认证与激活流程 |
+| SessionManagerProxyTests | 5 | 会话代理接线(创建会话暴露 ConfiguredProxy 并持久化凭据库/无代理不触碰存储/持久化失败 best-effort 登录仍成功/畸形代理创建前抛解析错误/TryRestore 从存储回带代理) |
+| SessionManagerLifecycleTests(集成) | 5 | 会话管理器后台生命周期臂(事件转发泵取消退出/通道完成退出/同账号重复恢复复用首会话/刷新在飞跳过重复派发/刷新循环取消静默退出——反射直驱私有泵与通道,无时序竞争确定性到达) |
+| BotSessionProxyTests | 2 | 登录路径按账号代理交接(配置代理在 CM logon 前 staged 到 transport/无代理绝不触碰 transport 代理 setter) |
+| ExceptionContractTests | 3 | 异常契约(登录挑战双异常 CA1032 构造器全表面保 message+inner/AchievementWriteResult record ToString 合成表面) |
+| GuardClauseTests | 8 | 构造器守卫集中收口(各 Web 客户端 null 依赖抛 ArgumentNullException 带 paramName/SteamWebHandler null config 回退默认/RedactingLoggerProvider 与 SteamTimeSynchronizer 守卫/RedisVaporCache-TradeRateLimiter null options 回退默认——happy-path 不触碰的 null-overload 臂) |
+| ValueStopwatchTests | 2 | 免分配秒表(default 实例未启动 Elapsed 恒 TimeSpan.Zero/StartNew 实测非负时长) |
 
 #### 交易安全层(Trade Safety)
 | 测试类 | 数量 | 说明 |
@@ -109,8 +118,8 @@ tests/
 | TradeActionValidationTests | 15 | 交易动作校验 |
 | TradeAssetValidatorTests | 13 | 资产校验 |
 | TradeAssetValidatorPropertyTests | 7 | FsCheck property:守卫链顺序(非法 amount→未拥有→不可交易→冷却→数量不足,早失败遮蔽后检查)、重复条目数量聚合(Σ 请求 vs 可用,坍缩为单条短缺错误)、冷却边界(now 本身过、严格大于才拦)、空报价恒 Success 单例、成功 ⟺ Errors 空 + CombinedError 契约、非法 amount 独立报错不进聚合;全程注入时钟保确定性 |
-| TradeRateLimiterTests | 16 | 频控(窗口/并发槽/超时/租约与销毁交互) |
-| CardSwapMatcherTests | 9 | 重复分组与 1:1 互补匹配(keep/excess 只取可交易/排序确定性/双向互补条件/单向不配/maxSwaps 截断/context 规则) |
+| TradeRateLimiterTests | 19 | 频控(窗口/并发槽/超时/租约与销毁交互) |
+| CardSwapMatcherTests | 12 | 重复分组与 1:1 互补匹配(keep/excess 只取可交易/排序确定性/双向互补条件/单向不配/maxSwaps 截断/context 规则) |
 | TradeUrlParamsTests / TradeUrlParamsExtendedTests | 7 | 报价 URL 参数 |
 | TradeParsingPropertyTests | 7 | FsCheck property:报价 URL 解析(任意输入不抛且解析成功必 ≥ base/32 位形态加 base/64 位形态直通/token URL 编码往返,lone surrogate 过滤)与状态机谓词(无过期时间永不过期/CanAccept⟹CanDecline+收到的 Active/sender 自匹配合规域恒过——抓出 AccountIdOther 次规范形态被 ToAccountId 折 0 的防御语义边界) |
 | CardSwapMatcherPropertyTests | 5 | FsCheck property:重复分组不变量(尺寸账目 TotalTradable-keep/只收可交易/组按 identity 排序)与 1:1 匹配(严格互补双向 DoesNotContain/双侧来自 excess 池/context 规则/maxSwaps 上限)+ 两确定性(逐字段比较——record 集合字段是引用比较)+ ContextIdFor 全域(753→6 其余→2);生成器 id 缩域保证碰撞(assetId 保持全域) |
@@ -119,36 +128,45 @@ tests/
 #### 安全与凭据
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
-| FileCredentialStoreTests | 27 | 凭据存储(加密落盘/备份恢复/权限收紧含 symlink EPERM 降级/shared/identity secret/新版本拒载/缺 accounts 拒载) |
-| MaFileParserTests | 13 | maFile 解析(SDA 嵌套/steamguard-cli 平铺/密码加密 PBKDF2+AES-CBC/无密码与错密码/无 secret/账户键回退/根数组与坏 payload 拒绝) |
-| VaporCryptoHelper(Encryption)Tests + VaporCryptoHelperMethodTests + VaporCryptoHelperTests | 39 | AES-GCM 加密助手(12+23+4:往返/篡改/边界 + 方法级分支/文件密钥回退含 base64 过短回退 raw/不可读文件降级) |
+| FileCredentialStoreTests | 37 | 凭据存储(加密落盘/备份恢复/权限收紧含 symlink EPERM 降级/shared/identity secret/新版本拒载/缺 accounts 拒载) |
+| MaFileParserTests | 17 | maFile 解析(SDA 嵌套/steamguard-cli 平铺/密码加密 PBKDF2+AES-CBC/无密码与错密码/无 secret/账户键回退/根数组与坏 payload 拒绝) |
+| VaporCryptoHelperEncryptionTests + VaporCryptoHelperMethodTests + VaporCryptoHelperTests | 41 | AES-GCM 加密助手(12+24+5:往返/篡改/边界 + 方法级分支/文件密钥回退含 base64 过短回退 raw/不可读文件降级) |
 | VaporCryptoRoundTripPropertyTests | 3 | FsCheck property:AES-GCM 任意明文×任意密钥往返恒等、错钥认证失败(NPE 永不静默回原文)、随机 nonce 密文互异且均可解 |
-| CredentialStoreRotatorTests | 5 | 密钥轮换 |
-| RedactingLoggerProviderTests / SensitiveDataRedactorTests | 17 | 日志脱敏(12+5:嵌套异常/结构化 scope/非泛型枚举臂/计数与索引器/空值归一) |
-| AgentReconnectPolicyTests | 4 | Agent 重连策略(默认值/退避曲线/重试上限/FromEnvironment 覆写) |
-| AgentReconnectPolicyPropertyTests | 5 | FsCheck property:任意合法配置下退避曲线单调非减、初值下界与 max 上界、重试谓词对失败数单调(unlimited 恒假)、构造器四参往返、单约束违约必抛 ArgumentOutOfRange(totality) |
+| CredentialStoreRotatorTests | 10 | 密钥轮换 |
+| RedactingLoggerProviderTests / SensitiveDataRedactorTests | 30 | 日志脱敏(14+16:嵌套异常/结构化 scope/非泛型枚举臂/计数与索引器/空值归一) |
+| AgentReconnectPolicyTests | 4 | Agent 重连策略(默认值/退避曲线/重试上限/FromEnvironment 覆写;同名 property 类属 Agent 项目,见 Agent 章) |
 
 #### 数据与 Web 客户端
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
-| MemoryVaporCacheTests | 22 | 内存缓存(TTL/SWR/单飞行去重) |
+| MemoryVaporCacheTests | 24 | 内存缓存(TTL/SWR/单飞行去重) |
 | RedisCacheEntryTests | 11 | Redis 信封编解码/新鲜度判定(纯逻辑,无需 Redis) |
-| RedisVaporCacheTests | 36 | Redis 缓存全路径离线覆盖(mock IConnectionMultiplexer/IDatabase:信封协议/SWR 跨实例锁/索引维护/SCAN 前缀清理含全端点断连回退/单飞行共享) |
+| RedisVaporCacheTests | 38 | Redis 缓存全路径离线覆盖(mock IConnectionMultiplexer/IDatabase:信封协议/SWR 跨实例锁/索引维护/SCAN 前缀清理含全端点断连回退/单飞行共享) |
 | RedisVaporCacheIntegrationTests(集成,门控) | 11 | Redis 端到端(需 `VAPOR_TEST_REDIS`) |
-| SteamStoreApiClientTests | 32 | 商店 API 客户端(解析/降级与畸形响应/market 新旧双契约回退) + addlicense 结账端点(detail 解析/已拥有/HTTP 失败) |
+| SteamStoreApiClientTests | 42 | 商店 API 客户端(解析/降级与畸形响应/market 新旧双契约回退) + addlicense 结账端点(detail 解析/已拥有/HTTP 失败) |
 | SteamStoreApiContractTests | 4 | 录制响应契约回放(appdetails/storesearch/market render 新旧双契约,fixture 见 `TestData/`) |
-| SteamMarketClientTests | 23 | 社区市场客户端(挂单列表新旧契约/currencyid 字符串臂/非标准 JSON 值类型防御/空响应体) |
-| SteamMarketMyListingsContractTests | 4 | 我的挂单契约回放(数值字段 JSON 字符串形状) |
-| SteamBadgesClientTests | 14 | 徽章页解析变体(appid 双载体/掉落文案/分页/失败语义) |
+| SteamMarketClientTests | 27 | 社区市场客户端(挂单列表新旧契约/currencyid 字符串臂/非标准 JSON 值类型防御/空响应体) |
+| SteamMarketMyListingsContractTests | 5 | 我的挂单契约回放(数值字段 JSON 字符串形状) |
+| SteamBadgesClientTests | 15 | 徽章页解析变体(appid 双载体/掉落文案/分页/失败语义) |
 | SteamBadgesPageContractTests | 3 | 徽章页 HTML 契约回放(fixture 为三方解析器互证构造,登录门控不可匿名录制) |
 | SteamWebHandlerResilienceTests | 8 | 429/5xx 退避重试与熔断 |
 | SteamWebHandlerRequestTests | 17 | 请求构造(cookie/自定义 header/分主机 Referer+Origin/UA/限流窗延迟/重试耗尽语义/无与不可解析 Retry-After 回退/Dispose 幂等/SteamWebResponse 分类属性) |
-| HttpCircuitBreakerTests | 8 | 熔断器状态机(Closed/Open/HalfOpen 转换与单探测) |
-| WebRequestMetricsTests | 3 | 请求指标采集 |
+| HttpCircuitBreakerTests | 9 | 熔断器状态机(Closed/Open/HalfOpen 转换与单探测) |
+| WebRequestMetricsTests | 4 | 请求指标采集 |
 | SteamCacheTtlTests | 2 | 分级 TTL 新鲜度 |
 | GameModelsTests | 3 | 游戏数据模型 |
 | PayloadReaderTests / TradeModelsEdgeTests | 25 | payload 读取器方法级分支(17) + 交易模型边界(8:TradeUrlParams/TradeAsset 等值形状与非法输入) |
 | PayloadReaderPropertyTests | 7 | FsCheck property:精确键恒压大小写变体/变体回退命中(OrdinalIgnoreCase)、boxed long 域判定(恰 int 域内转换)、boxed double 域判定(整数且域内,NaN/∞ 全 null)、任意 int 三形态(装箱/invariant 字符串/JSON 字符串)往返、任意 bool 三形态往返(**bool.ToString() 产 "True"/"False" 须被 TryParse 接受**——点例只测过小写)、任意形状×任意键全读取器不抛 |
+| ProxyOptionsTests | 32 | 代理 URL 解析(各 scheme 含凭据/显式端口/百分号编码凭据/仅用户名/方括号 IPv6/默认端口 80-443-1080/畸形输入(缺 scheme/空 host/坏端口/越界/带路径)一律 ArgumentException 带 paramName/坏百分号编码 verbatim 保留/遮掩 ToString/WebProxy 凭据形状/IPv6 去再加括号) |
+| ProxyOptionsPropertyTests | 4 | FsCheck property:受控生成器(scheme×host×port×可选凭据)下 Parse 字段往返(省端口落 scheme 约定)/ToWebProxy 凭据精确出现或 null/遮掩串绝不含非空密码/任意字符串只抛带 paramName 的 ArgumentException(totality) |
+| SteamAccountStandingClientTests | 13 | 账号状态客户端(fake HTTP 三端点:key 页/GetPlayerBans/GetSteamLevel;bans 始终权威,level 端点失败或畸形只降级 limited 为 null/缺 key 与空 players 抛错/全缺字段与错型回退默认/请求序携带 key+steamids/构造守卫) |
+| SteamProfileGamesClientTests | 12 | rgGames 载荷提取(平衡扫描器对抗「切首个终止符」式实现:名字内分号/方括号/转义引号不截断/嵌套数组内层收拢/缺载荷畸形抛错不静默零时长/空数组合法/无效 appid 跳过坏 hours 降级零/非首个 script 定位/缺名解析 null) |
+| SteamAchievementsClientTests | 2 | 成就页客户端取回失败契约(200 空体与非 2xx 均抛取回失败不静默解析空页——解析分支在 PageContract 类) |
+| SteamAchievementsPageContractTests | 12 | 成就页 HTML 契约回放(fixture 为 2026-09-18 公开 Portal 页原样录制+第二个 7/15 局部录制互证)/unlock 只认 unlock-time 块(锁着也带彩色图标)/逐行 15 条含推断 API 名(_bw 剥离)/summary 溢出钳 0/空白名描述读 null/无图标行跳过/最小内联锚点样例) |
+| SteamProfileGamesContractTests | 3 | 游戏页契约回放(fixture 为构造骨架——live 页登录门控不可匿名录制,嵌入数据契约经四个独立消费方交叉确认)/全量 5 款含逗号格式时长/未游玩归零/对抗性名存活平衡扫描 |
+| SteamWebApiKeyFetcherTests | 4 | dev/apikey 页 key 抓取(已揭示 key 返回/marker 后过短 blob 读作无 key/缺闭合段落 null/无 marker null——缺、截、过短一律无 key,绝不返回部分 secret) |
+| AchievementStatsBitmapTests | 10 | 成就位图编码(id-shift 数学位移含 31/32 边界跨条目/缺席条目按 0/空 blob 解锁只创建触达条目/合并保留未触达数值 stat/reset 只清目标位/缺席条目 reset 写显式零条目) |
+| UserStatsProtocolRecordsTests | 9 | stats 协议载荷 record 的 wire 契约(各 record 构造面与字段相等性/OK 结果携带 Load 体失败不带/空 blob crc=0 是合法全新形态/StoreResult 带 StatsOutOfDate+失败 statId/协议响应恰好一个 body(Get 或 Store 二选一)/ToString 含结果名) |
 
 #### Steam 认证
 | 测试类 | 数量 | 说明 |
@@ -161,54 +179,56 @@ tests/
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
-| ProgramBranchCoverageTests | 73 | Program 组装层分支(配置解析/环境变量回退/装配路径逐支驱动) |
+| ProgramBranchCoverageTests | 79 | Program 组装层分支(配置解析/环境变量回退/装配路径逐支驱动) |
+| ConfigEnvironmentTests | 52 | Config.LoadFromEnvironment 环境变量臂(Theory 数据表扫 18 键:垃圾值 parse-false/守卫违例(0 与负数)/合法覆盖/PluginIndexUrl 空白回退;每用例 finally 还原进程全局 env——走进程全局 collection 禁并行,防并发 boot 读到被改键(负 ReconcileInterval 会杀并发 boot 的 PeriodicTimer)) |
 | AccountApiTests | 120 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取、挂单创建/撤单、积分兑换、重复查询/换卡报价:fake agent 顺序回报;五端点 202/502 三态与 claim 校验;boost 目标与 farm 策略 PUT 校验/回读/清除,standing/farm 快照端点与强制体检) |
-| DesiredStateReconcilerTests | 116 | 账户编排(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸 + §35 派发守卫(agent 能力缺失与 dry-run)/审计隔离(异常吞咽与 OCE 传播)/payload 多类型解析防御/结算回读防御(空 Tasks/失败 deviation/confirm 链) + 挂卡增强:队列排序三式/PriorityApps 置顶/队列 diff 完成标记/预算跳过与未到期保持/drain 一次性通知与新轮重启/累计统计双格式解析与无 total 容错/spec bump 事实保留) |
+| DesiredStateReconcilerTests | 141 | 账户编排(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸 + §35 派发守卫(agent 能力缺失与 dry-run)/审计隔离(异常吞咽与 OCE 传播)/payload 多类型解析防御/结算回读防御(空 Tasks/失败 deviation/confirm 链) + 挂卡增强:队列排序三式/PriorityApps 置顶/队列 diff 完成标记/预算跳过与未到期保持/drain 一次性通知与新轮重启/累计统计双格式解析与无 total 容错/spec bump 事实保留) |
 | TradePolicyPropertyTests | 8 | FsCheck property:trade 策略白名单(零剔除/去重/升序/输入序无关/幂等/全零 auto-accept 必拒)与 payload 数值读取(任意 boxed 值不抛/false 置零/JSON 数字臂往返);抓出并修复 NaN/∞ 透传边界(string 臂 `TryParse("NaN")` 为 true、boxed double 臂不滤非有限) |
 | CrawlApiTests | 40 | 数据抓取 REST(计划 CRUD/PUT merge 语义/触发/分片领取/行回写/claim 校验与去重) |
-| CrawlRunWorkerTests | 28 | 抓取执行 worker(读取/派发取消传播/GetJob 故障吞咽/坏 tick 兜底/停机竞态双路径/审计故障不阻断/混合列表输出解析) |
-| SqliteJobStoreTests | 26 | job 存储(并发/迁移/周期模板) |
-| AccountStoreTests | 46 | 账户存储(ConfigVersion 并发/空名校验/boost 目标与 trade 策略规范化/farm 策略规范化校验矩阵/声明序保留/透传与清除) |
-| AccountTaskRunnerTests | 2 | 账户任务运行器(TaskRunResult record 合成成员/克隆等值) |
-| NotificationTests | 21 | 通知规则/webhook 签名/派发隔离/无 sink 快速返回/有限流 broker 三泵自然排空 |
+| CrawlRunWorkerTests | 33 | 抓取执行 worker(读取/派发取消传播/GetJob 故障吞咽/坏 tick 兜底/停机竞态双路径/审计故障不阻断/混合列表输出解析) |
+| SqliteJobStoreTests | 32 | job 存储(并发/迁移/周期模板) |
+| AccountStoreTests | 50 | 账户存储(ConfigVersion 并发/空名校验/boost 目标与 trade 策略规范化/farm 策略规范化校验矩阵/声明序保留/透传与清除) |
+| AccountTaskRunnerTests | 3 | 账户任务运行器(TaskRunResult record 合成成员/克隆等值) |
+| NotificationTests | 23 | 通知规则/webhook 签名/派发隔离/无 sink 快速返回/有限流 broker 三泵自然排空 |
 | ScheduleClockTests | 16 | 周期计划时钟(interval/cron/触发点计数) |
-| SqliteCrawlStoreTests | 16 | 抓取存储(守卫/同事务防御性 CAS) |
-| RecurringJobSchedulerTests + RetireTests | 14 | 周期任务触发/missed/overlap/退役(10+4) |
+| SqliteCrawlStoreTests | 21 | 抓取存储(守卫/同事务防御性 CAS) |
+| RecurringJobSchedulerTests + RecurringJobSchedulerRetireTests | 16 | 周期任务触发/missed/overlap/退役(12+4) |
 | ControlPlaneApiTests | 13 | REST API(鉴权/任务/SSE/计划 job、QR 挑战归类与 URL 透传、坏 JSON 体 400 边界) |
 | DashboardStaticTests | 14 | 静态面板(/dashboard.html 服务、无写动词契约、三视图互链、`/` 302 重定向、gamedata 五模型文档(含 ItemInfo 不回流守卫)、admin QR 按钮契约、写操作确认锚、standing 徽章与体检按钮、farm 徽章与策略字段、PluginStore 面板契约) |
-| CrawlShardPlannerTests | 10 | 抓取分片规划(空池告警/overrides) |
-| TaskSchedulerServiceTests | 8 | 任务派发/终态机制/无 listener 惰性分发 |
-| SqliteAuditStoreTests | 8 | 审计存储 |
-| EventBrokerTests | 8 | 事件总线 |
+| CrawlShardPlannerTests | 11 | 抓取分片规划(空池告警/overrides) |
+| TaskSchedulerServiceTests | 12 | 任务派发/终态机制/无 listener 惰性分发 |
+| SqliteAuditStoreTests | 9 | 审计存储 |
+| EventBrokerTests | 11 | 事件总线 |
 | AuthTests | 8 | Bearer 鉴权解析(合法/缺 scheme/非 Bearer/空 header/空配置键 fail-closed) |
 | WsProtocolReplayTests | 7 | WS 隧道协议录制回放(5 类帧快照 roundtrip + 会话序列路由 + 前向兼容) |
-| AgentRegistryTests | 7 | Agent 注册表 |
+| AgentRegistryTests | 8 | Agent 注册表 |
 | AuditApiTests | 6 | 审计查询 API |
 | TracingTests | 5 | OpenTelemetry 追踪注入(无 listener 惰性分发/双 null 臂) |
 | ControlPlaneBenchmarks(性能) | 4 | 吞吐/派发/扇出基准 |
-| ConfigStoreTests | 3 | 配置存储 |
+| ConfigStoreTests | 5 | 配置存储 |
 | AuthChallengeTrackerTests | 3 | 挑战追踪 |
-| SessionTrackerTests | 2 | 会话追踪 |
+| SessionTrackerTests | 3 | 会话追踪 |
 | CompositionRootSmokeTests | 2 | 组装根冒烟 |
 | ApiLatencyBenchmarks(性能) | 7 | 只读端点与任务创建入口时延基准 |
 | ResourceFootprintBenchmarks(性能) | 1 | 每操作托管分配量基准 |
 | ExceptionContractTests | 1 | 异常类型契约(序列化构造) |
-| PluginApiTests | 14 | PluginStore REST(五端点 401 矩阵/catalog 未配置与索引 entries 排序与 60s 缓存/拉取失败与坏 body 的 error 字段/install 校验矩阵(空 agents/缺 sha/坏 sha/双缺)/catalog 模式查无 404 与解析 url+sha256 归一/直连模式透传/uninstall 路由派发/refresh 派发/无 agent 409/stale 镜像清理/空镜像) |
+| WebSocketJsonTests | 1 | WebSocket JSON 接收契约("null" 是合法 JSON 却反序列化为 null 引用,按非法消息抛 InvalidOperationException 而非把 null 递给处理器——真实 socket 对偶验证) |
+| PluginApiTests | 20 | PluginStore REST(五端点 401 矩阵/catalog 未配置与索引 entries 排序与 60s 缓存/拉取失败与坏 body 的 error 字段/install 校验矩阵(空 agents/缺 sha/坏 sha/双缺)/catalog 模式查无 404 与解析 url+sha256 归一/直连模式透传/uninstall 路由派发/refresh 派发/无 agent 409/stale 镜像清理/空镜像) |
 | PluginCatalogServiceTests | 6 | 索引源解析与缓存(缺 plugins 数组拒收/缺必填字段拒收/sha256 归一与可选字段/未配置快照/60s 缓存命中与 Invalidate/URL 变更绕过陈旧缓存) |
-| PluginInventoryTests | 4 | 内存镜像(WS round-trip 形状重建与排序/plugins 键缺失与非数组值忽略/按 agent 整体覆盖/Remove) |
+| PluginInventoryTests | 7 | 内存镜像(WS round-trip 形状重建与排序/plugins 键缺失与非数组值忽略/按 agent 整体覆盖/Remove) |
 | HostTargetedDispatchTests | 3 | `agent:{id}` 定向派发(按 id 路由绕过区域 Pick/目标离线 requeue/目标能力缺失 requeue) |
 | PluginEcosystemPropertyTests | 7 | §38 维护轮 FsCheck property:target 往返恒等与精确接受(null/空/嵌套 `agent:`)、checksum 归一(64-hex 缩域生成器采样接受区/任意串接受谓词/幂等)、索引解析(平行数组生成任意 catalog:字段透传+sha 小写归一+Ordinal 排序;任意 json 只以 FormatException/ArgumentException/JsonException 拒绝且快照恒有序) |
 
 ### 插件体系(388 个测试)
 
-- **Plugins.Core(129)**:清单解析(13)、发现(5)、加载(11)+加载器(8)、卸载与 ALC 回收(9,含 DisposeAsync 卸载自身抛错隔离)、信任与权限(18)、事件分发(12)、配置扩展(20)、能力(7)、插件 API 与 SemVer 兼容(18,含 TryParseVersion theory 展开)、管理器并发(1)、故障 fixture 库(6)+ 异常 ctor 契约(1)
-- **MobileAuthenticator(129)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(41)+ 动作边界:payload 形状/失败语义/冷却与并发(44)、确认客户端解析含 type 归一化(10)+ 客户端会话分支(17)、解析分支(10)、确认哈希(8 + FsCheck property 3:HMAC oracle 交叉验证/确定性 + 四 tag 互异/空 tag 与空 secret 的 ParamName 契约)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
-- **MarketWatch(56)**:watch 存储(18)/阈值评估/三个 watch action(kind=price/free)/轮询告警与 webhook(free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机/手动驱动前 drain-and-stop 测试钩子)/单 app 抓取失败隔离/阈值 payload 值形状/无参构造 Info/插件宿主实战加载(2)
-- **Monitoring(35)**:指标注册表(9)/HTTP 服务(16)/插件生命周期(10)
+- **Plugins.Core(147)**:清单解析(13)、发现(5)、加载(11)+加载器(8)、卸载与 ALC 回收(9,含 DisposeAsync 卸载自身抛错隔离)、信任与权限(18)、事件分发(14)、配置扩展(21)、能力(10)、插件 API 与 SemVer 兼容(18,含 TryParseVersion theory 展开)、管理器并发(1)、故障 fixture 库(7)+ 异常 ctor 契约(1)、构造守卫(6:DefaultPluginHostServices/PluginManager/PluginEventDispatcher 的 paramName 抛出/重复 Add 同实例只计一次/坏 Version-ApiVersion 回退 0.0/缺入口发现告警)、TestPlugin 表面直测(5:echo action 反射 payload/plugin-ping 回 pong/初始化与关停标记文件——staged 副本不带 PDB,直实例化保覆盖可见)
+- **MobileAuthenticator(137)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(45)+ 动作边界:payload 形状/失败语义/冷却与并发(44)、确认客户端会话分支(21)+ 解析含 type 归一化(10)、确认哈希(8 + FsCheck property 3:HMAC oracle 交叉验证/确定性 + 四 tag 互异/空 tag 与空 secret 的 ParamName 契约)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
+- **MarketWatch(62)**:watch 存储(18)/插件动作与轮询告警(13:三个 watch action kind=price/free+阈值评估)/边缘与 webhook(29:free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机/手动驱动前 drain-and-stop 测试钩子/单 app 抓取失败隔离/阈值 payload 值形状/无参构造 Info)/插件宿主实战加载(2)
+- **Monitoring(42)**:指标注册表(10)/HTTP 服务(20)/插件生命周期(12)
 
 ### Agent(105 个测试)
 
-重连退避策略(30,含不变量 property 5——曲线单调非减/初值下界与 max 上界/重试谓词单调且 unlimited 恒假/构造器四参往返/单约束违约必抛 ArgumentOutOfRange;生成器陷阱两处:swap 法造 max<initial 会撞 max==initial 合法域,大 factor 上减 1 可能仍 ≥1——违约臂都必须构造出严格越界的值)、任务执行器(15,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、插件 host action(37:IHostAction 执行器 4——跨 agent target 拒绝/无会话执行/异常包装/取消透传;包安装器 18——zip-slip/根 manifest/URL 与校验和预检/校验和不符零痕迹/清单 id-version 核对/替换热重载/下载失败/PluginsRoot 属性/取消透传/64 位非 hex/无根 manifest 全链/坏 manifest JSON/入口 DLL 缺失/显式目录条目/http 下载成功/声明长度超限/默认 HttpClient 工厂失败臂;install action 5——元数据/url-sha256 必填与 sha_256 别名/宿主未初始化/成功全清单输出/失败仍带镜像;uninstall action 7——元数据/pluginId 必填/幂等 removed=false/卸载热卸载/宿主未初始化/缺失目录早退/只读根降级;list action 3——元数据/空清单/带元数据清单)、maFile 离线导入 CLI(9,含幽灵路径点名)、WS URI 构造(4)、追踪注入(1)
+重连退避策略(30,含不变量 property 5——曲线单调非减/初值下界与 max 上界/重试谓词单调且 unlimited 恒假/构造器四参往返/单约束违约必抛 ArgumentOutOfRange;生成器陷阱两处:swap 法造 max<initial 会撞 max==initial 合法域,大 factor 上减 1 可能仍 ≥1——违约臂都必须构造出严格越界的值)、任务执行器(18,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、插件 host action(41:IHostAction 执行器 4——跨 agent target 拒绝/无会话执行/异常包装/取消透传;包安装器 21——zip-slip/根 manifest/URL 与校验和预检/校验和不符零痕迹/清单 id-version 核对/替换热重载/下载失败/PluginsRoot 属性/取消透传/64 位非 hex/无根 manifest 全链/坏 manifest JSON/入口 DLL 缺失/显式目录条目/http 下载成功/声明长度超限/默认 HttpClient 工厂失败臂;install action 5——元数据/url-sha256 必填与 sha_256 别名/宿主未初始化/成功全清单输出/失败仍带镜像;uninstall action 8——元数据/pluginId 必填/幂等 removed=false/卸载热卸载/宿主未初始化/缺失目录早退/只读根降级;list action 3——元数据/空清单/带元数据清单)、maFile 离线导入 CLI(10,含幽灵路径点名)、WS URI 构造(4)、追踪注入(2)
 
 ### E2E(11 个测试)
 
