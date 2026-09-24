@@ -234,6 +234,25 @@ tests/
 
 真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。分类:ControlPlaneAgentE2ETests(5,健康检查/job 全链路/任务取消/SSE 事件流/2FA 挑战人工提交)、AccountOrchestrationE2ETests(1,账户声明→自动分配→kill agent→重平衡)、StaticPagesE2ETests(5,静态页守护:E2E 的 CP 进程是"bin dll + 测试器 cwd"的裸部署形态,守护 admin/dashboard/gamedata/favicon 匿名 200 与 `/`→admin UI 落地——曾因 Web SDK 只在 publish 复制 wwwroot + WebRoot 锚 cwd 导致部署态全 404 而全测试套件无一页面请求)。
 
+### Vapor.Protocol.Tests(43 个测试)
+
+全平台 REST/WS 消息的共享 JSON 序列化契约(JsonDefaults.Options——camelCase 命名/camelCase 枚举字符串/null 省略是 wire 契约而非实现细节)+ 全部协议模型逐字段往返。
+
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| ProtocolModelsRoundTripTests | 17 | 核心协议模型逐字段往返(JobSchedule 含策略/Job 含 schedule 与 nextRun/JobTask payload+output/CreateJobRequest/AccountSpec 含 desired state 与 farm 排除 apps/TradePolicy 白名单与 disabled 显式序列化/AccountConfig 密码格式/GlobalConfig/SessionEvent/AuthChallengeEvent 不带 code;camelCase 命名抽查) |
+| ProtocolRecordsEdgeTests | 15 | wire record 边界(ActionParamSchema/ActionDescriptor 默认与全填充/PluginEvent 带/不带 payload/TaskResult/TaskHeartbeat/TaskCancel 带/不带 reason/JobWithTasks/ErrorResponse camelCase 往返/Event/AgentHello capabilities+meta/WSMessage 全帧变体与最小帧可选成员省略/CreateJobResponse) |
+| JsonDefaultsContractTests | 7 | 共享序列化契约钉死(camelCase 属性名/枚举 camelCase 字符串/null 属性省略/非 null 默认值保留/camelCase JSON 反序列化/枚举字符串大小写不敏感/往返恒等) |
+| ProtocolJsonRoundTripPropertyTests | 4 | FsCheck property:任意字段值序列化→反序列化精确恢复 record(心跳/取消/错误/握手模型;object? payload 字典模型刻意排除——STJ 读回 JsonElement 是已知接受的损失,非本门追踪的回归;任意 long 折入 DateTimeOffset 可表示域 year 1..9999 再取任意偏移) |
+
+### Vapor.KeyRotation.Tests(28 个测试)
+
+凭据轮换 CLI 壳(Program):参数解析、key spec 四格式全臂、退出码契约(0/1/2)与真实旋转三态。
+
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| ProgramCliTests | 28 | CLI 全臂(help 双旗 0/缺必参与未知参与坏 base64 钥与同钥返回 2/store 缺失返回 1/dry-run 零改动/真实旋转 applied+备份+新钥可解 0/不可解账户与损坏 store 返回 1)、key spec 四格式(base64 前缀大小写不敏感/文件缺失以解析后路径抛错/文件 base64 过短回退 raw/纯文本 UTF-8 字节/env 未设抛错/trim)、路径展开(`~/` 与 `~\\` 取 HOME/其余转全路径)、GetValue 推进索引;`--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost |
+
 ## 运行测试
 
 > 测试目标框架为 `net10.0`（.NET SDK 10.x）。`./scripts/run-tests.sh` / `.\scripts\run-tests.ps1` 已默认设置 `DOTNET_ROLL_FORWARD=Major`。
@@ -308,7 +327,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
-### 当前基线（2026-09-23，行覆盖 100.0% / 分支覆盖 100.0%）
+### 当前基线（2026-09-24，行覆盖 100.0% / 分支覆盖 100.0%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中；分支覆盖按分支行的 condition-coverage 统计，同一行多次观察取已覆盖条件数的最大值）：
 
@@ -322,7 +341,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
 | ControlPlane | 100.0% | 100.0% (2060/2060) |
-| Steam.Core | 100.0%（取消/竞态臂经确定性测试与排除定性收尾，见下） | 100.0% (3005/3005) |
+| Steam.Core | 100.0%（取消臂经确定性测试收尾；TryAdd 竞态臂 2026-09-24 起由注入缝确定性测试覆盖，见下） | 100.0% (3005/3005) |
 | MarketWatch | 100.0% | 100.0% (142/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
 | **合计** | **100.0%** (15887/15887) | **100.0%** (6135/6135) |
@@ -415,6 +434,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-23 分支缺口冲刺第十二轮（复核收口轮三,逐轮棘轮:+2 测试全绿,分支 6133/6137=99.9% → **6134/6135=100.0%**,门禁 99.93 → **99.98**）。**方法论:对剩余 4 条缺口做第三维审查——前轮只审「源码改不改」,本轮加审「死位的可测性能不能造」**。2 条翻案:①SteamClientManager:40/48（SteamAuthTokenProvider）——上轮「包契约防御臂必须保留」的定性约束的是**源码形态**,没审 throw 位的**可测性**:把两处反射查找提取为 Type 参数化的 `internal static` resolver（`ResolveAuthenticationCtor`/`ResolveGenerateAccessTokenMethod`）,生产构造函数改为 `Resolve...(typeof(SteamAuthentication))`,查找参数/异常/消息逐字节不变;测试传 `typeof(string)`（无 SteamClient 构造/无该方法名）确定性命中两个 throw 位,+2 测试断言异常消息。**可测性开缝**:不改防御语义,只把「版本漂移时死」变成「版本漂移时测得出」。②SessionManager:233——`TryGetValue(...) ? existingSession : null` 三元等价消除:TryAdd 返 false 是 ConcurrentDictionary 的**原子承诺**（此刻键必在）,极端并发 Remove 窗口下 TryGetValue 产出 default(BotSession)=null——与原 null 臂可观察行为逐路径一致;改写为丢弃返回值 + `return existingSession!`,无条件表达式⇒探测位 −2。**1 条维持收口**:Reconciler:137——PeriodicTimer 局部 using 无 Dispose 通道结构性死位;本轮补充:换原语不等价（Task.Delay 无漂移补偿/防重叠语义）,`if (!await ...) break` 形态只挪死位位置,维持为**全解决方案最后一个分支缺口**。**分母口径**:分支 6137→6135（SessionManager 三元删除 −2:1 缺口 F 位 + 1 已覆盖 T 位）、分子 6133→6134（删 1 已覆盖位,新增 2 throw 位命中）;行 15883→15885（resolver 提取 +2 新行,全命中）。Steam.Core 分支升至 100.0%。教训:「不可测」有三层——逻辑不可达（改写消除）、逻辑可达但窗口不可得（竞态,收口论证）、**逻辑可达但缺注入缝（开缝补测）**;前轮定性只覆盖前两层。验证:Debug build 0 警告、SteamClientManagerTests 25/25（含 2 新测试）、format verify 过、显式 Release build 0 警告、全量串行绿（10 段全 attempt 1,0 重试）、门禁预验 GATE_CHECK_EXIT=0（99.98:当前 99.9837 过,丢末位 99.9674 红）,CI 终态见提交后监控。**第十二轮收尾修复（CI 行门禁轮盘行二例）**:首次 CI coverage job 行门禁红——ControlPlane 7071/7074 差 3 行,分支 6134/6135 与本地一致,rerun 转绿（15885/15885）证实非确定性。根因定位:本轮改动程序集（Steam.Core/MA）行全部满分,缺口在既有测试的真实时钟窗口——`Inventory_ValidationAndPendingResponses` 把 `AccountTaskRunner.WaitWindow`（internal static 旋钮,默认 30s）压到 **300ms** 驱动 DispatchAsync 超窗路径（202 断言）;CI 满核并行极端停顿下「进 while 前烧掉整个窗口」⇒ 轮询循环体行全 0（差 3 行吻合循环体序列点数）。修复①:窗口 300ms→2s（25ms 轮询 80 次,断言语义不变,吃窗需 2s+ 停顿,概率归零;用例 7s）。修复②（取证链）:ci.yml 中 Coverage gate 原排在「Upload test results on failure（if: failure()）」**之后**——gate 红时 upload 求值时 job 尚未失败被跳过,cobertura artifact 永不可得（第十一轮排查已踩）;gate 移至 upload 之前,gate 红即标记 job 失败⇒upload 触发⇒行级数据可查;Codecov 显式 `if: success()`。教训:①真实时钟窗口型测试的窗口必须远大于调度停顿（300ms 与 CI GC/调度停顿同数量级,是轮盘温床）;②internal static 可变旋钮（WaitWindow/PollInterval）跨测试污染风险靠 collection 串行化+try/finally 恢复管控（既有设计）,窗口取值还要考虑停顿免疫力;③门禁步骤与失败上传的顺序决定取证链生死——失败数据必须在失败判定后仍可产生。
 
 > 2026-09-23 分支缺口冲刺第十三轮（复核收口轮四,逐轮棘轮:+1 测试全绿,分支 6134/6135 → **6135/6135=精确 100%,门禁 99.98 → 100,全解决方案分支探测位清零**）。**方法论:对第十二轮「维持收口」的 Reconciler:137 做第三维复审——收口结论也要过「可测性能不能造」审查**。十二轮定性「PeriodicTimer 局部 using 无 Dispose 通道,结构性死位,换原语不等价」约束的是**服务私有 timer 上的原位可测性**,没审**所有权反转提取**:把 while 循环体反演为 `internal RunReconcileLoopAsync(PeriodicTimer, CancellationToken)`,ExecuteAsync 保留 timer 所有权与 Dispose 时机（循环体逐字节搬移,生产路径等价）;测试自建真实 `PeriodicTimer(5ms)`,先让活 tick 驱动 ReconcileOnce 走 try 臂,再 Dispose——BCL 契约「Dispose 后 in-flight 与后续 WaitForNextTickAsync 返 false」令 F 臂确定性命中（测试 252ms 过,无 mock 无替身,真实 timer）。十二轮「换原语不等价」论证依然成立,但结论错了一层:**死位不可在原位消除 ≠ 不可经所有权反转把 BCL 契约暴露给测试**。分母口径:分支 6134/6135 → 6135/6135（分子 +1,F 位收编）;行 15885 → 15887（方法提取 +2 新行:签名行与调用行,全命中）;ControlPlane 分支 2059/2060 → **2060/2060**,11 程序集行/分支双 100.0%。教训:「结构性死位」的定性是三维的——原位不可触 ≠ 全局不可测;收口论证的自然下一条审查线是「注入缝能否开在所有权边界上」。验证:Debug build 0 警告 0 错误、新测试 252ms 过、format verify 过（无管道真实退出码复跑,防 `$?` 伪影再实证）、显式 Release build 过（BUILD_EXIT=0,0 警告）、全量串行绿（10 段全 attempt 1,0 重试）、门禁预验 `--min 100 --min-branch 100` GATE_100_EXIT=0,CI 终态见提交后监控。
+
+> 2026-09-24 覆盖率复测轮（概率臂现形与确定性化收口,用户指令「以实际测试工具实测为准推进 100%,凑数的假覆盖不算;不可达分支如实记录原因」;+0 测试——同一条测试从概率撞改造为确定性缝,测试数不变）。**①概率臂现形（runbook 第 6 条再实证）**:逐类盘点轮收官后串行轮复测（src/tests 零变更）——行 15887/15887 满,分支 **6134/6135**,Steam.Core asm 3004/3005（十三轮收官时为 3005/3005）。照抄 coverage-summary.py 合并语义（glob 单层 `*`、asm 从 package.name 取、同行 `(covered,total)` 元组取大）的定位脚本锁出唯一缺口:**`SessionManager.cs:112` 的 `TryAdd` false 臂（1/2）**。第八轮已将该臂「Barrier 16 线程确定性」证伪为高概率（首线程可一路跑完 TryAdd,余者 TryGetValue 全命中——注释自记「40 轮曾整轮 miss」）,十三轮的 3005/3005 是那 5 轮齐放里真撞上了,本轮 5 轮全错峰——概率覆盖臂在门禁顶格下的必然现形。**②确定性化（改造 `GetOrCreateSessionAsync_ConcurrentCreation_RaceLoserReturnsWinner`,测试数 42 不变）**:竞态窗口（TryGetValue 与 TryAdd 之间的同步段）内运行 `CreateLogger<BotSession>`——注入 gated logger factory 把它变成确定性挂起缝:败者线程在线程池上先过 TryGetValue、park 在 CreateLogger 回调（armed 一次性撤防 + 30s 超时防死锁）,主线程完成赢者的完整 TryAdd,释放门放行败者落到 `HandleDuplicateCreateRace`——真双线程真竞态裁决,断言不变（败者返回赢者）。`HandleDuplicateCreateRace` 方法体维持 `[ExcludeFromCodeCoverage]`（行分母不含）,但 112 行三元判定的 false 臂（属 GetOrCreateSessionAsync,不在排除范围）现被每次运行确定性命中。重构测试 10 连跑全绿（单测 519ms,旧 16 线程×5 轮更慢且赌运气）,SessionManager 两测试类 47/47。**③教训入册（行号漂移 vs 合并视图）**:单段快验时两处注释改动使 SessionManager.cs 物理行号 +2 偏移——9 份旧报告（旧行号系）与 1 份新报告并集出 58 个幽灵分母行,合计假跌 99.6%。**改码后必须全量重跑串行轮（全部段对齐同一行号系）;单段重跑只能验证「修复位归满」,不能出全局数字**——runbook「显式 build」教训的合并视图推广:门禁数字的有效前提是所有报告来自同一源码版本。产品侧两处注释同步改写（「no deterministic in-process trigger」已被注入缝推翻,指向 SessionManagerTests）。**④验证**:显式 Release build 0 警告 0 错误（14m20s）、全量串行轮 10 段新行号系全绿、coverage-summary `--min 100 --min-branch 100` 顶格过、CI 终态见提交后监控。TRX 计数不变（同一条改造）,统计表/明细区/附录数字零变动。
 
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
@@ -567,9 +588,9 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 - 定期审查和重构测试代码
 
 
-## 附录：逐类测试计数（2026-09-23 r13 后 TRX 实测）
+## 附录：逐类测试计数（2026-09-24 十项目 TRX 实测）
 
-> 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（七项目 `--logger trx` 重跑,项目总数与串行轮一致：2879）。再生成方式见脚本头注释。本表是逐类计数的权威源;上方明细区的括号数字与类集合为历次盘点快照,若与本表冲突以本表为准。
+> 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（2026-09-24 十项目 `--logger trx` 全量重跑——盘点轮先跑七项目,复测轮补 Protocol/E2E/KeyRotation 三项目;合计与统计表一致：2879）。再生成方式见脚本头注释。本表是逐类计数的权威源;明细区已于 2026-09-24 重构对齐（计数/类集合/说明）,若与本表冲突以本表为准。
 
 ### Vapor.Steam.Core.Tests（1496 个测试）
 
@@ -797,3 +818,25 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | AgentWebSocketUriTests | 4 |
 | PluginListActionTests | 3 |
 | TracingTests | 2 |
+### Vapor.Protocol.Tests（43 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| ProtocolModelsRoundTripTests | 17 |
+| ProtocolRecordsEdgeTests | 15 |
+| JsonDefaultsContractTests | 7 |
+| ProtocolJsonRoundTripPropertyTests | 4 |
+
+### Vapor.KeyRotation.Tests（28 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| ProgramCliTests | 28 |
+
+### Vapor.E2E.Tests（11 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| StaticPagesE2ETests | 5 |
+| ControlPlaneAgentE2ETests | 5 |
+| AccountOrchestrationE2ETests | 1 |
