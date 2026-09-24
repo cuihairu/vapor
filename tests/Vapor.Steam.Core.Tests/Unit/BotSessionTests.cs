@@ -281,7 +281,14 @@ public class BotSessionTests : IDisposable
 		try
 		{
 			var call = session.ExecuteActionAsync("test", new Dictionary<string, object?>(), cts.Token);
-			await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+			// This wait covers "the command pump reached the mock body" — the pump
+			// resumes via a channel continuation on the thread pool, so under CI's
+			// instrumented coverage run (1-of-1496 scheduling stalls observed in
+			// run 36061986885) a 5 s budget can expire before the pump is ever
+			// scheduled. 30 s matches the SubscribeEvents budget precedent
+			// (f34ebc0): the green path completes in milliseconds, while a genuinely
+			// dead pump still times out red long before the CI blame-hang guard.
+			await started.Task.WaitAsync(TimeSpan.FromSeconds(30));
 
 			// Act & Assert
 			cts.Cancel();
