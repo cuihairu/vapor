@@ -549,6 +549,19 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">内部状态总览</h2>
+                            <div class="panel-subtitle">控制面自检 / 代理探测 / 运行状态 / 账号一致性（/v1/system/status，凭据与挑战码永不展示）。</div>
+                        </div>
+                        <button class="btn btn-small" id="refreshSystemStatusButton">刷新</button>
+                    </div>
+                    <div class="list" id="systemStatusList">
+                        <div class="empty-state">正在加载内部状态...</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">账户</h2>
                             <div class="panel-subtitle">声明状态与调度位置（/v1/accounts）。</div>
                         </div>
@@ -688,6 +701,7 @@
                 await bootstrap();
             });
 
+            document.getElementById("refreshSystemStatusButton").addEventListener("click", () => refreshSystemStatus());
             document.getElementById("refreshJobsButton").addEventListener("click", () => refreshJobs());
             document.getElementById("refreshAgentsButton").addEventListener("click", () => refreshAgents());
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
@@ -715,12 +729,156 @@
 
         async function refreshAll() {
             await Promise.all([
+                refreshSystemStatus(),
                 refreshAccounts(),
                 refreshAgents(),
                 refreshSessions(),
                 refreshJobs(),
                 refreshAudit()
             ]);
+        }
+
+        // 内部状态刷新去抖：SSE 事件密集时 2s 内只发一次请求，避免轮询轰炸。
+        let systemStatusRefreshTimer = null;
+        function scheduleSystemStatusRefresh() {
+            if (systemStatusRefreshTimer) {
+                return;
+            }
+            systemStatusRefreshTimer = setTimeout(() => {
+                systemStatusRefreshTimer = null;
+                refreshSystemStatus().catch(() => {});
+            }, 2000);
+        }
+
+        async function refreshSystemStatus() {
+            const data = await apiFetch("/v1/system/status");
+            renderSystemStatus(data);
+        }
+
+        function overallBadgeClass(status) {
+            if (status === "healthy") return "ok";
+            if (status === "degraded") return "warn";
+            return "bad";
+        }
+
+        function overallLabel(status) {
+            if (status === "healthy") return "正常";
+            if (status === "degraded") return "降级";
+            return "故障";
+        }
+
+        function renderSystemStatus(data) {
+            const container = document.getElementById("systemStatusList");
+            if (!data) {
+                container.innerHTML = '<div class="empty-state">内部状态不可用。</div>';
+                return;
+            }
+
+            const overall = data.overall || {};
+            const controlPlane = data.controlPlane || {};
+            const db = controlPlane.db || {};
+            const jobs = controlPlane.jobs || {};
+            const scheduler = controlPlane.scheduler || {};
+            const reconciler = controlPlane.reconciler || {};
+            const recurring = controlPlane.recurringJobs || {};
+            const plugins = controlPlane.plugins || {};
+            const proxies = data.proxies || {};
+            const agents = data.agents || {};
+            const accounts = data.accounts || {};
+
+            const reasons = (overall.reasons || [])
+                .map((reason) => `<div class="helper">· ${escapeHtml(reason)}</div>`)
+                .join("");
+            const overallRow = `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">整体健康</div>
+                            <div class="tiny mono">overall</div>
+                        </div>
+                        <span class="badge ${overallBadgeClass(overall.status)}">${overallLabel(overall.status)}</span>
+                    </div>
+                    ${reasons || '<div class="helper">一切正常。</div>'}
+                </article>`;
+
+            const dbLine = db.available
+                ? `<span class="badge ok">可用</span> <span class="tiny">延迟 ${db.latencyMs ?? "-"} ms</span>`
+                : `<span class="badge bad">不可用</span> <span class="tiny">${escapeHtml(db.error || "未知错误")}</span>`;
+            const schedulerLine = scheduler.lastTickAt
+                ? `<span class="badge ok">心跳正常</span> <span class="tiny">最近 tick ${formatDate(scheduler.lastTickAt)}</span>`
+                : '<span class="badge mute">尚未运行</span>';
+            const reconcilerLine = reconciler.lastPassAt
+                ? `${reconciler.lastPassFailed
+                    ? '<span class="badge bad">最近一轮失败</span>'
+                    : '<span class="badge ok">最近一轮成功</span>'} <span class="tiny">${formatDate(reconciler.lastPassAt)} · 耗时 ${reconciler.lastPassDurationMs ?? "-"} ms</span>`
+                : '<span class="badge mute">尚未运行</span>';
+            const pluginTrust = Object.entries(plugins.byTrust || {})
+                .map(([trust, count]) => `${escapeHtml(trust)}×${count}`)
+                .join("，") || "无";
+            const controlPlaneRow = `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">控制面自检</div>
+                            <div class="tiny mono">队列 待处理 ${jobs.queued ?? 0} · 运行 ${jobs.running ?? 0} · 完成 ${jobs.finished ?? 0} · 失败 ${jobs.failed ?? 0} · 取消 ${jobs.canceled ?? 0}</div>
+                        </div>
+                    </div>
+                    <div class="helper">任务库：${dbLine}</div>
+                    <div class="helper">调度器：${schedulerLine}</div>
+                    <div class="helper">收敛器：${reconcilerLine}</div>
+                    <div class="helper">定时作业：触发 ${recurring.triggered ?? 0} · 重叠跳过 ${recurring.overlapSkipped ?? 0} · 错过丢弃 ${recurring.missedDropped ?? 0} · 错过补跑 ${recurring.missedCatchUps ?? 0}</div>
+                    <div class="helper">插件：${plugins.agentsReporting ?? 0} 个 agent 上报，共 ${plugins.entries ?? 0} 个（信任级别：${pluginTrust}）</div>
+                </article>`;
+
+            const proxyRecent = (proxies.recent || []).slice(0, 5).map((probe) => `
+                <div class="helper">${probe.success ? "✅" : "❌"} ${escapeHtml(probe.account)} — 出口 ${escapeHtml(probe.exitIp || "-")} · ${probe.latencyMs != null ? `${probe.latencyMs} ms` : "无延迟数据"}${probe.error ? ` · ${escapeHtml(probe.error)}` : ""}</div>
+            `).join("");
+            const proxyRow = `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">代理探测</div>
+                            <div class="tiny mono">成功 ${proxies.probesOk ?? 0} · 失败 ${proxies.probesFailed ?? 0} · 未启用 ${proxies.proxyDisabled ?? 0}</div>
+                        </div>
+                    </div>
+                    ${proxyRecent || '<div class="helper">暂无探测记录（代理常驻状态在 agent 侧，此处汇总历史 check_proxy 任务）。</div>'}
+                </article>`;
+
+            const agentRows = (agents.entries || []).map((agent) => `
+                <div class="helper">${escapeHtml(agent.id)} @ ${escapeHtml(agent.region || "-")} · 连接于 ${formatDate(agent.connectedAt)}</div>
+            `).join("");
+            const agentsRow = `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">运行状态</div>
+                            <div class="tiny mono">在线 agent ${(agents.connected ?? 0)} 个 · 区域 ${(agents.regions || []).join("，") || "无"}</div>
+                        </div>
+                    </div>
+                    ${agentRows || '<div class="helper">没有已连接的 agent。</div>'}
+                </article>`;
+
+            const desiredSpread = Object.entries(accounts.byDesiredState || {})
+                .map(([state, count]) => `${escapeHtml(state)}×${count}`)
+                .join("，") || "无";
+            const mismatchRows = (accounts.mismatches || []).slice(0, 10).map((mismatch) => `
+                <div class="helper">⚠️ ${escapeHtml(mismatch.account)}：期望 ${escapeHtml(mismatch.desiredState)}，实际 ${escapeHtml(mismatch.actualSessionState || "无会话")}</div>
+            `).join("");
+            const challengeSpread = Object.entries(accounts.challengeTypes || {})
+                .map(([type, count]) => `${escapeHtml(type)}×${count}`)
+                .join("，") || "无";
+            const accountsRow = `
+                <article class="card-row">
+                    <div class="row-head">
+                        <div class="title-group">
+                            <div class="strong">账号信息</div>
+                            <div class="tiny mono">共 ${accounts.total ?? 0} 个（期望分布：${desiredSpread}）· 待处理挑战 ${accounts.pendingChallenges ?? 0}（${challengeSpread}）</div>
+                        </div>
+                    </div>
+                    ${mismatchRows || '<div class="helper">期望状态与实际会话一致。</div>'}
+                </article>`;
+
+            container.innerHTML = overallRow + controlPlaneRow + proxyRow + agentsRow + accountsRow;
         }
 
         function authHeaders() {
@@ -984,6 +1142,7 @@
                 "task.finished": (data) => {
                     addEvent("task", `任务完成 ${shortId(data.taskId)}，结果 ${data.success ? "成功" : "失败"}`);
                     refreshJobs().catch(() => {});
+                    scheduleSystemStatusRefresh();
                 },
                 "task.dispatched": (data) => {
                     addEvent("task", `任务已分发 ${shortId(data.taskId)} → ${data.agentId || "unknown"}`);
@@ -991,18 +1150,22 @@
                 "job.created": (data) => {
                     addEvent("task", `新作业：动作 ${data.action}，目标 ${data.targets}`);
                     refreshJobs().catch(() => {});
+                    scheduleSystemStatusRefresh();
                 },
                 "job.canceled": () => {
                     addEvent("task", "作业已取消");
                     refreshJobs().catch(() => {});
+                    scheduleSystemStatusRefresh();
                 },
                 "agent.connected": (data) => {
                     addEvent("agent", `Agent 已连接 ${data.agentId} @ ${data.region || "-"}`);
                     refreshAgents().catch(() => {});
+                    scheduleSystemStatusRefresh();
                 },
                 "agent.disconnected": (data) => {
                     addEvent("agent", `Agent 已断开 ${data.agentId} @ ${data.region || "-"}`);
                     refreshAgents().catch(() => {});
+                    scheduleSystemStatusRefresh();
                 }
             });
 
@@ -1021,6 +1184,7 @@
         function handleSessionEvent(data, action) {
             addEvent("session", `${data.accountName} ${action}`);
             refreshSessions().catch(() => {});
+            scheduleSystemStatusRefresh();
         }
 
         function createStream(path, handlers) {
