@@ -59,39 +59,54 @@ public class SessionManagerTests : IDisposable
 	public async Task GetOrCreateSessionAsync_ConcurrentCreation_RaceLoserReturnsWinner()
 	{
 		// Both callers can miss the TryGetValue fast path and race into TryAdd; the
-		// loser must dispose its own session and return the winner. The race window
-		// is the synchronous stretch between the two dictionary probes (no await to
-		// park inside), so raw threads released from a barrier all enter it together:
-		// by the time the winner's TryAdd lands, the other threads have already
-		// passed the lookup and must lose. Task-pool rounds left this to scheduling
-		// luck (a whole 40-round run once missed the slow path), which a 100% line
-		// gate cannot tolerate.
+		// loser must dispose its own session and return the winner. The window
+		// between the two dictionary probes has no await to park in, but it does
+		// evaluate CreateLogger<BotSession> — which a gated logger factory turns
+		// into a deterministic seam: the loser thread is parked inside it (past
+		// the lookup, before the add), the winner completes its TryAdd in full,
+		// and only then is the loser released to lose for real. The earlier
+		// 16-thread barrier volley left this to scheduling luck (a whole 40-round
+		// run once missed the slow path, and the 2026-09-24 coverage rerun
+		// reproduced that miss), which a 100% branch gate cannot tolerate.
 		var credentials = new AccountCredentials("race_account", "password");
-		const int racers = 16;
-		for (int round = 0; round < 5; round++)
+		var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		int armed = 1;
+		using var gatingFactory = new GatedLoggerFactory(categoryName =>
 		{
-			var barrier = new Barrier(racers);
-			var results = new BotSession[racers];
-			var threads = Enumerable.Range(0, racers).Select(i => new Thread(() =>
+			// Fire once, for the loser's CreateLogger<BotSession>; the winner's
+			// own (and every later) call passes straight through.
+			if (Interlocked.Exchange(ref armed, 0) == 1)
 			{
-				barrier.SignalAndWait();
-				results[i] = _manager.GetOrCreateSessionAsync("race_account", credentials, CancellationToken.None)
-					.GetAwaiter().GetResult();
-			})).ToArray();
-
-			foreach (var thread in threads)
-			{
-				thread.Start();
+				reached.TrySetResult();
+				if (!gate.Task.Wait(TimeSpan.FromSeconds(30)))
+				{
+					throw new TimeoutException("the winner never completed its creation; failing the parked loser");
+				}
 			}
+		});
+		var manager = new SessionManager(
+			_actionRegistryMock.Object, _loggerMock.Object, _steamClientManagerMock.Object,
+			loggerFactory: gatingFactory);
 
-			foreach (var thread in threads)
-			{
-				thread.Join();
-			}
+		var results = new BotSession[2];
+		var loser = new Thread(() =>
+		{
+			results[1] = manager.GetOrCreateSessionAsync("race_account", credentials, CancellationToken.None)
+				.GetAwaiter().GetResult();
+		});
+		loser.Start();
+		await reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-			Assert.All(results, session => Assert.Same(results[0], session));
-			await _manager.RemoveSessionAsync("race_account", CancellationToken.None);
-		}
+		results[0] = await manager.GetOrCreateSessionAsync("race_account", credentials, CancellationToken.None);
+		gate.TrySetResult();
+
+		loser.Join(TimeSpan.FromSeconds(30));
+		Assert.False(loser.IsAlive, "the loser thread never finished its creation");
+
+		Assert.All(results, session => Assert.Same(results[0], session));
+		await manager.RemoveSessionAsync("race_account", CancellationToken.None);
+		manager.Dispose();
 	}
 
 	[Fact]
@@ -1140,6 +1155,24 @@ public class SessionManagerTests : IDisposable
 		_steamClientManagerMock
 			.Setup(m => m.LoginAsync("test_account", string.Empty, It.IsAny<CancellationToken>()))
 			.Returns(Task.CompletedTask);
+	}
+
+	/// <summary>
+	/// Logger factory whose CreateLogger hands each category to a callback before
+	/// returning — the seam the race test parks the losing creation in (the call
+	/// sits between SessionManager's dictionary probes).
+	/// </summary>
+	private sealed class GatedLoggerFactory(Action<string> onCategoryCreated) : ILoggerFactory
+	{
+		public void AddProvider(ILoggerProvider provider) { }
+
+		public ILogger CreateLogger(string categoryName)
+		{
+			onCategoryCreated(categoryName);
+			return NullLogger.Instance;
+		}
+
+		public void Dispose() { }
 	}
 
 	public void Dispose()

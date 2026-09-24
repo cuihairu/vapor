@@ -105,10 +105,11 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		);
 
 		// The TryAdd loser only happens when two creations interleave between
-		// the lookup and the add — no deterministic in-process trigger. The
-		// conditional keeps that arm's sequence point on the same line as the
-		// success arm, so the line's hit count is fed by the sequential path
-		// instead of being an uncoverable row that only a rare real race hits.
+		// the lookup and the add. That stretch runs CreateLogger<BotSession>,
+		// which an injected logger factory turns into a deterministic seam the
+		// tests park the losing creation in (see SessionManagerTests); the
+		// conditional keeps both arms' sequence points on the same line so the
+		// line's hit count is fed by the sequential path as well.
 		return _sessions.TryAdd(accountName, session)
 			? await CompleteCreateAsync(session, accountName, credentials).ConfigureAwait(false)
 			: HandleDuplicateCreateRace(session, accountName);
@@ -136,9 +137,9 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	/// same account: dispose the duplicate and hand back the incumbent.
 	/// [ExcludeFromCodeCoverage] — sequential callers can never get here (the
 	/// TryGetValue at the top of GetOrCreateSessionAsync returns the incumbent
-	/// first), so this only runs when two creations interleave between the
-	/// lookup and the add; that interleaving has no in-process deterministic
-	/// trigger (see tests/TESTING.md).
+	/// first), so the body only runs on an interleaved creation; the gated
+	/// logger factory in SessionManagerTests reaches it deterministically, but
+	/// its interior stays out of the coverage denominators (see tests/TESTING.md).
 	/// </summary>
 	[ExcludeFromCodeCoverage]
 	private BotSession HandleDuplicateCreateRace(BotSession loser, string accountName)
