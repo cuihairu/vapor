@@ -12,7 +12,7 @@ tests/
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (808 tests)
+├── Vapor.ControlPlane.Tests/             (860 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
 ├── Vapor.Plugins.Core.Tests/             (147 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (137 tests)
@@ -30,7 +30,7 @@ tests/
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
 | Vapor.Steam.Core.Tests | 1496 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action) |
-| Vapor.ControlPlane.Tests | 808 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析 |
+| Vapor.ControlPlane.Tests | 860 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)及纯函数 property 扩面 |
 | Vapor.Plugins.Core.Tests | 147 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 137 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
 | Vapor.Agent.Tests | 105 | 重连退避策略(含不变量 property:曲线单调/上下界/重试谓词单调/构造器往返/四违约臂)、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
@@ -39,7 +39,7 @@ tests/
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2879** | (2026-09-23 r13 实测(TRX Passed 计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2931** | (2026-09-24 实测(TRX Passed 计数;ControlPlane 860 本轮实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -50,7 +50,7 @@ tests/
 
 ## 测试分类
 
-> 章节总数与文末「附录：逐类测试计数」均为 2026-09-24 专项盘点 TRX 实测（合计 2879）。逐类明细已与附录对齐（2026-09-24 重构轮：存量计数刷新 51 行、合并行正名 6 组、23 个漂移期新增类补行——新增类说明均从测试源码逐文件提炼,非反推）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
+> 章节总数与文末「附录：逐类测试计数」均为 2026-09-24 专项盘点 TRX 实测（合计 2879；2026-09-24 内部状态轮 +43 与维护轮 property 扩面 +9 后 ControlPlane 860,合计 2931——ControlPlane 部分为本轮实测,其余项目沿用盘点基线）。逐类明细已与附录对齐（2026-09-24 重构轮：存量计数刷新 51 行、合并行正名 6 组、23 个漂移期新增类补行——新增类说明均从测试源码逐文件提炼,非反推）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
 
 ### Steam.Core(1496 个测试)
 
@@ -175,14 +175,14 @@ tests/
 | SteamTotpPropertyTests | 6 | FsCheck property:**RFC 6238 oracle 交叉验证**(本地手写规范实现,任意 secret×时间恒等)、输出确定性 + 恒 5 字符无混淆字母表、同 30s 窗口任意偏移同码、SecondsRemaining 周期性与值域、DecodeSecret 任意合法 base64 往返 + 坏输入按参数名拒绝 |
 | SteamTimeSynchronizerTests | 9 | Steam 服务器时间同步 |
 
-### ControlPlane(808 个测试)
+### ControlPlane(860 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | ProgramBranchCoverageTests | 79 | Program 组装层分支(配置解析/环境变量回退/装配路径逐支驱动) |
 | ConfigEnvironmentTests | 52 | Config.LoadFromEnvironment 环境变量臂(Theory 数据表扫 18 键:垃圾值 parse-false/守卫违例(0 与负数)/合法覆盖/PluginIndexUrl 空白回退;每用例 finally 还原进程全局 env——走进程全局 collection 禁并行,防并发 boot 读到被改键(负 ReconcileInterval 会杀并发 boot 的 PeriodicTimer)) |
 | AccountApiTests | 120 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取、挂单创建/撤单、积分兑换、重复查询/换卡报价:fake agent 顺序回报;五端点 202/502 三态与 claim 校验;boost 目标与 farm 策略 PUT 校验/回读/清除,standing/farm 快照端点与强制体检) |
-| DesiredStateReconcilerTests | 141 | 账户编排(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸 + §35 派发守卫(agent 能力缺失与 dry-run)/审计隔离(异常吞咽与 OCE 传播)/payload 多类型解析防御/结算回读防御(空 Tasks/失败 deviation/confirm 链) + 挂卡增强:队列排序三式/PriorityApps 置顶/队列 diff 完成标记/预算跳过与未到期保持/drain 一次性通知与新轮重启/累计统计双格式解析与无 total 容错/spec bump 事实保留) |
+| DesiredStateReconcilerTests | 143 | 账户编排(含最近收敛遥测 LastPassAt/DurationMs/Failed 成败两臂)(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸 + §35 派发守卫(agent 能力缺失与 dry-run)/审计隔离(异常吞咽与 OCE 传播)/payload 多类型解析防御/结算回读防御(空 Tasks/失败 deviation/confirm 链) + 挂卡增强:队列排序三式/PriorityApps 置顶/队列 diff 完成标记/预算跳过与未到期保持/drain 一次性通知与新轮重启/累计统计双格式解析与无 total 容错/spec bump 事实保留) |
 | TradePolicyPropertyTests | 8 | FsCheck property:trade 策略白名单(零剔除/去重/升序/输入序无关/幂等/全零 auto-accept 必拒)与 payload 数值读取(任意 boxed 值不抛/false 置零/JSON 数字臂往返);抓出并修复 NaN/∞ 透传边界(string 臂 `TryParse("NaN")` 为 true、boxed double 臂不滤非有限) |
 | CrawlApiTests | 40 | 数据抓取 REST(计划 CRUD/PUT merge 语义/触发/分片领取/行回写/claim 校验与去重) |
 | CrawlRunWorkerTests | 33 | 抓取执行 worker(读取/派发取消传播/GetJob 故障吞咽/坏 tick 兜底/停机竞态双路径/审计故障不阻断/混合列表输出解析) |
@@ -218,6 +218,8 @@ tests/
 | PluginInventoryTests | 7 | 内存镜像(WS round-trip 形状重建与排序/plugins 键缺失与非数组值忽略/按 agent 整体覆盖/Remove) |
 | HostTargetedDispatchTests | 3 | `agent:{id}` 定向派发(按 id 路由绕过区域 Pick/目标离线 requeue/目标能力缺失 requeue) |
 | PluginEcosystemPropertyTests | 7 | §38 维护轮 FsCheck property:target 往返恒等与精确接受(null/空/嵌套 `agent:`)、checksum 归一(64-hex 缩域生成器采样接受区/任意串接受谓词/幂等)、索引解析(平行数组生成任意 catalog:字段透传+sha 小写归一+Ordinal 排序;任意 json 只以 FormatException/ArgumentException/JsonException 拒绝且快照恒有序) |
+| SystemStatusApiTests | 41 | 内部状态聚合端点 `/v1/system/status`(admin 鉴权;空系统 healthy/账号+挑战 degraded/JobStore 故障 unhealthy;代理探测 11 形态聚合(成功/失败/disabled/排队跳过/空 output/缺 exitIp/错型/空串/Output=null);调度器心跳 tick 前后;DeriveOverall 7 臂/IsSessionConsistent 13 例/断开词表 12 例;JSON 断言 TryGetProperty 容错 WhenWritingNull 缺失键) |
+| SystemStatusPropertyTests | 9 | 维护轮 FsCheck property:会话状态词表大小写不变性与 unknown 非证据任意大小写臂、非空域三态互斥且穷尽(词表外即 live 证据)、非 Offline 期望判定恒等与证据三元组精确决策、overall 封闭域(healthy⟺reasons 空/unhealthy⟺DB 不可用)、四原因子串恰在触发条件上开火、挑战原因插值精确计数(非负全域) |
 
 ### 插件体系(388 个测试)
 
@@ -708,12 +710,13 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | BotSessionProxyTests | 2 |
 | LoginFlowTests | 1 |
 
-### Vapor.ControlPlane.Tests（808 个测试）
+### Vapor.ControlPlane.Tests（860 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
-| DesiredStateReconcilerTests | 141 |
+| DesiredStateReconcilerTests | 143 |
 | AccountApiTests | 120 |
+| SystemStatusApiTests | 41 |
 | ProgramBranchCoverageTests | 79 |
 | ConfigEnvironmentTests | 52 |
 | AccountStoreTests | 50 |
@@ -731,6 +734,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | EventBrokerTests | 11 |
 | CrawlShardPlannerTests | 11 |
 | SqliteAuditStoreTests | 9 |
+| SystemStatusPropertyTests | 9 |
 | TradePolicyPropertyTests | 8 |
 | AuthTests | 8 |
 | AgentRegistryTests | 8 |
