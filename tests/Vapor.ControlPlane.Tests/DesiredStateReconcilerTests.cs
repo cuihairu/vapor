@@ -257,6 +257,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
 		var agents = NewRegistry(("agent-1", "us-east", null));
 		var jobs = new FakeReconcileJobStore();
+		jobs.ArmCancelGate();
 		using var reconciler = CreateReconciler(accounts, agents, jobs, intervalSeconds: 1);
 
 		await reconciler.StartAsync(CancellationToken.None);
@@ -270,14 +271,19 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 
 		Assert.Single(jobs.Created);
 
-		// Tick 2: disabling the account unassigns it, but the store's cancel throws —
-		// only the NotFoundException arm swallows, so the IOException escapes to the
-		// background loop's catch (the line under coverage).
+		// Tick 2: disabling the account unassigns it, and the store's cancel
+		// parks at the armed gate — deterministically before the ThrowOnCancel
+		// check. Only the NotFoundException arm swallows, so the IOException
+		// escapes to the background loop's catch (the lines under coverage);
+		// arming turns that escape from a one-interval race into a
+		// happens-before edge a CI stall cannot invert.
 		accounts.SetEnabled("alice", enabled: false);
+		await jobs.CancelGateTouched!.Task.WaitAsync(TimeSpan.FromSeconds(30));
 		jobs.ThrowOnCancel = true;
+		jobs.CancelGate!.SetResult();
 
-		// Tick 3 proves the loop survived: the active job id was cleared ahead of the
-		// failed cancel, so the retry unassigns cleanly.
+		// Tick 3 proves the loop survived: the active job id was cleared ahead of
+		// the failed cancel, so the retry unassigns cleanly.
 		deadline = DateTimeOffset.UtcNow.AddSeconds(30);
 		while (reconciler.Unassignments == 0 && DateTimeOffset.UtcNow < deadline)
 		{
@@ -1321,6 +1327,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
 		var agents = NewRegistry(("agent-1", "us-east", null));
 		var jobs = new FakeReconcileJobStore();
+		jobs.ArmCancelGate();
 		using var reconciler = CreateReconciler(accounts, agents, jobs, intervalSeconds: 1);
 		using var cts = new CancellationTokenSource();
 		await reconciler.StartAsync(cts.Token);
@@ -1333,11 +1340,17 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		}
 		Assert.Single(jobs.Created);
 
-		// Disable the account and sabotage its cancel: the next pass throws from
-		// UnassignAsync (outside the per-account try) — the loop must swallow it.
+		// Disable the account and sabotage its cancel at the armed gate: the
+		// next pass throws from UnassignAsync (outside the per-account try) —
+		// the loop must swallow it. (Dropping the job first would route the
+		// cancel through the NotFoundException arm, which is swallowed inside
+		// CancelJobAsync — the sabotage would never fire.) The gate makes
+		// "cancel reached" → "flag set" a happens-before edge instead of a
+		// one-interval race.
 		accounts.Upsert("alice", false, AccountDesiredState.Online, null, null, null, null);
-		jobs.Drop("job-1");
+		await jobs.CancelGateTouched!.Task.WaitAsync(TimeSpan.FromSeconds(30));
 		jobs.ThrowOnCancel = true;
+		jobs.CancelGate!.SetResult();
 		await Task.Delay(2500);
 
 		// StopAsync completing without observation proves the loop is still alive.
@@ -3998,6 +4011,24 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		/// <summary>Makes CancelJob throw a non-NotFoundException (background-loop isolation path).</summary>
 		public bool ThrowOnCancel { get; set; }
 
+		/// <summary>
+		/// When armed, CancelJob parks just before the ThrowOnCancel check and
+		/// signals <see cref="CancelGateTouched"/> — the test sets the flag and
+		/// releases, making "flag set" → "cancel observes it" a happens-before
+		/// edge. A CI scheduling stall once ran the pass's cancel before the
+		/// test set the flag: the pass completed cleanly, the test stayed
+		/// green, and the background-loop catch arm went uncovered.
+		/// </summary>
+		public TaskCompletionSource? CancelGate { get; set; }
+		public TaskCompletionSource? CancelGateTouched { get; private set; }
+
+		/// <summary>Arms the deterministic cancel-sabotage handoff (one shot).</summary>
+		public void ArmCancelGate()
+		{
+			CancelGateTouched = new(TaskCreationOptions.RunContinuationsAsynchronously);
+			CancelGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		}
+
 		public Task<JobWithTasks> CreateJob(CreateJobRequest request, CancellationToken cancellationToken)
 		{
 			if (ThrowOnCreate || ThrowOnCreateWhen?.Invoke(request) == true)
@@ -4032,11 +4063,18 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 					.ToList()));
 		}
 
-		public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken)
+		public async Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken)
 		{
 			if (!_jobs.ContainsKey(jobId))
 			{
 				throw new NotFoundException("job not found");
+			}
+
+			if (CancelGate is TaskCompletionSource gate)
+			{
+				CancelGateTouched!.TrySetResult();
+				await gate.Task.ConfigureAwait(false);
+				CancelGate = null; // one-shot: consumed by the release, later cancels pass straight through
 			}
 
 			if (ThrowOnCancel)
@@ -4045,7 +4083,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 			}
 
 			Cancelled.Add(jobId);
-			return Task.FromResult<IReadOnlyList<TaskCancel>>([]);
+			return [];
 		}
 
 		public Task<IReadOnlyList<Job>> ListJobs(int limit, string? account, CancellationToken cancellationToken)
