@@ -172,19 +172,19 @@ public sealed class PluginPackageInstaller
 	internal string? ExtractPackage(byte[] package, string staging, out string manifestPath)
 	{
 		manifestPath = string.Empty;
-		string root = Path.GetFullPath(staging);
+		string root = Path.GetFullPath(staging + Path.DirectorySeparatorChar);
+		string rootDirectory = root.TrimEnd(Path.DirectorySeparatorChar);
 		using var archive = new ZipArchive(new MemoryStream(package), ZipArchiveMode.Read);
 		bool hasManifest = false;
 		foreach (var entry in archive.Entries)
 		{
 			string destination = Path.GetFullPath(Path.Combine(staging, entry.FullName));
-			if (!destination.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
-				!string.Equals(destination, root, StringComparison.Ordinal))
+			if (!destination.StartsWith(root, StringComparison.Ordinal))
 			{
 				return $"package entry '{entry.FullName}' escapes the extraction directory (zip-slip rejected)";
 			}
 
-			if (entry.FullName.EndsWith('/'))
+			if (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\'))
 			{
 				Directory.CreateDirectory(destination);
 				continue;
@@ -193,7 +193,7 @@ public sealed class PluginPackageInstaller
 			Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
 			entry.ExtractToFile(destination, overwrite: true);
 			if (string.Equals(Path.GetFileName(destination), PluginManifest.ManifestFileName, StringComparison.Ordinal) &&
-				string.Equals(Path.GetDirectoryName(destination), root, StringComparison.Ordinal))
+				string.Equals(Path.GetDirectoryName(destination), rootDirectory, StringComparison.Ordinal))
 			{
 				hasManifest = true;
 				manifestPath = destination;
