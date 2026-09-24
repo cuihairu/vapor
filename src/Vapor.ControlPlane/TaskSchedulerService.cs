@@ -24,6 +24,19 @@ public sealed class TaskSchedulerService : BackgroundService
 	/// <summary>Tasks failed permanently after exhausting the dispatch attempt limit.</summary>
 	public long DispatchAttemptsExhausted => Interlocked.Read(ref _attemptsExhaustedFailures);
 
+	// Heartbeat: when the dispatch loop last woke (UtcTicks; 0 = never ticked).
+	// Written via Interlocked so /v1/system/status can read it lock-free.
+	private long _lastTickTicks;
+	/// <summary>When the dispatch loop last ran a tick, or null if it has not ticked yet.</summary>
+	public DateTimeOffset? LastTickAt
+	{
+		get
+		{
+			long ticks = Interlocked.Read(ref _lastTickTicks);
+			return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+		}
+	}
+
 	public TaskSchedulerService(AgentRegistry agents, IJobStore store, IEventBroker events, Config cfg)
 	{
 		_agents = agents;
@@ -54,6 +67,7 @@ public sealed class TaskSchedulerService : BackgroundService
 
 	internal async Task DispatchOnce(CancellationToken cancellationToken)
 	{
+		Interlocked.Exchange(ref _lastTickTicks, DateTimeOffset.UtcNow.UtcTicks); // heartbeat for /v1/system/status
 		if (DateTimeOffset.UtcNow - _lastRequeueAt >= TimeSpan.FromSeconds(5))
 		{
 			_ = await _store.RequeueStaleRunningTasks(TimeSpan.FromSeconds(_cfg.TaskLeaseSeconds), cancellationToken).ConfigureAwait(false);

@@ -297,6 +297,74 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task ReconcileLoop_RecordsLastPassTelemetryOnSuccess()
+	{
+		// Before the first pass completes the telemetry is unset (both null arms
+		// of the reader properties); a successful tick fills all three fields.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, intervalSeconds: 1);
+
+		Assert.Null(reconciler.LastPassAt);
+		Assert.Null(reconciler.LastPassDurationMs);
+		Assert.False(reconciler.LastPassFailed);
+
+		await reconciler.StartAsync(CancellationToken.None);
+
+		var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+		while (jobs.Created.Count == 0 && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		await reconciler.StopAsync(CancellationToken.None);
+
+		Assert.False(reconciler.LastPassFailed);
+		Assert.NotNull(reconciler.LastPassAt);
+		Assert.NotNull(reconciler.LastPassDurationMs);
+	}
+
+	[Fact]
+	public async Task ReconcileLoop_RecordsFailedPassTelemetry()
+	{
+		// Drives the failure arm with the same gate choreography as
+		// BrokenUnassignPass (interval 1s): tick 2 parks in the armed cancel
+		// gate, the escape reaches the loop catch, and RecordPass(ok: 0) lands.
+		// The stop comes right after the observation, so no later tick can
+		// overwrite the failed-pass telemetry before the assertions run.
+		AccountStore accounts = NewAccounts(("alice", true, AccountDesiredState.Online, null, null, null));
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		jobs.ArmCancelGate();
+		using var reconciler = CreateReconciler(accounts, agents, jobs, intervalSeconds: 1);
+
+		await reconciler.StartAsync(CancellationToken.None);
+
+		var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+		while (jobs.Created.Count == 0 && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		accounts.SetEnabled("alice", enabled: false);
+		await jobs.CancelGateTouched!.Task.WaitAsync(TimeSpan.FromSeconds(30));
+		jobs.ThrowOnCancel = true;
+		jobs.CancelGate!.SetResult();
+
+		deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+		while (!reconciler.LastPassFailed && DateTimeOffset.UtcNow < deadline)
+		{
+			await Task.Delay(10);
+		}
+
+		await reconciler.StopAsync(CancellationToken.None);
+
+		Assert.True(reconciler.LastPassFailed);
+		Assert.NotNull(reconciler.LastPassAt);
+	}
+
+	[Fact]
 	public async Task DryRun_ReportsDeviationsWithoutDispatching()
 	{
 		var audit = new FakeAuditStore();

@@ -48,6 +48,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<CrawlRunWorker>())
 
 // Plugin ecosystem: the catalog (index source) and the per-agent inventory mirror.
 builder.Services.AddSingleton<PluginInventory>();
+builder.Services.AddSingleton<SystemStatusService>();
 builder.Services.AddSingleton(sp =>
 {
 	var cfg = sp.GetRequiredService<Config>();
@@ -2419,6 +2420,28 @@ app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agen
 	.WithTags("Agents")
 	.WithSummary("List currently connected agents with region and capabilities")
 	.Produces(200)
+	.Produces<ErrorResponse>(401);
+
+// Aggregated internal status view: control-plane self health (DB latency,
+// job queue, scheduler heartbeat, reconciler last pass, plugins), proxy probe
+// history, connected agents and account desired-vs-actual state. Read-only;
+// credentials and challenge codes never appear in the response.
+app.MapGet("/v1/system/status", async (
+	HttpContext ctx,
+	Config cfg,
+	SystemStatusService status) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	SystemStatusReport report = await status.BuildAsync(ctx.RequestAborted).ConfigureAwait(false);
+	return Results.Ok(report);
+})
+	.WithTags("System")
+	.WithSummary("Aggregated internal status: control plane self health, proxy probes, connected agents, account desired-vs-actual state and overall health")
+	.Produces<SystemStatusReport>(200)
 	.Produces<ErrorResponse>(401);
 
 // Receive session events from agents

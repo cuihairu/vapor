@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Vapor.Protocol;
@@ -145,9 +146,11 @@ public sealed class DesiredStateReconciler : BackgroundService
 	{
 		while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
 		{
+			long passStarted = Stopwatch.GetTimestamp();
 			try
 			{
 				await ReconcileOnce(stoppingToken).ConfigureAwait(false);
+				RecordPass(ok: 1, passStarted); // last-pass telemetry for /v1/system/status
 			}
 			catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
 			{
@@ -157,7 +160,46 @@ public sealed class DesiredStateReconciler : BackgroundService
 			{
 				// A broken pass must never kill the background service.
 				_logger.LogError(ex, "Account reconcile pass failed");
+				RecordPass(ok: 0, passStarted);
 			}
+		}
+	}
+
+	// Last-pass telemetry (1 = succeeded, 0 = failed; int flag, not bool, so no
+	// ternary branch probe exists on the write path).
+	private long _lastPassOk = 1;
+	private long _lastPassDurationMs;
+	private long _lastPassCompletedTicks; // DateTimeOffset.UtcTicks of completion; 0 = never ran
+
+	/// <summary>Records the outcome of one reconcile pass (internal for tests; called from the reconcile loop).</summary>
+	internal void RecordPass(int ok, long passStartedTimestamp)
+	{
+		long durationMs = (long)Stopwatch.GetElapsedTime(passStartedTimestamp).TotalMilliseconds;
+		Interlocked.Exchange(ref _lastPassDurationMs, durationMs);
+		Interlocked.Exchange(ref _lastPassCompletedTicks, DateTimeOffset.UtcNow.UtcTicks);
+		Interlocked.Exchange(ref _lastPassOk, ok);
+	}
+
+	/// <summary>Whether the most recent reconcile pass failed (false before the first pass completes).</summary>
+	public bool LastPassFailed => Interlocked.Read(ref _lastPassOk) == 0;
+
+	/// <summary>When the most recent reconcile pass finished, or null if none has completed yet.</summary>
+	public DateTimeOffset? LastPassAt
+	{
+		get
+		{
+			long ticks = Interlocked.Read(ref _lastPassCompletedTicks);
+			return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+		}
+	}
+
+	/// <summary>Wall duration of the most recent reconcile pass, or null if none has completed yet.</summary>
+	public long? LastPassDurationMs
+	{
+		get
+		{
+			long ticks = Interlocked.Read(ref _lastPassCompletedTicks);
+			return ticks == 0 ? null : Interlocked.Read(ref _lastPassDurationMs);
 		}
 	}
 
