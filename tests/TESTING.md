@@ -4,7 +4,7 @@
 
 ## 测试项目结构
 
-`tests/` 下 9 个测试项目(外加 2 个测试基建程序集:示例插件与故障 fixture 库):
+`tests/` 下 10 个测试项目(外加 2 个测试基建程序集:示例插件与故障 fixture 库):
 
 ```
 tests/
@@ -21,6 +21,7 @@ tests/
 ├── Vapor.Plugins.Monitoring.Tests/       (42 tests)
 ├── Vapor.Protocol.Tests/                 (43 tests)
 ├── Vapor.E2E.Tests/                      (11 tests,真实双进程)
+├── Vapor.KeyRotation.Tests/              (28 tests,凭据轮换 CLI 壳)
 ├── Vapor.Plugins.TestPlugin/             插件基础设施测试用示例插件
 └── Vapor.Plugins.TestFixtures/           故障 fixture 库(故意坏实现/多实现类,供失败路径测试)
 ```
