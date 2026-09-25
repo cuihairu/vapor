@@ -163,6 +163,13 @@ jobs:
     - name: Verify api.md endpoint inventory consistency
       run: python3 scripts/verify-api-docs.py
 
+    # Auth declarations vs code: an endpoint without an inline/delegated
+    # Auth check — or a doc Auth line that no longer matches — goes red here.
+    # Missing auth is invisible to the coverage gate (no 401 branch to miss),
+    # so this is the second guard on the security surface.维护轮十七。
+    - name: Verify api.md auth declarations consistency
+      run: python3 scripts/verify-api-auth.py
+
     - name: Setup .NET
       uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
       with:
