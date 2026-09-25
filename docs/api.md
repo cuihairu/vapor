@@ -239,7 +239,7 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
 - Query: `appIds` (comma-separated uint list, same validation as inventory), `keep` (int, optional; must be 1–100, else 400 `keep must be an integer between 1 and 100`).
 - 200: `{ "job_id", "account", "duplicates": <agent output> }`. 202 / 502 pattern. Errors: 400, 404, 401. Audit: `inventory.duplicates`.
 
-#### `GET /v1/accounts/{name}/achievements?appId=`
+#### `GET /v1/accounts/{name}/achievements`
 - Purpose: list one game's achievements for the account (dispatches `get_achievements`).
 - Auth: admin.
 - Query: `appId` — **required**, positive uint, else 400 `appId must be a positive app id`.

@@ -157,6 +157,12 @@ jobs:
     - name: Verify TESTING.md test-count consistency
       run: python3 scripts/verify-testing-docs.py
 
+    # REST endpoint inventory (Program.cs literal routes vs api.md entries),
+    # same philosophy: a new route without a doc entry — or a zombie endpoint
+    # whose route is gone — goes red here.维护轮十六(见 todo.md)。
+    - name: Verify api.md endpoint inventory consistency
+      run: python3 scripts/verify-api-docs.py
+
     - name: Setup .NET
       uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
       with:
