@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Primitives;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Vapor.ControlPlane;
@@ -111,11 +111,12 @@ builder.Services.AddSwaggerGen(options =>
 		Description = "Send `Authorization: Bearer <token>`"
 	});
 
-	options.AddSecurityRequirement(new OpenApiSecurityRequirement {
-		{
-			new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "bearer" } },
-			Array.Empty<string>()
-		}
+	// Microsoft.OpenApi 2.x + Swashbuckle 10: scheme references are
+	// first-class OpenApiSecuritySchemeReference resolved against the
+	// document (hence the factory signature; OpenApiReference is gone).
+	options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+	{
+		[new OpenApiSecuritySchemeReference("bearer", document)] = []
 	});
 });
 

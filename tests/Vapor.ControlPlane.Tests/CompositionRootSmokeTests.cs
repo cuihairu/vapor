@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using System.Text.Json;
 using Vapor.ControlPlane;
 using Xunit;
 
@@ -73,6 +74,17 @@ public sealed class CompositionRootSmokeTests
 			{
 				using HttpResponseMessage swaggerUi = await client.GetAsync("/swagger");
 				Assert.Equal(HttpStatusCode.OK, swaggerUi.StatusCode);
+
+				// Swashbuckle 10 / Microsoft.OpenApi 2 migration anchor: the
+				// bearer scheme and the global security application must survive
+				// document generation — a silent drop would hollow out the
+				// OpenAPI contract without breaking anything else.
+				string doc = await swaggerDoc.Content.ReadAsStringAsync();
+				using var json = JsonDocument.Parse(doc);
+				Assert.True(json.RootElement.TryGetProperty("components", out var components)
+					&& components.TryGetProperty("securitySchemes", out var schemes)
+					&& schemes.TryGetProperty("bearer", out _), doc);
+				Assert.True(json.RootElement.TryGetProperty("security", out _), doc);
 			}
 		}
 		finally
