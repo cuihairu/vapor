@@ -170,6 +170,14 @@ jobs:
     - name: Verify api.md auth declarations consistency
       run: python3 scripts/verify-api-auth.py
 
+    # Coverage denominator integrity: a new collectible project missing from
+    # the TESTING.md assembly list — or a new [ExcludeFromCodeCoverage] not
+    # registered there — makes "100%" a lie, so both directions go red here.
+    # The third direction (reports actually collected) runs at coverage-rerun
+    # time via --reports.维护轮十九(见 todo.md)。
+    - name: Verify coverage denominator inventory consistency
+      run: python3 scripts/verify-coverage-inventory.py
+
     - name: Setup .NET
       uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
       with:

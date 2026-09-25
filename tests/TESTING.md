@@ -49,6 +49,47 @@ tests/
 > for f in $(find tests -name count.trx); do echo "== $f"; grep -o '<UnitTestResult [^>]*?testName="[^"]*"' "$f" | sed 's/.*testName="//;s/(.*//' | awk -F. '{print $(NF-1)}' | sort | uniq -c | sort -rn; done
 > ```
 
+## 覆盖率收集清单(机械校验:`scripts/verify-coverage-inventory.py`)
+
+> 分母完整性三向校验(2026-09-25 维护轮十九固化):①sln 可收集项目(排除 `*.Tests` 后缀)⇄ 下方收集程序集清单;②src/tools 全部 `[ExcludeFromCodeCoverage]` 注解点 ⇄ 下方排除登记表;③`--reports` 指向覆盖率报告目录时,报告实际收集的程序集 ⇄ 收集程序集清单。任一双向差额即红——新程序集漏收、或悄悄新增排除未在册,覆盖率数字再漂亮也是假象(轮十七鉴权盲区的分母版)。程序集名 = 项目名(全部 csproj 未自定义 AssemblyName,脚本有断言)。
+
+### 收集程序集(11)
+
+<!-- verify-coverage-inventory:asms -->
+- Vapor.Agent
+- Vapor.ControlPlane
+- Vapor.KeyRotation
+- Vapor.Plugins.Core
+- Vapor.Plugins.MarketWatch
+- Vapor.Plugins.MobileAuthenticator
+- Vapor.Plugins.Monitoring
+- Vapor.Plugins.TestFixtures
+- Vapor.Plugins.TestPlugin
+- Vapor.Protocol
+- Vapor.Steam.Core
+<!-- /verify-coverage-inventory:asms -->
+
+### 排除登记([ExcludeFromCodeCoverage],14 处)
+
+<!-- verify-coverage-inventory:exclusions -->
+| 文件 | 符号 | 理由 |
+|------|------|------|
+| src/Vapor.Agent/Program.Exclusions.cs | Program | Agent 入口 partial 类(WebApplication 构建/宿主启动),integration shell,经 ProgramBranchCoverageTests 等覆盖可测分支 |
+| src/Vapor.ControlPlane/StaticPages.cs | StaticPages | 静态面板资源直写 response 的宿主管道;面板内容契约由 DashboardStaticTests 断言 |
+| src/Vapor.ControlPlane/TaskSchedulerService.cs | DispatchTimerLoopAsync | PeriodicTimer(250ms)真实时钟泵,唯一退出是宿主取消——同族真实时钟循环按 2026-09-20 收官轮定性 |
+| src/Vapor.ControlPlane/RecurringJobScheduler.cs | TimerLoopAsync | PeriodicTimer(1s)真实时钟泵,同上 |
+| src/Vapor.Steam.Core/Steam/SteamTimeSynchronizer.cs | QuerySteamServerTimeAsync | 真网络探针(HTTP 查 Steam 服务器时间);偏移计算纯函数另测 |
+| src/Vapor.Steam.Core/Steam/SteamUserStatsProtocolHandler.cs | SteamUserStatsProtocolHandler | SteamKit 回调协议 handler,需真 CM 会话驱动 HandleClientMsgCallback |
+| src/Vapor.Steam.Core/Steam/SteamClientManager.cs | SteamClientManager | SteamKit CM 客户端宿主(真连接/回调泵),可测决策分支经接口替身覆盖 |
+| src/Vapor.Steam.Core/Web/SteamTradeClient.cs | SteamTradeClient | Steam Web 交易客户端宿主(真会话),同上 |
+| src/Vapor.Steam.Core/SessionManager.cs | HandleDuplicateCreateRace | 并发创建竞态败者臂,方法体无进程内确定性触发器(2026-09-24 复测轮:112 行判定臂经 gated logger 注入缝确定性命中,方法体维持排除) |
+| src/Vapor.Steam.Core/SessionManager.cs | RunTokenRefreshLoopAsync | 循环仅经取消退出,条件退出臂无进程内确定性触发器(Task.Delay 先于条件检查) |
+| src/Vapor.Steam.Core/SessionManager.cs | RefreshTimerLoopAsync | PeriodicTimer 泵,同上 |
+| src/Vapor.Steam.Core/BotSession.cs | RunSteamCallbacksAsync | 同族:循环体内 RunCallbacks 在 Task.Delay 之前,取消经 Delay 的 OCE 表面化,条件退出臂不可达 |
+| src/Vapor.Steam.Core/Actions/CheckProxyAction.cs | ProbeAsync | 真网络探针(出口 IP/Steam 可达/延迟);判定逻辑经 ProbeOverride seam 测试 |
+| src/Vapor.Plugins.MarketWatch/MarketWatchPlugin.cs | PollOnceGuardedAsync | 真实时钟轮询守卫循环;PollOnce 本体与告警逻辑另测 |
+<!-- /verify-coverage-inventory:exclusions -->
+
 ## 测试分类
 
 > 章节总数与文末「附录：逐类测试计数」均为 2026-09-24 专项盘点 TRX 实测（合计 2879；2026-09-24 内部状态轮 +43、维护轮九 property +9、维护轮十二 property +14(ScheduleClock 6/脱敏器 8)后 ControlPlane 866、Steam.Core 1504,维护轮十八 farm 策略 property +4 后 ControlPlane 870,合计 2949——ControlPlane 与 Steam.Core 部分为基线实测,其余项目沿用盘点基线）。逐类明细已与附录对齐（2026-09-24 重构轮：存量计数刷新 51 行、合并行正名 6 组、23 个漂移期新增类补行——新增类说明均从测试源码逐文件提炼,非反推）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
