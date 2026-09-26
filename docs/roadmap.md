@@ -74,7 +74,7 @@ alive — no layer below the operator would recover it. Inbound rate limiting is
 the missing protection plane for an API-first system whose control plane is, by
 design, the only ingress.
 
-## 4. Auth & key management — ✅ (P1 residual)
+## 4. Auth & key management — ✅ (P1 residual: key expiry/rotation policy)
 
 **Status.** Per-role API keys (admin / agent) guarding REST, SSE and the tunnel
 handshake; HMAC-SHA256-signed webhooks; AES-GCM credential store with
@@ -82,13 +82,14 @@ KMS-friendly master-key sources (`BASE64` / `FILE` / plain), rotation CLI, and
 v1→v2 transparent migration; audit log with redaction-at-rest; output-level log
 redaction (messages, scopes, exceptions); proxy credentials redacted end-to-end.
 
-**Gaps.** No OIDC / mTLS (listed as future work in `architecture.md`), no API
-key expiry or rotation policy, no per-tenant quotas beyond the rate limiter
-added this round.
+**Gaps.** No API key expiry or rotation policy (rotation today is "replace the
+key and restart both sides"). No OIDC/mTLS by design, not by omission — see
+the non-goals below: Vapor is a single-operator self-hosted system, and there
+is no tenant concept in the data model.
 
-**Priority rationale.** The single-operator / small-team security model is
-complete; OIDC and short-lived agent credentials become P1 when the API surface
-opens to multiple tenants.
+**Priority rationale.** The single-operator security model is complete.
+Multi-tenancy is explicitly out of scope (see `architecture.md` Non-goals);
+key expiry/rotation policy is the only material residual.
 
 ## 5. Protocol & serialization — ✅ (P2)
 
@@ -197,6 +198,11 @@ deliberately sequenced behind the P0 hardening.
 
 ## Explicit non-goals (for now)
 
+- **Multi-tenancy in any form** (per-tenant auth, quotas, namespacing,
+  OIDC/RBAC) — out of scope by design, not deferred: Vapor is a
+  single-operator self-hosted system and its threat model has exactly one
+  admin. See `architecture.md` Non-goals.
 - gRPC tunnel migration, external message-queue backbone (NATS/Kafka), and
   multi-instance control plane — reevaluate after the P0 items have soaked.
-- Mesh-style mTLS between services — revisit together with multi-tenant auth.
+- Mesh-style mTLS between services — unnecessary at one control plane with
+  key-authenticated agents over an outbound-only tunnel.

@@ -19,6 +19,11 @@ Implementation language: **C#/.NET** (to stay close to ASF patterns and ecosyste
 - Replacing the official Steam client UI.
 - Circumventing Steam security controls or rate limits.
 - Anything that violates Steam ToS or applicable laws.
+- **Multi-tenancy in any form** (per-tenant auth, quotas, namespacing).
+  Vapor is a single-operator self-hosted system by design: one admin key, a
+  set of agent keys, no tenant concept anywhere in the data model. Requests
+  to "open the API surface" to multiple tenants are rejected at design level,
+  not deferred.
 
 ## ASF concepts we reuse
 
@@ -33,7 +38,7 @@ Implementation language: **C#/.NET** (to stay close to ASF patterns and ecosyste
 ### Control Plane (public API)
 
 Responsibilities:
-- Authentication/authorization (API keys/OIDC, RBAC, quotas, rate limiting).
+- Authentication/authorization (per-role API keys for admin and agents, per-key rate limiting, audit logging).
 - Persisted models: accounts (metadata), regions, agents, jobs, tasks, audit records.
 - Job orchestration: split jobs into tasks, route to regions/agents, retries, cancellation.
 - Event aggregation: expose job/session events to clients (SSE/WebSocket) and webhooks.
@@ -80,8 +85,12 @@ Interfaces:
 ## Security model (public Internet API)
 
 - Control plane API:
-  - Prefer OIDC + RBAC for humans; API keys/service tokens for automation.
-  - Enforce per-tenant quotas, rate limits, and audit logs.
+  - Per-role API keys for everything (admin key for the operator, agent keys
+    for the fleet) — both humans and automation use the same mechanism. No
+    OIDC/RBAC: there is one operator, and adding an identity-federation
+    layer would add a dependency without removing one.
+  - Per-key rate limiting (opt-in) and audit logs — quotas are per key, not
+    per tenant (there is no tenant concept).
   - Never expose raw secrets (passwords, refresh tokens, 2FA seeds) over API.
 - Agent tunnel:
   - Agents authenticate with short-lived tokens or mTLS certs.
