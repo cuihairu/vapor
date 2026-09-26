@@ -55,6 +55,7 @@ are in [docker.md](docker.md).
 | `Vapor_WEBHOOK_NOTIFICATIONS_MAX_RETRIES` | no | `3` | Per-event delivery attempts before the failure is counted and dropped |
 | `Vapor_WEBHOOK_NOTIFICATIONS_RETRY_BASE_DELAY_MS` | no | `500` | Retry backoff base (`base × 2^attempt`) |
 | `Vapor_PLUGIN_INDEX_URL` | no | off | PluginStore index source (JSON: `{plugins:[{id,name,version,apiVersion,url,sha256,...}]}`); off = catalog endpoint reports `configured: false`. Point it only at an index you control |
+| `Vapor_API_RATE_LIMIT_PER_MINUTE` | no | `0` | Per-key sliding-window limit over `/v1` routes (0 = off); rejected requests get 429 + Retry-After (see api.md) |
 | `Vapor_CRAWL_DB_PATH` | no | `data/crawl.db` | SQLite file for crawl plans and per-app harvest results |
 | `Vapor_CRAWL_WORKER_TICK_SECONDS` | no | `5` | Crawl worker claim/poll cadence; `<= 0` disables crawl orchestration |
 | `Vapor_CRAWL_KEEP_RUNS` | no | `10` | Recent runs whose results are kept per plan (older runs pruned on completion) |

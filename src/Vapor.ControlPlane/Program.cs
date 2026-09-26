@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -49,6 +50,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<CrawlRunWorker>())
 // Plugin ecosystem: the catalog (index source) and the per-agent inventory mirror.
 builder.Services.AddSingleton<PluginInventory>();
 builder.Services.AddSingleton<SystemStatusService>();
+builder.Services.AddSingleton<ApiRequestMetrics>();
+builder.Services.AddSingleton(new ApiKeyRateLimiter(startupConfig.ApiRateLimitPerMinute));
 builder.Services.AddSingleton(sp =>
 {
 	var cfg = sp.GetRequiredService<Config>();
@@ -143,13 +146,60 @@ if (cfg.EnableSwagger)
 	app.UseSwaggerUI();
 }
 
+// API-edge observability and protection. Runs after routing so ctx.GetEndpoint()
+// resolves on entry: only endpoint-matched requests carry a route pattern worth
+// recording (static files and unmatched paths fall through unrecorded), and the
+// pattern (not the concrete path) keeps label cardinality bounded by the route
+// table. Rate limiting applies to /v1 only — the console pages, /healthz and
+// /metrics stay reachable even when a key is exhausted.
+app.Use(async (ctx, next) =>
+{
+	if (ctx.GetEndpoint() is not RouteEndpoint routeEndpoint)
+	{
+		await next();
+		return;
+	}
+
+	// Every route in this app is a literal template string, so RawText is
+	// always populated; PathText alternatives do not exist on RoutePattern.
+	string route = routeEndpoint.RoutePattern.RawText!;
+	string method = ctx.Request.Method;
+	ApiKeyRateLimiter limiter = ctx.RequestServices.GetRequiredService<ApiKeyRateLimiter>();
+	ApiRequestMetrics metrics = ctx.RequestServices.GetRequiredService<ApiRequestMetrics>();
+
+	if (limiter.IsEnabled && ctx.Request.Path.StartsWithSegments("/v1"))
+	{
+		string authHeader = ctx.Request.Headers.Authorization.ToString();
+		(bool allowed, int retryAfterSeconds) = limiter.TryAcquire(string.IsNullOrEmpty(authHeader) ? "anonymous" : authHeader);
+		if (!allowed)
+		{
+			metrics.RecordRateLimited();
+			metrics.RecordRequest(method, route, StatusCodes.Status429TooManyRequests, 0);
+			ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+			ctx.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
+			await ctx.Response.WriteAsJsonAsync(new ErrorResponse($"rate limit exceeded: retry after {retryAfterSeconds}s"));
+			return;
+		}
+	}
+
+	long started = Stopwatch.GetTimestamp();
+	try
+	{
+		await next();
+	}
+	finally
+	{
+		metrics.RecordRequest(method, route, ctx.Response.StatusCode, Stopwatch.GetElapsedTime(started).TotalSeconds);
+	}
+});
+
 app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.WithTags("System")
 	.WithSummary("Liveness probe (public, unauthenticated)")
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, RecurringJobScheduler recurringJobs, CrawlRunWorker crawl, IEnumerable<INotificationSink> notificationSinks) =>
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, RecurringJobScheduler recurringJobs, CrawlRunWorker crawl, IEnumerable<INotificationSink> notificationSinks, ApiRequestMetrics apiMetrics) =>
 {
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
@@ -227,6 +277,8 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 		sb.Append("# TYPE vapor_controlplane_notification_retries_total counter\n");
 		sb.Append("vapor_controlplane_notification_retries_total{sink=\"").Append(sink.Name).Append("\"} ").Append(sink.Retried).Append('\n');
 	}
+
+	apiMetrics.Render(sb);
 
 	ctx.Response.Headers.ContentType = "text/plain; version=0.0.4; charset=utf-8";
 	return Results.Text(sb.ToString());

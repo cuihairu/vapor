@@ -99,6 +99,51 @@ public sealed class CompositionRootSmokeTests
 		}
 	}
 
+	[Fact]
+	public async Task Factory_WiresTheRateLimiterFromEnvironment()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
+		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
+		Dictionary<string, string?> env = new()
+		{
+			["Vapor_ADMIN_API_KEY"] = "admin-token",
+			["Vapor_AGENT_API_KEYS"] = "agent-token",
+			["Vapor_DB_PATH"] = dbPath,
+			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
+			["Vapor_ENABLE_SWAGGER"] = "false",
+			// The limiter is constructed from the env-loaded startup config in
+			// Program.cs — this is the wiring the service-replacing factories
+			// bypass, so prove it end to end here.
+			["Vapor_API_RATE_LIMIT_PER_MINUTE"] = "2",
+		};
+
+		foreach ((string key, string? value) in env)
+		{
+			Environment.SetEnvironmentVariable(key, value);
+		}
+
+		try
+		{
+			await using RawFactory factory = new();
+			using HttpClient client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+			Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/v1/agents")).StatusCode);
+			Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/v1/agents")).StatusCode);
+			Assert.Equal(HttpStatusCode.TooManyRequests, (await client.GetAsync("/v1/agents")).StatusCode);
+		}
+		finally
+		{
+			foreach (string key in env.Keys)
+			{
+				Environment.SetEnvironmentVariable(key, null);
+			}
+
+			await DisposeDbFileAsync(dbPath);
+			await DisposeDbFileAsync(auditDbPath);
+		}
+	}
+
 	private static async Task DisposeDbFileAsync(string path)
 	{
 		for (int attempt = 0; attempt < 5; attempt++)

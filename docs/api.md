@@ -46,6 +46,10 @@ Unauthorized responses: `Results.Unauthorized()` / `TypedResults.Unauthorized()`
 
 `ErrorResponse(string Error)` → `{ "error": "<message>" }`. Used for 400/404/409 bodies. `401` has no body (see above). Account-task endpoints additionally return a distinct **502** body `{ "job_id": "...", "error": "..." }` when the dispatched agent task ends in a non-queued failure state.
 
+### Rate limiting (opt-in)
+
+Set `Vapor_API_RATE_LIMIT_PER_MINUTE` (> 0) on the control plane to enable a per-key sliding-window limiter over every `/v1` route. The key is the raw `Authorization` header value (unauthenticated requests share the `anonymous` bucket); `GET /`, `/healthz`, `/metrics` and static console pages are never limited. Rejections return **429** with the standard `{ "error": "..." }` body plus a `Retry-After` header (seconds until the oldest request in the window expires). Limiting is off by default; rejections are counted in `vapor_controlplane_rate_limited_total` on `/metrics`.
+
 ### Route parameter constraints
 
 No ASP.NET route constraints are declared (`{name}`, `{offerId}`, `{jobId}`, `{accountName}`, `{pluginId}`, `{id}` are plain strings); validation is done inside handlers (e.g. `offerId` must parse as `ulong > 0`, `appId` query must parse as `uint > 0`).

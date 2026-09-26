@@ -74,6 +74,10 @@ public sealed class ConfigEnvironmentTests
 		{ "Vapor_CRAWL_INTERVAL_MS", "soon", nameof(Config.CrawlIntervalMs), 500 },
 		{ "Vapor_CRAWL_INTERVAL_MS", "-1", nameof(Config.CrawlIntervalMs), 500 },
 		{ "Vapor_CRAWL_INTERVAL_MS", "0", nameof(Config.CrawlIntervalMs), 0 },
+		{ "Vapor_API_RATE_LIMIT_PER_MINUTE", "soon", nameof(Config.ApiRateLimitPerMinute), 0 },
+		{ "Vapor_API_RATE_LIMIT_PER_MINUTE", "0", nameof(Config.ApiRateLimitPerMinute), 0 },
+		{ "Vapor_API_RATE_LIMIT_PER_MINUTE", "-5", nameof(Config.ApiRateLimitPerMinute), 0 },
+		{ "Vapor_API_RATE_LIMIT_PER_MINUTE", "45", nameof(Config.ApiRateLimitPerMinute), 45 },
 	};
 
 	[Theory, MemberData(nameof(Rows))]
@@ -128,6 +132,7 @@ public sealed class ConfigEnvironmentTests
 		nameof(Config.CrawlMaxAppsPerTask) => config.CrawlMaxAppsPerTask,
 		nameof(Config.CrawlRunTimeoutSeconds) => config.CrawlRunTimeoutSeconds,
 		nameof(Config.CrawlIntervalMs) => config.CrawlIntervalMs,
+		nameof(Config.ApiRateLimitPerMinute) => config.ApiRateLimitPerMinute,
 		_ => throw new ArgumentException($"unknown property {property}", nameof(property)),
 	};
 }

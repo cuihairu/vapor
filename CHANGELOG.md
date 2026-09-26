@@ -24,6 +24,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host path now mirrors `BotSession` semantics (linked CTS + `CancelAfter` +
   a structured `action timeout` result, caller cancels still rethrow).
 
+- Control-plane REST RED metrics on `/metrics`
+  (`vapor_controlplane_http_requests_total{method,route,status}` and
+  `vapor_controlplane_http_request_duration_seconds_{sum,count}{method,route}`):
+  an edge middleware records every endpoint-resolved request keyed by the
+  route pattern (cardinality bounded by the route table, not by traffic),
+  independent of the optional OpenTelemetry pipeline so the scrape endpoint
+  is a complete story on its own.
+
+- Opt-in per-key rate limiting for `/v1` (`Vapor_API_RATE_LIMIT_PER_MINUTE`,
+  off by default): 60 s sliding window keyed by the raw Authorization header
+  (requests without one share the anonymous bucket), rejections get `429` +
+  `Retry-After` + the standard error body, and
+  `vapor_controlplane_rate_limited_total` counts them. `/healthz`, `/metrics`
+  and the console pages stay reachable even when a key is exhausted.
+
 - Aggregated internal status view (`GET /v1/system/status` + dashboard
   "内部状态总览" panel): one admin-only read-only report combining
   control-plane self health (DB availability/latency, job queue depth,
