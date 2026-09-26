@@ -10,7 +10,7 @@ namespace Vapor.ControlPlane.Tests;
 public sealed class AuthTests
 {
 	private static Config CreateConfig() =>
-		new("admin-key", new HashSet<string>(StringComparer.Ordinal) { "agent-1" }, ":memory:", 300, false, ":memory:");
+		new("admin-key", new Dictionary<string, DateTimeOffset?> { ["agent-1"] = null }, ":memory:", 300, false, ":memory:");
 
 	[Fact]
 	public void TryAdmin_WithValidBearerToken_Succeeds()
@@ -70,7 +70,7 @@ public sealed class AuthTests
 	[Fact]
 	public void TryAdmin_WithEmptyConfiguredKey_NeverMatches()
 	{
-		var cfg = new Config("", new HashSet<string>(StringComparer.Ordinal), ":memory:", 300, false, ":memory:");
+		var cfg = new Config("", new Dictionary<string, DateTimeOffset?>(), ":memory:", 300, false, ":memory:");
 
 		// An empty configured key disqualifies every token (string.Equals against "" fails).
 		Assert.False(Auth.TryAdmin(cfg, new StringValues("Bearer anything"), out string? token));

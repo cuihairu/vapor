@@ -32,8 +32,8 @@ are in [docker.md](docker.md).
 
 | Variable | Required | Default | Notes |
 |----------|----------|---------|-------|
-| `Vapor_ADMIN_API_KEY` | yes | — | Bearer key for admin REST/SSE endpoints |
-| `Vapor_AGENT_API_KEYS` | yes | — | Comma-separated keys the agent tunnel accepts |
+| `Vapor_ADMIN_API_KEY` | yes | — | Bearer key for admin REST/SSE endpoints; optional `@<ISO-8601>` expiry suffix (see § Secrets) |
+| `Vapor_AGENT_API_KEYS` | yes | — | Comma-separated keys the agent tunnel accepts; each key may carry an `@<ISO-8601>` expiry suffix |
 | `Vapor_DB_PATH` | no | `data/controlplane.db` | Main store; volume-mounted in compose |
 | `Vapor_AUDIT_DB_PATH` | no | (derived) | Audit log store |
 | `Vapor_TASK_LEASE_SECONDS` | no | `300` | Running tasks whose heartbeat stops for this long are requeued |
@@ -235,6 +235,25 @@ production and roll back by pinning the previous one.
    restrict `:8080` / `:9700` to trusted networks. All sensitive endpoints
    require the admin key; `/healthz` is intentionally public.
 
+### Key rotation
+
+API keys accept an optional expiry suffix so rotation is a scheduled cutover,
+not a coordinated dual restart:
+
+```bash
+# 1. Generate the new key and stage BOTH keys — the old one with a deadline:
+VAPOR_AGENT_API_KEYS="new-$(openssl rand -hex 32),$(printf %s "$OLD_AGENT_KEYS")@$(date -u -d '+14 days' +%Y-%m-%dT%H:%M:%SZ)"
+
+# 2. Restart the control plane (and move agents to the new key at leisure):
+docker compose --env-file .env up -d controlplane
+```
+
+The old key keeps working until the expiry instant, then starts failing with
+the same 401 as an unknown key — on the tunnel handshake for agents, on REST
+for the admin key. Move every client to the new key before the deadline;
+after it, drop the expired entry from the variable at the next convenient
+restart. The same suffix works on `VAPOR_ADMIN_API_KEY`.
+
 ## Web consoles
 
 Three static pages ship with the control plane (no build step, no external
@@ -257,6 +276,7 @@ the console can perform; treat it accordingly (see the checklist below).
 ## Security checklist
 
 - [ ] Random `Vapor_ADMIN_API_KEY` / `Vapor_AGENT_API_KEYS` (32+ hex chars)
+- [ ] Staged rotations use `@<expiry>` suffixes on the outgoing key (see § Key rotation)
 - [ ] `VAPOR_ENCRYPTION_KEY` set, `VAPOR_ALLOW_INSECURE_DEFAULT_KEY` unset
 - [ ] `Vapor_ENABLE_SWAGGER` unset
 - [ ] Control plane behind TLS; metrics ports firewalled from the internet

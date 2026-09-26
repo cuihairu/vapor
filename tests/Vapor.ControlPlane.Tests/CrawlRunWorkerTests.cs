@@ -29,7 +29,7 @@ public sealed class CrawlRunWorkerTests : IDisposable
 			_audit,
 			new Config(
 				"admin",
-				new HashSet<string>(StringComparer.Ordinal),
+				new Dictionary<string, DateTimeOffset?>(),
 				":memory:",
 				TaskLeaseSeconds: 300,
 				EnableSwagger: false,

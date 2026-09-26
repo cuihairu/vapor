@@ -40,6 +40,10 @@ Set these before running outside of local development (via shell env or a `.env`
 |----------|---------|--------------------|
 | `VAPOR_ADMIN_API_KEY` | control plane | `admin-dev-token` |
 | `VAPOR_AGENT_API_KEY` / `VAPOR_AGENT_API_KEYS` | agent / control plane | `agent-dev-token` |
+
+Both control-plane key variables accept an optional `@<ISO-8601>` expiry
+suffix per key (e.g. `old-key@2026-12-31T23:59:59Z`) for scheduled rotation —
+see [production.md](production.md) § Key rotation.
 | `VAPOR_AGENT_ID`, `VAPOR_AGENT_REGION` | agent | `agent-1`, `eu-west` |
 | `VAPOR_CONTROLPLANE_PORT` | host port mapping | `8080` |
 | `VAPOR_AGENT_METRICS_PORT` | host port mapping | `9700` |

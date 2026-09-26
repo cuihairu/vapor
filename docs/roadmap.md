@@ -74,22 +74,26 @@ alive — no layer below the operator would recover it. Inbound rate limiting is
 the missing protection plane for an API-first system whose control plane is, by
 design, the only ingress.
 
-## 4. Auth & key management — ✅ (P1 residual: key expiry/rotation policy)
+## 4. Auth & key management — ✅ (complete this round; residual: none material)
 
 **Status.** Per-role API keys (admin / agent) guarding REST, SSE and the tunnel
 handshake; HMAC-SHA256-signed webhooks; AES-GCM credential store with
 KMS-friendly master-key sources (`BASE64` / `FILE` / plain), rotation CLI, and
 v1→v2 transparent migration; audit log with redaction-at-rest; output-level log
 redaction (messages, scopes, exceptions); proxy credentials redacted end-to-end.
+API keys carry an optional `@<ISO-8601>` expiry suffix (`Vapor_AGENT_API_KEYS`
+per key, `Vapor_ADMIN_API_KEY` likewise): a key is valid strictly before its
+expiry instant and rejected like an unknown key from that instant on, which
+turns rotation into a staged cutover (new key plain, old key with a deadline)
+instead of a coordinated dual restart — see `production.md` § Key rotation.
 
-**Gaps.** No API key expiry or rotation policy (rotation today is "replace the
-key and restart both sides"). No OIDC/mTLS by design, not by omission — see
+**Gaps.** None material. No OIDC/mTLS by design, not by omission — see
 the non-goals below: Vapor is a single-operator self-hosted system, and there
 is no tenant concept in the data model.
 
-**Priority rationale.** The single-operator security model is complete.
-Multi-tenancy is explicitly out of scope (see `architecture.md` Non-goals);
-key expiry/rotation policy is the only material residual.
+**Priority rationale.** The single-operator security model is complete,
+including the rotation policy; multi-tenancy remains explicitly out of scope
+(see `architecture.md` Non-goals).
 
 ## 5. Protocol & serialization — ✅ (P2)
 
@@ -195,6 +199,11 @@ deliberately sequenced behind the P0 hardening.
    consistency guarantees — at-least-once with attempt fencing, lease
    reclaim, convergence semantics, failure/restart behavior — are now written
    down in [`consistency.md`](consistency.md).
+4. **API key expiry** (§4, P1 residual): every configured API key accepts an
+   optional `@<ISO-8601>` expiry suffix; expired keys fail closed with the
+   same 401 as unknown keys (admin REST/SSE and the agent tunnel handshake
+   alike), giving single-operator key rotation a deadline instead of a
+   coordinated restart.
 
 ## Explicit non-goals (for now)
 

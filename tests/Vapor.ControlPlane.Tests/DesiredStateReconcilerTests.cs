@@ -2145,7 +2145,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	{
 		var cfg = new Config(
 			"admin",
-			new HashSet<string>(StringComparer.Ordinal),
+			new Dictionary<string, DateTimeOffset?>(),
 			":memory:",
 			TaskLeaseSeconds: 300,
 			EnableSwagger: false,

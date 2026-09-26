@@ -5,13 +5,30 @@ namespace Vapor.ControlPlane;
 public static class Auth
 {
 	public static bool TryAdmin(Config cfg, StringValues authorizationHeader, out string? token)
+		=> TryAdmin(cfg, authorizationHeader, DateTimeOffset.UtcNow, out token);
+
+	/// <summary>The admin key is valid from load until <see cref="Config.AdminApiKeyExpiresAt"/>;
+	/// from the expiry instant on, the bearer token is rejected like an unknown key.</summary>
+	public static bool TryAdmin(Config cfg, StringValues authorizationHeader, DateTimeOffset now, out string? token)
 	{
-		return TryBearerToken(authorizationHeader, out token) && !string.IsNullOrEmpty(cfg.AdminApiKey) && string.Equals(cfg.AdminApiKey, token, StringComparison.Ordinal);
+		return TryBearerToken(authorizationHeader, out token)
+			&& !string.IsNullOrEmpty(cfg.AdminApiKey)
+			&& string.Equals(cfg.AdminApiKey, token, StringComparison.Ordinal)
+			&& (cfg.AdminApiKeyExpiresAt is null || cfg.AdminApiKeyExpiresAt.Value > now);
 	}
 
 	public static bool TryAgent(Config cfg, StringValues authorizationHeader, out string? token)
+		=> TryAgent(cfg, authorizationHeader, DateTimeOffset.UtcNow, out token);
+
+	/// <summary>Agent keys carry their own optional expiry (see <see cref="Config.ParseApiKey"/>);
+	/// an expired key fails exactly like an unconfigured one.</summary>
+	public static bool TryAgent(Config cfg, StringValues authorizationHeader, DateTimeOffset now, out string? token)
 	{
-		return TryBearerToken(authorizationHeader, out token) && cfg.AgentApiKeys.Count > 0 && token != null && cfg.AgentApiKeys.Contains(token);
+		return TryBearerToken(authorizationHeader, out token)
+			&& cfg.AgentApiKeys.Count > 0
+			&& token != null
+			&& cfg.AgentApiKeys.TryGetValue(token, out DateTimeOffset? expiresAt)
+			&& (expiresAt is null || expiresAt.Value > now);
 	}
 
 	private static bool TryBearerToken(StringValues header, out string? token)

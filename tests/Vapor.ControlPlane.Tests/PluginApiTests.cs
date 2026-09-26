@@ -583,7 +583,7 @@ public sealed class PluginApiTests
 				services.RemoveAll<IJobStore>();
 				services.RemoveAll<IAuditStore>();
 				services.RemoveAll<AccountStore>();
-				services.AddSingleton(new Config("admin-token", new HashSet<string>(StringComparer.Ordinal) { "agent-token" }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
+				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
 				services.AddSingleton<IJobStore>(sp => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();
@@ -938,7 +938,7 @@ public sealed class HostTargetedDispatchTests
 		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
 	}
 
-	private static Config CreateConfig() => new("", new HashSet<string>(StringComparer.Ordinal), "test.db", 300, false);
+	private static Config CreateConfig() => new("", new Dictionary<string, DateTimeOffset?>(), "test.db", 300, false);
 
 	private static JobTask CreateTask(string taskId, string jobId, string region, string action, string target)
 	{

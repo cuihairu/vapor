@@ -26,6 +26,14 @@ Header convention (matching the OpenAPI security definition `bearer`): `Authoriz
 
 - `Auth.TryAdmin` — token equals `AdminApiKey` exactly (ordinal).
 - `Auth.TryAgent` — token is a member of `AgentApiKeys` (ordinal).
+- **Key expiry** (`Config.ParseApiKey`): any configured key may carry an
+  `@<ISO-8601>` suffix — `VAPOR_AGENT_API_KEYS=new-key,old-key@2026-12-31T23:59:59Z`.
+  The suffix is stripped from the credential (only a date parses as an expiry; a key
+  whose text after the last `@` is not a date stays a literal key). A key is valid
+  strictly **before** its expiry instant; from that instant on the bearer token is
+  rejected with the same empty-body 401 as an unknown key. Expiry is the rotation
+  mechanism: stage the new key alongside the old one with a deadline, and the old key
+  dies on schedule without a second restart (see `production.md` § Secrets).
 - **Query-string fallback** (`GetAuthorization`): when the `Authorization` header is absent, a `?authorization=` query parameter is accepted, with or without the `Bearer ` prefix (added if missing). This exists for SSE/WebSocket clients that cannot set headers.
 - **Exempt from auth** (public): `GET /`, `GET /healthz`, `GET /metrics`, static files under `wwwroot` (`/admin.html`, …), `/swagger` (when enabled).
 - **Dual-auth endpoints** (admin OR agent key): `POST /v1/sessions/events`, `GET /v1/auth/challenges/events` (agents see a filtered view), `GET /v1/agent/ws` (agent key only).

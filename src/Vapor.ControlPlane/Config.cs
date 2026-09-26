@@ -1,8 +1,10 @@
+using System.Globalization;
+
 namespace Vapor.ControlPlane;
 
 public sealed record Config(
 	string AdminApiKey,
-	IReadOnlySet<string> AgentApiKeys,
+	IReadOnlyDictionary<string, DateTimeOffset?> AgentApiKeys,
 	string DbPath,
 	int TaskLeaseSeconds,
 	bool EnableSwagger,
@@ -32,15 +34,33 @@ public sealed record Config(
 	int CrawlRunTimeoutSeconds = 1800,
 	int CrawlIntervalMs = 500,
 	string? PluginIndexUrl = null,
-	int ApiRateLimitPerMinute = 0
+	int ApiRateLimitPerMinute = 0,
+	DateTimeOffset? AdminApiKeyExpiresAt = null
 )
 {
 	/// <summary>Max dispatch attempts per task before it fails permanently; 0 or less means unlimited retries.</summary>
 	public bool HasDispatchAttemptLimit => TaskMaxDispatchAttempts > 0;
 
+	/// <summary>
+	/// Splits an optional "<c>@&lt;ISO-8601&gt;</c>" expiry suffix from a configured API key:
+	/// <c>key@2030-01-01T00:00:00Z</c> carries an expiry; any other shape — including a
+	/// key whose text after the last '@' is not a date — is a literal key with no expiry.
+	/// </summary>
+	public static (string Credential, DateTimeOffset? ExpiresAt) ParseApiKey(string raw)
+	{
+		int separator = raw.LastIndexOf('@');
+		if (separator > 0
+			&& DateTimeOffset.TryParse(raw[(separator + 1)..], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTimeOffset expiresAt))
+		{
+			return (raw[..separator], expiresAt);
+		}
+
+		return (raw, null);
+	}
+
 	public static Config LoadFromEnvironment()
 	{
-		string adminApiKey = Environment.GetEnvironmentVariable("Vapor_ADMIN_API_KEY") ?? "";
+		(string adminApiKey, DateTimeOffset? adminApiKeyExpiresAt) = ParseApiKey(Environment.GetEnvironmentVariable("Vapor_ADMIN_API_KEY") ?? "");
 		string agentApiKeysRaw = Environment.GetEnvironmentVariable("Vapor_AGENT_API_KEYS") ?? "";
 		string dbPath = Environment.GetEnvironmentVariable("Vapor_DB_PATH") ?? "data/controlplane.db";
 		int taskLeaseSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_TASK_LEASE_SECONDS"), out int v) && v > 0 ? v : 300;
@@ -73,9 +93,14 @@ public sealed record Config(
 
 		// RemoveEmptyEntries | TrimEntries already drops entries that are empty or
 		// whitespace-only (trim runs before removal), so no per-key guard is needed.
-		HashSet<string> agentApiKeys = new(
-			agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-			StringComparer.Ordinal);
+		// A duplicate credential (with and without an expiry suffix) keeps the last
+		// entry's expiry — indexer assignment overwrites.
+		Dictionary<string, DateTimeOffset?> agentApiKeys = new(StringComparer.Ordinal);
+		foreach (string entry in agentApiKeysRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+		{
+			(string credential, DateTimeOffset? expiresAt) = ParseApiKey(entry);
+			agentApiKeys[credential] = expiresAt;
+		}
 
 		string? pluginIndexUrl = Environment.GetEnvironmentVariable("Vapor_PLUGIN_INDEX_URL");
 		if (string.IsNullOrWhiteSpace(pluginIndexUrl))
@@ -85,7 +110,7 @@ public sealed record Config(
 
 		int apiRateLimitPerMinute = int.TryParse(Environment.GetEnvironmentVariable("Vapor_API_RATE_LIMIT_PER_MINUTE"), out int rateLimit) && rateLimit > 0 ? rateLimit : 0;
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt);
 	}
 }
 

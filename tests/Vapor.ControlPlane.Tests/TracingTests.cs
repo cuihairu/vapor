@@ -173,7 +173,7 @@ public sealed class TracingTests
 		agents[agent.Hello.AgentId] = agent;
 	}
 
-	private static Config CreateConfig() => new("", new HashSet<string>(StringComparer.Ordinal), "test.db", 300, false);
+	private static Config CreateConfig() => new("", new Dictionary<string, DateTimeOffset?>(), "test.db", 300, false);
 
 	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0)
 	{

@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `vapor_controlplane_rate_limited_total` counts them. `/healthz`, `/metrics`
   and the console pages stay reachable even when a key is exhausted.
 
+- API key expiry: every configured API key (`Vapor_ADMIN_API_KEY`, each entry
+  of `Vapor_AGENT_API_KEYS`) accepts an optional `@<ISO-8601>` expiry suffix
+  (`Config.ParseApiKey`; a suffix that does not parse as a date stays part of
+  the key). A key is valid strictly before its expiry instant and fails with
+  the same 401 as an unknown key from that instant on — REST/SSE and the
+  agent tunnel handshake alike — turning key rotation into a staged cutover
+  (new key plain, old key with a deadline) instead of a coordinated dual
+  restart. See `production.md` § Key rotation.
+
 - Aggregated internal status view (`GET /v1/system/status` + dashboard
   "内部状态总览" panel): one admin-only read-only report combining
   control-plane self health (DB availability/latency, job queue depth,
