@@ -50,7 +50,7 @@ to agents by the reconciler, and job dispatch is a queue, not a hot path.
 **Priority rationale.** Adequate at current scale; revisit if per-agent queue
 depth becomes a scheduling constraint.
 
-## 3. Timeouts, retries, circuit breaking, rate limiting — 🟡 → ✅ this round (P0)
+## 3. Timeouts, retries, circuit breaking, rate limiting — ✅ (complete this round; P1 residual: none material at single-CP scale)
 
 Layer-by-layer inventory:
 
@@ -59,7 +59,7 @@ Layer-by-layer inventory:
 | agent → Steam Web | retry, differentiated 429 (`Retry-After`, capped) / 5xx backoff | ✅ |
 | agent → Steam Web | circuit breaker (Closed/Open/HalfOpen, single probe) | ✅ |
 | agent → Steam Web | request pacing (default 1 req/s, configurable) | ✅ |
-| action execution | declared per-action `TimeoutSeconds` (bounded, structured `action timeout` result) | 🟡 most actions declare one |
+| action execution | declared per-action `TimeoutSeconds` (bounded, structured `action timeout` result; all in-tree session + host actions declare one, enforced on both paths) | ✅ |
 | action execution | agent-level task watchdog (belt over unbraced actions, host actions, session-restore path) | ❌ → landed this round |
 | CP → agent dispatch | dispatch attempts + retry delay + lease reclaim + requeue | ✅ |
 | agent → CP tunnel | reconnect with exponential backoff (500 ms → 10 s, configurable, unlimited default) | ✅ |
@@ -104,7 +104,7 @@ is also its protection); no protobuf/gRPC; no schema registry.
 system; binary protocols were considered and rejected for now (see
 `architecture.md` trade-offs).
 
-## 6. Distributed tracing & metrics — 🟡 → ✅ this round (P0)
+## 6. Distributed tracing & metrics — ✅ (complete this round; P2 residual: exemplars, tail-based sampling)
 
 **Status.**
 
@@ -154,14 +154,19 @@ dispatch-failure paths against stub and real processes.
 rehearsal in CI; production fault injection is valuable mainly for the
 multi-instance topology that does not exist yet.
 
-## 9. State sync & consistency — 🟡 (P1 to document, P2 to build)
+## 9. State sync & consistency — 🟡 (model documented; P2 to build HA)
 
 **Status.** The control plane is the single writer and sole state owner
-(SQLite: jobs, accounts, audit, crawl). `ConfigVersion` optimistic concurrency
-guards spec updates; task claiming is lease-based with at-least-once delivery
-and idempotent, attempt-tracked execution; agent session state syncs
-eventually into the CP `SessionTracker`; caches are stale-while-revalidate with
-single-flight dedup, cross-instance when Redis is enabled.
+(SQLite: jobs, audit, crawl; in-memory serialized stores: account specs,
+settings). `ConfigVersion` is a monotonic convergence trigger on a
+full-replacement PUT store (single writer makes CAS unnecessary); task
+claiming is lease-based with at-least-once delivery, attempt-fenced reporting
+and one terminal record per task; agent session state syncs eventually into
+the CP `SessionTracker`; caches are stale-while-revalidate with single-flight
+dedup, cross-instance when Redis is enabled. **The full model — guarantees,
+non-guarantees, failure/restart semantics — is documented in
+[`consistency.md`](consistency.md)** (landed this round, §3's per-action
+timeout row completed in the same round).
 
 **Gaps.** Single-instance control plane: no HA, no horizontal write scaling,
 restart = brief orchestration pause (agents keep sessions via token restore).
@@ -185,6 +190,10 @@ deliberately sequenced behind the P0 hardening.
    supports per-key sliding-window rate limiting
    (`Vapor_API_RATE_LIMIT_PER_MINUTE`, default off) returning `429` with
    `Retry-After` and a rejection counter.
+3. **Consistency model documentation** (§9, P1-to-document): the delivery and
+   consistency guarantees — at-least-once with attempt fencing, lease
+   reclaim, convergence semantics, failure/restart behavior — are now written
+   down in [`consistency.md`](consistency.md).
 
 ## Explicit non-goals (for now)
 
