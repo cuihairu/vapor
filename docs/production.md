@@ -83,6 +83,7 @@ are in [docker.md](docker.md).
 | `AGENT_RECONNECT_MAX_DELAY_MS` | no | `10000` | Reconnect backoff ceiling |
 | `AGENT_RECONNECT_BACKOFF_FACTOR` | no | `2` | Exponential factor |
 | `AGENT_RECONNECT_MAX_RETRIES` | no | `0` | `0` = retry forever |
+| `AGENT_TASK_TIMEOUT_SECONDS` | no | `900` | Watchdog over any single dispatched task (cancels it, reports a structured `task timeout` failure, keeps the loop serving); `<= 0` disables. Sits above the per-action timeouts, which fire first |
 | `AGENT_2FA_AUTO_SUBMIT` | no | off | `true` = answer 2FA challenges locally from stored shared secrets (Steam TOTP); off leaves them to the manual SSE channel |
 | `AGENT_MARKET_LISTINGS_ENABLED` | no | off | `true` = allow real market listing creation (`create_market_listing` with `send=true`); the per-account switch must be on too (see below) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | no | off | OTLP endpoint; enables distributed tracing export |

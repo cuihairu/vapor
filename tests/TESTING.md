@@ -16,7 +16,7 @@ tests/
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
 ├── Vapor.Plugins.Core.Tests/             (147 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (137 tests)
-├── Vapor.Agent.Tests/                    (105 tests)
+├── Vapor.Agent.Tests/                    (136 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (62 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (42 tests)
 ├── Vapor.Protocol.Tests/                 (43 tests)
@@ -34,13 +34,13 @@ tests/
 | Vapor.ControlPlane.Tests | 870 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域、FarmPolicy 规范化幂等/接受域/保序) |
 | Vapor.Plugins.Core.Tests | 147 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 137 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
-| Vapor.Agent.Tests | 105 | 重连退避策略(含不变量 property:曲线单调/上下界/重试谓词单调/构造器往返/四违约臂)、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
+| Vapor.Agent.Tests | 136 | 重连退避策略(含不变量 property:曲线单调/上下界/重试谓词单调/构造器往返/四违约臂)、任务看门狗策略(默认/启停/环境解析含坏值与空值/取消源分类真值表 + property:任意整数环境往返与启停等价、TimeoutError 携秒数、谓词可靠性(蕴含)与完备性)、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道含声明超时强制(挂起→结构化 action timeout/未声明超时不自-cancel)、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
 | Vapor.Plugins.MarketWatch.Tests | 62 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/轮询循环确定性停机/阈值 payload 值形状/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 42 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **2949** | (2026-09-24 实测(TRX Passed 计数;ControlPlane 870 与 Steam.Core 1504 为 2026-09-24 基线实测,维护轮十七 +4 后 ControlPlane 870;其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **2980** | (2026-09-25 实测(Agent 136 为本轮实测,watchdog 轮 +31;ControlPlane 870 与 Steam.Core 1504 为 2026-09-24 基线实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -273,9 +273,9 @@ tests/
 - **MarketWatch(62)**:watch 存储(18)/插件动作与轮询告警(13:三个 watch action kind=price/free+阈值评估)/边缘与 webhook(29:free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机/手动驱动前 drain-and-stop 测试钩子/单 app 抓取失败隔离/阈值 payload 值形状/无参构造 Info)/插件宿主实战加载(2)
 - **Monitoring(42)**:指标注册表(10)/HTTP 服务(20)/插件生命周期(12)
 
-### Agent(105 个测试)
+### Agent(136 个测试)
 
-重连退避策略(30,含不变量 property 5——曲线单调非减/初值下界与 max 上界/重试谓词单调且 unlimited 恒假/构造器四参往返/单约束违约必抛 ArgumentOutOfRange;生成器陷阱两处:swap 法造 max<initial 会撞 max==initial 合法域,大 factor 上减 1 可能仍 ≥1——违约臂都必须构造出严格越界的值)、任务执行器(18,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、插件 host action(41:IHostAction 执行器 4——跨 agent target 拒绝/无会话执行/异常包装/取消透传;包安装器 21——zip-slip/根 manifest/URL 与校验和预检/校验和不符零痕迹/清单 id-version 核对/替换热重载/下载失败/PluginsRoot 属性/取消透传/64 位非 hex/无根 manifest 全链/坏 manifest JSON/入口 DLL 缺失/显式目录条目/http 下载成功/声明长度超限/默认 HttpClient 工厂失败臂;install action 5——元数据/url-sha256 必填与 sha_256 别名/宿主未初始化/成功全清单输出/失败仍带镜像;uninstall action 8——元数据/pluginId 必填/幂等 removed=false/卸载热卸载/宿主未初始化/缺失目录早退/只读根降级;list action 3——元数据/空清单/带元数据清单)、maFile 离线导入 CLI(10,含幽灵路径点名)、WS URI 构造(4)、追踪注入(2)
+重连退避策略(30,含不变量 property 5——曲线单调非减/初值下界与 max 上界/重试谓词单调且 unlimited 恒假/构造器四参往返/单约束违约必抛 ArgumentOutOfRange;生成器陷阱两处:swap 法造 max<initial 会撞 max==initial 合法域,大 factor 上减 1 可能仍 ≥1——违约臂都必须构造出严格越界的值)、任务看门狗策略(29:example 25——默认 900s/正负与零启停/TimeoutError 格式/环境解析默认-空白-合法-非正-坏值全臂含变量名点名与 null accessor/取消源分类真值表五行含禁用恒假;property 4——任意整数环境往返(启停等价于 >0)、TimeoutError 恒携秒数、谓词可靠性(报超时 ⇒ 已启用∧执行 token 已取消∧非全局∧非服务端)、启用的谓词完备性(唯一三元组组合必报))、任务执行器(18,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、插件 host action(43:IHostAction 执行器 6——跨 agent target 拒绝/无会话执行/异常包装/取消透传/声明超时 1s 挂起动作结构化 action timeout/未声明超时动作不自-cancel 且调用方 token 干净;包安装器 21——zip-slip/根 manifest/URL 与校验和预检/校验和不符零痕迹/清单 id-version 核对/替换热重载/下载失败/PluginsRoot 属性/取消透传/64 位非 hex/无根 manifest 全链/坏 manifest JSON/入口 DLL 缺失/显式目录条目/http 下载成功/声明长度超限/默认 HttpClient 工厂失败臂;install action 5——元数据/url-sha256 必填与 sha_256 别名/宿主未初始化/成功全清单输出/失败仍带镜像;uninstall action 8——元数据/pluginId 必填/幂等 removed=false/卸载热卸载/宿主未初始化/缺失目录早退/只读根降级;list action 3——元数据/空清单/带元数据清单)、maFile 离线导入 CLI(10,含幽灵路径点名)、WS URI 构造(4)、追踪注入(2)
 
 ### E2E(11 个测试)
 
@@ -374,24 +374,24 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
-### 当前基线（2026-09-24，行覆盖 100.0% / 分支覆盖 100.0%）
+### 当前基线（2026-09-25，行覆盖 100.0% / 分支覆盖 100.0%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中；分支覆盖按分支行的 condition-coverage 统计，同一行多次观察取已覆盖条件数的最大值）：
 
 | 程序集 | 行覆盖 | 分支覆盖 |
 |--------|--------|----------|
-| Agent | 100.0% | 100.0% (194/194) |
+| Agent | 100.0% | 100.0% (208/208) |
 | MobileAuthenticator | 100.0% | 100.0% (316/316) |
 | Monitoring | 100.0% | 100.0% (106/106) |
 | Plugins.Core | 100.0% | 100.0% (256/256) |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
-| ControlPlane | 100.0% | 100.0% (2060/2060) |
+| ControlPlane | 100.0% | 100.0% (2158/2158) |
 | Steam.Core | 100.0%（取消臂经确定性测试收尾；TryAdd 竞态臂 2026-09-24 起由注入缝确定性测试覆盖，见下） | 100.0% (3005/3005) |
 | MarketWatch | 100.0% | 100.0% (142/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
-| **合计** | **100.0%** (15887/15887) | **100.0%** (6135/6135) |
+| **合计** | **100.0%** (16183/16183) | **100.0%** (6247/6247) |
 
 分支覆盖门禁：CI `--min-branch 100`（基线 6135/6135 精确满覆盖——任何分支位未覆盖即红；2026-09-23 分支缺口冲刺第十三轮后设点，全解决方案分支探测位清零，百分比一律工具计算）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
 
@@ -483,6 +483,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-23 分支缺口冲刺第十三轮（复核收口轮四,逐轮棘轮:+1 测试全绿,分支 6134/6135 → **6135/6135=精确 100%,门禁 99.98 → 100,全解决方案分支探测位清零**）。**方法论:对第十二轮「维持收口」的 Reconciler:137 做第三维复审——收口结论也要过「可测性能不能造」审查**。十二轮定性「PeriodicTimer 局部 using 无 Dispose 通道,结构性死位,换原语不等价」约束的是**服务私有 timer 上的原位可测性**,没审**所有权反转提取**:把 while 循环体反演为 `internal RunReconcileLoopAsync(PeriodicTimer, CancellationToken)`,ExecuteAsync 保留 timer 所有权与 Dispose 时机（循环体逐字节搬移,生产路径等价）;测试自建真实 `PeriodicTimer(5ms)`,先让活 tick 驱动 ReconcileOnce 走 try 臂,再 Dispose——BCL 契约「Dispose 后 in-flight 与后续 WaitForNextTickAsync 返 false」令 F 臂确定性命中（测试 252ms 过,无 mock 无替身,真实 timer）。十二轮「换原语不等价」论证依然成立,但结论错了一层:**死位不可在原位消除 ≠ 不可经所有权反转把 BCL 契约暴露给测试**。分母口径:分支 6134/6135 → 6135/6135（分子 +1,F 位收编）;行 15885 → 15887（方法提取 +2 新行:签名行与调用行,全命中）;ControlPlane 分支 2059/2060 → **2060/2060**,11 程序集行/分支双 100.0%。教训:「结构性死位」的定性是三维的——原位不可触 ≠ 全局不可测;收口论证的自然下一条审查线是「注入缝能否开在所有权边界上」。验证:Debug build 0 警告 0 错误、新测试 252ms 过、format verify 过（无管道真实退出码复跑,防 `$?` 伪影再实证）、显式 Release build 过（BUILD_EXIT=0,0 警告）、全量串行绿（10 段全 attempt 1,0 重试）、门禁预验 `--min 100 --min-branch 100` GATE_100_EXIT=0,CI 终态见提交后监控。
 
 > 2026-09-24 覆盖率复测轮（概率臂现形与确定性化收口,用户指令「以实际测试工具实测为准推进 100%,凑数的假覆盖不算;不可达分支如实记录原因」;+0 测试——同一条测试从概率撞改造为确定性缝,测试数不变）。**①概率臂现形（runbook 第 6 条再实证）**:逐类盘点轮收官后串行轮复测（src/tests 零变更）——行 15887/15887 满,分支 **6134/6135**,Steam.Core asm 3004/3005（十三轮收官时为 3005/3005）。照抄 coverage-summary.py 合并语义（glob 单层 `*`、asm 从 package.name 取、同行 `(covered,total)` 元组取大）的定位脚本锁出唯一缺口:**`SessionManager.cs:112` 的 `TryAdd` false 臂（1/2）**。第八轮已将该臂「Barrier 16 线程确定性」证伪为高概率（首线程可一路跑完 TryAdd,余者 TryGetValue 全命中——注释自记「40 轮曾整轮 miss」）,十三轮的 3005/3005 是那 5 轮齐放里真撞上了,本轮 5 轮全错峰——概率覆盖臂在门禁顶格下的必然现形。**②确定性化（改造 `GetOrCreateSessionAsync_ConcurrentCreation_RaceLoserReturnsWinner`,测试数 42 不变）**:竞态窗口（TryGetValue 与 TryAdd 之间的同步段）内运行 `CreateLogger<BotSession>`——注入 gated logger factory 把它变成确定性挂起缝:败者线程在线程池上先过 TryGetValue、park 在 CreateLogger 回调（armed 一次性撤防 + 30s 超时防死锁）,主线程完成赢者的完整 TryAdd,释放门放行败者落到 `HandleDuplicateCreateRace`——真双线程真竞态裁决,断言不变（败者返回赢者）。`HandleDuplicateCreateRace` 方法体维持 `[ExcludeFromCodeCoverage]`（行分母不含）,但 112 行三元判定的 false 臂（属 GetOrCreateSessionAsync,不在排除范围）现被每次运行确定性命中。重构测试 10 连跑全绿（单测 519ms,旧 16 线程×5 轮更慢且赌运气）,SessionManager 两测试类 47/47。**③教训入册（行号漂移 vs 合并视图）**:单段快验时两处注释改动使 SessionManager.cs 物理行号 +2 偏移——9 份旧报告（旧行号系）与 1 份新报告并集出 58 个幽灵分母行,合计假跌 99.6%。**改码后必须全量重跑串行轮（全部段对齐同一行号系）;单段重跑只能验证「修复位归满」,不能出全局数字**——runbook「显式 build」教训的合并视图推广:门禁数字的有效前提是所有报告来自同一源码版本。产品侧两处注释同步改写（「no deterministic in-process trigger」已被注入缝推翻,指向 SessionManagerTests）。**④验证**:显式 Release build 0 警告 0 错误（14m20s）、全量串行轮 10 段新行号系全绿、coverage-summary `--min 100 --min-branch 100` 顶格过、CI 终态见提交后监控。TRX 计数不变（同一条改造）,统计表/明细区/附录数字零变动。
+> 2026-09-25 任务看门狗轮(distributed-systems roadmap P0 之①,用户指令「定位做成 API 调用的分布式系统」:先出九域能力地图 docs/roadmap.md,按优先级落地价值最高两项;2949→**2980** 全绿:Agent 105→136,+31)。**缺口定性(对照源码非推测)**:agent 任务循环对「未声明 TimeoutSeconds 的 action/host action 在 token 观察点之下挂起」无任何外层约束——挂死动作永久占据串行任务循环,而其心跳持续续 CP 租约,operator 以下无层可恢复;host 路径(插件三 action)声明了 300/60/15s 超时却只在与 BotSession 相异的会话路径强制。**两件套**:①**`TaskTimeoutPolicy`**(环境变量 AGENT_TASK_TIMEOUT_SECONDS,默认 900s,<=0 禁用;`IsTaskTimeout(executionCancelled, globalCancelled, cancelledByServer)` 三参谓词把取消源分类钉死——服务端 task_cancel 与 agent 关停保持原语义(静默/重连),仅第三种取消源报结构化 `task timeout after Ns`;默认值坐在全树最大 action 上界 600s 之上让精确超时先响);Program.cs 接线:executeCts.CancelAfter 布防、task_cancel 处理器在锁内置 server 标志、执行返回路径把裸 "canceled" 重分类、host rethrow 路径以「既非全局又非服务端」过滤捕获 OCE 转结构化失败(否则掉线重连丢结果)、发送守卫从 `!executeCts.IsCancellationRequested` 改为 `!suppressed`(仅关停/服务端取消抑制——看门狗即便恰在完成后触发也必须上报,租约总以终态结清)。②**`HostActionExecutor` 超时强制**(镜像 BotSession:nullable linked CTS + finally 释放 + `when (timeoutCts fired && caller not)` → 结构化 `action timeout`,调用方取消仍 rethrow)。**测试 +31**(25 example + 4 property + 2 executor):环境解析全臂(默认/空白/合法/非正/坏值点名变量/null accessor)、真值表 5 行 + 禁用恒假、property(任意整数环境往返与 >0 启停等价、TimeoutError 恒携秒数、谓词蕴含可靠性、启用完备性)、executor 挂起动作 1s 声明超时→结构化结果、未声明超时不自-cancel。**分析器缠斗入册**:HostActionExecutor 一旦「从参数 token 建 linked source」,Roslyn CA2000 的跨过程逃逸建模即把 Program.cs 调用方的 `using var executeCts/heartbeatCts` 判为不可全路径释放(using 声明的编译器保证被无视;纯 HEAD 基线复测对照证实为跨文件效应)——以文件既有先例的窄域带注 pragma 收口(Program.cs 两 using 处 + executor 的 BotSession 同款),非静默压制。**验证**:全量串行覆盖率轮 11 段全绿,行 16183/16183(+25)、分支 6247/6247(+14)双 100%,门禁 `--min 100 --min-branch 100` 过;Agent asm 507/507 行、208/208 分支;verify-testing-docs 四层同步;format 过。CHANGELOG/production.md(api.md 与限流条目归下一提交)。
 
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
@@ -855,18 +856,20 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | MonitoringPluginTests | 12 |
 | MetricsRegistryTests | 10 |
 
-### Vapor.Agent.Tests（105 个测试）
+### Vapor.Agent.Tests（136 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
 | AgentReconnectPolicyTests | 25 |
+| TaskTimeoutPolicyTests | 25 |
 | PluginPackageInstallerTests | 21 |
 | AgentTaskExecutorTests | 18 |
 | MaFileImportCliTests | 10 |
 | PluginUninstallActionTests | 8 |
+| HostActionExecutorTests | 6 |
 | PluginInstallActionTests | 5 |
 | AgentReconnectPolicyPropertyTests | 5 |
-| HostActionExecutorTests | 4 |
+| TaskTimeoutPolicyPropertyTests | 4 |
 | AgentWebSocketUriTests | 4 |
 | PluginListActionTests | 3 |
 | TracingTests | 2 |

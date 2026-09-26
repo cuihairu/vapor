@@ -32,10 +32,33 @@ public static class HostActionExecutor
 			return (false, $"host action {action.Name} is targeted at '{task.Target}', not this agent ('{expected}')", null);
 		}
 
+		// Mirror BotSession's per-action timeout semantics on the host path: the
+		// declared TimeoutSeconds is enforced with a linked CTS so a stuck host
+		// action surfaces as a structured "action timeout" result instead of
+		// holding the dispatch lease forever. A caller cancel still wins.
+		CancellationToken effectiveToken = cancellationToken;
+
+		// CA2000 suppressed: timeoutCts is disposed in this method's finally block.
+#pragma warning disable CA2000
+		CancellationTokenSource? timeoutCts = null;
+		if (action.Metadata.TimeoutSeconds is > 0)
+		{
+			timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(effectiveToken);
+			timeoutCts.CancelAfter(TimeSpan.FromSeconds(action.Metadata.TimeoutSeconds.Value));
+			effectiveToken = timeoutCts.Token;
+		}
+#pragma warning restore CA2000
+
 		try
 		{
-			var result = await action.ExecuteAsync(task.Payload ?? new Dictionary<string, object?>(), cancellationToken).ConfigureAwait(false);
+			var result = await action.ExecuteAsync(task.Payload ?? new Dictionary<string, object?>(), effectiveToken).ConfigureAwait(false);
 			return (result.Success, result.Error, result.Output);
+		}
+		catch (OperationCanceledException) when (timeoutCts?.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
+		{
+			// timeoutCts is linked to the caller token, so a caller cancel cancels
+			// it too; only report a timeout when the caller itself is still running.
+			return (false, "action timeout", null);
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 		{
@@ -45,6 +68,10 @@ public static class HostActionExecutor
 		{
 			logger.LogError(ex, "Host action {ActionName} failed unexpectedly", action.Name);
 			return (false, ex.Message, null);
+		}
+		finally
+		{
+			timeoutCts?.Dispose();
 		}
 	}
 }

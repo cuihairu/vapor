@@ -153,6 +153,37 @@ public sealed class HostActionExecutorTests
 			canceling, task, "this-agent", NullLogger.Instance, new CancellationToken(canceled: true)));
 	}
 
+	[Fact]
+	public async Task ExecuteAsync_EnforcesDeclaredTimeout_WithStructuredResult()
+	{
+		var hanging = new HangingHostAction();
+		var task = CreateTask("agent:this-agent");
+
+		(bool success, string? error, IReadOnlyDictionary<string, object?>? output) = await HostActionExecutor.ExecuteAsync(
+			hanging, task, "this-agent", NullLogger.Instance, CancellationToken.None);
+
+		Assert.False(success);
+		Assert.Equal("action timeout", error);
+		Assert.Null(output);
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_NoDeclaredTimeout_NeverCancelsOnItsOwn()
+	{
+		var unbounded = new WaitingHostAction();
+		var task = CreateTask("agent:this-agent");
+
+		using var callerCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+		(bool success, string? error, _) = await HostActionExecutor.ExecuteAsync(
+			unbounded, task, "this-agent", NullLogger.Instance, callerCts.Token);
+
+		Assert.True(success);
+		Assert.Null(error);
+		// The executor must not have raced its own timeout: only the caller's
+		// 10 s budget could have cancelled a task that declares no timeout.
+		Assert.False(unbounded.WasCancelled);
+	}
+
 	private static JobTask CreateTask(string target)
 	{
 		DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -173,6 +204,33 @@ public sealed class HostActionExecutorTests
 		public ActionMetadata Metadata => new(Name, "cancels");
 		public Task<ActionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> payload, CancellationToken cancellationToken) =>
 			throw new OperationCanceledException(cancellationToken);
+	}
+
+	private sealed class HangingHostAction : IHostAction
+	{
+		public string Name => "hanging";
+		public ActionMetadata Metadata => new(Name, "never completes on its own", RequiresLogin: false, TimeoutSeconds: 1);
+
+		public async Task<ActionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> payload, CancellationToken cancellationToken)
+		{
+			await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+			return new ActionResult(true, null, null);
+		}
+	}
+
+	private sealed class WaitingHostAction : IHostAction
+	{
+		public bool WasCancelled { get; private set; }
+
+		public string Name => "waiting";
+		public ActionMetadata Metadata => new(Name, "declares no timeout");
+
+		public async Task<ActionResult> ExecuteAsync(IReadOnlyDictionary<string, object?> payload, CancellationToken cancellationToken)
+		{
+			await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
+			WasCancelled = cancellationToken.IsCancellationRequested;
+			return new ActionResult(true, null, null);
+		}
 	}
 }
 

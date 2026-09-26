@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Agent task-execution watchdog (`AGENT_TASK_TIMEOUT_SECONDS`, default 900 s,
+  `<= 0` disables): bounds any single dispatched task on the agent, cancels
+  it, reports a structured `task timeout after Ns` failure to the control
+  plane and keeps the serial task loop serving the next task. Defense in
+  depth above per-action `TimeoutSeconds` (session actions were already
+  enforced by `BotSession`; see the host-action fix below). The default sits
+  above the largest in-tree action bound (600 s) so inner timeouts fire first
+  with their more precise errors.
+
+- Host actions now enforce their declared `TimeoutSeconds`
+  (`HostActionExecutor`): plugin install/uninstall/list previously declared
+  per-action timeouts that were only enforced on the session-action path; the
+  host path now mirrors `BotSession` semantics (linked CTS + `CancelAfter` +
+  a structured `action timeout` result, caller cancels still rethrow).
+
 - Aggregated internal status view (`GET /v1/system/status` + dashboard
   "内部状态总览" panel): one admin-only read-only report combining
   control-plane self health (DB availability/latency, job queue depth,

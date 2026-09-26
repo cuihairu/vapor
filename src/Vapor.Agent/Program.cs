@@ -51,6 +51,7 @@ string region = RequireEnv("AGENT_REGION");
 string wsUrlBase = RequireEnv("AGENT_CONTROLPLANE_WS_URL");
 string agentApiKey = RequireEnv("AGENT_API_KEY");
 var reconnectPolicy = AgentReconnectPolicy.FromEnvironment(Environment.GetEnvironmentVariable);
+var taskTimeoutPolicy = TaskTimeoutPolicy.FromEnvironment(Environment.GetEnvironmentVariable);
 
 var serviceCollection = new ServiceCollection()
 	.AddLogging(configure => configure.AddRedactingConsole())
@@ -181,6 +182,9 @@ logger.LogInformation(
 	reconnectPolicy.MaxDelay.TotalMilliseconds,
 	reconnectPolicy.BackoffFactor,
 	reconnectPolicy.IsUnlimitedRetries ? "unlimited" : reconnectPolicy.MaxRetries);
+logger.LogInformation(
+	"Task watchdog: {TaskWatchdog}",
+	taskTimeoutPolicy.IsEnabled ? $"{(int)taskTimeoutPolicy.Timeout.TotalSeconds}s" : "disabled");
 
 // Set up session event callback to publish to Control Plane
 sessionManager.SetEventCallback(async (accountName, eventType, state, message) =>
@@ -389,6 +393,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 	CancellationTokenSource? currentTaskCts = null;
 	string? currentTaskId = null;
 	int currentAttempt = 0;
+	bool currentTaskCancelledByServer = false;
 
 	var capabilities = actionRegistry.ListNames().Concat(hostActions.Keys)
 		.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -423,6 +428,13 @@ async Task RunOnce(CancellationToken cancellationToken)
 
 					if (matches)
 					{
+						lock (executionGate)
+						{
+							// Remember why the token fired so the watchdog does not
+							// misreport a server cancel as a timeout.
+							currentTaskCancelledByServer = true;
+						}
+
 						try
 						{
 							currentTaskCts!.Cancel();
@@ -453,14 +465,29 @@ async Task RunOnce(CancellationToken cancellationToken)
 
 			Console.WriteLine($"task received: id={task.Id} action={task.Action} target={task.Target}");
 
+			// CA2000 suppressed: both sources are disposed by their using declarations
+			// at the end of every loop-iteration path. The analyzer flags the creations
+			// only because the execution token is linked to further sources inside
+			// HostActionExecutor (a pessimistic interprocedural escape model); the
+			// disposals themselves are compiler-guaranteed here.
+#pragma warning disable CA2000
 			using var executeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, executeCts.Token);
+#pragma warning restore CA2000
 
 			lock (executionGate)
 			{
 				currentTaskCts = executeCts;
 				currentTaskId = task.Id;
 				currentAttempt = task.Attempt;
+				currentTaskCancelledByServer = false;
+			}
+
+			if (taskTimeoutPolicy.IsEnabled)
+			{
+				// Watchdog over the whole task: the per-action timeouts fire first,
+				// this is the hard outer bound that keeps the serial loop serving.
+				executeCts.CancelAfter(taskTimeoutPolicy.Timeout);
 			}
 
 			// CA2025 suppressed: heartbeatTask is awaited below (after heartbeatCts.Cancel)
@@ -476,6 +503,8 @@ async Task RunOnce(CancellationToken cancellationToken)
 			string? error;
 			IReadOnlyDictionary<string, object?>? output;
 			string? replyTraceparent;
+			bool timedOut = false;
+			bool suppressed = false;
 			using (Activity? execute = VaporAgentTracing.StartExecuteSpan(task, dispatch.TraceHeaders))
 			{
 				try
@@ -501,16 +530,50 @@ async Task RunOnce(CancellationToken cancellationToken)
 						);
 					}
 
+					// The session executor reports outer cancels as a plain "canceled"
+					// result; reclassify the watchdog case so the control plane sees a
+					// structured timeout instead.
+					timedOut = taskTimeoutPolicy.IsTaskTimeout(
+						executeCts.IsCancellationRequested,
+						cancellationToken.IsCancellationRequested,
+						currentTaskCancelledByServer);
+					if (timedOut)
+					{
+						success = false;
+						error = taskTimeoutPolicy.TimeoutError;
+						output = null;
+					}
+
 					execute?.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, error);
+					replyTraceparent = execute?.Id;
+				}
+				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !currentTaskCancelledByServer)
+				{
+					// Host actions rethrow caller cancels. Anything that is neither an
+					// agent shutdown nor a server task_cancel can only be the watchdog
+					// (the only other canceller of executeCts); report it as a
+					// structured failure instead of letting it drop the connection
+					// (which would lose the result and force a reconnect).
+					timedOut = true;
+					success = false;
+					error = taskTimeoutPolicy.TimeoutError;
+					output = null;
+					execute?.SetStatus(ActivityStatusCode.Error, error);
 					replyTraceparent = execute?.Id;
 				}
 				finally
 				{
 					lock (executionGate)
 					{
+						// A result is suppressed only on shutdown or an explicit server
+						// cancel — a watchdog firing (even just after completion) must
+						// still report, so the lease is always settled with a terminal state.
+						suppressed = cancellationToken.IsCancellationRequested
+							|| (currentTaskCancelledByServer && !timedOut);
 						currentTaskCts = null;
 						currentTaskId = null;
 						currentAttempt = 0;
+						currentTaskCancelledByServer = false;
 					}
 				}
 			}
@@ -533,7 +596,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 			{
 			}
 
-			if (!executeCts.IsCancellationRequested)
+			if (!suppressed)
 			{
 				await SendLocked(ws, sendGate, new WSMessage(
 					"task_result", null, null, result,
