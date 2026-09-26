@@ -451,3 +451,112 @@ See `tests/TESTING.md` for detailed testing documentation.
 - ✅ Integration: end-to-end workflows, multi-account scenarios
 - ✅ Performance: concurrency and stress testing
 
+## Distributed-systems design notes (2026-09)
+
+The capability map in `docs/roadmap.md` surveys where Vapor stands as an
+API-driven distributed system. This section records the load-bearing design
+decisions behind that map: what was chosen, what was considered and rejected,
+and why. The recurring theme: **Vapor optimizes for a single control plane
+with a fleet of dumb-ish edges**, buying transactional consistency and zero
+coordination at the cost of HA — a cost consciously deferred, not ignored.
+
+### Transport: outbound WebSocket tunnel
+
+**Decision.** Agents connect *out* to the control plane over one persistent
+WebSocket (`/v1/agent/ws`) using a closed four-message JSON envelope
+(hello/task/task_result/heartbeat + task_cancel). Tasks, results, heartbeats
+and the lease all ride this one connection.
+
+**Alternatives considered.**
+
+- *gRPC bidirectional streaming*: better typing and flow control, but drags
+  protobuf tooling into every plugin author's loop and adds nothing the closed
+  envelope doesn't already give at job granularity (this is not a hot path —
+  tasks per second is bounded by Steam, not by the tunnel).
+- *Message-queue backbone (NATS/Kafka)*: would buy broker-level durability and
+  multi-consumer dispatch, but introduces a stateful broker to operate and a
+  second consistency domain to reconcile against the job store. With a single
+  control plane, the WS tunnel plus the lease/requeue mechanism already gives
+  at-least-once delivery.
+- *Agent long-polling HTTP*: no persistent connection to break, but doubles
+  latency for every dispatch and makes server-push cancellation awkward.
+
+**Why WS + JSON wins here.** Agents live wherever Steam egress is best
+(residential proxies, cheap VPSen behind NAT) with **zero inbound ports**; the
+outbound tunnel makes that a deployment non-feature. JSON keeps the protocol
+debuggable with the same tooling as the REST surface, and the envelope is
+protected the cheap way: it is closed, and every record round-trips under
+property tests. Forward compatibility lives in optional members, not in
+schema negotiation.
+
+### Control plane: single writer on SQLite
+
+**Decision.** One control-plane process owns all state (jobs, accounts,
+audit, crawl) in SQLite; task claiming is lease-based with heartbeats and
+requeue on lease expiry.
+
+**Alternatives considered.** Postgres + multiple stateless CP replicas
+(write scaling, HA) and leader election over an external store (etcd/Consul).
+Both were deferred deliberately: with one writer, every job-state transition
+is one transaction with no cross-instance coordination, and SQLite's
+single-writer model is a feature — it makes the dispatch loop's
+serialization explicit instead of emergent.
+
+**Consequences.** Restart = brief orchestration pause (agents keep sessions
+via token restore; leases re-expire; nothing is lost). This is the largest
+single item on the roadmap (§9 there) and is sequenced *behind* the
+execution-timeout and observability hardening: HA multiplies failure modes,
+so the single-instance failure modes get bounded first.
+
+### Agent task loop: serial, with a watchdog
+
+**Decision.** One task at a time per agent connection; three timeout layers
+stacked:
+
+1. **Per-action declared `TimeoutSeconds`** (session path via `BotSession`,
+   host path via `HostActionExecutor`) — the precise, action-aware bound that
+   fires first with a structured `action timeout` result.
+2. **Agent task watchdog** (`AGENT_TASK_TIMEOUT_SECONDS`, default 900 s) —
+   the belt over actions that declare no timeout or hang below their token's
+   observation points. Cancels the task, reports `task timeout after Ns`,
+   keeps the loop serving.
+3. **CP lease reclaim** (`Vapor_TASK_LEASE_SECONDS`) — recovers from agent
+   death or tunnel loss by requeueing.
+
+Each layer exists because the one below it cannot recover that failure: an
+undeclared hang holds the serial loop forever while its heartbeats keep the
+lease alive (layer 2's raison d'être), and a dead agent obviously cannot
+report anything (layer 3). The default sits above the largest in-tree action
+bound (600 s) so the precise errors win when both are armed.
+
+**Alternatives considered.** Parallel per-session task loops on the agent —
+rejected because the contended resource is the *session* (one Steam login
+per account, shared CM client); a serial loop makes that exclusivity
+structural instead of a locking discipline.
+
+### State sync: desired-state reconciliation
+
+**Decision.** Accounts are declarative specs (versioned, optimistic
+concurrency) converged by a reconcile loop; tasks are at-least-once with
+attempt-tracked, idempotent execution; session state syncs eventually into
+the CP tracker.
+
+**Alternative considered.** Imperative orchestration (CP commands each
+transition). Reconciliation is self-healing by construction — every
+deviation (agent loss, failed login, missed report) is just tomorrow's
+converge target — and idempotency requirements fall out naturally, which is
+also what makes at-least-once task delivery safe.
+
+### API surface: JSON + OpenAPI, RED metrics, opt-in edge rate limiting
+
+REST with System.Text.Json everywhere (camelCase, enum-as-string, nulls
+omitted — the same options object as the tunnel, one wire dialect); protobuf
+was rejected for the same reasons as on the tunnel. Request-level
+observability is hand-rolled RED counters on `/metrics`
+(`vapor_controlplane_http_requests_total{method,route,status}` + duration
+sums), deliberately independent of the optional OTel pipeline so the scrape
+endpoint is a complete story on its own; tracing crosses the tunnel as W3C
+`traceparent` in the envelope (no SDK coupling on the wire). Rate limiting
+sits at the CP edge per credential (sliding window, off by default) because
+that is the only ingress — protecting it is protecting the system.
+
