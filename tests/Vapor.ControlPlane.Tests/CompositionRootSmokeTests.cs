@@ -29,6 +29,7 @@ public sealed class CompositionRootSmokeTests
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
 		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
 		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
+		string crawlDbPath = Path.Combine(Path.GetTempPath(), $"vapor-crawl-{Guid.NewGuid():N}.db");
 		Dictionary<string, string?> env = new()
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
@@ -36,6 +37,7 @@ public sealed class CompositionRootSmokeTests
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
 			["Vapor_CONFIG_DB_PATH"] = configDbPath,
+			["Vapor_CRAWL_DB_PATH"] = crawlDbPath,
 			["Vapor_ENABLE_SWAGGER"] = enableSwagger ? "true" : "false",
 			// Discard-protocol port: connects fail immediately, and with zero
 			// retries the notification sink never spins on delivery.
@@ -64,6 +66,9 @@ public sealed class CompositionRootSmokeTests
 			Assert.True(File.Exists(dbPath));
 			// Same proof for the declared-state persistence lambda.
 			Assert.True(File.Exists(configDbPath));
+			// Same proof for the crawl store (and that no boot falls back to the
+			// process-CWD default, where state would leak across runs).
+			Assert.True(File.Exists(crawlDbPath));
 
 			// The metrics endpoint renders the per-sink notification counters when a
 			// sink is registered at startup.
@@ -102,6 +107,7 @@ public sealed class CompositionRootSmokeTests
 			await DisposeDbFileAsync(dbPath);
 			await DisposeDbFileAsync(auditDbPath);
 			await DisposeDbFileAsync(configDbPath);
+			await DisposeDbFileAsync(crawlDbPath);
 		}
 	}
 
@@ -111,6 +117,7 @@ public sealed class CompositionRootSmokeTests
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
 		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
 		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
+		string crawlDbPath = Path.Combine(Path.GetTempPath(), $"vapor-crawl-{Guid.NewGuid():N}.db");
 		Dictionary<string, string?> env = new()
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
@@ -118,6 +125,7 @@ public sealed class CompositionRootSmokeTests
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
 			["Vapor_CONFIG_DB_PATH"] = configDbPath,
+			["Vapor_CRAWL_DB_PATH"] = crawlDbPath,
 			["Vapor_ENABLE_SWAGGER"] = "false",
 			// The limiter is constructed from the env-loaded startup config in
 			// Program.cs — this is the wiring the service-replacing factories
@@ -150,6 +158,7 @@ public sealed class CompositionRootSmokeTests
 			await DisposeDbFileAsync(dbPath);
 			await DisposeDbFileAsync(auditDbPath);
 			await DisposeDbFileAsync(configDbPath);
+			await DisposeDbFileAsync(crawlDbPath);
 		}
 	}
 
@@ -159,6 +168,7 @@ public sealed class CompositionRootSmokeTests
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
 		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
 		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
+		string crawlDbPath = Path.Combine(Path.GetTempPath(), $"vapor-crawl-{Guid.NewGuid():N}.db");
 		Dictionary<string, string?> env = new()
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
@@ -166,6 +176,7 @@ public sealed class CompositionRootSmokeTests
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
 			["Vapor_CONFIG_DB_PATH"] = configDbPath,
+			["Vapor_CRAWL_DB_PATH"] = crawlDbPath,
 			["Vapor_ENABLE_SWAGGER"] = "false",
 		};
 
@@ -204,6 +215,7 @@ public sealed class CompositionRootSmokeTests
 			await DisposeDbFileAsync(dbPath);
 			await DisposeDbFileAsync(auditDbPath);
 			await DisposeDbFileAsync(configDbPath);
+			await DisposeDbFileAsync(crawlDbPath);
 		}
 	}
 
@@ -217,6 +229,7 @@ public sealed class CompositionRootSmokeTests
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
 		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
 		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
+		string crawlDbPath = Path.Combine(Path.GetTempPath(), $"vapor-crawl-{Guid.NewGuid():N}.db");
 		Dictionary<string, string?> env = new()
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
@@ -224,6 +237,7 @@ public sealed class CompositionRootSmokeTests
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
 			["Vapor_CONFIG_DB_PATH"] = configDbPath,
+			["Vapor_CRAWL_DB_PATH"] = crawlDbPath,
 			["Vapor_ENABLE_SWAGGER"] = "false",
 		};
 
@@ -290,6 +304,7 @@ public sealed class CompositionRootSmokeTests
 			await DisposeDbFileAsync(dbPath);
 			await DisposeDbFileAsync(auditDbPath);
 			await DisposeDbFileAsync(configDbPath);
+			await DisposeDbFileAsync(crawlDbPath);
 		}
 	}
 

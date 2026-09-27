@@ -40,6 +40,12 @@ public sealed class E2EStack : IAsyncLifetime
 				["Vapor_AGENT_API_KEYS"] = AgentApiKey,
 				["Vapor_DB_PATH"] = Path.Combine(_workDir, "controlplane.db"),
 				["Vapor_AUDIT_DB_PATH"] = Path.Combine(_workDir, "audit.db"),
+				// Every env-driven database path must be pinned into the throwaway work
+				// dir: an unpinned path falls back to the process CWD default (data/
+				// under the test bin), where state from a previous run survives and the
+				// next boot rehydrates it (declared accounts reappearing unprompted).
+				["Vapor_CRAWL_DB_PATH"] = Path.Combine(_workDir, "crawl.db"),
+				["Vapor_CONFIG_DB_PATH"] = Path.Combine(_workDir, "config.db"),
 				// Fail undispatchable tasks quickly so the negative-path test observes the
 				// terminal state within seconds instead of the production default (10 × 2s).
 				["Vapor_TASK_MAX_DISPATCH_ATTEMPTS"] = "3",
