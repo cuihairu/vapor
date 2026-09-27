@@ -409,3 +409,136 @@ The checksum guarantees *integrity against the digest you pinned*, not the
 origin of the package; `trust` remains a manifest-declared label and the
 host's `MinimumTrust` policy is unchanged. Point `Vapor_PLUGIN_INDEX_URL` only
 at index sources you control, and pin digests you computed yourself.
+
+## Alignment with ASF (ArchiPlugin)
+
+Vapor's plugin system is modeled on ArchiSteamFarm's official plugin mechanism
+(`IPlugin` core plus opt-in capability interfaces), adjusted for Vapor's
+architecture. This section states the mapping and the deliberate divergences,
+so plugin authors coming from ASF know what to expect. (ASF reference:
+`ArchiSteamFarm/Plugins/Interfaces/` in
+[JustArchiNET/ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm),
+the [Plugins / Plugins-development wiki pages](https://github.com/JustArchiNET/ArchiSteamFarm/wiki/Plugins),
+and community plugins such as FreePackages and ASFEnhance.)
+
+| Concern | ASF (ArchiPlugin) | Vapor | Note |
+|---------|-------------------|-------|------|
+| Contract shape | Tiny `IPlugin` (`Name`/`Version`/`OnLoaded`) + ~22 opt-in capability interfaces, dispatched via `OfType<T>()` fan-out | `IPlugin` (`Info`/`InitializeAsync`/`ShutdownAsync`) + opt-in `IActionPlugin`/`ICommandPlugin`/`IWebApiPlugin`/`IEventPlugin` | Same additive pattern: new capabilities ship as *new optional interfaces*, old plugins untouched |
+| Discovery | Recursive `*.dll` scan of `plugins/` dirs + MEF2 convention catalog; no manifest | `VAPOR_PLUGINS_DIR`, one subdirectory per plugin, explicit `plugin.json` | The manifest carries `trust`, `permissions` and `configuration` — things ASF reads from config leftovers |
+| Version compatibility | None for third-party (a mismatch surfaces as `TypeLoadException`, verbose log, 10 s delay, process exit 1); ASF's *official* plugins are exact-version pinned (`HasSameVersion`) | `PluginApi.IsCompatible` handshake: major must match, plugin minor ≤ host minor; **official-trust plugins must target the host's API version exactly** (ASF `HasSameVersion` alignment) | Explicit rejection with a reason beats a crash; the official pin keeps bundled plugins from drifting against the host they ship with |
+| Host API exposure | Static singletons (`ASF.*`) + the `Bot` instance passed into each hook | `IPluginContext` → `IPluginHostServices` (`ILoggerFactory`, `IServiceProvider`) | Deliberate divergence: DI instead of global state, for testability and hot-unload hygiene |
+| Per-plugin config | `[JsonExtensionData]` leftovers of `GlobalConfig.json` / `BotConfig.json` | `configuration` map in `plugin.json`, handed to `InitializeAsync` | Same idea, declared where the plugin lives |
+| Event surface | `IBotConnection` (logged on/off), `IBotCardsFarmerInfo` (farming lifecycle), `IBotCommand2`, chat/trade/friend hooks, PICS changelist stream | `IEventPlugin.OnSessionEventAsync` (state changes, connected/disconnected, auth/2FA/QR prompts, errors) | Vapor has no ASF farming-hook equivalent by design: farm orchestration is control-plane side and flows through the job/audit/event bus, not agent-local state |
+| Auto-update | GitHub-release assets keyed by host version (`Plugin-V6-0.zip` convention), opt-in whitelist, applied on restart | PluginStore: index URL + SHA-256-pinned zip + `plugin_install` job, hot-loaded immediately | Vapor installs at runtime without a restart; update *policy* (opt-in, digest-pinned) matches ASF's conservatism |
+| Isolation | Default load context, loaded for process lifetime; swap requires restart | Collectible `AssemblyLoadContext` per plugin; `plugin_uninstall` hot-unloads and verifies collection | Beyond ASF |
+| Trust & permissions | Custom plugins load with full trust (a `-modded` warning is the only signal) | Manifest-declared `trust` gate + per-capability `permissions`, evaluated *before* any plugin code runs; undeclared capabilities are stripped (or rejected in strict mode) | Beyond ASF; Vapor plugins are untrusted by default |
+| Web surface | Plugin assemblies become MVC application parts; `IWebServiceProvider`/`IWebInterface` hooks | Host-agnostic `PluginWebRoute`s mounted by hosts under their plugin route prefix | Smaller, host-independent surface |
+
+**Compatibility policy (adopted from ASF's deprecation discipline):** new
+capabilities are new optional interfaces; when a hook's signature must change,
+a numbered successor interface ships instead of mutating the old one (ASF's
+`IBotCommand2` pattern); behavioral deprecations get a logged warning for at
+least one release before removal. The core `IPlugin`/`IPluginContext` pair and
+the `PluginApi` SemVer rule above are the only contracts a plugin may rely on —
+everything else in the host is free to change.
+
+## Case opening plugin (`vapor.caseopening`)
+
+The second official plugin doubles as the reference example for the full
+capability surface: actions + web routes + configuration + result recording,
+with zero Steam-side side effects.
+
+### What it is
+
+A **dry-run case-opening simulator**. It rolls Valve's published CS:GO/CS2
+case-opening odds against a local case catalog, records every result, and
+exposes catalog/open/results/stats through an action (`case_open`, callable
+through the job pipeline) and plugin web routes (`GET cases`, `POST open`,
+`GET results`, `GET stats`). It never touches Steam inventory, trade or web
+session endpoints — see [ToS boundary](#tos-boundary).
+
+### Algorithm and sources
+
+The odds are **Valve's own published disclosure** — the official Chinese CS:GO
+site's 概率公示 page (probability disclosure, 2017-09-11,
+[csgo.com.cn](https://www.csgo.com.cn/news/gamebroad/20170911/206155.shtml)),
+which is the only primary source for case odds:
+
+| Rarity tier | Published probability | Exact roll window (of 782) |
+|-------------|----------------------|----------------------------|
+| Mil-Spec (blue) | 79.923% | 625 |
+| Restricted (purple) | 15.985% | 125 |
+| Classified (pink) | 3.197% | 25 |
+| Covert (red) | 0.639% | 5 |
+| Rare special item (gold — knife/gloves) | 0.256% | 2 |
+
+The same disclosure fixes the remaining structure, which the engine follows
+exactly: each tier is 1:5 against the next-higher tier (2:5 gold:covert),
+items of equal rarity are equally likely, and **StatTrak™ is an independent
+1:10 roll** for items that have a StatTrak variant. There is **no pity
+system** — every open is an independent, identically distributed draw.
+
+Per-open roll order (deterministic, `System.Random`-backed, seed injectable
+for tests):
+
+1. **Rarity** — one draw against the 625:125:25:5:2 table above.
+2. **Item** — uniform among the case's items at the rolled tier.
+3. **StatTrak™** — 1:10 when the picked item allows it.
+4. **Float** — uniform U(0,1) mapped linearly into the item's own
+   `[min_float, max_float]` range. Wear ranges are per paint kit, not per case
+   (e.g. AK-47 | Redline is 0.10–0.70); the CSFloat float/paint-seed analysis
+   ([blog.csfloat.com, 2020](https://blog.csfloat.com/analysis-of-float-value-and-paint-seed-distribution-in-cs-go/))
+   is the reference for the mapping and the wear thresholds:
+   FN < 0.07, MW < 0.15, FT < 0.38, WW < 0.45, BS ≥ 0.45.
+5. **Paint seed** — uniform integer 0–1000, independent of float.
+
+Open-source references consulted (approach only, no code copied):
+[Desmait/OpenCasePlugin](https://github.com/Desmait/OpenCasePlugin) (C#, same
+odds table with a cumulative roll — unlicensed, reference for approach),
+[jonese1234/Csgo-Case-Data](https://github.com/jonese1234/Csgo-Case-Data)
+(per-case item pools and odds provenance), and
+[kratos1812/Case-Opening](https://github.com/kratos1812/Case-Opening)
+(GPL-3.0, SourceMod — an alternative weighted-bucket roll).
+
+### Modes and the backend seam
+
+`ICaseOpeningBackend` is the single seam between "decide what was unboxed" and
+"how it came to be". The plugin ships exactly one implementation:
+
+- **`SimulationBackend`** (the default, and the only `backend` configuration
+  value accepted today): pure local RNG. No network, no Steam calls, no
+  account required. `case_open` actions report `mode: "dry-run"` in their
+  output.
+
+A real backend is **deliberately not implemented**: opening a case consumes a
+key inside the CS2 game client (game coordinator traffic), which the public
+Steam Web API cannot do. Requesting any other `backend` value fails plugin
+initialization with an explicit error rather than silently simulating.
+
+### Result recording
+
+Every open appends one JSON line (case id, item, rarity, stattrak, float,
+wear, paint seed, timestamp) to the configured results file
+(`results.path`). Aggregates — opens per case, per-rarity counts and observed
+rates — are computed from the same records (`GET stats`). When `results.path`
+is omitted, results are kept in a bounded in-memory ring (last 1000) and not
+persisted.
+
+### ToS boundary
+
+Stated plainly, so nobody has to guess:
+
+- Case opening in CS2 is a **game-client transaction**; there is no public API
+  for it. Automating it (web session scripting, trade-bot unboxing fleets) is
+  exactly the "Automation" the
+  [Steam Subscriber Agreement §4.C](https://store.steampowered.com/subscriber_agreement/)
+  prohibits, and is the pattern Valve targeted in its July 2016 actions against
+  unboxing/gambling sites.
+- This plugin therefore **only simulates**: local RNG over published odds, no
+  inventory reads, no trade offers, no market calls, no web session actions.
+  The `ICaseOpeningBackend` seam exists so a future legitimate integration has
+  one honest place to live — not as a stub for automation.
+- Steam Web API terms
+  ([apiterms](https://steamcommunity.com/dev/apiterms)) additionally restrict
+  Steam data to personal, non-commercial use; the plugin's output (simulated
+  results) involves no Steam data at all.
