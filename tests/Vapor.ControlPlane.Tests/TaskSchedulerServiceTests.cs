@@ -22,7 +22,7 @@ public sealed class TaskSchedulerServiceTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -48,7 +48,7 @@ public sealed class TaskSchedulerServiceTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -71,7 +71,7 @@ public sealed class TaskSchedulerServiceTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig() with { TaskDispatchRetryDelayMs = 0 });
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig() with { TaskDispatchRetryDelayMs = 0 }, new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -104,7 +104,7 @@ public sealed class TaskSchedulerServiceTests
 			var store = new FakeJobStore();
 			store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 10));
 			var events = new RecordingEventBroker();
-			var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+			var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 			await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -136,7 +136,7 @@ public sealed class TaskSchedulerServiceTests
 			var store = new FakeJobStore();
 			store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
 			var events = new RecordingEventBroker();
-			var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+			var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 			await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -155,7 +155,7 @@ public sealed class TaskSchedulerServiceTests
 		var registry = new AgentRegistry();
 		var store = new FakeJobStore();
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.StartAsync(CancellationToken.None);
 		// The dispatch timer fires every 250ms; the stale-requeue probe that opens
@@ -183,7 +183,7 @@ public sealed class TaskSchedulerServiceTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -207,7 +207,7 @@ public sealed class TaskSchedulerServiceTests
 		// Attempt equals the configured limit (10): no agent will ever support "login".
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 10));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -231,7 +231,7 @@ public sealed class TaskSchedulerServiceTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 3));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -257,7 +257,7 @@ public sealed class TaskSchedulerServiceTests
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 1_000));
 		var config = CreateConfig() with { TaskMaxDispatchAttempts = 0 };
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, config);
+		var scheduler = new TaskSchedulerService(registry, store, events, config, new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -269,7 +269,7 @@ public sealed class TaskSchedulerServiceTests
 	public async Task DispatchOnce_RequeuesStaleTasksOnlyOnceWithinFiveSecondWindow()
 	{
 		var store = new FakeJobStore();
-		var scheduler = new TaskSchedulerService(new AgentRegistry(), store, new RecordingEventBroker(), CreateConfig());
+		var scheduler = new TaskSchedulerService(new AgentRegistry(), store, new RecordingEventBroker(), CreateConfig(), new FaultInjector());
 		SetLastRequeueAt(scheduler, DateTimeOffset.UtcNow - TimeSpan.FromSeconds(10));
 
 		await scheduler.DispatchOnce(CancellationToken.None);
@@ -287,7 +287,7 @@ public sealed class TaskSchedulerServiceTests
 		// reaches the loop call and the 250ms timer's await throws immediately.
 		var registry = new AgentRegistry();
 		var scheduler = new TaskSchedulerService(
-			registry, new FakeJobStore(), new RecordingEventBroker(), CreateConfig());
+			registry, new FakeJobStore(), new RecordingEventBroker(), CreateConfig(), new FaultInjector());
 		var execute = typeof(TaskSchedulerService).GetMethod(
 			"ExecuteAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
 		Assert.NotNull(execute);
@@ -295,6 +295,97 @@ public sealed class TaskSchedulerServiceTests
 		Task task = (Task)execute.Invoke(scheduler, [new CancellationToken(canceled: true)])!;
 
 		await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+	}
+
+	// ── Fault-injection drills (roadmap §8): dispatch-plane enforcement rides the
+	// real requeue/retry machinery instead of a parallel failure path. ──
+
+	[Fact]
+	public async Task DispatchOnce_TaskDispatchErrorFault_RequeuesWithoutAgentAndSelfHeals()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["login"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
+		var events = new RecordingEventBroker();
+		var faults = new FaultInjector();
+		FaultSpec spec = faults.Enable(FaultKind.TaskDispatch, FaultMode.Error, "login", null, null, null, null, null, budget: 1, ttlSeconds: 60);
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), faults);
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		// The drill reuses the undispatchable path: requeued, dispatch_failed
+		// published, and the capable agent never invoked.
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Empty(store.FailedTaskIds);
+		Assert.Single(events.Events);
+		Assert.Equal("task.dispatch_failed", events.Events[0].Type);
+		Assert.Equal($"fault injection {spec.Id}: dispatch failed", events.Events[0].Payload!["error"]?.ToString());
+
+		// Budget exhausted: a fresh task dispatches normally on the next pass.
+		store.QueuedTasks.Enqueue(CreateTask("task-2", "job-1", "local", "login"));
+		await scheduler.DispatchOnce(CancellationToken.None);
+		Assert.Single(events.Events, e => e.Type == "task.dispatched");
+		Assert.Empty(faults.List());
+	}
+
+	[Fact]
+	public async Task DispatchOnce_TaskDispatchDelayFault_PushesNextAttemptByTheDelay()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["login"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
+		var events = new RecordingEventBroker();
+		var faults = new FaultInjector();
+		FaultSpec spec = faults.Enable(FaultKind.TaskDispatch, FaultMode.Delay, null, null, null, null, null, delayMs: 5000, budget: 1, ttlSeconds: 60);
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), faults);
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		// The retry delay is max(configured 2000ms, injected 5000ms): the delayed
+		// requeue defers the retry past the drill window.
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Equal(TimeSpan.FromMilliseconds(5000), store.RequeueDelays[0]);
+		Assert.Single(events.Events);
+		Assert.Equal("task.dispatch_failed", events.Events[0].Type);
+		Assert.Equal($"fault injection {spec.Id}: dispatch delayed by 5000ms", events.Events[0].Payload!["error"]?.ToString());
+	}
+
+	[Fact]
+	public async Task DispatchOnce_TaskDispatchFaultWithMismatchedSelector_DispatchesNormally()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["login"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
+		var events = new RecordingEventBroker();
+		var faults = new FaultInjector();
+		faults.Enable(FaultKind.TaskDispatch, FaultMode.Error, "farm", null, null, null, null, null, budget: 5, ttlSeconds: 60);
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), faults);
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Single(events.Events);
+		Assert.Equal("task.dispatched", events.Events[0].Type);
+		// The unmatched action leaves the drill fully armed.
+		FaultSpec armed = Assert.Single(faults.List());
+		Assert.Equal(0, armed.Fired);
 	}
 
 	private static Config CreateConfig() => new("", new Dictionary<string, DateTimeOffset?>(), "test.db", 300, false);

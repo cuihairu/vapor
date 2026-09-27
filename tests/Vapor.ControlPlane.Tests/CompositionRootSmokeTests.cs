@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using System.Text.Json;
@@ -131,6 +132,57 @@ public sealed class CompositionRootSmokeTests
 			Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/v1/agents")).StatusCode);
 			Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/v1/agents")).StatusCode);
 			Assert.Equal(HttpStatusCode.TooManyRequests, (await client.GetAsync("/v1/agents")).StatusCode);
+		}
+		finally
+		{
+			foreach (string key in env.Keys)
+			{
+				Environment.SetEnvironmentVariable(key, null);
+			}
+
+			await DisposeDbFileAsync(dbPath);
+			await DisposeDbFileAsync(auditDbPath);
+		}
+	}
+
+	[Fact]
+	public async Task Factory_WiresTheFaultInjectorIntoTheEdgePipeline()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
+		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
+		Dictionary<string, string?> env = new()
+		{
+			["Vapor_ADMIN_API_KEY"] = "admin-token",
+			["Vapor_AGENT_API_KEYS"] = "agent-token",
+			["Vapor_DB_PATH"] = dbPath,
+			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
+			["Vapor_ENABLE_SWAGGER"] = "false",
+		};
+
+		foreach ((string key, string? value) in env)
+		{
+			Environment.SetEnvironmentVariable(key, value);
+		}
+
+		try
+		{
+			await using RawFactory factory = new();
+			using HttpClient client = factory.CreateClient();
+			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+			// Disarmed by default; the injector resolves from the real root.
+			Assert.Equal("[]", (await client.GetStringAsync("/v1/faults")).Trim());
+
+			// Arm through the real pipeline and prove the edge middleware enforces
+			// the drill while the fault endpoints themselves stay reachable.
+			using HttpResponseMessage armed = await client.PostAsJsonAsync("/v1/faults", new { kind = "api-request", mode = "error", route = "/v1/agents", httpStatus = 503 });
+			Assert.Equal(HttpStatusCode.Created, armed.StatusCode);
+			Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/v1/agents")).StatusCode);
+
+			string metrics = await client.GetStringAsync("/metrics");
+			Assert.Contains("vapor_controlplane_fault_injections_total{kind=\"api-request\",mode=\"error\"} 1", metrics);
+			Assert.Equal(HttpStatusCode.OK, (await client.DeleteAsync("/v1/faults")).StatusCode);
+			Assert.Contains("vapor_controlplane_faults_armed 0", await client.GetStringAsync("/metrics"));
 		}
 		finally
 		{

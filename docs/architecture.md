@@ -569,3 +569,15 @@ endpoint is a complete story on its own; tracing crosses the tunnel as W3C
 sits at the CP edge per credential (sliding window, off by default) because
 that is the only ingress — protecting it is protecting the system.
 
+### Fault injection: bounded drills through the real failure paths
+
+The admin-only `/v1/faults` API (roadmap §8) arms runtime drills on exactly
+two planes — task dispatch (after claim, riding the real requeue/retry
+machinery) and `/v1` requests (in the same edge middleware that records RED
+metrics, so an injected 503 shows up in the scrape like any organic one).
+Design invariants: every fault carries a budget and a TTL so drills
+self-heal instead of leaking degradation; the fault endpoints, `/healthz`
+and `/metrics` are exempt so a running drill is always observable and
+stoppable; state is in-memory so a restart disarms everything — a drill that
+outlives the operator's attention is precisely what the bounds prevent.
+

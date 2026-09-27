@@ -670,6 +670,68 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ---
 
+### 4.12 Faults (fault-injection drills)
+
+Runtime fault injection for resilience drills (roadmap §8). All four endpoints are admin-only and exempt from api-request injection themselves — a drill can always be observed and stopped. Every armed fault is bounded twice over: a **budget** (injections left; the fault removes itself when exhausted) and a **TTL** (`expiresAt`, 1..3600 s, default 900) — a forgotten drill self-heals. State is in-memory: a control-plane restart disarms everything (deliberate). Audit actions: `faults.enable`, `faults.disable`, `faults.clear`. Metrics: `vapor_controlplane_fault_injections_total{kind,mode}` counter and `vapor_controlplane_faults_armed` gauge.
+
+Two planes, selected by `kind`:
+
+- `task-dispatch` — injected after the scheduler claims a task, before agent pick. Selectors: `action` (exact task action), `region` (exact region); null/omitted = any. Error mode reuses the real undispatchable path (requeue + retry, `task.dispatch_failed` event with `fault injection <id>: dispatch failed`); delay mode requeues with `max(configured retry delay, delayMs)` and the error `fault injection <id>: dispatch delayed by <N>ms`.
+- `api-request` — injected in the edge middleware for `/v1` routes only (`/v1/faults`, `/healthz`, `/metrics` are exempt). Selectors: `route` (case-insensitive substring against the route pattern — `"/v1/jobs"` matches both `/v1/jobs` and `/v1/jobs/{jobId}`), `method` (any case); null = any. Error mode returns the configured status with body `{ "error": "fault injection <id>" }` (recorded in the RED families like any other response); delay mode adds `delayMs` of latency — and the timestamp is taken before the drill point, so the inflated duration lands in `vapor_controlplane_http_request_duration_seconds_sum`.
+
+Plane-mismatched selectors are rejected (400): `route`/`method` with `task-dispatch`, `action`/`region` with `api-request` — an armed fault that can never fire is a drill failure, not a feature.
+
+#### `GET /v1/faults`
+- Purpose: list armed fault injections.
+- Auth: admin. Body: none.
+- 200: `FaultView[]` (empty array when nothing is armed):
+
+```json
+[{
+  "id": "3f0c…32hex",
+  "kind": "api-request",
+  "mode": "error",
+  "action": null, "region": null,
+  "route": "/v1/agents", "method": null,
+  "httpStatus": 503,
+  "delayMs": 1000,
+  "budgetRemaining": 1, "fired": 0,
+  "createdAt": "…", "expiresAt": "…"
+}]
+```
+
+#### `POST /v1/faults`
+- Purpose: arm a fault injection.
+- Auth: admin. Body (`*` mandatory):
+
+```json
+{ "kind": "api-request", "mode": "error",
+  "action": null, "region": null, "route": "/v1/agents", "method": null,
+  "httpStatus": 503, "delayMs": 1000, "budget": 1, "ttlSeconds": 900 }
+```
+
+- `kind`* — `"task-dispatch"` or `"api-request"` (case-insensitive).
+- `mode`* — `"error"` or `"delay"` (case-insensitive).
+- Selectors — plane-specific, see above; null/omitted = any; whitespace-only = null.
+- `httpStatus` — 400..599 (default 500), error mode only.
+- `delayMs` — 1..60000 (default 1000), delay mode only.
+- `budget` — 1..1000 (default 1; each fired injection consumes one, auto-remove at zero).
+- `ttlSeconds` — 1..3600 (default 900).
+- 201: the armed `FaultView` (same shape as the list items), `Location: /v1/faults/{id}`.
+- Errors: 400 (bad kind / mode / bound / selector), 401.
+
+#### `DELETE /v1/faults/{faultId}`
+- Purpose: disarm one fault injection.
+- Auth: admin. Body: none.
+- 200: empty body. Errors: 404 (`fault <id> is not armed` — never armed, already disarmed, or self-removed by budget/TTL), 401.
+
+#### `DELETE /v1/faults`
+- Purpose: disarm every fault injection — the panic button.
+- Auth: admin. Body: none.
+- 200: `{ "removed": <int> }` (how many were armed). Errors: 401.
+
+---
+
 ## 5. Audit actions reference (written by these endpoints)
 
 `account.spec.updated`, `account.spec.removed`, `account.enabled`, `account.disabled`, `account.loot`, `account.add_license`, `standing_check_requested`, `trade_offers.read`, `trade_offer.accept`, `trade_offer.decline`, `trade_offer.confirm`, `trade.swap_offer`, `trade_confirmations.accept_all`, `inventory.read`, `inventory.duplicates`, `achievement.read`, `achievement.unlock`, `achievement.reset`, `market_listings.read`, `market_listings.create`, `market_listings.cancel`, `points_shop.summary`, `points_shop.claim`, `job.created`, `job.canceled`, `session.event.received`, `session.login`, `auth.code.submitted`, `config.global.updated`, `config.account.updated`, `plugin_install_dispatched`, `plugin_uninstall_dispatched`, `crawl.plan.created`, `crawl.plan.updated`, `crawl.plan.deleted`, `crawl.plan.triggered`, plus task-result audits (`task.result.reported` for sensitive actions: `SendTradeOffer*`, `AcceptTradeOffer*`, `DeclineTradeOffer*`, `CancelTradeOffer*`, `GetInventory*`, `RedeemKey*`) and crawl-run audits from the worker.

@@ -891,7 +891,7 @@ public sealed class HostTargetedDispatchTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "plugin_install", target: "agent:agent-2"));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -912,7 +912,7 @@ public sealed class HostTargetedDispatchTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "plugin_install", target: "agent:agent-2"));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -931,7 +931,7 @@ public sealed class HostTargetedDispatchTests
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "plugin_install", target: "agent:agent-1"));
 		var events = new RecordingEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 

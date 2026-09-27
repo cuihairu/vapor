@@ -199,6 +199,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Refresh cadence configurable via `Vapor_RECONCILE_BOOST_REFRESH_SECONDS`
   (default 1800s).
 
+- Control-plane fault-injection API (`/v1/faults`, roadmap §8): admin-only
+  endpoints arm runtime error/delay drills on two planes — task dispatch
+  (injected after claim, riding the real requeue/retry machinery with the
+  retry delay pushed past the injected delay) and `/v1` API requests (edge
+  middleware; injected statuses land in the RED families, delay-mode
+  inflated latency lands in the duration sums). Every fault is bounded by a
+  budget (auto-removes at exhaustion) and a TTL (1..3600 s, default 900), a
+  panic button (`DELETE /v1/faults`) disarms everything, and the fault
+  endpoints themselves plus `/healthz`/`/metrics` are exempt so a drill is
+  always observable and stoppable. State is in-memory (restart disarms all,
+  deliberately); observable via `vapor_controlplane_fault_injections_total{kind,mode}`
+  / `vapor_controlplane_faults_armed` and the `faults.enable/disable/clear`
+  audit actions. Wrong-plane selectors are rejected (400) so an armed fault
+  can never silently never fire.
+
 ### Fixed
 
 - Market fee math (`MarketFeeCalculator`, exposed via property tests):

@@ -11,6 +11,7 @@ public sealed class TaskSchedulerService : BackgroundService
 	private readonly IJobStore _store;
 	private readonly IEventBroker _events;
 	private readonly Config _cfg;
+	private readonly FaultInjector _faults;
 	private DateTimeOffset _lastRequeueAt = DateTimeOffset.MinValue;
 
 	private long _noCapableAgentFailures;
@@ -37,12 +38,13 @@ public sealed class TaskSchedulerService : BackgroundService
 		}
 	}
 
-	public TaskSchedulerService(AgentRegistry agents, IJobStore store, IEventBroker events, Config cfg)
+	public TaskSchedulerService(AgentRegistry agents, IJobStore store, IEventBroker events, Config cfg, FaultInjector faults)
 	{
 		_agents = agents;
 		_store = store;
 		_events = events;
 		_cfg = cfg;
+		_faults = faults;
 	}
 
 	protected override Task ExecuteAsync(CancellationToken stoppingToken)
@@ -87,6 +89,22 @@ public sealed class TaskSchedulerService : BackgroundService
 				}
 
 				using Activity? dispatch = StartDispatchActivity(task, region);
+
+				// Fault-injection drill point (roadmap §8): consume budget after the
+				// claim so the task rides the real retry machinery (requeue with
+				// next-attempt gate, or permanent failure once attempts exhaust).
+				if (_faults.TryInjectDispatch(task.Action, task.Region) is { } fault)
+				{
+					bool delayed = fault.Mode == FaultMode.Delay;
+					await HandleUndispatchableTaskAsync(
+						task,
+						"task.dispatch_failed",
+						delayed ? $"fault injection {fault.Id}: dispatch delayed by {fault.DelayMs}ms" : $"fault injection {fault.Id}: dispatch failed",
+						cancellationToken,
+						dispatch: dispatch,
+						retryDelayOverride: delayed ? TimeSpan.FromMilliseconds(Math.Max(_cfg.TaskDispatchRetryDelayMs, fault.DelayMs)) : null).ConfigureAwait(false);
+					continue;
+				}
 
 				// Host-targeted tasks ("agent:{id}" — e.g. plugin lifecycle) must land on
 				// the named machine: each agent has its own filesystem, so the region's
@@ -146,7 +164,7 @@ public sealed class TaskSchedulerService : BackgroundService
 	/// Handles a claimed task that could not be handed to any agent: retry with a delay while
 	/// attempts remain, otherwise fail the task permanently so it cannot block the queue forever.
 	/// </summary>
-	private async Task HandleUndispatchableTaskAsync(JobTask task, string failureEvent, string error, CancellationToken cancellationToken, string? agentId = null, Activity? dispatch = null)
+	private async Task HandleUndispatchableTaskAsync(JobTask task, string failureEvent, string error, CancellationToken cancellationToken, string? agentId = null, Activity? dispatch = null, TimeSpan? retryDelayOverride = null)
 	{
 		if (_cfg.HasDispatchAttemptLimit && task.Attempt >= _cfg.TaskMaxDispatchAttempts)
 		{
@@ -167,7 +185,9 @@ public sealed class TaskSchedulerService : BackgroundService
 			Interlocked.Increment(ref _enqueueFailedFailures);
 		}
 
-		TimeSpan? retryDelay = _cfg.TaskDispatchRetryDelayMs > 0 ? TimeSpan.FromMilliseconds(_cfg.TaskDispatchRetryDelayMs) : null;
+		// Fault drills can push the next-attempt gate further out than the config
+		// default; every other caller uses the configured retry delay.
+		TimeSpan? retryDelay = retryDelayOverride ?? (_cfg.TaskDispatchRetryDelayMs > 0 ? TimeSpan.FromMilliseconds(_cfg.TaskDispatchRetryDelayMs) : null);
 		await _store.RequeueTask(task.Id, retryDelay, cancellationToken).ConfigureAwait(false);
 
 		var payload = new Dictionary<string, object?> { ["taskId"] = task.Id, ["attempt"] = task.Attempt, ["error"] = error };

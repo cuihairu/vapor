@@ -52,6 +52,7 @@ builder.Services.AddSingleton<PluginInventory>();
 builder.Services.AddSingleton<SystemStatusService>();
 builder.Services.AddSingleton<ApiRequestMetrics>();
 builder.Services.AddSingleton(new ApiKeyRateLimiter(startupConfig.ApiRateLimitPerMinute));
+builder.Services.AddSingleton<FaultInjector>();
 builder.Services.AddSingleton(sp =>
 {
 	var cfg = sp.GetRequiredService<Config>();
@@ -182,7 +183,32 @@ app.Use(async (ctx, next) =>
 		}
 	}
 
+	// The timestamp is taken before the fault-injection drill point so a delay
+	// fault's added latency lands in the recorded RED duration (the error arm
+	// short-circuits below and records its own status with a zero duration).
 	long started = Stopwatch.GetTimestamp();
+
+	// Fault-injection drill point (roadmap §8): /v1 routes only, and never the
+	// fault endpoints themselves — the panic button and the drill's readout
+	// (/v1/faults, /metrics, /healthz) must stay reachable mid-drill.
+	if (ctx.Request.Path.StartsWithSegments("/v1") && !ctx.Request.Path.StartsWithSegments("/v1/faults")
+		&& ctx.RequestServices.GetRequiredService<FaultInjector>().TryInjectApiRequest(route, method) is { } apiFault)
+	{
+		if (apiFault.Mode == FaultMode.Delay)
+		{
+			// Bounded (<= 60 s), deliberately not tied to RequestAborted: the delay
+			// must complete so the request is recorded with its inflated duration.
+			await Task.Delay(TimeSpan.FromMilliseconds(apiFault.DelayMs));
+		}
+		else
+		{
+			metrics.RecordRequest(method, route, apiFault.HttpStatusCode, 0);
+			ctx.Response.StatusCode = apiFault.HttpStatusCode;
+			await ctx.Response.WriteAsJsonAsync(new ErrorResponse($"fault injection {apiFault.Id}"));
+			return;
+		}
+	}
+
 	try
 	{
 		await next();
@@ -199,7 +225,7 @@ app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.Produces(200);
 
 // Prometheus metrics endpoint (public like the agent's /metrics; protect at the network layer).
-app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, RecurringJobScheduler recurringJobs, CrawlRunWorker crawl, IEnumerable<INotificationSink> notificationSinks, ApiRequestMetrics apiMetrics) =>
+app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry agents, TaskSchedulerService scheduler, AccountStore accounts, DesiredStateReconciler reconciler, RecurringJobScheduler recurringJobs, CrawlRunWorker crawl, IEnumerable<INotificationSink> notificationSinks, ApiRequestMetrics apiMetrics, FaultInjector faults) =>
 {
 	IReadOnlyDictionary<JobTaskStatus, int> taskCounts = await store.GetTaskStatusCounts(ctx.RequestAborted);
 
@@ -279,6 +305,7 @@ app.MapGet("/metrics", async (HttpContext ctx, IJobStore store, AgentRegistry ag
 	}
 
 	apiMetrics.Render(sb);
+	faults.Render(sb);
 
 	ctx.Response.Headers.ContentType = "text/plain; version=0.0.4; charset=utf-8";
 	return Results.Text(sb.ToString());
@@ -2933,6 +2960,129 @@ app.MapGet("/v1/crawl/results", async Task<IResult> (
 	.Produces(200)
 	.Produces<ErrorResponse>(401);
 
+// Fault-injection drills (roadmap §8). Admin-only, runtime-toggled, and
+// self-healing by construction: every armed fault carries a budget and a TTL,
+// and these endpoints are exempt from api-request injection so a drill can
+// always be observed and stopped. See docs/roadmap.md §8 and production.md.
+app.MapGet("/v1/faults", (HttpContext ctx, Config cfg, FaultInjector faults) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	return Results.Ok(faults.List().Select(ToFaultView).ToList());
+})
+	.WithTags("Faults")
+	.WithSummary("List armed fault injections (admin)")
+	.Produces(200)
+	.Produces(401);
+
+app.MapPost("/v1/faults", async Task<Results<Created<FaultView>, BadRequest<ErrorResponse>, UnauthorizedHttpResult>> (
+	HttpContext ctx, Config cfg, IAuditStore audit, ILogger<Program> logger, FaultInjector faults, EnableFaultRequest req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return TypedResults.Unauthorized();
+	}
+
+	// Distinct messages for the two mandatory fields so a bad mode on a good kind
+	// is reported precisely; a missing body reads as a null kind either way.
+	if (!TryFaultKind(req.Kind, out FaultKind kind))
+	{
+		return TypedResults.BadRequest(new ErrorResponse("kind must be 'task-dispatch' or 'api-request'"));
+	}
+
+	if (!TryFaultMode(req.Mode, out FaultMode mode))
+	{
+		return TypedResults.BadRequest(new ErrorResponse("mode must be 'error' or 'delay'"));
+	}
+
+	if (req.HttpStatus is int status && (status < FaultInjector.MinHttpStatusCode || status > FaultInjector.MaxHttpStatusCode))
+	{
+		return TypedResults.BadRequest(new ErrorResponse($"httpStatus must be {FaultInjector.MinHttpStatusCode}..{FaultInjector.MaxHttpStatusCode}"));
+	}
+
+	if (req.DelayMs is int delay && (delay < FaultInjector.MinDelayMs || delay > FaultInjector.MaxDelayMs))
+	{
+		return TypedResults.BadRequest(new ErrorResponse($"delayMs must be {FaultInjector.MinDelayMs}..{FaultInjector.MaxDelayMs}"));
+	}
+
+	if (req.Budget is long budget && (budget < FaultInjector.MinBudget || budget > FaultInjector.MaxBudget))
+	{
+		return TypedResults.BadRequest(new ErrorResponse($"budget must be {FaultInjector.MinBudget}..{FaultInjector.MaxBudget}"));
+	}
+
+	if (req.TtlSeconds is int ttl && (ttl < FaultInjector.MinTtlSeconds || ttl > FaultInjector.MaxTtlSeconds))
+	{
+		return TypedResults.BadRequest(new ErrorResponse($"ttlSeconds must be {FaultInjector.MinTtlSeconds}..{FaultInjector.MaxTtlSeconds}"));
+	}
+
+	// Selectors are plane-specific: rejecting the wrong-plane ones keeps an armed
+	// fault from silently never firing.
+	if (kind == FaultKind.TaskDispatch && (req.Route is not null || req.Method is not null))
+	{
+		return TypedResults.BadRequest(new ErrorResponse("route/method selectors apply to kind 'api-request' only"));
+	}
+
+	if (kind == FaultKind.ApiRequest && (req.Action is not null || req.Region is not null))
+	{
+		return TypedResults.BadRequest(new ErrorResponse("action/region selectors apply to kind 'task-dispatch' only"));
+	}
+
+	FaultSpec spec = faults.Enable(kind, mode, req.Action, req.Region, req.Route, req.Method, req.HttpStatus, req.DelayMs, req.Budget, req.TtlSeconds);
+	await WriteAuditLog(logger, audit, ctx, "faults.enable", details: new Dictionary<string, object?>
+	{
+		["faultId"] = spec.Id,
+		["kind"] = FaultKindText(kind),
+		["mode"] = FaultModeText(mode),
+		["budget"] = spec.Budget,
+		["ttlSeconds"] = (int)(spec.ExpiresAt - spec.CreatedAt).TotalSeconds,
+	});
+
+	return TypedResults.Created($"/v1/faults/{spec.Id}", ToFaultView(spec));
+})
+	.WithTags("Faults")
+	.WithSummary("Arm a fault injection (admin): error or delay on task dispatch or /v1 requests, bounded by budget and TTL")
+	.Produces<FaultView>(201)
+	.Produces<ErrorResponse>(400)
+	.Produces(401);
+
+app.MapDelete("/v1/faults/{faultId}", async Task<Results<Ok, NotFound<ErrorResponse>, UnauthorizedHttpResult>> (
+	HttpContext ctx, Config cfg, IAuditStore audit, ILogger<Program> logger, FaultInjector faults, string faultId) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return TypedResults.Unauthorized();
+	}
+
+	bool removed = faults.Disable(faultId);
+	await WriteAuditLog(logger, audit, ctx, "faults.disable", details: new Dictionary<string, object?> { ["faultId"] = faultId, ["removed"] = removed });
+	return removed ? TypedResults.Ok() : TypedResults.NotFound(new ErrorResponse($"fault {faultId} is not armed"));
+})
+	.WithTags("Faults")
+	.WithSummary("Disarm one fault injection (admin)")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces(401);
+
+app.MapDelete("/v1/faults", async Task<Results<Ok<ClearFaultsResponse>, UnauthorizedHttpResult>> (
+	HttpContext ctx, Config cfg, IAuditStore audit, ILogger<Program> logger, FaultInjector faults) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return TypedResults.Unauthorized();
+	}
+
+	int removed = faults.ClearAll();
+	await WriteAuditLog(logger, audit, ctx, "faults.clear", details: new Dictionary<string, object?> { ["removed"] = removed });
+	return TypedResults.Ok(new ClearFaultsResponse(removed));
+})
+	.WithTags("Faults")
+	.WithSummary("Disarm every fault injection — panic button (admin)")
+	.Produces(200)
+	.Produces(401);
+
 app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IAuditStore audit, IEventBroker events, PluginInventory pluginsInventory) =>
 {
 	if (!Auth.TryAgent(cfg, GetAuthorization(ctx), out _))
@@ -3254,6 +3404,62 @@ static CrawlPlan BuildCrawlPlan(
 	LastRunId: lastRunId,
 	LastRunAt: lastRunAt,
 	NextRunAt: nextRun);
+
+static bool TryFaultKind(string? raw, out FaultKind kind)
+{
+	if (string.Equals(raw?.Trim(), "task-dispatch", StringComparison.OrdinalIgnoreCase))
+	{
+		kind = FaultKind.TaskDispatch;
+		return true;
+	}
+
+	if (string.Equals(raw?.Trim(), "api-request", StringComparison.OrdinalIgnoreCase))
+	{
+		kind = FaultKind.ApiRequest;
+		return true;
+	}
+
+	kind = default;
+	return false;
+}
+
+static bool TryFaultMode(string? raw, out FaultMode mode)
+{
+	if (string.Equals(raw?.Trim(), "error", StringComparison.OrdinalIgnoreCase))
+	{
+		mode = FaultMode.Error;
+		return true;
+	}
+
+	if (string.Equals(raw?.Trim(), "delay", StringComparison.OrdinalIgnoreCase))
+	{
+		mode = FaultMode.Delay;
+		return true;
+	}
+
+	mode = default;
+	return false;
+}
+
+static string FaultKindText(FaultKind kind) => kind == FaultKind.TaskDispatch ? "task-dispatch" : "api-request";
+
+static string FaultModeText(FaultMode mode) => mode == FaultMode.Error ? "error" : "delay";
+
+static FaultView ToFaultView(FaultSpec spec) => new(
+	spec.Id,
+	FaultKindText(spec.Kind),
+	FaultModeText(spec.Mode),
+	spec.Action,
+	spec.Region,
+	spec.Route,
+	spec.Method,
+	spec.HttpStatusCode,
+	spec.DelayMs,
+	spec.BudgetRemaining,
+	spec.Fired,
+	spec.CreatedAt,
+	spec.ExpiresAt);
+
 
 static async Task WriteAuditLog(
 	ILogger logger,
@@ -3648,6 +3854,46 @@ public sealed record AchievementWriteRequest(
 	List<string>? Names = null,
 	bool? Confirm = null
 );
+
+// Request body for arming a fault injection. kind/mode are mandatory strings
+// ("task-dispatch"/"api-request", "error"/"delay"); the selector fields are
+// plane-specific (action/region for dispatch drills, route/method for API-edge
+// drills — null means "any"), and the bounds mirror FaultInjector's clamps.
+// The status field is HttpStatus so the camelCase wire name is "httpStatus".
+public sealed record EnableFaultRequest(
+	string? Kind = null,
+	string? Mode = null,
+	string? Action = null,
+	string? Region = null,
+	string? Route = null,
+	string? Method = null,
+	int? HttpStatus = null,
+	int? DelayMs = null,
+	long? Budget = null,
+	int? TtlSeconds = null
+);
+
+// Read model of an armed fault; kind/mode are the canonical API strings, and
+// budgetRemaining/expiresAt are the self-healing bounds an operator watches.
+public sealed record FaultView(
+	string Id,
+	string Kind,
+	string Mode,
+	string? Action,
+	string? Region,
+	string? Route,
+	string? Method,
+	int HttpStatus,
+	int DelayMs,
+	long BudgetRemaining,
+	long Fired,
+	DateTimeOffset CreatedAt,
+	DateTimeOffset ExpiresAt
+);
+
+// Response of the panic button (DELETE /v1/faults).
+public sealed record ClearFaultsResponse(int Removed);
+
 
 // Request body for creating a crawl plan (game-data harvesting). One-shot unless
 // Cron or IntervalSeconds is set; StartNow=false arms a recurring schedule later.

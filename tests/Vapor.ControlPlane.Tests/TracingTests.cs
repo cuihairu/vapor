@@ -29,7 +29,7 @@ public sealed class TracingTests
 
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
-		var scheduler = new TaskSchedulerService(registry, store, new RecordingNoopEventBroker(), CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, new RecordingNoopEventBroker(), CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -67,7 +67,7 @@ public sealed class TracingTests
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 10));
 		store.QueuedTasks.Enqueue(CreateTask("task-2", "job-2", "local", "login"));
 		var broker = new RecordingNoopEventBroker();
-		var scheduler = new TaskSchedulerService(registry, store, broker, CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, broker, CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 
@@ -100,7 +100,7 @@ public sealed class TracingTests
 
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login"));
-		var scheduler = new TaskSchedulerService(registry, store, new RecordingNoopEventBroker(), CreateConfig());
+		var scheduler = new TaskSchedulerService(registry, store, new RecordingNoopEventBroker(), CreateConfig(), new FaultInjector());
 
 		await scheduler.DispatchOnce(CancellationToken.None);
 

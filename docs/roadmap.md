@@ -146,18 +146,30 @@ decisions without dispatching.
 watch it converge"; fractional rollout machinery pays off only with much larger
 fleets.
 
-## 8. Fault injection & drills — 🟡 (P2)
+## 8. Fault injection & drills — ✅ (complete this round; P2 residual: none material)
 
 **Status.** Deterministic test seams throughout (`ProbeOverride`,
 `FetchOverride`, fake Redis, injectable clocks, happens-before gates in test
 fixtures); E2E drills including kill-the-agent rebalancing and
-dispatch-failure paths against stub and real processes.
+dispatch-failure paths against stub and real processes. **Runtime fault
+injection API landed this round**: admin-only `/v1/faults` endpoints
+(`FaultInjector`) arm error/delay injections on two planes — task dispatch
+(after claim, riding the real requeue/retry machinery) and `/v1` API requests
+(edge middleware; the fault endpoints, `/healthz` and `/metrics` stay exempt
+so a drill is always observable and stoppable). Every fault self-heals via a
+budget (auto-remove at exhaustion) and a TTL; a panic button (`DELETE
+/v1/faults`) disarms everything; state is in-memory so a CP restart disarms
+all — deliberate (outliving the operator's attention is what the bounds exist
+to prevent). Observable via `vapor_controlplane_fault_injections_total{kind,mode}`
+/ `vapor_controlplane_faults_armed` and the `faults.enable/disable/clear`
+audit actions.
 
-**Gaps.** No production chaos / fault-injection API.
+**Gaps.** None material at single-CP scale (a multi-instance topology would
+want per-plane scoping and a global disarm barrier — revisit with §9 HA).
 
 **Priority rationale.** The seam discipline gives deterministic failure
-rehearsal in CI; production fault injection is valuable mainly for the
-multi-instance topology that does not exist yet.
+rehearsal in CI; the runtime API adds production drills against the real
+machinery without a chaos framework.
 
 ## 9. State sync & consistency — 🟡 (model documented; P2 to build HA)
 
@@ -204,6 +216,10 @@ deliberately sequenced behind the P0 hardening.
    same 401 as unknown keys (admin REST/SSE and the agent tunnel handshake
    alike), giving single-operator key rotation a deadline instead of a
    coordinated restart.
+5. **Fault-injection API** (§8, P2): admin-only `/v1/faults` endpoints arm
+   bounded error/delay drills on the task-dispatch and api-request planes
+   (budget + TTL self-healing, panic button, exempt control surface,
+   Prometheus counters and audit trail) — see §8 above.
 
 ## Explicit non-goals (for now)
 

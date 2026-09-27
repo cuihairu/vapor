@@ -372,8 +372,33 @@ Route these via your Alertmanager to whatever paging channel you use.
 The control plane exposes Prometheus metrics at `/metrics` (public like
 the agent's endpoint — protect at the network layer):
 `vapor_controlplane_tasks_by_status{status="..."}`,
-`vapor_controlplane_agents_connected`, and dispatch failure counters
-`vapor_controlplane_dispatch_failures_total{reason="no_capable_agent"|"enqueue_failed"|"attempts_exhausted"}`.
+`vapor_controlplane_agents_connected`, dispatch failure counters
+`vapor_controlplane_dispatch_failures_total{reason="no_capable_agent"|"enqueue_failed"|"attempts_exhausted"}`,
+and the fault-injection families `vapor_controlplane_fault_injections_total{kind,mode}`
+/ `vapor_controlplane_faults_armed` (below).
+
+## Fault-injection drills
+
+The admin-only `/v1/faults` API (see `api.md` §4.12) arms runtime error/delay
+drills against the real machinery — task dispatch (requeue/retry path) or
+`/v1` API requests (edge middleware). Operational rules of thumb:
+
+- **Every fault self-heals**: a budget (injections left, auto-remove at
+  exhaustion) and a TTL (default 15 min) bound each drill. Nothing you arm
+  can degrade the system indefinitely, and a control-plane restart disarms
+  everything (state is in-memory).
+- **The control surface is never faulted**: `/v1/faults`, `/healthz` and
+  `/metrics` are exempt from api-request injection, so a drill is always
+  observable and stoppable.
+- **Panic button**: `DELETE /v1/faults` disarms everything at once and
+  reports how many were armed.
+- **Every arm/disarm is audited** (`faults.enable` / `faults.disable` /
+  `faults.clear` in `/v1/audit/logs`) and visible in the
+  `vapor_controlplane_fault_injections_total` counter and
+  `vapor_controlplane_faults_armed` gauge.
+- Route selector matching is case-insensitive substring on the route
+  pattern, so `"/v1/jobs"` fans out to every jobs endpoint — arm with the
+  narrowest selector that answers the question you are asking.
 
 ## Distributed tracing
 
