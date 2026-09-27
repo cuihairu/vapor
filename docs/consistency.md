@@ -22,10 +22,10 @@ story is "one writer, one lock, one file". Everything below follows from that.
 | State | Owner | Store | Durability |
 |-------|-------|-------|------------|
 | Jobs, tasks, schedules | Control plane | SQLite (`SqliteJobStore`) | Survives CP restart |
-| Account specs (desired state) | Control plane | In-memory `AccountStore` behind `_gate` | Declared via API; re-declare after restart |
+| Account specs (desired state) | Control plane | `AccountStore` (memory read path) write-through to SQLite (`SqliteConfigStore`) | Survives CP restart |
 | Audit log | Control plane | SQLite (`SqliteAuditStore`) | Survives CP restart |
 | Crawl plans / results | Control plane | SQLite (`SqliteCrawlStore`) | Survives CP restart |
-| Global / per-account settings | Control plane | SQLite-backed `ConfigStore` | Survives CP restart |
+| Global / per-account settings | Control plane | `ConfigStore` (memory read path) write-through to SQLite (`SqliteConfigStore`) | Survives CP restart |
 | Agent registry (who is connected) | Control plane | In-memory `AgentRegistry` | Rebuilt from agent re-hello |
 | Session snapshots | Control plane | In-memory `SessionTracker` (agent-reported) | Re-populated by agent session events |
 | Auth challenges | Control plane | In-memory `AuthChallengeTracker` | Transient by design |
@@ -170,7 +170,10 @@ window:
 
 ### Control plane restart
 
-- Survives: jobs, tasks, schedules, audit, crawl state (SQLite).
+- Survives: jobs, tasks, schedules, audit, crawl state, and the declared
+  farm — account specs and settings (all SQLite; specs/settings are
+  write-through persisted and rehydrated at startup, so a restart no longer
+  requires re-declaring accounts).
 - Lost and rebuilt: agent registry (agents reconnect with their exponential
   backoff and re-hello), session snapshots (agents re-report), challenge
   prompts, plugin mirror (rebuilt from task results), rate-limiter windows

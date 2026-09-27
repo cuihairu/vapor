@@ -180,11 +180,13 @@ want per-plane scoping and a global disarm barrier — revisit with §9 HA).
 rehearsal in CI; the runtime API adds production drills against the real
 machinery without a chaos framework.
 
-## 9. State sync & consistency — 🟡 (model documented; P2 to build HA)
+## 9. State sync & consistency — 🟡 (model documented, declared state now durable; P2 to build HA)
 
-**Status.** The control plane is the single writer and sole state owner
-(SQLite: jobs, audit, crawl; in-memory serialized stores: account specs,
-settings). `ConfigVersion` is a monotonic convergence trigger on a
+**Status.** The control plane is the single writer and sole state owner —
+and all of its state now survives a restart: SQLite backs jobs, audit and
+crawl directly, while account specs and settings (the declared farm) live in
+memory read paths write-through-persisted to SQLite by `SqliteConfigStore`
+and rehydrated at startup (landed this round). `ConfigVersion` is a monotonic convergence trigger on a
 full-replacement PUT store (single writer makes CAS unnecessary); task
 claiming is lease-based with at-least-once delivery, attempt-fenced reporting
 and one terminal record per task; agent session state syncs eventually into
@@ -195,7 +197,8 @@ non-guarantees, failure/restart semantics — is documented in
 timeout row completed in the same round).
 
 **Gaps.** Single-instance control plane: no HA, no horizontal write scaling,
-restart = brief orchestration pause (agents keep sessions via token restore).
+restart = brief orchestration pause (agents keep sessions via token restore,
+and the declared farm is rehydrated from SQLite — no manual re-declaration).
 
 **Priority rationale.** Single-CP is an explicit, documented trade-off (see
 `architecture.md`): it buys transactional consistency and zero coordination.
@@ -234,6 +237,12 @@ deliberately sequenced behind the P0 hardening.
    trace id as a Prometheus text-format exemplar — drilled errors and
    organic ones alike are one click from a concrete trace; tail-based
    sampling documented as collector-side policy (§6).
+7. **Declared-state durability** (§9): account specs and settings are
+   write-through-persisted to SQLite (`SqliteConfigStore`,
+   `Vapor_CONFIG_DB_PATH`) and rehydrated at startup — the control plane's
+   last non-persisted state is gone, a restart no longer erases the farm
+   declaration, and the consistency.md claim that settings "survive CP
+   restart" became true of the code instead of aspirational.
 
 ## Explicit non-goals (for now)
 

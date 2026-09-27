@@ -2,16 +2,37 @@ using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
+/// <summary>
+/// Store of global and per-account settings: the dictionaries are the read
+/// path; when a <see cref="SqliteConfigStore"/> is supplied the store
+/// additionally loads at startup and write-throughs every mutation (DB before
+/// memory, inside <c>_gate</c>), so settings survive a control-plane restart
+/// like jobs, audit and crawl rows do.
+/// </summary>
 public sealed class ConfigStore
 {
 	private readonly object _gate = new();
 	private GlobalConfig _global;
 	private readonly Dictionary<string, AccountConfig> _accounts = new(StringComparer.OrdinalIgnoreCase);
+	private readonly SqliteConfigStore? _persistence;
 
-	public ConfigStore()
+	public ConfigStore(SqliteConfigStore? persistence = null)
+	{
+		_persistence = persistence;
+		_global = persistence?.LoadGlobalConfig() ?? DefaultGlobal();
+		if (persistence is not null)
+		{
+			foreach (AccountConfig config in persistence.LoadAccountConfigs())
+			{
+				_accounts[config.AccountName] = config;
+			}
+		}
+	}
+
+	private static GlobalConfig DefaultGlobal()
 	{
 		var now = DateTimeOffset.UtcNow;
-		_global = new GlobalConfig(
+		return new GlobalConfig(
 			Version: new ConfigVersion(1, now, "system"),
 			Settings: new Dictionary<string, object?>()
 		);
@@ -41,11 +62,13 @@ public sealed class ConfigStore
 		{
 			var now = DateTimeOffset.UtcNow;
 			int nextVersion = _global.Version.Version + 1;
-			_global = new GlobalConfig(
+			var updated = new GlobalConfig(
 				Version: new ConfigVersion(nextVersion, now, string.IsNullOrWhiteSpace(updatedBy) ? null : updatedBy),
 				Settings: settings ?? new Dictionary<string, object?>()
 			);
-			return _global;
+			_persistence?.SaveGlobalConfig(updated);
+			_global = updated;
+			return updated;
 		}
 	}
 
@@ -78,6 +101,7 @@ public sealed class ConfigStore
 				Version: new ConfigVersion(nextVersion, now, string.IsNullOrWhiteSpace(updatedBy) ? null : updatedBy)
 			);
 
+			_persistence?.SaveAccountConfig(updated);
 			_accounts[normalizedAccountName] = updated;
 			return updated;
 		}

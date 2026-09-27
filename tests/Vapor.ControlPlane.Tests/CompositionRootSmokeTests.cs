@@ -28,12 +28,14 @@ public sealed class CompositionRootSmokeTests
 	{
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
 		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
+		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
 		Dictionary<string, string?> env = new()
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
 			["Vapor_AGENT_API_KEYS"] = "agent-token",
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
+			["Vapor_CONFIG_DB_PATH"] = configDbPath,
 			["Vapor_ENABLE_SWAGGER"] = enableSwagger ? "true" : "false",
 			// Discard-protocol port: connects fail immediately, and with zero
 			// retries the notification sink never spins on delivery.
@@ -60,6 +62,8 @@ public sealed class CompositionRootSmokeTests
 
 			// The real SqliteJobStore lambda was used, so the database file exists.
 			Assert.True(File.Exists(dbPath));
+			// Same proof for the declared-state persistence lambda.
+			Assert.True(File.Exists(configDbPath));
 
 			// The metrics endpoint renders the per-sink notification counters when a
 			// sink is registered at startup.
@@ -97,6 +101,7 @@ public sealed class CompositionRootSmokeTests
 
 			await DisposeDbFileAsync(dbPath);
 			await DisposeDbFileAsync(auditDbPath);
+			await DisposeDbFileAsync(configDbPath);
 		}
 	}
 
@@ -105,12 +110,14 @@ public sealed class CompositionRootSmokeTests
 	{
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
 		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
+		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
 		Dictionary<string, string?> env = new()
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
 			["Vapor_AGENT_API_KEYS"] = "agent-token",
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
+			["Vapor_CONFIG_DB_PATH"] = configDbPath,
 			["Vapor_ENABLE_SWAGGER"] = "false",
 			// The limiter is constructed from the env-loaded startup config in
 			// Program.cs — this is the wiring the service-replacing factories
@@ -142,6 +149,7 @@ public sealed class CompositionRootSmokeTests
 
 			await DisposeDbFileAsync(dbPath);
 			await DisposeDbFileAsync(auditDbPath);
+			await DisposeDbFileAsync(configDbPath);
 		}
 	}
 
@@ -150,12 +158,14 @@ public sealed class CompositionRootSmokeTests
 	{
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
 		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
+		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
 		Dictionary<string, string?> env = new()
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
 			["Vapor_AGENT_API_KEYS"] = "agent-token",
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
+			["Vapor_CONFIG_DB_PATH"] = configDbPath,
 			["Vapor_ENABLE_SWAGGER"] = "false",
 		};
 
@@ -193,6 +203,93 @@ public sealed class CompositionRootSmokeTests
 
 			await DisposeDbFileAsync(dbPath);
 			await DisposeDbFileAsync(auditDbPath);
+			await DisposeDbFileAsync(configDbPath);
+		}
+	}
+
+	// The §9 restart drill: what the operator used to have to redo by hand —
+	// re-declaring every account and every setting after a control-plane
+	// restart — must now survive it through the declared-state database. Two
+	// RawFactory lifecycles against the same files are the "restart".
+	[Fact]
+	public async Task Factory_RehydratesDeclaredStateAfterRestart()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-cp-{Guid.NewGuid():N}.db");
+		string auditDbPath = Path.Combine(Path.GetTempPath(), $"vapor-audit-{Guid.NewGuid():N}.db");
+		string configDbPath = Path.Combine(Path.GetTempPath(), $"vapor-config-{Guid.NewGuid():N}.db");
+		Dictionary<string, string?> env = new()
+		{
+			["Vapor_ADMIN_API_KEY"] = "admin-token",
+			["Vapor_AGENT_API_KEYS"] = "agent-token",
+			["Vapor_DB_PATH"] = dbPath,
+			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
+			["Vapor_CONFIG_DB_PATH"] = configDbPath,
+			["Vapor_ENABLE_SWAGGER"] = "false",
+		};
+
+		foreach ((string key, string? value) in env)
+		{
+			Environment.SetEnvironmentVariable(key, value);
+		}
+
+		try
+		{
+			await using (RawFactory first = new())
+			{
+				HttpClient client = first.CreateClient();
+				client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+				using HttpResponseMessage declared = await client.PutAsJsonAsync("/v1/accounts/alice", new
+				{
+					enabled = true,
+					desiredState = "idle",
+					idleApps = new[] { "730" },
+					region = "us-east",
+					note = "keep my farm",
+				});
+				Assert.Equal(HttpStatusCode.OK, declared.StatusCode);
+				using HttpResponseMessage doomed = await client.PutAsJsonAsync("/v1/accounts/bob", new { desiredState = "offline" });
+				Assert.Equal(HttpStatusCode.OK, doomed.StatusCode);
+				Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/v1/accounts/bob")).StatusCode);
+				using HttpResponseMessage global = await client.PutAsJsonAsync("/v1/config/global", new { settings = new { theme = "dark" }, updatedBy = "operator" });
+				Assert.Equal(HttpStatusCode.OK, global.StatusCode);
+			}
+
+			await using (RawFactory second = new())
+			{
+				HttpClient client = second.CreateClient();
+				client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+				using HttpResponseMessage accounts = await client.GetAsync("/v1/accounts");
+				Assert.Equal(HttpStatusCode.OK, accounts.StatusCode);
+				using var accountsJson = JsonDocument.Parse(await accounts.Content.ReadAsStringAsync());
+				JsonElement specs = accountsJson.RootElement.GetProperty("accounts");
+				// alice rehydrated with her declaration; bob stays deleted (the
+				// delete write-through survives too, not just the upserts).
+				Assert.Single(specs.EnumerateArray().Select(e => e.GetProperty("accountName").GetString()));
+				Assert.Equal("alice", specs[0].GetProperty("accountName").GetString());
+				Assert.Equal("us-east", specs[0].GetProperty("region").GetString());
+				Assert.Equal(1, specs[0].GetProperty("version").GetProperty("version").GetInt32());
+
+				using HttpResponseMessage config = await client.GetAsync("/v1/config");
+				Assert.Equal(HttpStatusCode.OK, config.StatusCode);
+				using var configJson = JsonDocument.Parse(await config.Content.ReadAsStringAsync());
+				JsonElement settings = configJson.RootElement.GetProperty("global").GetProperty("settings");
+				Assert.Equal("dark", settings.GetProperty("theme").GetString());
+				// The version counter continues from the persisted value, not from 1.
+				Assert.Equal(2, configJson.RootElement.GetProperty("global").GetProperty("version").GetProperty("version").GetInt32());
+			}
+		}
+		finally
+		{
+			foreach (string key in env.Keys)
+			{
+				Environment.SetEnvironmentVariable(key, null);
+			}
+
+			await DisposeDbFileAsync(dbPath);
+			await DisposeDbFileAsync(auditDbPath);
+			await DisposeDbFileAsync(configDbPath);
 		}
 	}
 

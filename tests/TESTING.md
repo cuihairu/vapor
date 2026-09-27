@@ -12,7 +12,7 @@ tests/
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (965 tests)
+├── Vapor.ControlPlane.Tests/             (982 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
 ├── Vapor.Plugins.Core.Tests/             (147 tests)
 ├── Vapor.Plugins.MobileAuthenticator.Tests/ (137 tests)
@@ -31,7 +31,7 @@ tests/
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
 | Vapor.Steam.Core.Tests | 1504 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action)、脱敏/日志消毒纯函数 property 扩面(控制字符三律/proxy URI 凭据/JSON 键敏感) |
-| Vapor.ControlPlane.Tests | 965 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)、API 边缘中间件(RED 指标聚合/排序/不变 culture 渲染 + trace exemplar 双臂(有 Activity 渲染 32hex 链接/无 Activity 裸样本) + 按键滑动窗限流假钟全臂/TestServer 429/Retry-After/非 /v1 不限流/路由模式标签)、API 密钥过期(@ISO-8601 后缀解析全臂/env 建图/注入钟到期边界强制)、故障注入 API(FaultInjector 单元全臂 + /v1/faults 四端点 e2e:验证/默认值/预算自愈/TTL/豁免面/跨面选择器 400/审计/指标族 + 派发面注入走真实 requeue 机器 + 组装根装配)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域、FarmPolicy 规范化幂等/接受域/保序) |
+| Vapor.ControlPlane.Tests | 982 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)、API 边缘中间件(RED 指标聚合/排序/不变 culture 渲染 + trace exemplar 双臂(有 Activity 渲染 32hex 链接/无 Activity 裸样本) + 按键滑动窗限流假钟全臂/TestServer 429/Retry-After/非 /v1 不限流/路由模式标签)、API 密钥过期(@ISO-8601 后缀解析全臂/env 建图/注入钟到期边界强制)、故障注入 API(FaultInjector 单元全臂 + /v1/faults 四端点 e2e:验证/默认值/预算自愈/TTL/豁免面/跨面选择器 400/审计/指标族 + 派发面注入走真实 requeue 机器 + 组装根装配)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域、FarmPolicy 规范化幂等/接受域/保序)、声明态持久化(SqliteConfigStore 单元全臂 + AccountStore/ConfigStore 重启回灌与写穿失败原子性 + 组装根双生命周期重启演练) |
 | Vapor.Plugins.Core.Tests | 147 | 插件发现/清单/SemVer 兼容/加载/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 137 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
 | Vapor.Agent.Tests | 136 | 重连退避策略(含不变量 property:曲线单调/上下界/重试谓词单调/构造器往返/四违约臂)、任务看门狗策略(默认/启停/环境解析含坏值与空值/取消源分类真值表 + property:任意整数环境往返与启停等价、TimeoutError 携秒数、谓词可靠性(蕴含)与完备性)、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道含声明超时强制(挂起→结构化 action timeout/未声明超时不自-cancel)、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出) |
@@ -40,7 +40,7 @@ tests/
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **3075** | (2026-09-27 实测(ControlPlane 965 为本轮实测,exemplar 轮 +4;Agent 136 为 2026-09-25 watchdog 轮实测;Steam.Core 1504 为 2026-09-24 基线实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **3092** | (2026-09-27 实测(ControlPlane 982 为本轮实测,声明态持久化轮 +17;Agent 136 为 2026-09-25 watchdog 轮实测;Steam.Core 1504 为 2026-09-24 基线实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -218,7 +218,7 @@ tests/
 | SteamTotpPropertyTests | 6 | FsCheck property:**RFC 6238 oracle 交叉验证**(本地手写规范实现,任意 secret×时间恒等)、输出确定性 + 恒 5 字符无混淆字母表、同 30s 窗口任意偏移同码、SecondsRemaining 周期性与值域、DecodeSecret 任意合法 base64 往返 + 坏输入按参数名拒绝 |
 | SteamTimeSynchronizerTests | 9 | Steam 服务器时间同步 |
 
-### ControlPlane(965 个测试)
+### ControlPlane(982 个测试)
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
@@ -231,12 +231,13 @@ tests/
 | CrawlApiTests | 40 | 数据抓取 REST(计划 CRUD/PUT merge 语义/触发/分片领取/行回写/claim 校验与去重) |
 | CrawlRunWorkerTests | 33 | 抓取执行 worker(读取/派发取消传播/GetJob 故障吞咽/坏 tick 兜底/停机竞态双路径/审计故障不阻断/混合列表输出解析) |
 | SqliteJobStoreTests | 32 | job 存储(并发/迁移/周期模板) |
-| AccountStoreTests | 50 | 账户存储(ConfigVersion 并发/空名校验/boost 目标与 trade 策略规范化/farm 策略规范化校验矩阵/声明序保留/透传与清除) |
+| AccountStoreTests | 53 | 账户存储(ConfigVersion 并发/空名校验/boost 目标与 trade 策略规范化/farm 策略规范化校验矩阵/声明序保留/透传与清除 + 持久化三件套:重启回灌(版本续行/大小写并集/删除也持久)、SetEnabled 抵达下一生命周期、写穿失败原子性(DB 先行,内存与行均不动) |
 | AccountTaskRunnerTests | 3 | 账户任务运行器(TaskRunResult record 合成成员/克隆等值) |
 | NotificationTests | 23 | 通知规则/webhook 签名/派发隔离/无 sink 快速返回/有限流 broker 三泵自然排空 |
 | ScheduleClockTests | 16 | 周期计划时钟(interval/cron/触发点计数) |
 | ScheduleClockPropertyTests | 6 | 维护轮 FsCheck property:interval 精确秒算术、ticks 公式计数、半开区间可加性(interval 网格 split 相对再锚定语义/cron 任意 split 绝对点集)、cron NextRun 严格后继、Validate 接受域封闭分类 |
 | SqliteCrawlStoreTests | 21 | 抓取存储(守卫/同事务防御性 CAS) |
+| SqliteConfigStoreTests | 11 | 声明态持久化 sink(spec 全字段 payload 往返/按名排序/NOCASE 主键大小写并单行/删除幂等/global 缺行 null+upsert 单行/账户 config 往返/坏行 fail-closed InvalidDataException/建目录+无目录相对路径+空路径 ctor 三臂/NULL 参数守卫) |
 | RecurringJobSchedulerTests + RecurringJobSchedulerRetireTests | 16 | 周期任务触发/missed/overlap/退役(12+4) |
 | ControlPlaneApiTests | 13 | REST API(鉴权/任务/SSE/计划 job、QR 挑战归类与 URL 透传、坏 JSON 体 400 边界) |
 | DashboardStaticTests | 14 | 静态面板(/dashboard.html 服务、无写动词契约、三视图互链、`/` 302 重定向、gamedata 五模型文档(含 ItemInfo 不回流守卫)、admin QR 按钮契约、写操作确认锚、standing 徽章与体检按钮、farm 徽章与策略字段、PluginStore 面板契约) |
@@ -250,10 +251,10 @@ tests/
 | AuditApiTests | 6 | 审计查询 API |
 | TracingTests | 5 | OpenTelemetry 追踪注入(无 listener 惰性分发/双 null 臂) |
 | ControlPlaneBenchmarks(性能) | 4 | 吞吐/派发/扇出基准 |
-| ConfigStoreTests | 5 | 配置存储 |
+| ConfigStoreTests | 7 | 配置存储(+持久化:空库仍 seed 默认全局、重启回灌设置与版本续行、账户写不动全局行、写穿失败原子性) |
 | AuthChallengeTrackerTests | 3 | 挑战追踪 |
 | SessionTrackerTests | 3 | 会话追踪 |
-| CompositionRootSmokeTests | 4 | 组装根冒烟(环境驱动真宿主 boot:存储 lambda/webhook sink/OTel/Swagger 开关 + `Vapor_API_RATE_LIMIT_PER_MINUTE` 限流器装配端到端 + FaultInjector 边缘管线装配:真根 arm→注入 503→计数器→panic 键→gauge 归零) |
+| CompositionRootSmokeTests | 5 | 组装根冒烟(环境驱动真宿主 boot:存储 lambda/webhook sink/OTel/Swagger 开关 + `Vapor_API_RATE_LIMIT_PER_MINUTE` 限流器装配端到端 + FaultInjector 边缘管线装配:真根 arm→注入 503→计数器→panic 键→gauge 归零 + 声明态重启演练:同一 config.db 上真组合根两次生命周期,PUT/DELETE/设置回灌、版本续行、config.db 文件存在性) |
 | ApiKeyRateLimiterTests | 7 | 按键滑动窗限流器(禁用恒放行/限额内准入与拒绝/Retry-After 向上取整与 1s 下限/滑动窗到期重准入/按键隔离/1024 阈值清扫保活窗/默认时钟) |
 | ApiRequestMetricsTests | 8 | RED 指标(空快照族头/按 (method,route,status) 聚合 count 与 sum/排序确定性/不变 culture 时长渲染/限流计数/exemplar 三臂:trace 渲染+summary 恒裸/同系列最新 trace 覆盖且系列独立/无 trace 裸样本逐字等值) |
 | ApiEdgeMiddlewareTests | 8 | API 边缘中间件 TestServer 集成(超限 429 + Retry-After + 错误体/匿名桶与命名键隔离/非 /v1 不限流含 /healthz 与 /metrics/禁用恒放行//metrics 暴露 RED 族含 429 与 rate_limited_total + 200/429 两臂 exemplar 正则钉形(32 小写 hex)/outer IStartupFilter 清空 Activity.Current ⇒ 全裸样本(null 臂)/路由模式标签(非具体路径)/未匹配路径不记录) |
@@ -393,11 +394,11 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
-| ControlPlane | 100.0% | 100.0% (2266/2266) |
+| ControlPlane | 100.0% | 100.0% (2304/2304) |
 | Steam.Core | 100.0%（取消臂经确定性测试收尾；TryAdd 竞态臂 2026-09-24 起由注入缝确定性测试覆盖，见下） | 100.0% (3005/3005) |
 | MarketWatch | 100.0% | 100.0% (142/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
-| **合计** | **100.0%** (16622/16622) | **100.0%** (6355/6355) |
+| **合计** | **100.0%** (16741/16741) | **100.0%** (6393/6393) |
 
 分支覆盖门禁：CI `--min-branch 100`（基线 6135/6135 精确满覆盖——任何分支位未覆盖即红；2026-09-23 分支缺口冲刺第十三轮后设点，全解决方案分支探测位清零，百分比一律工具计算）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
 
@@ -498,6 +499,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-27 故障注入 API 轮(distributed-systems roadmap §8 P2「故障注入 API」收口;单管理员自托管定位不变、无多租户;3022→**3071** 全绿:ControlPlane 912→961,+49)。**设计(有界演练,走真实失败路径)**:①`FaultInjector`(新文件,进程内单例,无锁外状态)——双平面(task-dispatch/api-request)×双模式(error/delay),每条故障带 **budget**(耗尽自摘)+ **TTL**(1..3600s 默认 900,`TryAcquire` 入锁先清扫过期);选择器归一化(method 大写化),`Enable` 端点级校验全边界(高低双界各臂 400),**跨面选择器拒绝**(route/method 出现在 task-dispatch、action/region 出现在 api-request 即 400——布防的故障绝不静默永不触发);②api-request 臂在 RED 边缘中间件内注入——`Stopwatch.GetTimestamp()` 必须取在演练点**之上**(delay 模式注入的延迟才计入 duration sums;error 臂短路自记状态、零延迟);`/v1/faults`、`/healthz`、`/metrics` 豁免——演练永远可观测可停止;③task-dispatch 臂在 claim 之后走 `HandleUndispatchableTaskAsync` 真实 requeue 机制,delay 模式经 `retryDelayOverride` 把下次尝试推过注入延迟(无注入时 `??` 回落配置值);④观测:`vapor_controlplane_fault_injections_total{kind,mode}` 计数 + `vapor_controlplane_faults_armed` 仪表,审计 `faults.enable/disable/clear` 三动作,`DELETE /v1/faults` panic button 一键全摘;状态纯内存——重启即缴械(演练不该活得比操作员注意力久,这正是 budget+TTL 双界的存在理由)。**测试 +49**(28+17+3+1):FaultApiTests 28(四端点鉴权/空列表/非法体 theory×8(含跨面选择器 `||` 双侧)/越界 theory×8(四字段高低双界)/缺体/默认值往返+Location 头+DELETE 200→404/panic Removed=2/error e2e(503×2→自愈 200,豁免面恒可达)/非匹配路由 budget 未动/delay e2e(Stopwatch ≥300ms 且 `/metrics` duration sum 实测 ≥0.3s——时间戳取位的直接钉桩)/注入入指标(counter+armed+RED 503)/审计三动作逐 `?action=` 精确查);FaultInjectorTests 17(单元面:预算耗尽自摘/TTL 清扫/选择器归一与子串匹配/渲染排序/`ClearAll`);scheduler  Drill 3(claim 后注入→RequeuedTaskIds 记录且不触 agent→下一条自然派发(自愈)、delay→`RequeueDelays[0]==5000ms`、选择器不匹配→Fired==0 正常派发);CompositionRootSmokeTests 1(真组合根端到端:布防→503→指标→panic→仪表 0)。**坑位入册(本轮最贵教训×3)**:①**camelCase 线名陷阱**——record 属性 `HttpStatusCode` 序列化/绑定名是 `httpStatusCode` 而非文档写的 `httpStatus`,**静默永不绑定**(症状:越界 theory 竟返回 Created——值根本没进来;e2e 得 500 而非注入体——用了默认值)。诊断:scratch 测试打 body + 隔离 `JsonSerializer` 核验(先撞 CA1869:JsonSerializerOptions 必须静态缓存)。修复:DTO 属性改名 `HttpStatus`(内部 `FaultSpec`/`FaultInjection` 保留 `HttpStatusCode` 不动)。「DTO 属性名必须按 camelCase 折算核对线名」入册;②**时间戳取位**——`started` 在 delay 块之后取,duration sums 就永远不含注入延迟,`>=0.3` 断言红;演练点之上取戳是唯一正确位置;③**factory DI 纪律**——9 个测试 factory 例行公事地 `RemoveAll<FaultInjector>()` 却不回加(TaskSchedulerService 新增第 5 参后全部 boot 崩,串行轮 295 失败),而**过滤单跑全绿只有全量串行轮暴露**:FaultInjector 是参数less `AddSingleton`,根本不需要替换——RemoveAll 是 cargo-cult。规则:factory 只替换确实需要替身的服务;新增服务参数先想清楚「测试要不要换它」。另:默认 budget=1 轮盘——多次探针的单测必须显式 budget(2);`||` 短路每操作数 true 臂需独立用例(theory 行铺满双侧)。**验证**:显式 Release build 0 警告 0 错误、全量串行覆盖率轮全绿全 attempt 1、行 **16614/16614**(+305)、分支 **6353/6353**(+64)双 100%,门禁 `--min 100 --min-branch 100` GATE=0;verify 四脚本 ALL GREEN;format 过。api.md §4.12/production.md 演练节+指标段/architecture.md 设计注记/roadmap §8 收口/Landed 第 5 条/CHANGELOG/todo 随本轮入册。
 
 > 2026-09-27 指标→链路 exemplar 轮(distributed-systems roadmap §6 P2 残余「exemplars linking traces to metric series」收口,tail-based sampling 定性为 Collector 侧策略文档化;轮二十四与本轮之间无用户新指令,按「继续」+ roadmap 优先级自主立项——P0/P1 全收口后唯一「实测可落地且不需外部依赖」的残余,§1/§2/§5/§7/§9 残余均被各自 rationale 判为不绑定/已否决/需 soak 后重评;3071→**3075** 全绿:ControlPlane 961→965,+4)。**设计(两表面独立性不变的前提下架桥)**:①每个 `vapor_controlplane_http_requests_total` 样本行尾附 Prometheus 文本格式 exemplar ` # {trace_id="<32hex>"} 1`——exemplar 是样本行上的注释,忽略它的抓取器看到的值逐字节不变(「/metrics 自成完整故事」的设计不变量保持);时长族是 summary,格式只允许 counter/histogram 带 exemplar,故 duration sums 恒裸(注释入类文档);②**实测先行**:scratch 探针证实 TestServer 管道内 `Activity.Current` 无 OTel 也恒存在且为 W3C 32hex——exemplar 在所有部署形态天然可用,不依赖 `OTEL_EXPORTER_OTLP_ENDPOINT`;null 臂由 outer `IStartupFilter` 清空 `Activity.Current` 的工厂测试制造(该臂非装饰:空/畸形 exemplar 会毒化抓取,null⇒裸样本是唯一安全回退);③中间件在 route/method 之后取一次 `traceId` 贯穿三个记录点(限流 429/故障 error 短路/finally 成功)——每请求恒 1 增量,exemplar 值取 1(OpenMetrics 惯例:样本增量非累计);`_requests` 值形 `(long Count, string? Trace)`,**同系列最新 trace 覆盖**(exemplar 指向一个可拉出的具体请求,非历史),系列间独立;`RecordRequest` 增可选参 `traceId = null`(单测 4 参调用零改动、无缺省分支);④标签字母表核查:trace id 十六进制构造成品,引号/反斜杠产不出——与既有 method/route 的「无转义臂」同型不变量。**测试 +4**(3+1):ApiRequestMetricsTests 三臂(exemplar 渲染+summary 恒裸断言/最新覆盖+503 系列独立/无 trace 逐字等值裸样本);ApiEdgeMiddlewareTests 200 与 429 两臂 `Regex.Escape`+`\{trace_id="[0-9a-f]{32}"\}` 全行钉形 + ClearedActivity 工厂 null 臂全裸断言;另 FaultApiTests 既有 503 断言升级为全行正则(exemplar 经轮二十四短路臂透传——「注入错误也可链路」锁进回归)。**教训入册**:轮二十四 camelCase 陷阱的姊妹形态在本轮以防御姿态规避——exemplar 行形状不靠 `Contains` 前缀(前缀匹配对尾随内容失明),一律 `Split('\n').Single(StartsWith)` 锁唯一行 + 全行正则/等值断言,行尾任何漂移即红。**验证**:显式 Release build 0 警告 0 错误、全量串行覆盖率轮 10 段全 attempt 1、行 **16622/16622**(+8)、分支 **6355/6355**(+2,恰为 `?.` null 臂与 `IsNullOrEmpty` 渲染臂)双 100%,门禁 GATE=0;verify 四脚本 ALL GREEN;format 过。roadmap §6 收口+Landed 第 6 条/production.md 追踪节 exemplar+采样策略/architecture.md 设计注记/CHANGELOG/todo 随本轮入册;api.md 零改动(无新路由,66/66 不变)。
+> 2026-09-27 声明态持久化轮(distributed-systems roadmap §9 残余「重启=重新声明农场」收口;轮二十五与本轮之间无用户新指令,按「继续」+ roadmap 优先级自主立项——单 CP 形态最后一块非持久状态,重启需人工重新声明整个农场是声明式系统最实际的运维痛;3075→**3092** 全绿:ControlPlane 965→982,+17)。**先发现后设计**:侦察证实①AccountStore/ConfigStore 均纯内存(变更面恰 7 处、无旁路);②consistency.md 表行 28 一直声称 settings 是 "SQLite-backed ConfigStore | Survives CP restart"——**文档谎言**(代码无此层);本轮选择把承诺变成事实而非降级文档。**设计(写穿 sink,读路径不动)**:①新 `SqliteConfigStore`(第四库文件 `data/config.db`,`Vapor_CONFIG_DB_PATH`,`:memory:`=旧语义):三表 `account_specs`/`global_config`(单行)/`account_configs`,行=不透明 JSON 负载(没人查 spec 内部,reconciler 整表读,故不做列展开);**NOCASE 主键**镜像内存字典的 OrdinalIgnoreCase(Foo→foo 重声明收敛为一行,与 Upsert 语义逐字对齐);负载统一 `JsonDefaults.Options`(唯一线方言);②AccountStore/ConfigStore 增可选参 `persistence = null`(既有单测调用零改动):构造时回灌、变更时写穿、**DB 先行内存后继**(单写者锁内,失败则内存与库同停前态——原子性有专测:Dispose sink 后 `ThrowsAny`+字典逐项核查未动);③**fail-closed**:坏行(含字面 JSON null)在加载时抛 `InvalidDataException`→宿主拒启——带着静默缩水期望状态启动、首写即覆盖幸存行,是比拒启更坏的选择(注释入码);④全局/账户设置分表分版本:账户写永不触碰全局行(有断言)。**测试 +17**(11+3+2+1):SqliteConfigStoreTests 11(spec 全字段往返逐字段/global 缺行 null+upsert 单行/NOCASE 并单行/删除幂等/排序回灌/ctor 三臂(空路径/建嵌套目录/无目录相对路径)/坏行 fail-closed/NULL 参数守卫×3);AccountStoreTests +3(重启回灌+版本续行+**删除也持久**、SetEnabled 抵达下一生命周期、写穿失败原子性);ConfigStoreTests +2(空库仍 seed 默认全局、三实例链式回灌、写穿失败原子性);CompositionRootSmokeTests +1 **旗舰重启演练**:同一 config.db 上真组合根两次生命周期——PUT alice/PUT+DELETE bob/PUT settings,重启后 GET 回灌精确断言(版本续行/删除持久/theme 回读/global v2)。另 12 个测试 factory 例行加 `ConfigDbPath: ":memory:"`、三处 smoke env 钉临时文件+存在性断言。**坑位入册**:①**文件默认库的测试卫生**——覆盖率取证发现 SqliteCrawlStore 文件路径 ctor 臂的 4 次命中来自 smoke 测试未设 `Vapor_CRAWL_DB_PATH` 走了 `data/crawl.db` 默认值(`data/` 被 gitignore 掩护了污染)——新文件默认持久层必须当轮把所有 boot DI 的 Config 与 smoke env 显式钉死,否则跨测试经文件回灌(本层若污染=期望状态跨测试泄漏,比 crawl 严重);②DELETE /v1/accounts 成功是 **204** 非 200(旗舰测试首红);③record `with { Prop = v }` 不是 `:`;④全字段 `Assert.Equal(SampleSpec(), loaded)` 对含数组的 positional record 是引用相等假象——循仓库逐字段断言先例(SqliteCrawlStoreTests)不引入 Assert.Equivalent;⑤**脚本改文档自伤**——TESTING.md 四层同步用 python 批量替换时,短 plain 行(`| X | 4 |`)会子串命中长描述行,顺序不当即污染明细区;规则:**先长后短、替换后必跑 verify-testing-docs**(本轮抓到并当场修复)。**验证**:显式 Release build 0 警告 0 错误、全量串行覆盖率轮 10 段全 attempt 1、行 **16741/16741**(+119)、分支 **6393/6393**(+38)双 100%,门禁 `--min 100 --min-branch 100` GATE=0;verify 四脚本 ALL GREEN(动态 inventory 含);format 过。consistency.md 两表行+§6 回实/production.md env+卷宗行/roadmap §9 收口+Landed 第 7 条/CHANGELOG/todo 随本轮入册;api.md 零改动(66/66 不变)。
 
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
@@ -771,7 +773,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | BotSessionProxyTests | 2 |
 | LoginFlowTests | 1 |
 
-### Vapor.ControlPlane.Tests（965 个测试）
+### Vapor.ControlPlane.Tests（982 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
@@ -780,13 +782,14 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | SystemStatusApiTests | 41 |
 | ProgramBranchCoverageTests | 79 |
 | ConfigEnvironmentTests | 56 |
-| AccountStoreTests | 50 |
+| AccountStoreTests | 53 |
 | CrawlApiTests | 40 |
 | CrawlRunWorkerTests | 33 |
 | SqliteJobStoreTests | 32 |
 | NotificationTests | 23 |
 | FaultApiTests | 28 |
 | SqliteCrawlStoreTests | 21 |
+| SqliteConfigStoreTests | 11 |
 | PluginApiTests | 20 |
 | ApiKeyExpiryTests | 18 |
 | FaultInjectorTests | 17 |
@@ -813,11 +816,11 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | AuditApiTests | 6 |
 | ApiRequestMetricsTests | 8 |
 | TracingTests | 5 |
-| ConfigStoreTests | 5 |
+| ConfigStoreTests | 7 |
 | RecurringJobSchedulerRetireTests | 4 |
 | ControlPlaneBenchmarks | 4 |
 | FarmPolicyPropertyTests | 4 |
-| CompositionRootSmokeTests | 4 |
+| CompositionRootSmokeTests | 5 |
 | SessionTrackerTests | 3 |
 | HostTargetedDispatchTests | 3 |
 | AuthChallengeTrackerTests | 3 |

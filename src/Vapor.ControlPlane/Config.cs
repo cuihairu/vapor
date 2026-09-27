@@ -35,7 +35,8 @@ public sealed record Config(
 	int CrawlIntervalMs = 500,
 	string? PluginIndexUrl = null,
 	int ApiRateLimitPerMinute = 0,
-	DateTimeOffset? AdminApiKeyExpiresAt = null
+	DateTimeOffset? AdminApiKeyExpiresAt = null,
+	string ConfigDbPath = "data/config.db"
 )
 {
 	/// <summary>Max dispatch attempts per task before it fails permanently; 0 or less means unlimited retries.</summary>
@@ -109,8 +110,9 @@ public sealed record Config(
 		}
 
 		int apiRateLimitPerMinute = int.TryParse(Environment.GetEnvironmentVariable("Vapor_API_RATE_LIMIT_PER_MINUTE"), out int rateLimit) && rateLimit > 0 ? rateLimit : 0;
+		string configDbPath = Environment.GetEnvironmentVariable("Vapor_CONFIG_DB_PATH") ?? "data/config.db";
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt, configDbPath);
 	}
 }
 

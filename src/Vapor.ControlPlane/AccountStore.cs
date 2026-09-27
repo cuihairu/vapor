@@ -3,14 +3,31 @@ using Vapor.Protocol;
 namespace Vapor.ControlPlane;
 
 /// <summary>
-/// In-memory store of declared account specifications (desired farm state).
-/// Follows the same lifecycle as <see cref="ConfigStore"/>: CRUD via the API,
-/// orchestrator reads it on every reconcile pass.
+/// Store of declared account specifications (desired farm state): CRUD via the
+/// API, orchestrator reads it on every reconcile pass. The dictionary is the
+/// read path; when a <see cref="SqliteConfigStore"/> is supplied the store
+/// additionally write-throughs every mutation and loads the declared set at
+/// startup, so a control-plane restart no longer erases the farm declaration.
+/// Write order is DB-then-memory inside <c>_gate</c>: a failed write leaves
+/// memory and database in the previous consistent state.
 /// </summary>
 public sealed class AccountStore
 {
 	private readonly object _gate = new();
 	private readonly Dictionary<string, AccountSpec> _accounts = new(StringComparer.OrdinalIgnoreCase);
+	private readonly SqliteConfigStore? _persistence;
+
+	public AccountStore(SqliteConfigStore? persistence = null)
+	{
+		_persistence = persistence;
+		if (persistence is not null)
+		{
+			foreach (AccountSpec spec in persistence.LoadAccountSpecs())
+			{
+				_accounts[spec.AccountName] = spec;
+			}
+		}
+	}
 
 	public IReadOnlyList<AccountSpec> List()
 	{
@@ -68,6 +85,7 @@ public sealed class AccountStore
 				spec = spec with { MarketListingsEnabled = true };
 			}
 
+			_persistence?.SaveAccountSpec(spec);
 			_accounts[normalizedAccountName] = spec;
 			return spec;
 		}
@@ -92,6 +110,7 @@ public sealed class AccountStore
 				Enabled = enabled,
 				Version = new ConfigVersion((existing.Version?.Version ?? 0) + 1, DateTimeOffset.UtcNow)
 			};
+			_persistence?.SaveAccountSpec(updated);
 			_accounts[existing.AccountName] = updated;
 			return updated;
 		}
@@ -111,6 +130,7 @@ public sealed class AccountStore
 				return null;
 			}
 
+			_persistence?.DeleteAccountSpec(existing.AccountName);
 			_accounts.Remove(existing.AccountName);
 			return existing;
 		}

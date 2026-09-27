@@ -31,7 +31,7 @@ public sealed class ApiEdgeMiddlewareTests
 				services.RemoveAll<AccountStore>();
 				services.RemoveAll<IHostedService>();
 				services.RemoveAll<IHostedLifecycleService>();
-				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
+				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:"));
 				services.AddSingleton<IJobStore>(_ => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(_ => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();
@@ -57,7 +57,7 @@ public sealed class ApiEdgeMiddlewareTests
 				services.RemoveAll<AccountStore>();
 				services.RemoveAll<IHostedService>();
 				services.RemoveAll<IHostedLifecycleService>();
-				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
+				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:"));
 				services.AddSingleton<IJobStore>(_ => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(_ => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();

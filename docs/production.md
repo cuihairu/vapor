@@ -57,6 +57,7 @@ are in [docker.md](docker.md).
 | `Vapor_PLUGIN_INDEX_URL` | no | off | PluginStore index source (JSON: `{plugins:[{id,name,version,apiVersion,url,sha256,...}]}`); off = catalog endpoint reports `configured: false`. Point it only at an index you control |
 | `Vapor_API_RATE_LIMIT_PER_MINUTE` | no | `0` | Per-key sliding-window limit over `/v1` routes (0 = off); rejected requests get 429 + Retry-After (see api.md) |
 | `Vapor_CRAWL_DB_PATH` | no | `data/crawl.db` | SQLite file for crawl plans and per-app harvest results |
+| `Vapor_CONFIG_DB_PATH` | no | `data/config.db` | SQLite file for the declared farm: account specs and settings are write-through persisted here and rehydrated at startup, so a control-plane restart no longer requires re-declaring accounts (`:memory:` restores the pre-persistence behavior) |
 | `Vapor_CRAWL_WORKER_TICK_SECONDS` | no | `5` | Crawl worker claim/poll cadence; `<= 0` disables crawl orchestration |
 | `Vapor_CRAWL_KEEP_RUNS` | no | `10` | Recent runs whose results are kept per plan (older runs pruned on completion) |
 | `Vapor_CRAWL_MAX_APPS_PER_PLAN` | no | `500` | Upper bound on app_ids per crawl plan (rejects larger requests) |
@@ -289,7 +290,7 @@ State lives in two named volumes:
 
 | Volume | Content |
 |--------|---------|
-| `controlplane-data` (`/app/data`) | `controlplane.db` (jobs/tasks/agents), `audit.db` |
+| `controlplane-data` (`/app/data`) | `controlplane.db` (jobs/tasks/agents), `audit.db`, `crawl.db`, `config.db` (declared specs + settings) |
 | `agent-data` (`/app/.vapor`) | Per-agent credentials and session data |
 
 Back up with SQLite's online API (consistent while the control plane keeps

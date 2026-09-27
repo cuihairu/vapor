@@ -226,6 +226,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on counters/histograms). Tail-based sampling documented as an OTel
   Collector-side policy, deliberately not a service knob.
 
+- Declared-state durability (roadmap §9): account specs and global/per-account
+  settings are write-through-persisted to SQLite (`SqliteConfigStore`,
+  `Vapor_CONFIG_DB_PATH`, default `data/config.db`) and rehydrated at startup,
+  so a control-plane restart no longer erases the farm declaration — the
+  reconciler resumes converging the same desired state it had before the
+  restart. The memory dictionaries stay the read path (per-request latency and
+  the reconciler's every-pass listing never touch a database); writes go to the
+  database before the in-memory mutation, so a failed write leaves memory and
+  disk in the previous consistent state; a corrupt stored row aborts startup
+  rather than booting with a silently-shrunken desired state. `:memory:`
+  restores the old in-process-only semantics. This also makes the
+  `consistency.md` claim that settings "survive CP restart" true of the code
+  (it previously described persistence that did not exist).
+
 ### Fixed
 
 - Market fee math (`MarketFeeCalculator`, exposed via property tests):

@@ -497,4 +497,110 @@ public sealed class AccountStoreTests
 		Assert.Equal(1, updated!.Version!.Version);
 		Assert.False(updated.Enabled);
 	}
+	// ── Persistence through a SqliteConfigStore sink (§9: the declared farm
+	// ── survives a control-plane restart; the dictionary stays the read path).
+
+	[Fact]
+	public async Task Persistence_SpecsSurviveRestart_VersionsContinue_CaseMerges()
+	{
+		string root = Path.Combine(Path.GetTempPath(), $"vapor-store-{Guid.NewGuid():N}");
+		string dbPath = Path.Combine(root, "config.db");
+		try
+		{
+			var persist1 = new SqliteConfigStore(dbPath);
+			var store1 = new AccountStore(persist1);
+			store1.Upsert("alice", enabled: true, AccountDesiredState.Idle, ["730"], "us-east", null, "note");
+			store1.Upsert("bob", enabled: true, AccountDesiredState.Online, null, null, null, null);
+			store1.Remove("bob");
+			persist1.Dispose();
+
+			var persist2 = new SqliteConfigStore(dbPath);
+			var store2 = new AccountStore(persist2);
+
+			// alice rehydrated, bob's deletion rehydrated too — the delete
+			// write-through matters as much as the upsert one.
+			AccountSpec alice = Assert.Single(store2.List());
+			Assert.Equal("alice", alice.AccountName);
+			Assert.Equal("us-east", alice.Region);
+			Assert.Equal(1, alice.Version!.Version);
+
+			// A restarted store keeps the optimistic-concurrency counter going,
+			// and case-redeclaration still converges to a single row.
+			AccountSpec bumped = store2.Upsert("ALICE", enabled: true, AccountDesiredState.Online, null, "eu", null, null);
+			Assert.Equal(2, bumped.Version!.Version);
+			persist2.Dispose();
+
+			var persist3 = new SqliteConfigStore(dbPath);
+			var store3 = new AccountStore(persist3);
+			AccountSpec final = Assert.Single(store3.List());
+			Assert.Equal("eu", final.Region);
+			Assert.Equal(2, final.Version!.Version);
+			persist3.Dispose();
+		}
+		finally
+		{
+			await CleanupRootAsync(root);
+		}
+	}
+
+	[Fact]
+	public async Task Persistence_SetEnabledReachesNextProcess()
+	{
+		string root = Path.Combine(Path.GetTempPath(), $"vapor-store-{Guid.NewGuid():N}");
+		string dbPath = Path.Combine(root, "config.db");
+		try
+		{
+			var persist1 = new SqliteConfigStore(dbPath);
+			var store1 = new AccountStore(persist1);
+			store1.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null);
+			store1.SetEnabled("alice", enabled: false);
+			persist1.Dispose();
+
+			var persist2 = new SqliteConfigStore(dbPath);
+			var store2 = new AccountStore(persist2);
+			Assert.False(Assert.Single(store2.List()).Enabled);
+			persist2.Dispose();
+		}
+		finally
+		{
+			await CleanupRootAsync(root);
+		}
+	}
+
+	[Fact]
+	public void Persistence_WriteThroughFailure_LeavesMemoryAndRowUntouched()
+	{
+		// DB-first write order means a failed write-through cannot desync the
+		// store from its database: the mutation surfaces as an exception and
+		// neither the dictionary nor (by definition) the row changes.
+		var persist = new SqliteConfigStore(":memory:");
+		var store = new AccountStore(persist);
+		store.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null);
+
+		persist.Dispose();
+
+		Assert.ThrowsAny<Exception>(() => store.Upsert("bob", enabled: true, AccountDesiredState.Online, null, null, null, null));
+		Assert.Null(store.Get("bob"));
+		Assert.ThrowsAny<Exception>(() => store.SetEnabled("alice", enabled: false));
+		Assert.True(Assert.Single(store.List()).Enabled);
+		Assert.ThrowsAny<Exception>(() => store.Remove("alice"));
+		Assert.NotNull(store.Get("alice"));
+	}
+
+	private static async Task CleanupRootAsync(string root)
+	{
+		for (int attempt = 0; attempt < 5; attempt++)
+		{
+			try
+			{
+				Directory.Delete(root, recursive: true);
+				return;
+			}
+			catch (IOException)
+			{
+				// The connection pool may still hold the file briefly after dispose.
+				await Task.Delay(50);
+			}
+		}
+	}
 }

@@ -1739,7 +1739,7 @@ internal sealed class BranchFactory : WebApplicationFactory<Program>
 			services.RemoveAll<IAuditStore>();
 			services.RemoveAll<IHostedService>();
 			services.RemoveAll<IHostedLifecycleService>();
-			services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
+			services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:"));
 			services.AddSingleton<IJobStore>(sp => self.JobStore ?? new SqliteJobStore(":memory:"));
 			services.AddSingleton<IAuditStore>(sp => self.AuditStore ??= new SqliteAuditStore(":memory:"));
 			services.AddSingleton<IEventBroker>(self.Events);

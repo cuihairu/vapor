@@ -21,8 +21,15 @@ builder.Services.AddSingleton(startupConfig);
 builder.Services.AddSingleton<IEventBroker, EventBroker>();
 builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddSingleton<AuthChallengeTracker>();
-builder.Services.AddSingleton<ConfigStore>();
-builder.Services.AddSingleton<AccountStore>();
+// Declared-state persistence: account specs and settings write through to this
+// database so a control-plane restart no longer erases the farm declaration.
+builder.Services.AddSingleton(sp =>
+{
+	var cfg = sp.GetRequiredService<Config>();
+	return new SqliteConfigStore(cfg.ConfigDbPath);
+});
+builder.Services.AddSingleton<ConfigStore>(sp => new ConfigStore(sp.GetRequiredService<SqliteConfigStore>()));
+builder.Services.AddSingleton<AccountStore>(sp => new AccountStore(sp.GetRequiredService<SqliteConfigStore>()));
 
 builder.Services.AddSingleton<IJobStore>(sp =>
 {
