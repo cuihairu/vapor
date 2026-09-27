@@ -109,7 +109,7 @@ is also its protection); no protobuf/gRPC; no schema registry.
 system; binary protocols were considered and rejected for now (see
 `architecture.md` trade-offs).
 
-## 6. Distributed tracing & metrics — ✅ (complete this round; P2 residual: exemplars, tail-based sampling)
+## 6. Distributed tracing & metrics — ✅ (exemplars landed this round; residual: tail-based sampling, a collector-side policy)
 
 **Status.**
 
@@ -129,7 +129,16 @@ system; binary protocols were considered and rejected for now (see
 `vapor_controlplane_http_requests_total{method,route,status}` and duration
 sum/count — request-level visibility independent of the optional OTel pipeline.
 
-**Later (P2).** Exemplars linking traces to metric series; tail-based sampling.
+**Gap → landed (second pass).** Exemplars: every request-counter sample
+carries the ambient W3C trace id (`# {trace_id="<32 hex>"} 1`), so a
+slow/erroring route on a dashboard links straight to a concrete trace;
+scrapers that ignore exemplars see identical values, keeping the two
+surfaces independent (see `production.md` Monitoring).
+
+**Residual (P2, deliberate).** Tail-based sampling lives in an OTel
+Collector between the services and the backend — intentionally not a
+service-side knob at single-operator scale (`production.md` Distributed
+tracing).
 
 ## 7. Config distribution & canary — 🟡 (P2)
 
@@ -220,6 +229,11 @@ deliberately sequenced behind the P0 hardening.
    bounded error/delay drills on the task-dispatch and api-request planes
    (budget + TTL self-healing, panic button, exempt control surface,
    Prometheus counters and audit trail) — see §8 above.
+6. **Metric→trace exemplars** (§6, P2 residual): each
+   `vapor_controlplane_http_requests_total` sample carries the ambient W3C
+   trace id as a Prometheus text-format exemplar — drilled errors and
+   organic ones alike are one click from a concrete trace; tail-based
+   sampling documented as collector-side policy (§6).
 
 ## Explicit non-goals (for now)
 

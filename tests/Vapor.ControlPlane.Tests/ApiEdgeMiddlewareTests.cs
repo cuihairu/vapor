@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,11 +43,63 @@ public sealed class ApiEdgeMiddlewareTests
 		}
 	}
 
+	/// <summary>Same edge config as TestFactory, plus an outermost startup filter
+	/// that clears Activity.Current for the whole inner pipeline.</summary>
+	private sealed class ClearedActivityTestFactory : WebApplicationFactory<Program>
+	{
+		protected override void ConfigureWebHost(IWebHostBuilder builder)
+		{
+			builder.UseEnvironment("Development");
+			builder.ConfigureServices(services =>
+			{
+				services.RemoveAll<IJobStore>();
+				services.RemoveAll<IAuditStore>();
+				services.RemoveAll<AccountStore>();
+				services.RemoveAll<IHostedService>();
+				services.RemoveAll<IHostedLifecycleService>();
+				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:"));
+				services.AddSingleton<IJobStore>(_ => new SqliteJobStore(":memory:"));
+				services.AddSingleton<IAuditStore>(_ => new SqliteAuditStore(":memory:"));
+				services.AddSingleton<AccountStore>();
+				services.AddSingleton<IStartupFilter>(new ClearActivityFilter());
+			});
+		}
+
+		private sealed class ClearActivityFilter : IStartupFilter
+		{
+			public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+			{
+				app.Use(async (ctx, inner) =>
+				{
+					Activity? saved = Activity.Current;
+					Activity.Current = null;
+					try
+					{
+						await inner();
+					}
+					finally
+					{
+						Activity.Current = saved;
+					}
+				});
+				next(app);
+			};
+		}
+	}
+
 	private static HttpClient AdminClient(WebApplicationFactory<Program> factory)
 	{
 		HttpClient client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 		return client;
+	}
+
+	/// <summary>Extracts the single sample line with <paramref name="prefix"/> and asserts it
+	/// carries a well-formed trace exemplar (32-lowercase-hex W3C id, increment value 1).</summary>
+	private static void AssertExemplarSample(string exposition, string prefix)
+	{
+		string line = exposition.Split('\n').Single(l => l.StartsWith(prefix, StringComparison.Ordinal));
+		Assert.Matches(System.Text.RegularExpressions.Regex.Escape(prefix) + @" # \{trace_id=""[0-9a-f]{32}""\} 1", line);
 	}
 
 	[Fact]
@@ -127,6 +181,28 @@ public sealed class ApiEdgeMiddlewareTests
 		Assert.Contains("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/healthz\",status=\"200\"} 1", exposition);
 		Assert.Contains("vapor_controlplane_http_request_duration_seconds_count{method=\"GET\",route=\"/v1/agents\"} 2", exposition);
 		Assert.Contains("vapor_controlplane_rate_limited_total 1", exposition);
+
+		// Both middleware arms that record (the success finally and the
+		// rate-limiter 429) carry the ambient W3C trace id as exemplar.
+		AssertExemplarSample(exposition, "vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/agents\",status=\"200\"} 1");
+		AssertExemplarSample(exposition, "vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/agents\",status=\"429\"} 1");
+	}
+
+	[Fact]
+	public async Task Metrics_ExemplarsAreOmittedWhenNoActivityIsCurrent()
+	{
+		// The null arm of the middleware's Activity.Current read: an outer
+		// startup filter clears the ambient activity, and every sample the
+		// request produces must render bare (an empty or malformed exemplar
+		// would poison the scrape).
+		await using ClearedActivityTestFactory factory = new();
+		using HttpClient client = AdminClient(factory);
+
+		Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/v1/agents")).StatusCode);
+
+		string exposition = await client.GetStringAsync("/metrics");
+		string line = exposition.Split('\n').Single(l => l.StartsWith("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/agents\",status=\"200\"} 1", StringComparison.Ordinal));
+		Assert.DoesNotContain("# {", line);
 	}
 
 	[Fact]

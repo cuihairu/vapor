@@ -420,3 +420,22 @@ Any OTLP-compatible backend works (Jaeger, Grafana Tempo, Zipkin-compatible
 collectors). Point both services at the same backend to see the full chain
 in one trace; with the variable unset no exporter is registered and the
 spans are inert (no overhead beyond disabled ActivitySources).
+
+Every `vapor_controlplane_http_requests_total` sample carries a Prometheus
+text-format **exemplar** with the W3C trace id of the most recent request in
+that series (`…status="503"} 1 # {trace_id="<32 hex>"} 1`): the metric→trace
+bridge from a slow-or-erroring route straight to a concrete trace, with no
+dependency between the two surfaces (the exemplar is just a comment on the
+scrape line; scrapers that ignore it see identical values). To use it, run
+Prometheus with `--enable-feature=exemplar-storage` and configure the
+data-source "Exemplars → trace" link in Grafana (Tempo/Jaeger) — clicking a
+point on the request-rate panel opens the trace. The duration summary
+carries no exemplars (the exposition format allows them only on counters
+and histograms).
+
+Tail-based sampling, if you need it, belongs to an OTel Collector between
+the services and the backend (`tailsampling` policy processor): both services
+export everything when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, and the
+collector decides what to keep. Deliberately no sampling knobs in the
+services themselves — at single-operator scale the backend volume is the
+operator's policy, not the application's.

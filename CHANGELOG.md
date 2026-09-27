@@ -214,6 +214,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   audit actions. Wrong-plane selectors are rejected (400) so an armed fault
   can never silently never fire.
 
+- Metric→trace exemplars on the RED surface (roadmap §6): every
+  `vapor_controlplane_http_requests_total` sample carries the ambient W3C
+  trace id of its most recent request as a Prometheus text-format exemplar
+  (`# {trace_id="<32 hex>"} 1`) — injected errors, rate-limit rejections and
+  organic responses alike are linkable from a dashboard point to a concrete
+  trace (Prometheus `--enable-feature=exemplar-storage` + Grafana
+  trace data-source link). Scrapers that ignore exemplars see identical
+  values, so the metric surface stays independent of the optional OTel
+  pipeline; the duration summary carries none (format allows exemplars only
+  on counters/histograms). Tail-based sampling documented as an OTel
+  Collector-side policy, deliberately not a service knob.
+
 ### Fixed
 
 - Market fee math (`MarketFeeCalculator`, exposed via property tests):

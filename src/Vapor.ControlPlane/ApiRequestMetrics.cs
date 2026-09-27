@@ -13,10 +13,20 @@ namespace Vapor.ControlPlane;
 /// table, not by traffic. The label alphabet (HTTP method tokens and route
 /// pattern characters) cannot produce quotes or backslashes, so no label
 /// escaping is needed.
+/// <para>
+/// Each request-counter sample carries the W3C trace id of the most recent
+/// request in its series as a Prometheus text-format exemplar
+/// (<c># {trace_id="&lt;32 hex&gt;"} 1</c>), bridging the metric series to
+/// the trace the request belonged to — scrapeable with
+/// <c>--enable-feature=exemplar-storage</c> and linkable from Grafana to an
+/// OTLP-consuming backend. Trace ids are hex by construction, so exemplar
+/// labels need no escaping either; the duration summary carries none (the
+/// format allows exemplars only on counters and histograms).
+/// </para>
 /// </summary>
 public sealed class ApiRequestMetrics
 {
-	private readonly ConcurrentDictionary<(string Method, string Route, int Status), long> _requests = new();
+	private readonly ConcurrentDictionary<(string Method, string Route, int Status), (long Count, string? Trace)> _requests = new();
 	private readonly ConcurrentDictionary<(string Method, string Route), (long Count, double Sum)> _durations = new();
 	private long _rateLimited;
 
@@ -27,9 +37,11 @@ public sealed class ApiRequestMetrics
 		Interlocked.Increment(ref _rateLimited);
 	}
 
-	public void RecordRequest(string method, string route, int statusCode, double durationSeconds)
+	public void RecordRequest(string method, string route, int statusCode, double durationSeconds, string? traceId = null)
 	{
-		_requests.AddOrUpdate((method, route, statusCode), 1, static (_, count) => count + 1);
+		// Latest trace wins per series: the exemplar points at one concrete
+		// request the operator can pull up in a trace explorer, not at history.
+		_requests.AddOrUpdate((method, route, statusCode), (1, traceId), (_, pair) => (pair.Count + 1, traceId));
 		_durations.AddOrUpdate((method, route), (1, durationSeconds), (_, pair) => (pair.Count + 1, pair.Sum + durationSeconds));
 	}
 
@@ -38,12 +50,18 @@ public sealed class ApiRequestMetrics
 	{
 		sb.Append("# HELP vapor_controlplane_http_requests_total HTTP requests handled by the REST surface, by method, route pattern and status.\n");
 		sb.Append("# TYPE vapor_controlplane_http_requests_total counter\n");
-		foreach ((string Method, string Route, int Status) key in _requests.Keys.OrderBy(k => k.Method, StringComparer.Ordinal).ThenBy(k => k.Route, StringComparer.Ordinal).ThenBy(k => k.Status))
+		foreach (KeyValuePair<(string Method, string Route, int Status), (long Count, string? Trace)> entry in _requests.OrderBy(kvp => kvp.Key.Method, StringComparer.Ordinal).ThenBy(kvp => kvp.Key.Route, StringComparer.Ordinal).ThenBy(kvp => kvp.Key.Status))
 		{
-			sb.Append("vapor_controlplane_http_requests_total{method=\"").Append(key.Method)
-				.Append("\",route=\"").Append(key.Route)
-				.Append("\",status=\"").Append(key.Status.ToString(CultureInfo.InvariantCulture))
-				.Append("\"} ").Append(_requests[key].ToString(CultureInfo.InvariantCulture)).Append('\n');
+			sb.Append("vapor_controlplane_http_requests_total{method=\"").Append(entry.Key.Method)
+				.Append("\",route=\"").Append(entry.Key.Route)
+				.Append("\",status=\"").Append(entry.Key.Status.ToString(CultureInfo.InvariantCulture))
+				.Append("\"} ").Append(entry.Value.Count.ToString(CultureInfo.InvariantCulture));
+			if (!string.IsNullOrEmpty(entry.Value.Trace))
+			{
+				sb.Append(" # {trace_id=\"").Append(entry.Value.Trace).Append("\"} 1");
+			}
+
+			sb.Append('\n');
 		}
 
 		sb.Append("# HELP vapor_controlplane_http_request_duration_seconds HTTP request durations by method and route pattern.\n");

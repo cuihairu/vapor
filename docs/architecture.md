@@ -564,8 +564,12 @@ was rejected for the same reasons as on the tunnel. Request-level
 observability is hand-rolled RED counters on `/metrics`
 (`vapor_controlplane_http_requests_total{method,route,status}` + duration
 sums), deliberately independent of the optional OTel pipeline so the scrape
-endpoint is a complete story on its own; tracing crosses the tunnel as W3C
-`traceparent` in the envelope (no SDK coupling on the wire). Rate limiting
+endpoint is a complete story on its own — while still bridging the two
+surfaces where they meet: each request-counter sample carries the ambient
+W3C trace id as a Prometheus exemplar, so a metric anomaly links straight to
+a concrete trace without either surface depending on the other. Tracing
+crosses the tunnel as W3C `traceparent` in the envelope (no SDK coupling on
+the wire). Rate limiting
 sits at the CP edge per credential (sliding window, off by default) because
 that is the only ingress — protecting it is protecting the system.
 

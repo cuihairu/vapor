@@ -262,8 +262,11 @@ public sealed class FaultApiTests
 		string metrics = await client.GetStringAsync("/metrics");
 		Assert.Contains("vapor_controlplane_fault_injections_total{kind=\"api-request\",mode=\"error\"} 1", metrics);
 		Assert.Contains("vapor_controlplane_faults_armed 1", metrics);
-		// The injected 503 is recorded in the RED family like any other response.
-		Assert.Contains("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/agents\",status=\"503\"} 1", metrics);
+		// The injected 503 is recorded in the RED family like any other response —
+		// including the exemplar arm: the fault short-circuit passes the ambient
+		// trace id through, so drilled errors are trace-linkable too.
+		string faultLine = metrics.Split('\n').Single(l => l.StartsWith("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/agents\",status=\"503\"} 1", StringComparison.Ordinal));
+		Assert.Matches(@"^vapor_controlplane_http_requests_total\{method=""GET"",route=""/v1/agents"",status=""503""\} 1 # \{trace_id=""[0-9a-f]{32}""\} 1$", faultLine);
 	}
 
 	[Fact]

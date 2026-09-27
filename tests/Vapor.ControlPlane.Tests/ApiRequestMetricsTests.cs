@@ -89,6 +89,44 @@ public sealed class ApiRequestMetricsTests
 	}
 
 	[Fact]
+	public void RecordRequest_WithTrace_RendersPrometheusExemplar()
+	{
+		ApiRequestMetrics metrics = new();
+		metrics.RecordRequest("GET", "/v1/a", 200, 0.5, "af5f908a19cd4e72b21f66c391bdec61");
+
+		string exposition = Render(metrics);
+		Assert.Contains("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/a\",status=\"200\"} 1 # {trace_id=\"af5f908a19cd4e72b21f66c391bdec61\"} 1", exposition);
+		// The duration family is a summary — the text format carries exemplars
+		// only on counters and histograms, so its lines stay bare.
+		Assert.DoesNotContain("# {trace_id", exposition.Split('\n').Single(l => l.StartsWith("vapor_controlplane_http_request_duration_seconds_sum{", StringComparison.Ordinal)));
+	}
+
+	[Fact]
+	public void RecordRequest_LatestTraceWins_PerSeries()
+	{
+		ApiRequestMetrics metrics = new();
+		metrics.RecordRequest("GET", "/v1/a", 200, 0.5, "11111111111111111111111111111111");
+		metrics.RecordRequest("GET", "/v1/a", 200, 0.25, "22222222222222222222222222222222");
+		metrics.RecordRequest("GET", "/v1/a", 500, 1.0, "33333333333333333333333333333333");
+
+		string exposition = Render(metrics);
+		string okLine = exposition.Split('\n').Single(l => l.StartsWith("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/a\",status=\"200\"}", StringComparison.Ordinal));
+		Assert.Equal("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/a\",status=\"200\"} 2 # {trace_id=\"22222222222222222222222222222222\"} 1", okLine);
+		// Series are independent: the 500 series keeps its own exemplar.
+		Assert.Contains("status=\"500\"} 1 # {trace_id=\"33333333333333333333333333333333\"} 1", exposition);
+	}
+
+	[Fact]
+	public void RecordRequest_WithoutTrace_RendersBareSample()
+	{
+		ApiRequestMetrics metrics = new();
+		metrics.RecordRequest("GET", "/v1/a", 200, 0.5);
+
+		string line = Render(metrics).Split('\n').Single(l => l.StartsWith("vapor_controlplane_http_requests_total{", StringComparison.Ordinal));
+		Assert.Equal("vapor_controlplane_http_requests_total{method=\"GET\",route=\"/v1/a\",status=\"200\"} 1", line);
+	}
+
+	[Fact]
 	public void RecordRateLimited_CountsRejections()
 	{
 		ApiRequestMetrics metrics = new();

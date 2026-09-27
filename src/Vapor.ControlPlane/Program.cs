@@ -165,6 +165,11 @@ app.Use(async (ctx, next) =>
 	// always populated; PathText alternatives do not exist on RoutePattern.
 	string route = routeEndpoint.RoutePattern.RawText!;
 	string method = ctx.Request.Method;
+	// W3C trace id of the ambient request activity, rendered as the exemplar on
+	// every counter sample this request produces (metric → trace bridge).
+	// Null only when no activity is current (hosting always starts one in
+	// practice; a test clears it to pin the arm).
+	string? traceId = Activity.Current?.TraceId.ToHexString();
 	ApiKeyRateLimiter limiter = ctx.RequestServices.GetRequiredService<ApiKeyRateLimiter>();
 	ApiRequestMetrics metrics = ctx.RequestServices.GetRequiredService<ApiRequestMetrics>();
 
@@ -175,7 +180,7 @@ app.Use(async (ctx, next) =>
 		if (!allowed)
 		{
 			metrics.RecordRateLimited();
-			metrics.RecordRequest(method, route, StatusCodes.Status429TooManyRequests, 0);
+			metrics.RecordRequest(method, route, StatusCodes.Status429TooManyRequests, 0, traceId);
 			ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests;
 			ctx.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
 			await ctx.Response.WriteAsJsonAsync(new ErrorResponse($"rate limit exceeded: retry after {retryAfterSeconds}s"));
@@ -202,7 +207,7 @@ app.Use(async (ctx, next) =>
 		}
 		else
 		{
-			metrics.RecordRequest(method, route, apiFault.HttpStatusCode, 0);
+			metrics.RecordRequest(method, route, apiFault.HttpStatusCode, 0, traceId);
 			ctx.Response.StatusCode = apiFault.HttpStatusCode;
 			await ctx.Response.WriteAsJsonAsync(new ErrorResponse($"fault injection {apiFault.Id}"));
 			return;
@@ -215,7 +220,7 @@ app.Use(async (ctx, next) =>
 	}
 	finally
 	{
-		metrics.RecordRequest(method, route, ctx.Response.StatusCode, Stopwatch.GetElapsedTime(started).TotalSeconds);
+		metrics.RecordRequest(method, route, ctx.Response.StatusCode, Stopwatch.GetElapsedTime(started).TotalSeconds, traceId);
 	}
 });
 
