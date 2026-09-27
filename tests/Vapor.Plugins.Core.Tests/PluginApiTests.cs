@@ -76,4 +76,21 @@ public class PluginApiTests
 		Assert.False(PluginApi.IsCompatible("not-a-version", out var reason));
 		Assert.Contains("invalid plugin API version", reason);
 	}
+
+	[Fact]
+	public void MatchesExactly_TreatsMissingComponentsAsZero()
+	{
+		Version current = PluginApi.Current;
+
+		Assert.True(PluginApi.MatchesExactly(current));
+		Assert.True(PluginApi.MatchesExactly(new Version(current.Major, current.Minor)));
+		Assert.True(PluginApi.MatchesExactly(new Version(current.Major, current.Minor, 0, 0)));
+		Assert.False(PluginApi.MatchesExactly(new Version(current.Major, current.Minor, current.Build + 1)));
+	}
+
+	[Fact]
+	public void MatchesExactly_RejectsNull()
+	{
+		Assert.Throws<ArgumentNullException>(() => PluginApi.MatchesExactly(null!));
+	}
 }

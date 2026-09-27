@@ -119,6 +119,48 @@ public class PluginLoadTests : IDisposable
 	}
 
 	[Fact]
+	public async Task LoadAsync_OfficialPlugin_ApiVersionPinnedToHostExactVersion_Throws()
+	{
+		// "1.0.5" passes the SemVer handshake (major match, minor <= host) but an
+		// official plugin must target the host API version exactly — ASF's
+		// HasSameVersion alignment: a SemVer-compatible older official build is
+		// still a mismatched artifact.
+		PluginStaging.StageTestPlugin(_root, apiVersion: "1.0.5", trust: "official");
+
+		await using var manager = PluginStaging.CreateManager();
+		var descriptor = Assert.Single(manager.Discover(_root));
+
+		var ex = await Assert.ThrowsAsync<PluginException>(() => manager.LoadAsync(descriptor));
+		Assert.Contains("version-pinned to the host", ex.Message);
+	}
+
+	[Fact]
+	public async Task LoadAsync_OfficialPlugin_MatchingApiVersion_Loads()
+	{
+		PluginStaging.StageTestPlugin(_root, trust: "official");
+
+		await using var manager = PluginStaging.CreateManager();
+		var descriptor = Assert.Single(manager.Discover(_root));
+
+		var loaded = await manager.LoadAsync(descriptor);
+		Assert.Equal(PluginTrust.Official, loaded.Descriptor.Trust);
+	}
+
+	[Fact]
+	public async Task LoadAsync_CommunityPlugin_CompatibleOlderApiVersion_StillLoads()
+	{
+		// The exact-version pin applies to official plugins only; community
+		// plugins keep the SemVer handshake.
+		PluginStaging.StageTestPlugin(_root, apiVersion: "1.0.5", trust: "community");
+
+		await using var manager = PluginStaging.CreateManager();
+		var descriptor = Assert.Single(manager.Discover(_root));
+
+		var loaded = await manager.LoadAsync(descriptor);
+		Assert.Equal(PluginTrust.Community, loaded.Descriptor.Trust);
+	}
+
+	[Fact]
 	public async Task LoadAsync_DuplicatePluginId_Throws()
 	{
 		PluginStaging.StageTestPlugin(_root);

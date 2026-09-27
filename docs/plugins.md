@@ -4,7 +4,7 @@ Vapor's agent ships with a full plugin system: isolated loading, SemVer-gated AP
 compatibility, a trust/permission model and a small, explicit API surface. This guide
 walks through building, declaring, configuring and debugging a plugin.
 
-Everything described here is exercised by three official plugins and the test suites —
+Everything described here is exercised by four official plugins and the test suites —
 `Vapor.Plugins.TestPlugin` (infrastructure tests), `Vapor.Plugins.MarketWatch` (the
 richest example), and the load/unload tests in `Vapor.Plugins.Core.Tests`.
 
@@ -329,6 +329,7 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Mobile Authenticator | `vapor.mobile-authenticator` | Actions only; TOTP/confirmation logic kept out of the host |
 | Monitoring | `vapor.monitoring` | Actions + web routes; self-hosted Prometheus endpoint, background metrics pump |
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
+| Case Opening | `vapor.caseopening` | Actions + web routes + configuration + result recording/archive; the dry-run CS:GO case simulator (see its section above) |
 
 ## Packaging checklist
 

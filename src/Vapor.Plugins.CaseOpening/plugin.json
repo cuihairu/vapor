@@ -1,0 +1,18 @@
+{
+  "id": "vapor.caseopening",
+  "name": "Vapor Case Opening",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "description": "Dry-run CS:GO/CS2 case-opening simulator over Valve's published odds; records every result. No Steam side effects.",
+  "trust": "official",
+  "permissions": [
+    "actions",
+    "web"
+  ],
+  "entryAssembly": "Vapor.Plugins.CaseOpening.dll",
+  "entryType": "Vapor.Plugins.CaseOpening.CaseOpeningPlugin",
+  "configuration": {
+    "backend": "simulation",
+    "results.path": ""
+  }
+}

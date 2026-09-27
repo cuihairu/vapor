@@ -84,4 +84,24 @@ public static class PluginApi
 
 		return IsCompatible(requested, out reason);
 	}
+
+	/// <summary>
+	/// Determines whether a plugin targets this host's API version <b>exactly</b>
+	/// (the official-plugin pin). "1.0", "1.0.0" and "1.0.0.0" all mean the same
+	/// API; any other build/revision is a different artifact. Version's own
+	/// comparison treats a missing build (-1) as less than an explicit 0, so both
+	/// sides are normalized to explicit components first.
+	/// </summary>
+	public static bool MatchesExactly(Version requestedApiVersion)
+	{
+		ArgumentNullException.ThrowIfNull(requestedApiVersion);
+
+		return Normalize(requestedApiVersion) == Normalize(Current);
+
+		static Version Normalize(Version version) => new(
+			version.Major,
+			version.Minor,
+			Math.Max(version.Build, 0),
+			Math.Max(version.Revision, 0));
+	}
 }

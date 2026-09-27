@@ -33,6 +33,7 @@ dotnet_diagnostic.CA1515.severity = none   # 类型保持 public 供 InternalsVi
 dotnet_diagnostic.CA1062.severity = none   # nullable enable 下参数 null 校验由编译器覆盖
 dotnet_diagnostic.CA1873.severity = none   # 日志参数求值成本微优化
 dotnet_diagnostic.CA5350.severity = none   # SHA1/HMACSHA1 是 Steam Guard/SteamId 协议要求，非选型
+dotnet_diagnostic.CA5394.severity = none   # System.Random 是开箱模拟器的文档化仿真 RNG（可种子/可注入，确定性测试要求），无安全属性依赖
 # API design 风格（改面大、无 bug 检出价值）：
 dotnet_diagnostic.CA1050.severity = none   # namespace 外类型
 dotnet_diagnostic.CA1002.severity = none   # List 属性暴露

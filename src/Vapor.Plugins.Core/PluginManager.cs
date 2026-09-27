@@ -91,6 +91,16 @@ public sealed class PluginManager : IAsyncDisposable
 			throw new PluginException($"Plugin '{info.Id}' is not compatible with this host: {reason}");
 		}
 
+		// ASF's HasSameVersion alignment: official plugins ship with the host and
+		// must target its plugin API version exactly — a SemVer-compatible older
+		// build is still a mismatched artifact and is refused loudly.
+		if (descriptor.Trust == PluginTrust.Official && !PluginApi.MatchesExactly(info.ApiVersion))
+		{
+			throw new PluginException(
+				$"Official plugin '{info.Id}' targets plugin API {info.ApiVersion} but this host implements {PluginApi.Current}; " +
+				"official plugins are version-pinned to the host they ship with");
+		}
+
 		if (descriptor.Trust < _options.MinimumTrust)
 		{
 			throw new PluginException(
