@@ -173,7 +173,10 @@ window:
 - Survives: jobs, tasks, schedules, audit, crawl state, and the declared
   farm — account specs and settings (all SQLite; specs/settings are
   write-through persisted and rehydrated at startup, so a restart no longer
-  requires re-declaring accounts).
+  requires re-declaring accounts). These files are the control plane's
+  entire durable state — copying them (see production.md, "Data, backup and
+  upgrades") is a complete backup, and restoring a slightly older set is
+  safe: desired state re-converges.
 - Lost and rebuilt: agent registry (agents reconnect with their exponential
   backoff and re-hello), session snapshots (agents re-report), challenge
   prompts, plugin mirror (rebuilt from task results), rate-limiter windows

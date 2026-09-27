@@ -294,16 +294,47 @@ State lives in two named volumes:
 | `agent-data` (`/app/.vapor`) | Per-agent credentials and session data |
 
 Back up with SQLite's online API (consistent while the control plane keeps
-running), using any SQLite image that mounts the same volume:
+running), using any SQLite image that mounts the same volume. The mount must
+be writable — `.backup` writes its output file into the same volume — and all
+four databases belong in the backup set:
 
 ```bash
-docker run --rm -v vapor_controlplane-data:/data:ro alpine/sqlite3 \
-  /data/controlplane.db ".backup '/data/backup-controlplane-$(date +%F).db'"
+for db in controlplane audit crawl config; do
+  docker run --rm -v vapor_controlplane-data:/data alpine/sqlite3 \
+    /data/$db.db ".backup '/data/backup-$db-$(date +%F).db'"
+done
+```
+
+Back up the agent volume alongside the farm it serves — it holds the
+encrypted credentials and session tokens; losing them forces an interactive
+re-login (possibly with 2FA) for every account:
+
+```bash
+docker run --rm -v vapor_agent-data:/data:ro -v "$PWD:/out" alpine \
+  tar czf /out/agent-data-$(date +%F).tgz -C /data .
 ```
 
 The runtime image itself ships no `sqlite3` CLI. Alternatively, stop the
 control plane first and copy the volume contents — file-level copies of a
 stopped SQLite database are always consistent.
+
+### Restoring
+
+1. `docker compose stop controlplane` — never restore over a running one.
+2. Copy the backed-up `*.db` files into the `controlplane-data` volume and
+   delete any `*.db-wal` / `*.db-shm` files sitting next to them first: they
+   belong to the database being replaced, and a stale WAL replayed onto a
+   restored file corrupts or rewinds it.
+3. `docker compose up -d`. Schema migrations are idempotent on start; the
+   declared farm is rehydrated from `config.db`, jobs/agents from
+   `controlplane.db`, audit and crawl history from their files, and agents
+   reconnect and re-report sessions on their own.
+
+The four control-plane files are backed up independently, so a restore may
+mix points in time across them. That skew is safe by design: `config.db`
+holds *desired* state, and the reconciler re-converges sessions toward it —
+a slightly older `config.db` at worst replays a convergence the operator
+already observed, while a newer one only adds declarations.
 
 Upgrades:
 
