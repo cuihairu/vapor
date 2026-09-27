@@ -239,13 +239,19 @@ public sealed class FaultApiTests
 		stopwatch.Stop();
 
 		Assert.Equal(HttpStatusCode.OK, response.StatusCode); // delay, not failure
-		Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(300), $"elapsed {stopwatch.Elapsed} should include the injected 300 ms delay");
 
-		// The duration family for the route carries the inflated sum (>= 0.3s).
+		// 250 ms, not 300: Task.Delay is allowed to wake slightly early and the
+		// Windows timer resolution (~15.6 ms) makes a ~299.8 ms sleep legal, so
+		// an exact 300 ms lower bound flakes on Windows runners (CI, 2026-09-27).
+		// A delay-free request lands in the sub-millisecond range, so this bound
+		// still pins the "timestamp taken above the drill point" contract.
+		Assert.True(stopwatch.Elapsed >= TimeSpan.FromMilliseconds(250), $"elapsed {stopwatch.Elapsed} should include the injected 300 ms delay");
+
+		// The duration family for the route carries the inflated sum (>= ~0.3s).
 		string metrics = await client.GetStringAsync("/metrics");
 		string sumLine = metrics.Split('\n').Single(l => l.StartsWith("vapor_controlplane_http_request_duration_seconds_sum{method=\"GET\",route=\"/v1/agents\"} ", StringComparison.Ordinal));
 		double sumSeconds = double.Parse(sumLine[(sumLine.LastIndexOf(' ') + 1)..], CultureInfo.InvariantCulture);
-		Assert.True(sumSeconds >= 0.3, $"duration sum {sumSeconds}s should include the injected 300 ms delay");
+		Assert.True(sumSeconds >= 0.25, $"duration sum {sumSeconds}s should include the injected 300 ms delay");
 	}
 
 	[Fact]
