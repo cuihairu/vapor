@@ -294,16 +294,22 @@ State lives in two named volumes:
 | `agent-data` (`/app/.vapor`) | Per-agent credentials and session data |
 
 Back up with SQLite's online API (consistent while the control plane keeps
-running), using any SQLite image that mounts the same volume. The mount must
-be writable — `.backup` writes its output file into the same volume — and all
+running). The runtime image ships no `sqlite3` CLI — run the official
+`alpine` image and add the `sqlite` package on the fly. The mount must be
+writable — `.backup` writes its output file into the same volume — and all
 four databases belong in the backup set:
 
 ```bash
 for db in controlplane audit crawl config; do
-  docker run --rm -v vapor_controlplane-data:/data alpine/sqlite3 \
-    /data/$db.db ".backup '/data/backup-$db-$(date +%F).db'"
+  docker run --rm -v vapor_controlplane-data:/data alpine \
+    sh -c "apk add --no-cache sqlite >/dev/null && sqlite3 /data/$db.db \".backup '/data/backup-$db-$(date +%F).db'\""
 done
 ```
+
+Volume names are prefixed with the compose project name, which defaults to
+the checkout directory name — `vapor_controlplane-data` is what the
+documented clone produces. If your checkout lives elsewhere, substitute
+your own prefix (`docker volume ls | grep controlplane-data`).
 
 Back up the agent volume alongside the farm it serves — it holds the
 encrypted credentials and session tokens; losing them forces an interactive
@@ -314,9 +320,8 @@ docker run --rm -v vapor_agent-data:/data:ro -v "$PWD:/out" alpine \
   tar czf /out/agent-data-$(date +%F).tgz -C /data .
 ```
 
-The runtime image itself ships no `sqlite3` CLI. Alternatively, stop the
-control plane first and copy the volume contents — file-level copies of a
-stopped SQLite database are always consistent.
+Alternatively, stop the control plane first and copy the volume contents —
+file-level copies of a stopped SQLite database are always consistent.
 
 ### Restoring
 
