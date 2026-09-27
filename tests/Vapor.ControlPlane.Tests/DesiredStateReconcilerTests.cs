@@ -341,24 +341,36 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 
 		await reconciler.StartAsync(CancellationToken.None);
 
+		// Wait for pass 1 to COMPLETE (telemetry recorded), not just to have
+		// dispatched: disabling afterwards means tick 2 is guaranteed to see the
+		// account disabled and take the unassign path, whose cancel sits OUTSIDE
+		// the per-account try — the settle path would swallow the sabotage.
 		var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-		while (jobs.Created.Count == 0 && DateTimeOffset.UtcNow < deadline)
+		while ((jobs.Created.Count == 0 || reconciler.LastPassAt is null) && DateTimeOffset.UtcNow < deadline)
 		{
 			await Task.Delay(10);
 		}
 
 		accounts.SetEnabled("alice", enabled: false);
 		await jobs.CancelGateTouched!.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+		// The failed-pass flag is transient by design: the next pass retries the
+		// unassign cleanly (the active job id was cleared ahead of the failed
+		// cancel) and overwrites the telemetry ~1 s later. Polling that ~1 s
+		// window raced a CI stall (macos runner, 2026-09-27): a test thread
+		// frozen across the window never saw the flag and burned the 30 s budget.
+		// Anchor on the stop instead — the release task lets the escape land, the
+		// loop records the failed pass and exits on the stop token before
+		// StopAsync returns, so no later pass exists to overwrite. Release order
+		// is a happens-before edge, not a wall-clock race.
 		jobs.ThrowOnCancel = true;
-		jobs.CancelGate!.SetResult();
-
-		deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-		while (!reconciler.LastPassFailed && DateTimeOffset.UtcNow < deadline)
+		Task release = Task.Run(async () =>
 		{
-			await Task.Delay(10);
-		}
-
+			await Task.Delay(100);
+			jobs.CancelGate!.SetResult();
+		});
 		await reconciler.StopAsync(CancellationToken.None);
+		await release;
 
 		Assert.True(reconciler.LastPassFailed);
 		Assert.NotNull(reconciler.LastPassAt);
