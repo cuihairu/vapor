@@ -1005,6 +1005,42 @@
                         <div class="helper">保存走 PUT 全量语义：所有字段按表单当前值提交。市场挂单开关是灰区操作门控，开启后市场类操作才会被服务端接受。代理变更是独立于保存的审计动作，点「应用代理」立即下发。</div>
                     </div>
 
+                    <div class="action-row" id="inventoryPanel" hidden>
+                        <div class="row-head">
+                            <div class="strong">背包查看（只读）— <span id="inventoryAccountName"></span></div>
+                            <button class="btn btn-secondary btn-small" id="inventoryCloseButton">关闭</button>
+                        </div>
+                        <div class="helper">每次点击都现派任务到 agent 实时读取——控制面不做库存缓存（agent 即真相，SWR 原则）。任务异步执行：HTTP 202 = 任务仍在排队（面板自动轮询该任务，不缓存中间态），HTTP 502 = 任务失败（原因照显）。</div>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label for="inventoryAppIdsInput">App 筛选（appid CSV，留空 = 默认 CS2 730/2）</label>
+                                <input id="inventoryAppIdsInput" type="text" placeholder="753, 730">
+                            </div>
+                            <div class="field">
+                                <label for="inventoryContextIdInput">Context ID（单 app 模式可选，默认 2；753 卡牌在 6）</label>
+                                <input id="inventoryContextIdInput" type="text" placeholder="2">
+                            </div>
+                        </div>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label><input id="inventoryTradableOnly" type="checkbox"> 仅显示可交易</label>
+                            </div>
+                            <div class="field">
+                                <label><input id="inventoryMarketableOnly" type="checkbox"> 仅显示可市场出售</label>
+                            </div>
+                            <div class="field">
+                                <label for="inventoryKeepInput">重复卡保留份数（查重复卡用，1-100）</label>
+                                <input id="inventoryKeepInput" type="number" min="1" max="100" value="1">
+                            </div>
+                        </div>
+                        <div class="button-row">
+                            <button class="btn btn-primary" id="inventoryFetchButton">拉取背包</button>
+                            <button class="btn btn-secondary" id="inventoryDuplicatesButton">查重复卡</button>
+                        </div>
+                        <div class="helper" id="inventoryStatus"></div>
+                        <div id="inventoryResultBox"></div>
+                    </div>
+
                     <div class="row-head" style="margin-top: 16px;">
                         <div class="strong">成就管理</div>
                         <button class="btn btn-secondary btn-small" id="loadAchievementsButton">拉取成就列表</button>
@@ -1569,6 +1605,9 @@
             document.getElementById("saveAccountButton").addEventListener("click", () => saveAccountEdits());
             document.getElementById("applyProxyButton").addEventListener("click", () => applyProxyAssignment());
             document.getElementById("cancelEditButton").addEventListener("click", () => closeAccountEditor());
+            document.getElementById("inventoryCloseButton").addEventListener("click", () => closeInventoryPanel());
+            document.getElementById("inventoryFetchButton").addEventListener("click", () => runInventoryRead("inventory"));
+            document.getElementById("inventoryDuplicatesButton").addEventListener("click", () => runInventoryRead("duplicates"));
             document.getElementById("runStorageCollectButton").addEventListener("click", () => runStorageCollect());
             document.getElementById("refreshStorageSnapshotButton").addEventListener("click", () => loadStorageSnapshot());
             document.getElementById("loadAchievementsButton").addEventListener("click", () => loadAchievements());
@@ -2297,6 +2336,7 @@
                         ${notes.length ? `<div class="helper">${escapeHtml(notes.join(" · "))}</div>` : ""}
                         <div class="button-row">
                             <button class="btn btn-secondary btn-small" data-edit-account="${escapeHtml(account.accountName)}">编辑</button>
+                            <button class="btn btn-secondary btn-small" data-inventory-account="${escapeHtml(account.accountName)}">背包</button>
                             <button class="btn btn-secondary btn-small" data-standing-check="${escapeHtml(account.accountName)}">体检</button>
                             <button class="btn btn-secondary btn-small" data-toggle-account="${escapeHtml(account.accountName)}" data-next-enabled="${account.enabled ? "false" : "true"}">${account.enabled ? "禁用" : "启用"}</button>
                             <button class="btn btn-danger btn-small" data-delete-account="${escapeHtml(account.accountName)}">删除</button>
@@ -2307,6 +2347,10 @@
 
             container.querySelectorAll("[data-edit-account]").forEach((button) => {
                 button.addEventListener("click", () => editAccount(button.dataset.editAccount));
+            });
+
+            container.querySelectorAll("[data-inventory-account]").forEach((button) => {
+                button.addEventListener("click", () => openInventoryPanel(button.dataset.inventoryAccount));
             });
 
             container.querySelectorAll("[data-standing-check]").forEach((button) => {
@@ -2826,6 +2870,216 @@
             } catch (error) {
                 alert(`体检排期失败: ${error.message}`);
             }
+        }
+
+        // --- §39 P-c: read-only inventory panel ---------------------------------
+        // The panel never caches: every fetch dispatches a fresh agent task and
+        // renders whatever comes back (SWR discipline — the agent is the source
+        // of truth). 202 = task still queued, so the panel polls that one job
+        // (bounded); 502 = the task failed and its error is shown verbatim.
+        const inventoryState = { account: null, pollTimer: null, pollJobId: null };
+
+        function openInventoryPanel(accountName) {
+            stopInventoryPoll();
+            inventoryState.account = accountName;
+            document.getElementById("inventoryAccountName").textContent = accountName;
+            document.getElementById("inventoryStatus").textContent = "";
+            document.getElementById("inventoryResultBox").innerHTML = "";
+            document.getElementById("inventoryPanel").hidden = false;
+            document.getElementById("inventoryPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+            addEvent("task", `打开账户 ${accountName} 的背包面板（只读）`);
+        }
+
+        function closeInventoryPanel() {
+            stopInventoryPoll();
+            document.getElementById("inventoryPanel").hidden = true;
+            inventoryState.account = null;
+        }
+
+        function parseInventoryAppIds(raw) {
+            const entries = raw.split(",").map((item) => item.trim()).filter(Boolean);
+            for (const entry of entries) {
+                if (!/^\d+$/.test(entry) || Number(entry) <= 0) {
+                    throw new Error(`App 筛选必须是正整数 appid，收到「${entry}」`);
+                }
+            }
+            return entries.length ? entries.join(",") : null;
+        }
+
+        // Builds the query string for the panel's single GET endpoint per kind;
+        // returns null (after alerting) when a filter value is invalid.
+        function inventoryQuery(kind) {
+            let appIds;
+            try {
+                appIds = parseInventoryAppIds(document.getElementById("inventoryAppIdsInput").value);
+            } catch (error) {
+                alert(error.message);
+                return null;
+            }
+
+            const params = new URLSearchParams();
+            if (appIds) {
+                params.set("appIds", appIds);
+            }
+            const contextId = document.getElementById("inventoryContextIdInput").value.trim();
+            if (!appIds && contextId) {
+                params.set("contextId", contextId);
+            }
+            if (document.getElementById("inventoryTradableOnly").checked) {
+                params.set("tradableOnly", "true");
+            }
+            if (document.getElementById("inventoryMarketableOnly").checked) {
+                params.set("marketableOnly", "true");
+            }
+            if (kind === "duplicates") {
+                const keep = Number(document.getElementById("inventoryKeepInput").value);
+                if (!Number.isInteger(keep) || keep < 1 || keep > 100) {
+                    alert(`重复卡保留份数无效: ${document.getElementById("inventoryKeepInput").value}（须为 1-100 整数）`);
+                    return null;
+                }
+                params.set("keep", String(keep));
+            }
+            return params;
+        }
+
+        async function runInventoryRead(kind) {
+            if (!inventoryState.account) {
+                return;
+            }
+
+            const params = inventoryQuery(kind);
+            if (params === null) {
+                return;
+            }
+
+            const status = document.getElementById("inventoryStatus");
+            stopInventoryPoll();
+            const label = kind === "inventory" ? "背包" : "重复卡";
+            status.textContent = `正在派发${label}读取任务（任务异步执行，agent 实时读取）...`;
+
+            let response;
+            try {
+                response = await fetch(
+                    `${API_BASE}/v1/accounts/${encodeURIComponent(inventoryState.account)}/${kind}?${params}`,
+                    { headers: authHeaders() });
+            } catch (error) {
+                status.textContent = `请求失败: ${error.message}`;
+                return;
+            }
+
+            const body = await response.json().catch(() => null);
+            if (response.status === 200) {
+                status.textContent = `读取完成（任务 ${body?.job_id ?? "?"}）——以上为 agent 实时快照，非缓存`;
+                renderInventoryResult(kind, kind === "inventory" ? body?.inventory : body?.duplicates);
+                return;
+            }
+            if (response.status === 202) {
+                status.textContent = `任务 ${body?.job_id ?? "?"} 仍在排队（202）——面板自动轮询中，不缓存中间态`;
+                startInventoryPoll(body?.job_id ?? null, kind);
+                return;
+            }
+            if (response.status === 502) {
+                status.textContent = `任务失败（502）：${body?.error ?? "未知错误"}（任务 ${body?.job_id ?? "?"}）`;
+                return;
+            }
+            status.textContent = `请求失败: HTTP ${response.status}${body?.error ? `：${body.error}` : ""}`;
+        }
+
+        function startInventoryPoll(jobId, kind) {
+            if (!jobId) {
+                return;
+            }
+
+            inventoryState.pollJobId = jobId;
+            let tries = 0;
+            inventoryState.pollTimer = setInterval(async () => {
+                tries += 1;
+                if (inventoryState.pollJobId !== jobId) {
+                    // The panel was closed or a newer read superseded this poll.
+                    clearInterval(inventoryState.pollTimer);
+                    inventoryState.pollTimer = null;
+                    return;
+                }
+
+                let data = null;
+                try {
+                    data = await apiFetch(`/v1/jobs/${encodeURIComponent(jobId)}`);
+                } catch {
+                    // Transient read failure: keep polling until the cap.
+                }
+
+                const task = data?.tasks?.[0];
+                if (task && (task.status === "finished" || task.status === "failed")) {
+                    stopInventoryPoll();
+                    const status = document.getElementById("inventoryStatus");
+                    if (task.status === "finished") {
+                        status.textContent = `轮询完成（任务 ${jobId}）——agent 实时快照，非缓存`;
+                        renderInventoryResult(kind, task.output);
+                    } else {
+                        status.textContent = `轮询到任务失败：${task.error ?? "未知错误"}（任务 ${jobId}）`;
+                    }
+                } else if (tries >= 40) {
+                    stopInventoryPoll();
+                    document.getElementById("inventoryStatus").textContent =
+                        `任务 ${jobId} 仍在执行（轮询超时，约 2 分钟）——稍后可重新拉取或到任务面板查看`;
+                }
+            }, 3000);
+        }
+
+        function stopInventoryPoll() {
+            if (inventoryState.pollTimer) {
+                clearInterval(inventoryState.pollTimer);
+            }
+            inventoryState.pollTimer = null;
+            inventoryState.pollJobId = null;
+        }
+
+        function renderInventoryResult(kind, output) {
+            const box = document.getElementById("inventoryResultBox");
+            if (!output) {
+                box.innerHTML = '<div class="empty-state">任务成功但没有输出。</div>';
+                return;
+            }
+
+            if (kind === "duplicates") {
+                const groups = output.duplicates || [];
+                const summary = [`超出保留份数 ${output.excess_count ?? 0} 件`];
+                const scanned = output.apps_scanned || [];
+                if (scanned.length) {
+                    summary.push(`扫描 ${scanned.map((app) => `app ${app.app_id}(${app.scanned_items})`).join("、")}`);
+                }
+                const rows = groups.map((group) => `
+                    <tr>
+                        <td class="mono">${escapeHtml(String(group.app_id ?? ""))}</td>
+                        <td>${escapeHtml(String(group.name ?? ""))}</td>
+                        <td class="mono">${escapeHtml(String(group.total ?? ""))}</td>
+                        <td class="mono">${escapeHtml(String(group.excess_count ?? ""))}</td>
+                    </tr>`).join("");
+                box.innerHTML = `
+                    <div class="helper">${escapeHtml(summary.join(" · "))}（keep=${escapeHtml(String(output.keep ?? ""))}）</div>
+                    ${rows ? `<table><thead><tr><th>App</th><th>物品</th><th>共有</th><th>超出</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty-state">无超出保留份数的重复卡。</div>'}`;
+                return;
+            }
+
+            const apps = output.apps || [];
+            const appChips = apps.length
+                ? `<div class="helper">多 app 扫描：${apps.map((app) => `app ${escapeHtml(String(app.app_id))} → ${escapeHtml(String(app.item_count))} 件`).join("、")}</div>`
+                : "";
+            const items = output.items || [];
+            const rows = items.map((item) => `
+                <tr>
+                    <td>${escapeHtml(String(item.market_name ?? item.name ?? ""))}</td>
+                    <td class="mono">${escapeHtml(String(item.amount ?? 1))}</td>
+                    <td class="mono">${escapeHtml(String(item.app_id ?? ""))}</td>
+                    <td>${escapeHtml(String(item.type ?? ""))}</td>
+                    <td>${item.tradable ? "✓" : "✗"}</td>
+                    <td>${item.marketable ? "✓" : "✗"}</td>
+                    <td class="mono tiny">${escapeHtml(String(item.asset_id ?? ""))}</td>
+                </tr>`).join("");
+            box.innerHTML = `
+                ${appChips}
+                <div class="helper">共 ${escapeHtml(String(output.total_count ?? items.length))} 件（steam_id ${escapeHtml(String(output.steam_id ?? ""))}）</div>
+                ${rows ? `<table><thead><tr><th>物品</th><th>数量</th><th>App</th><th>类型</th><th>可交易</th><th>可出售</th><th>Asset ID</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty-state">背包为空（或被筛选器全部过滤）。</div>'}`;
         }
 
         async function deleteAccount(accountName) {

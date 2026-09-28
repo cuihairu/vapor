@@ -268,6 +268,55 @@ public sealed class DashboardStaticTests
 		Assert.Equal("/admin.html", response.Headers.Location?.ToString());
 	}
 
+	[Fact]
+	public void AdminHtml_InventoryPanel_ReadOnlyAgentTruthSurface()
+	{
+		// §39 P-c contract: the account card grows a read-only 背包 view that
+		// hits the existing GET inventory/duplicates endpoints with app/context
+		// filters, and states the no-cache discipline (the agent is the source
+		// of truth, SWR) instead of holding any inventory state.
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		Assert.Contains("data-inventory-account", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"inventoryPanel\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"inventoryAppIdsInput\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"inventoryContextIdInput\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"inventoryTradableOnly\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"inventoryMarketableOnly\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"inventoryKeepInput\"", html, StringComparison.Ordinal);
+
+		// GET-only reads against the existing endpoints (no POST, no cache).
+		Assert.Contains(
+			"/v1/accounts/${encodeURIComponent(inventoryState.account)}/${kind}?${params}",
+			html,
+			StringComparison.Ordinal);
+		Assert.Contains("params.set(\"appIds\"", html, StringComparison.Ordinal);
+		Assert.Contains("params.set(\"contextId\"", html, StringComparison.Ordinal);
+		Assert.Contains("params.set(\"tradableOnly\"", html, StringComparison.Ordinal);
+		Assert.Contains("params.set(\"marketableOnly\"", html, StringComparison.Ordinal);
+		Assert.Contains("params.set(\"keep\"", html, StringComparison.Ordinal);
+
+		// The no-cache discipline is stated in the panel and in every result.
+		Assert.Contains("控制面不做库存缓存（agent 即真相", html, StringComparison.Ordinal);
+		Assert.Contains("非缓存", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void AdminHtml_InventoryPanel_ShowsAsyncJobSemanticsAndPolls()
+	{
+		// §39 P-c async contract: 202 (queued) is surfaced with a bounded poll
+		// of the job endpoint, 502 (task failed) shows the error verbatim, and
+		// neither path fabricates inventory data.
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		Assert.Contains("response.status === 202", html, StringComparison.Ordinal);
+		Assert.Contains("response.status === 502", html, StringComparison.Ordinal);
+		Assert.Contains("仍在排队（202）", html, StringComparison.Ordinal);
+		Assert.Contains("任务失败（502）", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/jobs/${encodeURIComponent(jobId)}`)", html, StringComparison.Ordinal);
+		Assert.Contains("轮询超时", html, StringComparison.Ordinal);
+	}
+
 	/// <summary>Walks up from the test run directory until the repo root is found.</summary>
 	private static string FindRepoFile(string relativePath)
 	{
