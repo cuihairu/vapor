@@ -460,7 +460,7 @@ public sealed class FileCredentialStoreTests : IDisposable
 			l => l.Log(
 				Microsoft.Extensions.Logging.LogLevel.Warning,
 				It.IsAny<Microsoft.Extensions.Logging.EventId>(),
-				It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Failed to restrict permissions", StringComparison.Ordinal)),
+				It.Is<It.IsAnyType>((v, _) => v!.ToString()!.Contains("Failed to restrict permissions", StringComparison.Ordinal)),
 				It.IsAny<Exception?>(),
 				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
 			Times.Once);
@@ -487,7 +487,7 @@ public sealed class FileCredentialStoreTests : IDisposable
 			l => l.Log(
 				Microsoft.Extensions.Logging.LogLevel.Warning,
 				It.IsAny<Microsoft.Extensions.Logging.EventId>(),
-				It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("Failed to check permissions", StringComparison.Ordinal)),
+				It.Is<It.IsAnyType>((v, _) => v!.ToString()!.Contains("Failed to check permissions", StringComparison.Ordinal)),
 				It.IsAny<Exception?>(),
 				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
 			Times.Once);

@@ -1100,7 +1100,7 @@ public class SessionManagerTests : IDisposable
 			l => l.Log(
 				LogLevel.Error,
 				It.IsAny<EventId>(),
-				It.Is<It.IsAnyType>((v, t) => v.ToString()!.Contains("token refresh loop")),
+				It.Is<It.IsAnyType>((v, t) => v!.ToString()!.Contains("token refresh loop")),
 				It.IsAny<Exception>(),
 				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
 			Times.AtLeastOnce);
