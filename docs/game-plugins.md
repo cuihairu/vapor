@@ -65,14 +65,21 @@ The honest per-game plugin surface is therefore three shapes:
 | CS:GO / CS2 | `vapor.caseopening` | ✅ shipped (dry-run) | Valve's published odds, simulation only; real backend is a stated non-goal |
 | CS:GO / CS2 | drop/playtime farming | ✅ via generic catalog | `play_games`/`idle`/`boost`; no plugin needed |
 | CS:GO / CS2 | inventory/trade/market tooling | ✅ via generic catalog | inventory, duplicates, trade offers, §39 storage collect, market actions |
-| CS:GO / CS2 | item schema / drop telemetry (read-only, `IEconItems_730`) | ❌ not implemented | plausible future candidate; read-only only |
-| Dota 2 | dedicated plugin | ❌ not implemented | card farming and playtime already work through the generic catalog; the missing piece would be read-only match/econ analytics (`IDOTA2Match_570` / `IEconDOTA2_570`) |
-| TF2 | dedicated plugin | ❌ not implemented | same shape: read-only schema/inventory analytics candidate (`IEconItems_440`) |
+| CS:GO / CS2 | item schema digest (read-only, `IEconItems_730`) | ✅ shipped via `vapor.game-data` | `econ_item_schema` appid 730 — compact digest only; full schema stays at the Web API |
+| Dota 2 | read-only match/econ analytics (`IDOTA2Match_570` / `IEconDOTA2_570`) | ✅ shipped via `vapor.game-data` | `dota2_match_history` / `dota2_heroes` / `dota2_game_items`; card farming and playtime already work through the generic catalog |
+| TF2 | read-only schema digest (`IEconItems_440`) | ✅ shipped via `vapor.game-data` | same `econ_item_schema` action, appid 440 |
 | any title | market watch / price alerts | ✅ `vapor.market-watch` | economy-wide, not title-specific |
+
+The one plugin that shipped all three read-only candidates is
+[`vapor.game-data`](plugins.md#game-data-plugin-vaporgame-data): actions
+only, key-authed GETs against `api.steampowered.com`, agent-side key
+handling, and compact digests instead of raw payloads. Remaining per-title
+candidates (if any ever appear) would follow the same shape.
 
 ## What a future per-game plugin looks like
 
-The mechanism side is ready — nothing needs to change to add one:
+The mechanism side is ready — nothing needs to change to add one, and
+`vapor.game-data` is now the second worked example beside `vapor.caseopening`:
 
 - Package as a normal plugin ([Quick start](plugins.md#quick-start)); declare
   `trust: official` and honest `permissions`; official-trust plugins must pin

@@ -1,6 +1,6 @@
 # Actions catalog
 
-Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **50 shipped actions** — 34 Steam-domain actions, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring and 3 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
+Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **55 shipped actions** — 34 Steam-domain actions, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 4 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
@@ -384,11 +384,33 @@ Output: `watches[]` `{ app_id, kind, threshold_percent, cc, currency, baseline, 
 Returns the current metrics snapshot so the control plane can pull monitoring data through normal task execution (the plugin also serves it on its own HTTP endpoint). No payload fields.
 Output: `format` (`"prometheus"`), `metrics` (Prometheus exposition text), `summary` (JSON summary string).
 
+## Game Data plugin (`vapor.game-data`, `src/Vapor.Plugins.GameData/GameDataPlugin.cs`)
+
+Four read-only actions over the official Steam Web API (`api.steampowered.com`, key-authed GETs). The API key lives **agent-side** in the plugin configuration (`webapi.key`) or the `VAPOR_GAME_DATA_WEBAPI_KEY` environment variable — the control plane never sees it — and a missing key fails every action with explicit guidance instead of faking data. Every action catches transport (`HttpRequestException`) and parse (`JsonException`) failures into failed results with the operation name. Projections are compact digests, not raw payloads. Per-title plugin boundaries: [game-plugins.md](game-plugins.md).
+
+### `dota2_match_history` (login: no, timeout: 30s)
+Fetches public Dota 2 match history (`IDOTA2Match_570/GetMatchHistory/v1/`).
+Payload: `heroId` number optional; `gameMode` number optional; `matchesRequested` number optional (clamped to 1..100). Unparsable values are ignored rather than rejected.
+Output: `status` (Web API result status, 0 when absent), `matchCount`, `totalResults`, `matches[]` `{ matchId, matchSeqNum, startTime, lobbyType, gameMode }` — `matchId`/`matchSeqNum` are int64 (real match ids exceed int32).
+
+### `dota2_heroes` (login: no, timeout: 30s)
+Fetches the Dota 2 hero catalog (`IEconDOTA2_570/GetHeroes/v1/`). No payload fields.
+Output: `status`, `count`, `items[]` `{ id, name, localizedName, legs }`.
+
+### `dota2_game_items` (login: no, timeout: 30s)
+Fetches the Dota 2 item catalog (`IEconDOTA2_570/GetGameItems/v1/`). No payload fields.
+Output: `status`, `count`, `items[]` `{ id, name, localizedName, cost }`.
+
+### `econ_item_schema` (login: no, timeout: 60s)
+Fetches a TF2/CS2 item-schema digest (`IEconItems_{appid}/GetSchema/v1/`).
+Payload: `appid` number **required** — only `440` (TF2) and `730` (CS2) are accepted; anything else fails with the whitelist spelled out.
+Output: `status`, `count` (schema items), `items[]` `{ defIndex, name }`, `appId`. The full schema is megabytes and stays at the Web API — only the digest is returned.
+
 ---
 
 # Agent host actions (`Vapor.Agent` assembly, `src/Vapor.Agent/HostActions/`)
 
-All three require the job target to be exactly `"agent:{agentId}"` (see `HostTaskTarget`); they run host-scoped — no bot session — and ride the regular task pipeline (retries/audit/jobs panel apply). `pluginId` spellings: both `pluginId` and `plugin_id` are accepted (alias lookup).
+All four require the job target to be exactly `"agent:{agentId}"` (see `HostTaskTarget`); they run host-scoped — no bot session — and ride the regular task pipeline (retries/audit/jobs panel apply). `pluginId` spellings: both `pluginId` and `plugin_id` are accepted (alias lookup).
 
 ### `plugin_install` (login: no, timeout: 300s)
 Installs a plugin package (zip) by URL with a **mandatory SHA-256 checksum**, validates it against the manifest and hot-loads it.
@@ -420,5 +442,6 @@ Note: this action is host-scoped (`agent:{id}` target) but keyed by account — 
 | Mobile Authenticator plugin (`vapor.mobile-authenticator`) | 9 |
 | Market Watch plugin (`vapor.market-watch`) | 3 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |
+| Game Data plugin (`vapor.game-data`) | 4 |
 | Agent host (`Vapor.Agent/HostActions/`) | 4 |
-| **Total** | **51** |
+| **Total** | **55** |

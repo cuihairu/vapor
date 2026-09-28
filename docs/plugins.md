@@ -4,7 +4,7 @@ Vapor's agent ships with a full plugin system: isolated loading, SemVer-gated AP
 compatibility, a trust/permission model and a small, explicit API surface. This guide
 walks through building, declaring, configuring and debugging a plugin.
 
-Everything described here is exercised by four official plugins and the test suites —
+Everything described here is exercised by five official plugins and the test suites —
 `Vapor.Plugins.TestPlugin` (infrastructure tests), `Vapor.Plugins.MarketWatch` (the
 richest example), and the load/unload tests in `Vapor.Plugins.Core.Tests`.
 
@@ -330,6 +330,7 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Monitoring | `vapor.monitoring` | Actions + web routes; self-hosted Prometheus endpoint, background metrics pump |
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
 | Case Opening | `vapor.caseopening` | Actions + web routes + configuration + result recording/archive; the dry-run CS:GO case simulator (see its section above) |
+| Game Data | `vapor.game-data` | Actions only; read-only Steam Web API digests (Dota 2 matches/heroes/items, TF2/CS2 schema) with agent-side key handling (see its section below) |
 
 Per-title plugin coverage — what exists for CS:GO/CS2, Dota 2 and TF2, what is
 deliberately a non-goal, and what a future per-game plugin looks like — is
@@ -547,3 +548,43 @@ Stated plainly, so nobody has to guess:
   ([apiterms](https://steamcommunity.com/dev/apiterms)) additionally restrict
   Steam data to personal, non-commercial use; the plugin's output (simulated
   results) involves no Steam data at all.
+
+## Game data plugin (`vapor.game-data`)
+
+The third game plugin (and fifth official one) closes the read-only analytics
+candidates from [Valve game plugins](game-plugins.md): public Dota 2 data and
+the TF2/CS2 item schemas, straight from the official Steam Web API.
+
+### What it is
+
+Four **read-only actions** — every call is a key-authed GET against
+`api.steampowered.com`, projected to a compact digest (never the raw
+megabyte-scale payload):
+
+| Action | Web API call | Returns |
+|--------|--------------|---------|
+| `dota2_match_history` | `IDOTA2Match_570/GetMatchHistory/v1/` | status, counts, compact match list (int64 ids — real match ids exceed int32) |
+| `dota2_heroes` | `IEconDOTA2_570/GetHeroes/v1/` | status, count, id/name/localizedName/legs |
+| `dota2_game_items` | `IEconDOTA2_570/GetGameItems/v1/` | status, count, id/name/localizedName/cost |
+| `econ_item_schema` | `IEconItems_{440,730}/GetSchema/v1/` | status, count, defIndex/name digest, appId |
+
+### Key handling (agent-side, lazy)
+
+The Web API key lives in the plugin configuration (`webapi.key`) or the
+`VAPOR_GAME_DATA_WEBAPI_KEY` environment variable — both read by the **agent**
+at plugin initialization. It never reaches the control plane, the job
+pipeline, or any audit record. With no key configured the plugin still loads
+and registers its actions; calling any of them fails with explicit guidance
+(`webapi.key` / env var names) instead of faking data — the same
+honest-degradation rule as Case Opening's backend seam.
+
+### Boundaries
+
+- **No write path**: no trade offers, no market calls, no inventory mutation,
+  no game-client automation — real matches, trading and battle-pass progress
+  stay out (SSA §4.C, see [game-plugins.md](game-plugins.md)).
+- **`econ_item_schema` whitelists appids** 440 (TF2) and 730 (CS2); anything
+  else fails with the whitelist spelled out rather than probing Valve's API.
+- Web API availability and coverage are Valve's to change; HTTP and parse
+  failures become failed action results with the operation name, never thrown
+  into the job pipeline.
