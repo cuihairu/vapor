@@ -327,7 +327,7 @@ tests/
 
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
-| ProtocolModelsRoundTripTests | 17 | 核心协议模型逐字段往返(JobSchedule 含策略/Job 含 schedule 与 nextRun/JobTask payload+output/CreateJobRequest/AccountSpec 含 desired state 与 farm 排除 apps/TradePolicy 白名单与 disabled 显式序列化/AccountConfig 密码格式/GlobalConfig/SessionEvent/AuthChallengeEvent 不带 code;camelCase 命名抽查) |
+| ProtocolModelsRoundTripTests | 20 | 核心协议模型逐字段往返(JobSchedule 含策略/Job 含 schedule 与 nextRun/JobTask payload+output/CreateJobRequest/AccountSpec 含 desired state 与 farm 排除 apps/TradePolicy 白名单与 disabled 显式序列化/AccountConfig 密码格式/GlobalConfig/SessionEvent/AuthChallengeEvent 不带 code;camelCase 命名抽查) |
 | ProtocolRecordsEdgeTests | 15 | wire record 边界(ActionParamSchema/ActionDescriptor 默认与全填充/PluginEvent 带/不带 payload/TaskResult/TaskHeartbeat/TaskCancel 带/不带 reason/JobWithTasks/ErrorResponse camelCase 往返/Event/AgentHello capabilities+meta/WSMessage 全帧变体与最小帧可选成员省略/CreateJobResponse) |
 | JsonDefaultsContractTests | 7 | 共享序列化契约钉死(camelCase 属性名/枚举 camelCase 字符串/null 属性省略/非 null 默认值保留/camelCase JSON 反序列化/枚举字符串大小写不敏感/往返恒等) |
 | ProtocolJsonRoundTripPropertyTests | 4 | FsCheck property:任意字段值序列化→反序列化精确恢复 record(心跳/取消/错误/握手模型;object? payload 字典模型刻意排除——STJ 读回 JsonElement 是已知接受的损失,非本门追踪的回归;任意 long 折入 DateTimeOffset 可表示域 year 1..9999 再取任意偏移) |
