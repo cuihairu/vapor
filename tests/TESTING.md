@@ -53,6 +53,8 @@ tests/
 > for f in $(find tests -name count.trx); do echo "== $f"; grep -o '<UnitTestResult [^>]*?testName="[^"]*"' "$f" | sed 's/.*testName="//;s/(.*//' | awk -F. '{print $(NF-1)}' | sort | uniq -c | sort -rn; done
 > ```
 
+> 收尾核查(2026-09-28,轮三十六 P-c 合入 7370121 之后):全量 12 测试项目串行复跑全绿(3333 通过/0 失败,逐项目计数与上表一致),覆盖率双口径 100% 无回归(18002/18002 行 + 6893/6893 分支,13 程序集全满),`dotnet format --verify-no-changes` 通过;本轮零产品代码改动,仅本条补记。
+
 ## 覆盖率收集清单(机械校验:`scripts/verify-coverage-inventory.py`)
 
 > 分母完整性三向校验(2026-09-25 维护轮十九固化):①sln 可收集项目(排除 `*.Tests` 后缀)⇄ 下方收集程序集清单;②src/tools 全部 `[ExcludeFromCodeCoverage]` 注解点 ⇄ 下方排除登记表;③`--reports` 指向覆盖率报告目录时,报告实际收集的程序集 ⇄ 收集程序集清单。任一双向差额即红——新程序集漏收、或悄悄新增排除未在册,覆盖率数字再漂亮也是假象(轮十七鉴权盲区的分母版)。程序集名 = 项目名(全部 csproj 未自定义 AssemblyName,脚本有断言)。
