@@ -20,6 +20,8 @@ internal static class AccountTaskRunner
 	internal const string ConfirmTradeOfferAction = "confirm_trade_offer";
 	internal const string ConfirmAllConfirmationsAction = "confirm_all_confirmations";
 	internal const string LootInventoryAction = "loot_inventory";
+	internal const string SetProxyAction = "set_proxy";
+	internal const string CheckProxyAction = "check_proxy";
 	internal const string AddLicenseAction = "add_license";
 	internal const string GetInventoryAction = "get_inventory";
 	internal const string FindDuplicatesAction = "find_duplicates";
@@ -184,23 +186,50 @@ internal static class AccountTaskRunner
 	/// Status <see cref="JobTaskStatus.Queued"/> on the result means "still pending
 	/// when the window closed".
 	/// </summary>
-	public static async Task<TaskRunResult> DispatchAsync(
+	public static Task<TaskRunResult> DispatchAsync(
 		IJobStore store,
 		string action,
 		string accountName,
 		IReadOnlyDictionary<string, object?> payload,
 		CancellationToken cancellationToken)
 	{
+		return DispatchCoreAsync(store, action, [accountName], payload, cancellationToken);
+	}
+
+	/// <summary>
+	/// Dispatches a host-scoped action to one specific agent ("agent:{id}"
+	/// target, the convention HostActionExecutor enforces agent-side) with the
+	/// same bounded wait as the account path. Used for agent-local mutations
+	/// keyed by an account — the per-account proxy assignment persists in the
+	/// pinned agent's credential store, so it must run on exactly that machine.
+	/// </summary>
+	public static Task<TaskRunResult> DispatchHostActionAsync(
+		IJobStore store,
+		string action,
+		string agentId,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
+		return DispatchCoreAsync(store, action, [HostTaskTarget.For(agentId)], payload, cancellationToken);
+	}
+
+	private static async Task<TaskRunResult> DispatchCoreAsync(
+		IJobStore store,
+		string action,
+		string[] targets,
+		IReadOnlyDictionary<string, object?> payload,
+		CancellationToken cancellationToken)
+	{
 		var created = await store.CreateJob(new CreateJobRequest(
 			action,
 			Region: null,
-			Targets: [accountName],
+			Targets: targets,
 			Payload: payload,
 			Meta: new Dictionary<string, string> { ["origin"] = "accounts-api" }
 		), cancellationToken).ConfigureAwait(false);
 
 		string jobId = created.Job.Id;
-		string taskId = created.Tasks.Single(t => t.Target == accountName).Id;
+		string taskId = created.Tasks.Single(t => t.Target == targets[0]).Id;
 
 		DateTimeOffset deadline = DateTimeOffset.UtcNow + WaitWindow;
 		while (DateTimeOffset.UtcNow < deadline)

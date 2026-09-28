@@ -967,6 +967,18 @@
                         </div>
                         <div class="field-grid">
                             <div class="field">
+                                <label for="editProxy">出口代理（http/https/socks5，凭据可内嵌）</label>
+                                <input id="editProxy" type="text" placeholder="socks5://user:pass@host:1080">
+                            </div>
+                            <div class="field">
+                                <label>&nbsp;</label>
+                                <button class="btn btn-secondary" id="applyProxyButton">应用代理（独立审计动作）</button>
+                            </div>
+                        </div>
+                        <div class="helper" id="editProxyStatus"></div>
+                        <div class="helper">代理按账号固定在 Agent 凭据库中（控制面不存储凭据，故不回显）。固定后尽量少改动——频繁切换出口 IP 易触发 Steam 风控。留空并点「应用代理」会清除代理改为直连。</div>
+                        <div class="field-grid">
+                            <div class="field">
                                 <label><input id="editEnabled" type="checkbox"> 启用账户</label>
                             </div>
                             <div class="field">
@@ -977,7 +989,7 @@
                             <button class="btn btn-primary" id="saveAccountButton">保存变更</button>
                             <button class="btn btn-secondary" id="cancelEditButton">取消编辑</button>
                         </div>
-                        <div class="helper">保存走 PUT 全量语义：所有字段按表单当前值提交。市场挂单开关是灰区操作门控，开启后市场类操作才会被服务端接受。</div>
+                        <div class="helper">保存走 PUT 全量语义：所有字段按表单当前值提交。市场挂单开关是灰区操作门控，开启后市场类操作才会被服务端接受。代理变更是独立于保存的审计动作，点「应用代理」立即下发。</div>
                     </div>
 
                     <div class="row-head" style="margin-top: 16px;">
@@ -1504,6 +1516,7 @@
             document.getElementById("refreshChallengesButton").addEventListener("click", () => refreshAuthChallenges());
             document.getElementById("refreshAccountsButton").addEventListener("click", () => refreshAccounts());
             document.getElementById("saveAccountButton").addEventListener("click", () => saveAccountEdits());
+            document.getElementById("applyProxyButton").addEventListener("click", () => applyProxyAssignment());
             document.getElementById("cancelEditButton").addEventListener("click", () => closeAccountEditor());
             document.getElementById("loadAchievementsButton").addEventListener("click", () => loadAchievements());
             document.getElementById("selectAllAchievementsButton").addEventListener("click", () => toggleAllAchievements());
@@ -2280,6 +2293,9 @@
             document.getElementById("editNote").value = account.note || "";
             document.getElementById("editEnabled").checked = Boolean(account.enabled);
             document.getElementById("editMarketListings").checked = Boolean(account.marketListingsEnabled);
+            // 凭据不进控制面：代理从不回显，编辑器每次打开都从空输入开始。
+            document.getElementById("editProxy").value = "";
+            document.getElementById("editProxyStatus").textContent = "";
 
             const editor = document.getElementById("accountEditor");
             editor.hidden = false;
@@ -2557,6 +2573,53 @@
                 await refreshAccounts();
             } catch (error) {
                 alert(`保存账户失败: ${error.message}`);
+            }
+        }
+
+        async function applyProxyAssignment() {
+            const accountName = state.editingAccountName;
+            if (!accountName) {
+                return;
+            }
+
+            const proxy = document.getElementById("editProxy").value.trim();
+            const status = document.getElementById("editProxyStatus");
+            if (!proxy && !window.confirm(`输入为空：将清除 ${accountName} 的代理（改为直连）。确定继续？`)) {
+                return;
+            }
+
+            status.textContent = "正在下发代理变更（set_proxy + 连通性验证）...";
+            try {
+                const response = await apiFetch(`/v1/accounts/${encodeURIComponent(accountName)}/proxy`, {
+                    method: "POST",
+                    body: JSON.stringify({ proxy })
+                });
+                if (!response || !response.result) {
+                    // 202：任务仍在排队，set_proxy 还未落定。
+                    status.textContent = `代理变更仍在排队（任务 ${response?.job_id ?? "?"}），稍后在任务面板查看`;
+                    addEvent("task", `账户 ${accountName} 代理变更排队中`);
+                    return;
+                }
+
+                const result = response.result;
+                const verification = response.verification || {};
+                const parts = [`代理已${result.cleared ? "清除（直连）" : "下发"}`];
+                parts.push(result.sessionRestarted ? "会话已通过新出口重建" : "会话将在下次登录生效");
+                if (verification.status === "finished") {
+                    const output = verification.output || {};
+                    parts.push(`验证：出口 IP ${output.exitIp ?? "未知"}，Steam ${output.steamReachable ? "可达" : "不可达"}`);
+                    if (output.proxy) {
+                        parts.push(`当前代理 ${output.proxy}`);
+                    }
+                } else if (verification.status === "pending") {
+                    parts.push("连通性验证仍在排队，稍后在任务面板查看");
+                } else if (verification.error) {
+                    parts.push(`验证失败：${verification.error}`);
+                }
+                status.textContent = parts.join("；");
+                addEvent("task", `账户 ${accountName} 代理变更完成`);
+            } catch (error) {
+                status.textContent = `代理变更失败: ${error.message}`;
             }
         }
 
