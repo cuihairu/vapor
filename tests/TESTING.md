@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1508 tests)
+├── Vapor.Steam.Core.Tests/               (1527 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -31,7 +31,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1508 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检含活探测 fake transport 全链路)、异常账号体检(standing 客户端 + check_account_standing action)、脱敏/日志消毒纯函数 property 扩面(控制字符三律/proxy URI 凭据/JSON 键敏感) |
+| Vapor.Steam.Core.Tests | 1527 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检含活探测 fake transport 全链路)、异常账号体检(standing 客户端 + check_account_standing action)、脱敏/日志消毒纯函数 property 扩面(控制字符三律/proxy URI 凭据/JSON 键敏感)、成就写入共享载荷解析与输出格式化 19 例 |
 | Vapor.ControlPlane.Tests | 982 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)、API 边缘中间件(RED 指标聚合/排序/不变 culture 渲染 + trace exemplar 双臂(有 Activity 渲染 32hex 链接/无 Activity 裸样本) + 按键滑动窗限流假钟全臂/TestServer 429/Retry-After/非 /v1 不限流/路由模式标签)、API 密钥过期(@ISO-8601 后缀解析全臂/env 建图/注入钟到期边界强制)、故障注入 API(FaultInjector 单元全臂 + /v1/faults 四端点 e2e:验证/默认值/预算自愈/TTL/豁免面/跨面选择器 400/审计/指标族 + 派发面注入走真实 requeue 机器 + 组装根装配)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域、FarmPolicy 规范化幂等/接受域/保序)、声明态持久化(SqliteConfigStore 单元全臂 + AccountStore/ConfigStore 重启回灌与写穿失败原子性 + 组装根双生命周期重启演练) |
 | Vapor.Plugins.Core.Tests | 152 | 插件发现/清单/SemVer 兼容/加载(含 official 插件 API 精确版本锁定 MatchesExactly)/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 137 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
@@ -42,7 +42,7 @@ tests/
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **3208** | (2026-09-28 实测(覆盖率轮实测:Steam.Core 1504→1508;此前 2026-09-27 插件轮实测:CaseOpening 107 新增、Core 147→152;ControlPlane 982 为声明态持久化轮实测;Agent 136 为 2026-09-25 watchdog 轮实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **3227** | (2026-09-28 实测(覆盖率轮实测:Steam.Core 1504→1527;此前 2026-09-27 插件轮实测:CaseOpening 107 新增、Core 147→152;ControlPlane 982 为声明态持久化轮实测;Agent 136 为 2026-09-25 watchdog 轮实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -128,6 +128,7 @@ tests/
 | ClaimPointsShopItemsActionTests | 15 | 兑换积分奖励(metadata 契约/force 语义/lookup 失败前置短路) |
 | GetAchievementsActionTests | 10 | 成就列表读取(社区页解析/steam_id 缺省 cookie 反解/显式传参与 cookie 缺失/失败语义/internal 工厂元数据/无 webHandler/非数字 steam_id) |
 | UnlockAchievementsActionTests / ResetAchievementsActionTests | 19 | 成就解锁/重置(位图载荷门控/显式 names 双格式与不可用形状/reset 双 confirm/transport 抛异常与无响应/无 client/逐条结果与 verified 透传) |
+| AchievementsWritePayloadTests | 19 | 成就写入共享载荷解析与输出格式化(解析 app_id/names/confirm 多格式/校验非空与正数/输出 results 逐条 verified/succeeded/failed 聚合) |
 | GetPlaytimeActionTests | 15 | 游戏时长读取(games tab fixture 驱动真实 client/小时降序+零小时尾按 appid/games 过滤只回查询 appid/steam_id 缺省 cookie 反解/非数字 steam_id 拒绝/cache_ttl 正值覆盖窗口/force_refresh 绕过缓存/ttl=0 每次都拉/缓存 miss 落空表回退且零请求/元数据 RequiresLogin) |
 | CheckAccountStandingActionTests | 19 | 账号状态查询 action(FetchOverride seam/steam_id 覆盖会话身份/垃圾 SteamID 不解析为 0/clean-restricted-banned 分类矩阵/失败信息透传含 Web API key/无 web handler 短路/取消重抛 OCE/cookie 兜底自身 ID/工厂 seam 走真实 client happy path) |
 | CheckProxyActionTests | 15 | 代理探测 action(ProbeOverride seam/无代理短路 proxyEnabled=false/payload 代理覆盖配置代理/畸形代理抛解析错误/成功输出仅带遮掩端点/探测失败映射 success=false+error/无 error 回退通用文案/探测异常不外泄/取消重抛 OCE/活探测 fake transport 全链路:双端点成功含 URI 序/Steam 5xx 不可达保留出口 IP/Steam 异常保留出口 IP 与延迟/出口 IP 失败止步于单请求/活探测把取消折叠为失败结果) |
@@ -666,7 +667,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 
 > 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（2026-09-24 十项目 `--logger trx` 全量重跑——盘点轮先跑七项目,复测轮补 Protocol/E2E/KeyRotation 三项目;合计与统计表一致：2879）。再生成方式见脚本头注释。本表是逐类计数的权威源;明细区已于 2026-09-24 重构对齐（计数/类集合/说明）,若与本表冲突以本表为准。
 
-### Vapor.Steam.Core.Tests（1508 个测试）
+### Vapor.Steam.Core.Tests（1527 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
@@ -726,6 +727,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | GetInventoryActionBranchTests | 12 |
 | CardSwapMatcherTests | 12 |
 | UnlockAchievementsActionTests | 11 |
+| AchievementsWritePayloadTests | 19 |
 | RedisVaporCacheIntegrationTests | 11 |
 | RedisCacheEntryTests | 11 |
 | MarketFeeCalculatorTests | 11 |
