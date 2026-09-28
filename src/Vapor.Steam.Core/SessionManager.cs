@@ -32,7 +32,21 @@ public interface ISessionManager
 	/// Attempts to restore a session for the given account using stored credentials.
 	/// </summary>
 	Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Assigns (or clears) the account's egress proxy: persists it in the
+	/// credential store and, when a live session exists, rebuilds that session
+	/// through the new exit so the change takes effect immediately.
+	/// </summary>
+	Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Outcome of a proxy assignment: what is now configured and whether a live
+/// session already moved over. Proxy carries the masked display form only —
+/// raw credentials never leave the assignment path.
+/// </summary>
+public sealed record ProxyAssignmentResult(string? Proxy, bool Cleared, bool SessionRestarted);
 
 public sealed class SessionManager : ISessionManager, IDisposable
 {
@@ -162,6 +176,55 @@ public sealed class SessionManager : ISessionManager, IDisposable
 			session.Dispose();
 			_logger.LogInformation("Session removed for {AccountName}", accountName);
 		}
+	}
+
+	/// <inheritdoc cref="ISessionManager.SetProxyAsync" />
+	public async Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(accountName);
+
+		string? normalized = string.IsNullOrWhiteSpace(proxy) ? null : proxy.Trim();
+		ProxyOptions? parsed = null;
+		if (normalized is not null)
+		{
+			try
+			{
+				parsed = ProxyOptions.Parse(normalized, nameof(proxy));
+			}
+			catch (ArgumentException ex)
+			{
+				// ProxyOptions.Parse echoes the raw endpoint (credentials included);
+				// error text surfaced to tasks and audits must never carry them.
+				throw new ArgumentException(
+					"invalid proxy endpoint: expected scheme://host:port (http, https or socks5)",
+					nameof(proxy), ex);
+			}
+		}
+
+		if (_credentialStore is null)
+		{
+			throw new InvalidOperationException("no credential store is configured on this agent; cannot persist a proxy");
+		}
+
+		await _credentialStore.SaveProxyAsync(accountName, normalized, cancellationToken).ConfigureAwait(false);
+
+		BotSession? existing = await GetSessionAsync(accountName, cancellationToken).ConfigureAwait(false);
+		if (existing is null)
+		{
+			_logger.LogInformation("Proxy for {AccountName} {State} ({Proxy}); applies at next login",
+				accountName, normalized is null ? "cleared" : "assigned", parsed?.ToString() ?? "(direct)");
+			return new ProxyAssignmentResult(parsed?.ToString(), Cleared: normalized is null, SessionRestarted: false);
+		}
+
+		// Live session: remove first so the rebuild reads the freshly persisted
+		// proxy from the store, then restore — the rebuild re-stages the CM
+		// socket and the web handler through the new exit and re-logs-in.
+		await RemoveSessionAsync(accountName, cancellationToken).ConfigureAwait(false);
+		BotSession? rebuilt = await TryRestoreSessionAsync(accountName, cancellationToken).ConfigureAwait(false);
+		_logger.LogInformation("Proxy for {AccountName} assigned through {Proxy}; session restart {Outcome}",
+			accountName, parsed?.ToString() ?? "(direct)",
+			rebuilt is null ? "deferred (restore failed; applies at next login)" : "completed");
+		return new ProxyAssignmentResult(parsed?.ToString(), Cleared: normalized is null, SessionRestarted: rebuilt is not null);
 	}
 
 	public async Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default)
