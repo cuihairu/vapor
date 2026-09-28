@@ -242,7 +242,8 @@ IReadOnlyDictionary<string, IHostAction> hostActions = new Dictionary<string, IH
 {
 	["plugin_install"] = new PluginInstallAction(installer, pluginManager, hostLoggerFactory.CreateLogger<PluginInstallAction>()),
 	["plugin_uninstall"] = new PluginUninstallAction(pluginsDirectory, pluginManager, hostLoggerFactory.CreateLogger<PluginUninstallAction>()),
-	["plugin_list"] = new PluginListAction(pluginsDirectory, pluginManager)
+	["plugin_list"] = new PluginListAction(pluginsDirectory, pluginManager),
+	["set_proxy"] = new SetProxyAction(sessionManager, hostLoggerFactory.CreateLogger<SetProxyAction>())
 };
 
 using CancellationTokenSource cts = new();
