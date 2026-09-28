@@ -404,6 +404,12 @@ Output: `pluginId`, `removed`, `plugins` (remaining list).
 Reports the currently loaded plugins and the plugins root. No payload fields.
 Output: `directory` (plugins root path), `count`, `plugins` (loaded-plugin list).
 
+### `set_proxy` (login: no, timeout: 120s)
+Assigns (or clears) an account's egress proxy: validates the endpoint, persists it in **this agent's** credential store and, when a live session exists, rebuilds that session through the new exit (remove → restore → token re-login). A failed rebuild is not an error: the assignment persists and the next login picks it up (`sessionRestarted=false`).
+Payload: `account` string **required**; `proxy` string optional — the endpoint (`http|https|socks5://[user:pass@]host:port`); **omitted/empty means clear** (the REST layer enforces explicitness so an accidental empty call cannot strip a pinned exit).
+Output: `account`, `proxy` (**masked form only** — `socks5://user:<redacted>@host:port`; credentials never leave the agent), `cleared` (bool), `sessionRestarted` (bool).
+Note: this action is host-scoped (`agent:{id}` target) but keyed by account — the ControlPlane refuses assignment for accounts without a pinned agent, because the endpoint would otherwise persist into whichever agent claims the task. Pair with `check_proxy` to verify the live exit. Rationale: Steam correlates logins by IP; an account's exit is pinned once and changed rarely (see `todo.md` §39).
+
 ---
 
 ## Action count summary
@@ -414,5 +420,5 @@ Output: `directory` (plugins root path), `count`, `plugins` (loaded-plugin list)
 | Mobile Authenticator plugin (`vapor.mobile-authenticator`) | 9 |
 | Market Watch plugin (`vapor.market-watch`) | 3 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |
-| Agent host (`Vapor.Agent/HostActions/`) | 3 |
-| **Total** | **50** |
+| Agent host (`Vapor.Agent/HostActions/`) | 4 |
+| **Total** | **51** |

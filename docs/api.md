@@ -318,6 +318,16 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
   - `force` — bool, optional, default `false` (`true` redeems paid definitions, spending points; only forwarded when true).
 - 200: `{ "job_id", "account", "result" }`. 202 / 502 pattern. Errors: 400, 404, 401. Audit: `points_shop.claim`.
 
+#### `POST /v1/accounts/{name}/proxy`
+- Purpose: pin (or clear) the account's egress proxy via the pinned agent's `set_proxy` host action, then verify the live exit with a chained `check_proxy`. The endpoint persists **agent-side only** (the ControlPlane stores no credentials), so it requires the account to pin its agent first.
+- Auth: admin.
+- Errors (pre-dispatch): 400 `proxy is required (an explicit empty string clears the account's pinned exit)`; 400 `account has no pinned agent (agentId); a proxy persists agent-side and requires one`; 404 `pinned agent '{id}' is not connected; connect it and retry`; 404 unknown account; 401.
+- Body (`SetProxyRequest`):
+  - `proxy` — string, **required field** (sending `null`/absent is rejected so a body-less POST can never strip a pinned exit); an explicit **empty string clears** the proxy (direct connection); otherwise `http|https|socks5://[user:pass@]host:port`. Endpoint validation happens agent-side; invalid endpoints fail the task with a static (credential-free) message.
+- Dispatch: host-targeted task `set_proxy` on `agent:{agentId}` (region pick would be wrong — the secret must land in the pinned agent's store), followed on success by an account-targeted `check_proxy` verification task (payload-free; the agent probes whatever the account now has configured). A failed verification is **reported, not rolled back** — the assignment stands and the operator decides.
+- 200: `{ "job_id", "account", "result", "verification" }` where `result` is the `set_proxy` output (`{ account, proxy (masked), cleared, sessionRestarted }`) and `verification` is `{ job_id, status, output? | error? }` (`status`: `finished` with the probe output — exit IP, Steam reachability, latency — or `pending` / `failed`).
+- 202 / 502 pattern (502 when the `set_proxy` task itself fails; no verification runs in that case). Audit: `account.proxy_set` (endpoint recorded in masked form, or `(cleared)`) + `account.proxy_check`.
+
 #### `POST /v1/accounts/{name}/loot`
 - Purpose: send all of the account's tradable items to a partner (dispatches `loot_inventory`); auto-confirms the mobile step when Steam requires it.
 - Auth: admin.
@@ -734,6 +744,6 @@ Plane-mismatched selectors are rejected (400): `route`/`method` with `task-dispa
 
 ## 5. Audit actions reference (written by these endpoints)
 
-`account.spec.updated`, `account.spec.removed`, `account.enabled`, `account.disabled`, `account.loot`, `account.add_license`, `standing_check_requested`, `trade_offers.read`, `trade_offer.accept`, `trade_offer.decline`, `trade_offer.confirm`, `trade.swap_offer`, `trade_confirmations.accept_all`, `inventory.read`, `inventory.duplicates`, `achievement.read`, `achievement.unlock`, `achievement.reset`, `market_listings.read`, `market_listings.create`, `market_listings.cancel`, `points_shop.summary`, `points_shop.claim`, `job.created`, `job.canceled`, `session.event.received`, `session.login`, `auth.code.submitted`, `config.global.updated`, `config.account.updated`, `plugin_install_dispatched`, `plugin_uninstall_dispatched`, `crawl.plan.created`, `crawl.plan.updated`, `crawl.plan.deleted`, `crawl.plan.triggered`, plus task-result audits (`task.result.reported` for sensitive actions: `SendTradeOffer*`, `AcceptTradeOffer*`, `DeclineTradeOffer*`, `CancelTradeOffer*`, `GetInventory*`, `RedeemKey*`) and crawl-run audits from the worker.
+`account.spec.updated`, `account.spec.removed`, `account.enabled`, `account.disabled`, `account.loot`, `account.proxy_set`, `account.proxy_check`, `account.add_license`, `standing_check_requested`, `trade_offers.read`, `trade_offer.accept`, `trade_offer.decline`, `trade_offer.confirm`, `trade.swap_offer`, `trade_confirmations.accept_all`, `inventory.read`, `inventory.duplicates`, `achievement.read`, `achievement.unlock`, `achievement.reset`, `market_listings.read`, `market_listings.create`, `market_listings.cancel`, `points_shop.summary`, `points_shop.claim`, `job.created`, `job.canceled`, `session.event.received`, `session.login`, `auth.code.submitted`, `config.global.updated`, `config.account.updated`, `plugin_install_dispatched`, `plugin_uninstall_dispatched`, `crawl.plan.created`, `crawl.plan.updated`, `crawl.plan.deleted`, `crawl.plan.triggered`, plus task-result audits (`task.result.reported` for sensitive actions: `SendTradeOffer*`, `AcceptTradeOffer*`, `DeclineTradeOffer*`, `CancelTradeOffer*`, `GetInventory*`, `RedeemKey*`) and crawl-run audits from the worker.
 
 Actor = `X-Forwarded-For` header when present, else the remote IP; details are redacted before persistence (`SensitiveDataRedactor`).
