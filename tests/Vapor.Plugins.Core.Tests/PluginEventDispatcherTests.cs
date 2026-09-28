@@ -353,6 +353,9 @@ public sealed class PluginEventDispatcherTests
 
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default)
 			=> throw new NotSupportedException();
+
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
+			=> throw new NotSupportedException();
 	}
 
 	/// <summary>Event source that yields one event and then completes on its own.</summary>
@@ -374,6 +377,9 @@ public sealed class PluginEventDispatcherTests
 		}
 
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default)
+			=> throw new NotSupportedException();
+
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
 			=> throw new NotSupportedException();
 
 		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
@@ -404,6 +410,9 @@ public sealed class PluginEventDispatcherTests
 		}
 
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default)
+			=> throw new NotSupportedException();
+
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default)
 			=> throw new NotSupportedException();
 
 		public IAsyncEnumerable<SessionEvent> SubscribeAllEvents(CancellationToken cancellationToken = default) =>

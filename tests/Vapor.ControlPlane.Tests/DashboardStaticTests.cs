@@ -176,6 +176,23 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_ProxyAssignment_IsSeparateAuditedActionWithClearGuard()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		// §39 P-a contract: proxy pinning lives in the account editor but rides
+		// its own audited action (POST /v1/accounts/{name}/proxy), never the PUT
+		// save. Clearing goes through the empty-input confirm naming the
+		// consequence, and the console never echoes a stored endpoint (the
+		// ControlPlane holds no credentials).
+		Assert.Contains("id=\"applyProxyButton\"", html, StringComparison.Ordinal);
+		Assert.Contains("applyProxyAssignment", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/accounts/${encodeURIComponent(accountName)}/proxy`", html, StringComparison.Ordinal);
+		Assert.Contains("method: \"POST\"", html, StringComparison.Ordinal);
+		Assert.Contains("将清除", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void AdminHtml_FarmPanel_ShowsProgressBadgeAndPolicyFields()
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));

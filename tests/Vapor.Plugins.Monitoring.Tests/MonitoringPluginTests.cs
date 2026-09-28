@@ -395,6 +395,9 @@ public class MonitoringPluginTests
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
 			Task.FromResult<BotSession?>(null);
 
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
 		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
 			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
 		{
@@ -433,6 +436,9 @@ public class MonitoringPluginTests
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
 			Task.FromResult<BotSession?>(null);
 
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
 		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
 			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
 		{
@@ -462,6 +468,9 @@ public class MonitoringPluginTests
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
 			Task.FromResult<BotSession?>(null);
 
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
+
 		public IAsyncEnumerable<SessionEvent> SubscribeAllEvents(CancellationToken cancellationToken = default) =>
 			throw new InvalidOperationException("session source exploded");
 	}
@@ -490,6 +499,9 @@ public class MonitoringPluginTests
 
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
 			Task.FromResult<BotSession?>(null);
+
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
 
 		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
 			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -545,6 +557,9 @@ public class MonitoringPluginTests
 
 		public Task<BotSession?> TryRestoreSessionAsync(string accountName, CancellationToken cancellationToken = default) =>
 			Task.FromResult<BotSession?>(null);
+
+		public Task<ProxyAssignmentResult> SetProxyAsync(string accountName, string? proxy, CancellationToken cancellationToken = default) =>
+			throw new NotSupportedException();
 
 		public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents(
 			[System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
