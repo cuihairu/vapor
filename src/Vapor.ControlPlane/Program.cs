@@ -528,7 +528,7 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 	AccountSpec spec;
 	try
 	{
-		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy, req.MarketListingsEnabled, req.BoostTargets, req.TradePolicy, req.FarmPolicy);
+		spec = accounts.Upsert(name, req.Enabled, req.DesiredState, req.IdleApps, req.Region, req.AgentId, req.Note, req.UpdatedBy, req.MarketListingsEnabled, req.BoostTargets, req.TradePolicy, req.FarmPolicy, req.Role, req.SteamId);
 	}
 	catch (ArgumentException ex)
 	{
@@ -566,6 +566,8 @@ app.MapPut("/v1/accounts/{name}", async Task<IResult> (
 					["priorityOrder"] = spec.FarmPolicy.PriorityOrder.ToString(),
 					["priorityApps"] = spec.FarmPolicy.PriorityApps
 				},
+			["role"] = spec.Role.ToString(),
+			["steamId"] = spec.SteamId,
 			["version"] = spec.Version?.Version
 		});
 	return Results.Ok(new { spec });
@@ -697,6 +699,114 @@ app.MapGet("/v1/orchestration/farm", (HttpContext ctx, Config cfg, DesiredStateR
 })
 	.WithTags("Accounts")
 	.WithSummary("Farm-loop snapshot for every account the orchestrator tracks (queue, progress, efficiency counters)")
+	.Produces(200)
+	.Produces(401);
+
+// §39 P-b storage-collect: fans one loot_inventory task per enabled farm
+// account into a single job (its SSE stream is the progress channel), waits
+// bounded, then chains sender-side mobile confirmations. The loot+partner
+// semantics are reused deliberately — no dedicated warehouse table, the jobs
+// are the record (the snapshot endpoint reads them back).
+app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, StorageCollectRequest? req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	// Normalize the body up front: an absent body is just a malformed request,
+	// and the storage guard below rejects it with the same 400 an empty field
+	// gets. Having done that, the rest of the handler can read the request
+	// directly instead of null-conditionally at every use.
+	StorageCollectRequest request = req ?? new StorageCollectRequest();
+	string? storageName = request.Storage?.Trim();
+	if (string.IsNullOrWhiteSpace(storageName))
+	{
+		return Results.BadRequest(new ErrorResponse("storage (target account name) is required"));
+	}
+
+	AccountSpec? storage = accounts.Get(storageName);
+	if (storage is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{storageName}' is not declared"));
+	}
+
+	if (storage.Role != AccountRole.Storage)
+	{
+		return Results.BadRequest(new ErrorResponse($"account '{storage.AccountName}' is not declared as a storage account (role=storage)"));
+	}
+
+	if (string.IsNullOrWhiteSpace(storage.SteamId))
+	{
+		return Results.BadRequest(new ErrorResponse($"storage account '{storage.AccountName}' has no steam_id declared; set steamId on the account before collecting"));
+	}
+
+	IReadOnlyList<AccountSpec> farms = StorageCollectRunner.SelectFarmSources(accounts.List());
+	if (farms.Count == 0)
+	{
+		return Results.BadRequest(new ErrorResponse("no enabled farm accounts to collect from (sources are enabled farm accounts not declared offline)"));
+	}
+
+	CollectRun run = await StorageCollectRunner.DispatchCollectAsync(store, storage, farms, request.Message, request.AppIds, ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"storage.collect",
+		accountName: storage.AccountName,
+		jobId: run.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["storage"] = storage.AccountName,
+			["steamId"] = storage.SteamId,
+			["farmCount"] = farms.Count,
+			["completed"] = run.Completed,
+			["succeeded"] = run.Tasks.Count(t => t.Status == JobTaskStatus.Finished),
+			["failed"] = run.Tasks.Count(t => t.Status != JobTaskStatus.Finished)
+		});
+
+	if (!run.Completed)
+	{
+		return Results.Accepted($"/v1/jobs/{run.JobId}", new
+		{
+			job_id = run.JobId,
+			storage = storage.AccountName,
+			storage_steam_id = storage.SteamId,
+			farm_accounts = farms.Select(f => f.AccountName),
+			status = "pending"
+		});
+	}
+
+	return Results.Ok(new
+	{
+		job_id = run.JobId,
+		storage = storage.AccountName,
+		storage_steam_id = storage.SteamId,
+		farm_accounts = farms.Select(f => f.AccountName),
+		results = run.Tasks
+	});
+})
+	.WithTags("Accounts")
+	.WithSummary("Collect farm accounts' tradable items into a storage account: one loot_inventory task per enabled farm source, chained mobile confirmations; 200 with per-account results, 202 while still in flight")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapGet("/v1/orchestration/storage/snapshot", async (HttpContext ctx, Config cfg, IJobStore store) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	IReadOnlyList<CollectSnapshotEntry> entries = await StorageCollectRunner.BuildSnapshotAsync(store, ctx.RequestAborted);
+	return Results.Ok(new { accounts = entries });
+})
+	.WithTags("Accounts")
+	.WithSummary("Per-account last storage-collect statistics, rebuilt from recent collect jobs (source account, storage, item count, offer and confirmation outcome)")
 	.Produces(200)
 	.Produces(401);
 
@@ -3909,7 +4019,9 @@ public sealed record PutAccountRequest(
 	bool? MarketListingsEnabled = null,
 	IReadOnlyList<BoostTarget>? BoostTargets = null,
 	TradePolicy? TradePolicy = null,
-	FarmPolicy? FarmPolicy = null
+	FarmPolicy? FarmPolicy = null,
+	AccountRole Role = AccountRole.Farm,
+	string? SteamId = null
 );
 
 // Request body for trade offer accept/decline endpoints
@@ -3958,6 +4070,15 @@ public sealed record PointsShopClaimRequest(
 public sealed record LootRequest(
 	string? PartnerSteamId = null,
 	string? TradeUrl = null,
+	string? Message = null,
+	int[]? AppIds = null
+);
+
+// Request body for the §39 P-b storage-collect orchestration: the storage
+// account is named explicitly (role=storage + its own SteamId64 declared on
+// the spec), the sources are derived from the declared fleet.
+public sealed record StorageCollectRequest(
+	string? Storage = null,
 	string? Message = null,
 	int[]? AppIds = null
 );

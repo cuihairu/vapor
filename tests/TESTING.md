@@ -12,7 +12,7 @@ tests/
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
-├── Vapor.ControlPlane.Tests/             (995 tests)
+├── Vapor.ControlPlane.Tests/             (1038 tests)
 │   └── Performance/                      队列吞吐/派发/SSE 扇出/时延/资源占用基准
 ├── Vapor.Plugins.CaseOpening.Tests/      (107 tests)
 ├── Vapor.Plugins.Core.Tests/             (152 tests)
@@ -20,7 +20,7 @@ tests/
 ├── Vapor.Agent.Tests/                    (141 tests)
 ├── Vapor.Plugins.MarketWatch.Tests/      (62 tests)
 ├── Vapor.Plugins.Monitoring.Tests/       (42 tests)
-├── Vapor.Protocol.Tests/                 (43 tests)
+├── Vapor.Protocol.Tests/                 (46 tests)
 ├── Vapor.E2E.Tests/                      (11 tests,真实双进程)
 ├── Vapor.KeyRotation.Tests/              (28 tests,凭据轮换 CLI 壳)
 ├── Vapor.Plugins.TestPlugin/             插件基础设施测试用示例插件
@@ -32,17 +32,17 @@ tests/
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
 | Vapor.Steam.Core.Tests | 1536 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检含活探测 fake transport 全链路 + SetProxyAsync 持久化/换出口重建/masked 回报)、异常账号体检(standing 客户端 + check_account_standing action)、脱敏/日志消毒纯函数 property 扩面(控制字符三律/proxy URI 凭据/JSON 键敏感)、成就写入共享载荷解析与输出格式化 19 例 |
-| Vapor.ControlPlane.Tests | 995 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚、代理分配确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)、API 边缘中间件(RED 指标聚合/排序/不变 culture 渲染 + trace exemplar 双臂(有 Activity 渲染 32hex 链接/无 Activity 裸样本) + 按键滑动窗限流假钟全臂/TestServer 429/Retry-After/非 /v1 不限流/路由模式标签)、API 密钥过期(@ISO-8601 后缀解析全臂/env 建图/注入钟到期边界强制)、故障注入 API(FaultInjector 单元全臂 + /v1/faults 四端点 e2e:验证/默认值/预算自愈/TTL/豁免面/跨面选择器 400/审计/指标族 + 派发面注入走真实 requeue 机器 + 组装根装配)、控制台代理分配(`/v1/accounts/{name}/proxy` 鉴权/404/400 族/钉住 agent 前置校验/set_proxy 定向派发 payload/验证链 check_proxy/202/502/200 三态/masked 审计)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域、FarmPolicy 规范化幂等/接受域/保序)、声明态持久化(SqliteConfigStore 单元全臂 + AccountStore/ConfigStore 重启回灌与写穿失败原子性 + 组装根双生命周期重启演练) |
+| Vapor.ControlPlane.Tests | 1038 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚、代理分配确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)、API 边缘中间件(RED 指标聚合/排序/不变 culture 渲染 + trace exemplar 双臂(有 Activity 渲染 32hex 链接/无 Activity 裸样本) + 按键滑动窗限流假钟全臂/TestServer 429/Retry-After/非 /v1 不限流/路由模式标签)、API 密钥过期(@ISO-8601 后缀解析全臂/env 建图/注入钟到期边界强制)、故障注入 API(FaultInjector 单元全臂 + /v1/faults 四端点 e2e:验证/默认值/预算自愈/TTL/豁免面/跨面选择器 400/审计/指标族 + 派发面注入走真实 requeue 机器 + 组装根装配)、控制台代理分配(`/v1/accounts/{name}/proxy` 鉴权/404/400 族/钉住 agent 前置校验/set_proxy 定向派发 payload/验证链 check_proxy/202/502/200 三态/masked 审计)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域、FarmPolicy 规范化幂等/接受域/保序)、声明态持久化(SqliteConfigStore 单元全臂 + AccountStore/ConfigStore 重启回灌与写穿失败原子性 + 组装根双生命周期重启演练) |
 | Vapor.Plugins.Core.Tests | 152 | 插件发现/清单/SemVer 兼容/加载(含 official 插件 API 精确版本锁定 MatchesExactly)/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 137 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
 | Vapor.Agent.Tests | 141 | 重连退避策略(含不变量 property:曲线单调/上下界/重试谓词单调/构造器往返/四违约臂)、任务看门狗策略(默认/启停/环境解析含坏值与空值/取消源分类真值表 + property:任意整数环境往返与启停等价、TimeoutError 携秒数、谓词可靠性(蕴含)与完备性)、任务执行器(含 QR 登录与 password+refreshToken 组合 payload、代理 payload 透传与畸形端点 fail-fast)、WS URI 构造、maFile 离线导入 CLI、追踪注入、插件 host action(IHostAction 通道含声明超时强制(挂起→结构化 action timeout/未声明超时不自-cancel)、zip 包安装器(URL/校验和/zip-slip/清单核对/目录条目/http 下载三态)、install/uninstall/list 三 action 与镜像输出)、set_proxy host action(account 必需校验/缺省清除/畸形端点 fail-fast 不回显凭据/masked 输出/声明元数据) |
 | Vapor.Plugins.MarketWatch.Tests | 62 | watch 存储/阈值评估/free watch 边沿告警/轮询告警与 webhook(含传输崩溃与取消路径)/轮询循环确定性停机/阈值 payload 值形状/插件宿主实战加载 |
 | Vapor.Plugins.Monitoring.Tests | 42 | 指标注册表/HTTP 指标服务/插件生命周期 |
 | Vapor.Plugins.CaseOpening.Tests | 107 | 开箱引擎(已公示概率窗精确映射/物品 tier 内均匀抽取/StatTrak 1:10/逐物品 float 线性映射/磨损固定阈值/paint seed 0-1000/脚本化随机按文档化 roll 顺序确定性 + 20 万开粗粒度统计 sanity)、目录 JSON 严格解析(全字段 schema/字面 null 文档/缺失 tier/重复 case/item id/未知成员拒收/坏 float 域/别名 rarity 解析)、结果记录(容量环淘汰/JSONL 追加与重启回灌/畸形行跳过/不可读归档吞并/不可写归档吞并/统计聚合零填充五 tier)、插件面(宿主实战加载 trust+权限+贡献断言/backend 白名单拒绝/注入 backend/cases.path 替换目录/results.path 归档/case_open action payload 形状/四 web 路由验证与取消臂) |
-| Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
+| Vapor.Protocol.Tests | 46 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **3254** | (2026-09-28 实测(§39 P-a 代理分配轮实测:Steam.Core 1527→1536、ControlPlane 982→995、Agent 136→141;此前 2026-09-28 基线:Steam.Core 1527 为成就载荷轮实测;2026-09-27 插件轮实测:CaseOpening 107 新增、Core 147→152;ControlPlane 982 为声明态持久化轮实测;其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **3300** | (2026-09-28 实测(§39 P-b 仓库归集轮本趟 TRX 实测:Agent 141→Counter({'AgentReconnectPolicyTests': 25, 'TaskTimeoutPolicyTests': 25, 'PluginPackageInstallerTests': 21, 'AgentTaskExecutorTests': 18, 'MaFileImportCliTests': 10, 'PluginUninstallActionTests': 8, 'HostActionExecutorTests': 6, 'PluginInstallActionTests': 5, 'SetProxyActionTests': 5, 'AgentReconnectPolicyPropertyTests': 5, 'AgentWebSocketUriTests': 4, 'TaskTimeoutPolicyPropertyTests': 4, 'PluginListActionTests': 3, 'TracingTests': 2})、ControlPlane 1038→Counter({'AccountApiTests': 145, 'DesiredStateReconcilerTests': 143, 'ProgramBranchCoverageTests': 79, 'AccountStoreTests': 64, 'ConfigEnvironmentTests': 56, 'SystemStatusApiTests': 41, 'CrawlApiTests': 40, 'CrawlRunWorkerTests': 33, 'SqliteJobStoreTests': 32, 'FaultApiTests': 27, 'NotificationTests': 23, 'SqliteCrawlStoreTests': 21, 'PluginApiTests': 20, 'ApiKeyExpiryTests': 18, 'FaultInjectorTests': 18, 'StorageCollectRunnerTests': 18, 'ScheduleClockTests': 16, 'DashboardStaticTests': 16, 'TaskSchedulerServiceTests': 15, 'ControlPlaneApiTests': 13, 'RecurringJobSchedulerTests': 12, 'SqliteConfigStoreTests': 11, 'CrawlShardPlannerTests': 11, 'EventBrokerTests': 11, 'SqliteAuditStoreTests': 9, 'SystemStatusPropertyTests': 9, 'ApiEdgeMiddlewareTests': 8, 'ApiRequestMetricsTests': 8, 'AuthTests': 8, 'AgentRegistryTests': 8, 'TradePolicyPropertyTests': 8, 'PluginEcosystemPropertyTests': 7, 'ApiKeyRateLimiterTests': 7, 'PluginInventoryTests': 7, 'ApiLatencyBenchmarks': 7, 'WsProtocolReplayTests': 7, 'ConfigStoreTests': 7, 'PluginCatalogServiceTests': 6, 'AuditApiTests': 6, 'ScheduleClockPropertyTests': 6, 'TracingTests': 5, 'CompositionRootSmokeTests': 5, 'ControlPlaneBenchmarks': 4, 'RecurringJobSchedulerRetireTests': 4, 'FarmPolicyPropertyTests': 4, 'SessionTrackerTests': 3, 'AccountTaskRunnerTests': 3, 'AuthChallengeTrackerTests': 3, 'HostTargetedDispatchTests': 3, 'ResourceFootprintBenchmarks': 1, 'WebSocketJsonTests': 1, 'ExceptionContractTests': 1})、E2E 11→Counter({'ControlPlaneAgentE2ETests': 5, 'StaticPagesE2ETests': 5, 'AccountOrchestrationE2ETests': 1})、KeyRotation 28→Counter({'ProgramCliTests': 28})、Plugins.CaseOpening 107→Counter({'CaseCatalogTests': 42, 'CaseOpeningEngineTests': 29, 'CaseOpeningPluginTests': 24, 'CaseOpeningStoreTests': 12})、Plugins.Core 152→Counter({'PluginConfigurationExtensionsTests': 21, 'PluginApiTests': 20, 'PluginTrustTests': 18, 'PluginLoadTests': 14, 'PluginEventDispatcherTests': 14, 'PluginManifestTests': 13, 'PluginCapabilitiesTests': 10, 'PluginUnloadTests': 9, 'PluginLoaderTests': 8, 'TestFixturesTests': 7, 'GuardClauseTests': 6, 'PluginDiscoveryTests': 5, 'TestPluginSurfaceTests': 5, 'PluginExceptionTests': 1, 'PluginManagerConcurrencyTests': 1})、Plugins.MarketWatch 62→Counter({'MarketWatchPluginEdgeTests': 29, 'MarketWatchStoreTests': 18, 'MarketWatchPluginTests': 13, 'PluginHostLoadTests': 2})、Plugins.MobileAuthenticator 137→Counter({'AuthenticatorActionTests': 45, 'AuthenticatorActionEdgeCaseTests': 44, 'MobileConfirmationClientTests': 21, 'MobileConfirmationClientParseTests': 10, 'ConfirmationHashGeneratorTests': 8, 'SteamDeviceIdTests': 3, 'MobileAuthenticatorPluginTests': 3, 'ConfirmationHashGeneratorPropertyTests': 3})、Plugins.Monitoring 42→Counter({'MetricsHttpServerTests': 20, 'MonitoringPluginTests': 12, 'MetricsRegistryTests': 10})、Protocol 46→Counter({'ProtocolModelsRoundTripTests': 20, 'ProtocolRecordsEdgeTests': 15, 'JsonDefaultsContractTests': 7, 'ProtocolJsonRoundTripPropertyTests': 4})、Steam.Core 1536→Counter({'SessionManagerTests': 51, 'TradeOfferActionExecutionTests': 47, 'SteamStoreApiClientTests': 42, 'ModelsTests': 41, 'RedisVaporCacheTests': 38, 'DataActionsTests': 37, 'FileCredentialStoreTests': 37, 'TradeOfferStateMachineTests': 35, 'RedeemKeyActionTests': 34, 'ProxyOptionsTests': 32, 'SteamMarketClientTests': 27, 'BotSessionTests': 27, 'GetGameInfoBatchActionTests': 27, 'SwapDuplicatesActionTests': 26, 'SteamClientManagerTests': 25, 'BotSessionBranchTests': 25, 'VaporCryptoHelperMethodTests': 24, 'MemoryVaporCacheTests': 24, 'LootInventoryActionTests': 23, 'IdleActionTests': 23, 'EdgeCaseTests': 23, 'CreateMarketListingActionTests': 22, 'FindDuplicatesActionTests': 22, 'AddLicenseActionTests': 20, 'TradeRateLimiterTests': 19, 'CheckAccountStandingActionTests': 19, 'SessionWorkflowTests': 19, 'AchievementsWritePayloadTests': 19, 'ActionRegistryTests': 18, 'PayloadReaderTests': 17, 'CancelMarketListingsActionTests': 17, 'LoginActionTests': 17, 'SteamWebHandlerRequestTests': 17, 'MaFileParserTests': 17, 'SensitiveDataRedactorTests': 16, 'CheckProxyActionTests': 15, 'ClaimPointsShopItemsActionTests': 15, 'TradeActionValidationTests': 15, 'EchoActionTests': 15, 'GetPlaytimeActionTests': 15, 'SteamBadgesClientTests': 15, 'GetCardDropsActionTests': 14, 'SteamTransportContractTests': 14, 'SteamTotpTests': 14, 'RedactingLoggerProviderTests': 14, 'SteamAccountStandingClientTests': 13, 'TradeAssetValidatorTests': 13, 'CardSwapMatcherTests': 12, 'PlayGamesPayloadParserTests': 12, 'GetInventoryActionTests': 12, 'VaporCryptoHelperEncryptionTests': 12, 'PingActionTests': 12, 'GetPointsShopSummaryActionTests': 12, 'SteamAchievementsPageContractTests': 12, 'GetInventoryActionBranchTests': 12, 'SteamProfileGamesClientTests': 12, 'MarketFeeCalculatorTests': 11, 'UnlockAchievementsActionTests': 11, 'RedisVaporCacheIntegrationTests': 11, 'RedisCacheEntryTests': 11, 'AchievementStatsBitmapTests': 10, 'GetAchievementsActionTests': 10, 'CredentialStoreRotatorTests': 10, 'UserStatsProtocolRecordsTests': 9, 'PlayGamesActionTests': 9, 'SteamTimeSynchronizerTests': 9, 'HttpCircuitBreakerTests': 9, 'GetTradeOffersActionTests': 9, 'ConcurrencyTests': 9, 'ResetAchievementsActionTests': 8, 'GetMyMarketListingsActionTests': 8, 'TradeModelsEdgeTests': 8, 'GuardClauseTests': 8, 'SteamWebHandlerResilienceTests': 8, 'TwoFactorAutoResponderTests': 8, 'SensitiveDataRedactorPropertyTests': 8, 'BotSessionQrLoginTests': 8, 'TradeAssetParsingPropertyTests': 7, 'TradeParsingPropertyTests': 7, 'TradeAssetValidatorPropertyTests': 7, 'PayloadReaderPropertyTests': 7, 'SteamTotpPropertyTests': 6, 'TradeUrlParamsTests': 5, 'MarketFeeCalculatorPropertyTests': 5, 'SessionManagerProxyTests': 5, 'VaporCryptoHelperTests': 5, 'SessionManagerLifecycleTests': 5, 'CardSwapMatcherPropertyTests': 5, 'SteamMarketMyListingsContractTests': 5, 'SendTradeOfferActionTests': 4, 'ActionRegistryExecutionObserverTests': 4, 'AgentReconnectPolicyTests': 4, 'SteamStoreApiContractTests': 4, 'ProxyOptionsPropertyTests': 4, 'WebRequestMetricsTests': 4, 'AcceptTradeOfferActionTests': 4, 'SteamWebApiKeyFetcherTests': 4, 'GameModelsTests': 3, 'ExceptionContractTests': 3, 'SteamProfileGamesContractTests': 3, 'SteamBadgesPageContractTests': 3, 'VaporCryptoRoundTripPropertyTests': 3, 'SteamCacheTtlTests': 2, 'TradeUrlParamsExtendedTests': 2, 'CancelTradeOfferActionTests': 2, 'TokenRefreshTests': 2, 'ValueStopwatchTests': 2, 'SteamAchievementsClientTests': 2, 'BotSessionProxyTests': 2, 'RedeemKeyFlowTests': 2, 'CacheBenchmarks': 2, 'DeclineTradeOfferActionTests': 2, 'LoginFlowTests': 1})、合计 3254→3300;§39 P-a 代理分配轮实测:Steam.Core 1527→1536、ControlPlane 982→995、Agent 136→141;此前 2026-09-28 基线:Steam.Core 1527 为成就载荷轮实测;2026-09-27 插件轮实测:CaseOpening 107 新增、Core 147→152;ControlPlane 982 为声明态持久化轮实测;其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -97,7 +97,6 @@ tests/
 > 章节总数与文末「附录：逐类测试计数」均为 TRX 实测并随轮次滚动（2026-09-24 专项盘点基线 2879 → §39 P-a 代理分配轮 2026-09-28 实测 **3254**:Steam.Core 1536/ControlPlane 995/Agent 141,其余项目沿用既有基线）。逐类明细已与附录对齐（2026-09-24 重构轮全量对齐,此后每轮随类集合变更同步）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
 
 ### Steam.Core(1536 个测试)
-
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
@@ -221,20 +220,20 @@ tests/
 | SteamTotpPropertyTests | 6 | FsCheck property:**RFC 6238 oracle 交叉验证**(本地手写规范实现,任意 secret×时间恒等)、输出确定性 + 恒 5 字符无混淆字母表、同 30s 窗口任意偏移同码、SecondsRemaining 周期性与值域、DecodeSecret 任意合法 base64 往返 + 坏输入按参数名拒绝 |
 | SteamTimeSynchronizerTests | 9 | Steam 服务器时间同步 |
 
-### ControlPlane(995 个测试)
-
+### ControlPlane(1038 个测试)
 | 测试类 | 数量 | 说明 |
 |--------|------|------|
 | ProgramBranchCoverageTests | 79 | Program 组装层分支(配置解析/环境变量回退/装配路径逐支驱动) |
 | ConfigEnvironmentTests | 56 | Config.LoadFromEnvironment 环境变量臂(Theory 数据表扫 19 键:垃圾值 parse-false/守卫违例(0 与负数)/合法覆盖/PluginIndexUrl 空白回退;每用例 finally 还原进程全局 env——走进程全局 collection 禁并行,防并发 boot 读到被改键(负 ReconcileInterval 会杀并发 boot 的 PeriodicTimer)) |
-| AccountApiTests | 132 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取、挂单创建/撤单、积分兑换、重复查询/换卡报价:fake agent 顺序回报;五端点 202/502 三态与 claim 校验;boost 目标与 farm 策略 PUT 校验/回读/清除,standing/farm 快照端点与强制体检;代理分配:鉴权/未知账号/缺 proxy 字段/无钉住 agent/钉住 agent 离线/set_proxy 成功+check_proxy 验证链/agent 失败 502/验证失败 200 上报不回滚/set 仍 pending 202/验证仍 pending/masked 审计链) |
+| AccountApiTests | 145 | `/v1/accounts` REST(含 farm 状态、报价查询/接受/拒绝、自动确认、批量移动确认、loot 同步端点、免费 license 认领、库存读取、挂单创建/撤单、积分兑换、重复查询/换卡报价:fake agent 顺序回报;五端点 202/502 三态与 claim 校验;boost 目标与 farm 策略 PUT 校验/回读/清除,standing/farm 快照端点与强制体检;代理分配:鉴权/未知账号/缺 proxy 字段/无钉住 agent/钉住 agent 离线/set_proxy 成功+check_proxy 验证链/agent 失败 502/验证失败 200 上报不回滚/set 仍 pending 202/验证仍 pending/masked 审计链;仓库归集:两端点鉴权/storage 必填三形态(缺字段/空白/无体)/未声明 404/非 storage 角色/无 steamId/无源 400/三源 200 逐源结果(含失败源)+storage.collect 审计计数/窗口关闭 202 pending+审计、非账号 loot 不混入快照) |
 | DesiredStateReconcilerTests | 143 | 账户编排(含最近收敛遥测 LastPassAt/DurationMs/Failed 成败两臂)(登录派发/退避/节流/重平衡/dry-run/smart farming 调度 + 循环存活/无 agent/在途窗口/形状怪癖执行路径加固/unassign 存储故障逃逸 + §35 派发守卫(agent 能力缺失与 dry-run)/审计隔离(异常吞咽与 OCE 传播)/payload 多类型解析防御/结算回读防御(空 Tasks/失败 deviation/confirm 链) + 挂卡增强:队列排序三式/PriorityApps 置顶/队列 diff 完成标记/预算跳过与未到期保持/drain 一次性通知与新轮重启/累计统计双格式解析与无 total 容错/spec bump 事实保留) |
 | TradePolicyPropertyTests | 8 | FsCheck property:trade 策略白名单(零剔除/去重/升序/输入序无关/幂等/全零 auto-accept 必拒)与 payload 数值读取(任意 boxed 值不抛/false 置零/JSON 数字臂往返);抓出并修复 NaN/∞ 透传边界(string 臂 `TryParse("NaN")` 为 true、boxed double 臂不滤非有限) |
 | FarmPolicyPropertyTests | 4 | 维护轮 FsCheck property:farm 策略规范化(与 trade 输入序无关设计有意分叉——**保声明序**):budget 接受域全域精确(抛 ⟺ 非 null 且非有限/非正,NaN/±∞ 边界表 + 任意小数/大数/极小数)、规范化幂等(逐元素相等——record 在数组上的引用相等会说谎)、输出域封闭与 null 精确刻画(null ⟺ 无预算+默认排序+无可用优先)、优先声明序保持(独立二实现稳定去重对照,0 与重复强制注入必现) |
 | CrawlApiTests | 40 | 数据抓取 REST(计划 CRUD/PUT merge 语义/触发/分片领取/行回写/claim 校验与去重) |
 | CrawlRunWorkerTests | 33 | 抓取执行 worker(读取/派发取消传播/GetJob 故障吞咽/坏 tick 兜底/停机竞态双路径/审计故障不阻断/混合列表输出解析) |
 | SqliteJobStoreTests | 32 | job 存储(并发/迁移/周期模板) |
-| AccountStoreTests | 53 | 账户存储(ConfigVersion 并发/空名校验/boost 目标与 trade 策略规范化/farm 策略规范化校验矩阵/声明序保留/透传与清除 + 持久化三件套:重启回灌(版本续行/大小写并集/删除也持久)、SetEnabled 抵达下一生命周期、写穿失败原子性(DB 先行,内存与行均不动) |
+| AccountStoreTests | 64 | 账户存储(ConfigVersion 并发/空名校验/boost 目标与 trade 策略规范化/farm 策略规范化校验矩阵/声明序保留/透传与清除 + 持久化三件套:重启回灌(版本续行/大小写并集/删除也持久)、SetEnabled 抵达下一生命周期、、写穿失败原子性(DB 先行,内存与行均不动)、role 与 steamId 归一(缺省 farm/非法枚举抛/SteamID64 正 64 位校验/空白归 null/去空格规范形)) |
+| StorageCollectRunnerTests | 18 | 仓库归集编排(§39 P-b:源集过滤只留启用且非 offline 的 farm 账号/输出读取器全臂含 JsonElement 与 primitive 往返/等待窗口四态:缺任务行永不视为终态、窗口关闭返 null、canceled 计入终态、loot 未落定返 pending/归集 happy path 两源各自续派确认并校验 payload 与 parent_job meta//混合结局(免确认不建 confirm job、失败源逐账号上报)/需确认但无 offer id 跳过/确认窗口关闭 loot 仍报完成/确认失败与取消各自成文/确认成功但未确认返 false 无 error/快照:关联确认并跳过非归集 job、每账号最近一次胜出、扫描上限生效、怪 meta 与怪确认形态优雅降级) |
 | AccountTaskRunnerTests | 3 | 账户任务运行器(TaskRunResult record 合成成员/克隆等值) |
 | NotificationTests | 23 | 通知规则/webhook 签名/派发隔离/无 sink 快速返回/有限流 broker 三泵自然排空 |
 | ScheduleClockTests | 16 | 周期计划时钟(interval/cron/触发点计数) |
@@ -243,7 +242,7 @@ tests/
 | SqliteConfigStoreTests | 11 | 声明态持久化 sink(spec 全字段 payload 往返/按名排序/NOCASE 主键大小写并单行/删除幂等/global 缺行 null+upsert 单行/账户 config 往返/坏行 fail-closed InvalidDataException/建目录+无目录相对路径+空路径 ctor 三臂/NULL 参数守卫) |
 | RecurringJobSchedulerTests + RecurringJobSchedulerRetireTests | 16 | 周期任务触发/missed/overlap/退役(12+4) |
 | ControlPlaneApiTests | 13 | REST API(鉴权/任务/SSE/计划 job、QR 挑战归类与 URL 透传、坏 JSON 体 400 边界) |
-| DashboardStaticTests | 15 | 静态面板(/dashboard.html 服务、无写动词契约、三视图互链、`/` 302 重定向、gamedata 五模型文档(含 ItemInfo 不回流守卫)、admin QR 按钮契约、写操作确认锚、standing 徽章与体检按钮、farm 徽章与策略字段、PluginStore 面板契约、代理分配独立审计动作与显式清除守卫) |
+| DashboardStaticTests | 16 | 静态面板(/dashboard.html 服务、无写动词契约、三视图互链、`/` 302 重定向、gamedata 五模型文档(含 ItemInfo 不回流守卫)、admin QR 按钮契约、写操作确认锚、standing 徽章与体检按钮、farm 徽章与策略字段、PluginStore 面板契约、代理分配独立审计动作与显式清除守卫、仓库归集面板锚:role/SteamID64 字段进 PUT 体、只列 storage 账号、不可逆确认与逐源结果渲染) |
 | CrawlShardPlannerTests | 11 | 抓取分片规划(空池告警/overrides) |
 | TaskSchedulerServiceTests | 15 | 任务派发/终态机制/无 listener 惰性分发 + 故障注入派发演练(error 复用 undispatchable 路径 requeue/事件文案/预算尽次轮自愈正常派发;delay 推迟重试 max(配置, delayMs)/文案;选择器不匹配正常派发且 Fired=0) |
 | SqliteAuditStoreTests | 9 | 审计存储 |
@@ -262,8 +261,8 @@ tests/
 | ApiRequestMetricsTests | 8 | RED 指标(空快照族头/按 (method,route,status) 聚合 count 与 sum/排序确定性/不变 culture 时长渲染/限流计数/exemplar 三臂:trace 渲染+summary 恒裸/同系列最新 trace 覆盖且系列独立/无 trace 裸样本逐字等值) |
 | ApiEdgeMiddlewareTests | 8 | API 边缘中间件 TestServer 集成(超限 429 + Retry-After + 错误体/匿名桶与命名键隔离/非 /v1 不限流含 /healthz 与 /metrics/禁用恒放行//metrics 暴露 RED 族含 429 与 rate_limited_total + 200/429 两臂 exemplar 正则钉形(32 小写 hex)/outer IStartupFilter 清空 Activity.Current ⇒ 全裸样本(null 臂)/路由模式标签(非具体路径)/未匹配路径不记录) |
 | ApiKeyExpiryTests | 18 | API 密钥过期(`@<ISO-8601>` 后缀:ParseApiKey 全臂(纯键无到期/ISO 拆分/仅日期归 UTC 零点/带偏移归一/非日期后缀字面键/空后缀/前导 @ 不成键/末位 @ 胜)/env 解析(admin 后缀入 Config/混合表建每键到期图/重复凭据末条胜)/Auth 注入钟强制(过期前准入/到期即拒含边界瞬间/无过期任意时刻准/agent 每键独立到期/生产无钟重载真钟拒已过期)) |
-| FaultInjectorTests | 17 | FaultInjector 单元(注入钟确定性:defaults/clamps 全界/选择器归一(空白→null/方法归大写)/action 精确与 region 匹配/空选择器任意匹配/预算递减与耗尽自移除/默认一次性/到期边界拒绝且清扫/api 路由子串与方法大小写/双平面隔离×2(探针不耗对面预算)/单撤/全撤计数/空渲染族头与零 gauge/计数器按枚举序排序且 ClearAll 后存续/真钟到期锚点) |
-| FaultApiTests | 28 | `/v1/faults` 四端点 e2e(无 token 401×4/空列表/无效体 400×8(缺 kind/坏 kind/坏 mode/缺 mode/跨面选择器×4——route/method 与 action/region 各两臂点亮 || 双侧)/越界 400×8(高低双界,手拼 JSON 定位任意字段)/缺体/默认值+Location+列表+单撤后 404/panic 键 Removed=2/503×2 预算自愈+豁免面(/v1/faults、/healthz)可达+列表清空/不匹配路由预算不动/延迟≥300ms 实测且 duration_sum≥0.3 逐行解析(路由与方法 InvariantCulture)/指标三家族(注入计数器/armed gauge/RED 503 行)/跨面选择器 400/审计三动作逐条精确 action 查询) |
+| FaultInjectorTests | 18 | FaultInjector 单元(注入钟确定性:defaults/clamps 全界/选择器归一(空白→null/方法归大写)/action 精确与 region 匹配/空选择器任意匹配/预算递减与耗尽自移除/默认一次性/到期边界拒绝且清扫/api 路由子串与方法大小写/双平面隔离×2(探针不耗对面预算)/单撤/全撤计数/空渲染族头与零 gauge/计数器按枚举序排序且 ClearAll 后存续/真钟到期锚点) |
+| FaultApiTests | 27 | `/v1/faults` 四端点 e2e(无 token 401×4/空列表/无效体 400×8(缺 kind/坏 kind/坏 mode/缺 mode/跨面选择器×4——route/method 与 action/region 各两臂点亮 || 双侧)/越界 400×8(高低双界,手拼 JSON 定位任意字段)/缺体/默认值+Location+列表+单撤后 404/panic 键 Removed=2/503×2 预算自愈+豁免面(/v1/faults、/healthz)可达+列表清空/不匹配路由预算不动/延迟≥300ms 实测且 duration_sum≥0.3 逐行解析(路由与方法 InvariantCulture)/指标三家族(注入计数器/armed gauge/RED 503 行)/跨面选择器 400/审计三动作逐条精确 action 查询) |
 | ApiLatencyBenchmarks(性能) | 7 | 只读端点与任务创建入口时延基准 |
 | ResourceFootprintBenchmarks(性能) | 1 | 每操作托管分配量基准 |
 | ExceptionContractTests | 1 | 异常类型契约(序列化构造) |
@@ -292,7 +291,37 @@ tests/
 
 真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。分类:ControlPlaneAgentE2ETests(5,健康检查/job 全链路/任务取消/SSE 事件流/2FA 挑战人工提交)、AccountOrchestrationE2ETests(1,账户声明→自动分配→kill agent→重平衡)、StaticPagesE2ETests(5,静态页守护:E2E 的 CP 进程是"bin dll + 测试器 cwd"的裸部署形态,守护 admin/dashboard/gamedata/favicon 匿名 200 与 `/`→admin UI 落地——曾因 Web SDK 只在 publish 复制 wwwroot + WebRoot 锚 cwd 导致部署态全 404 而全测试套件无一页面请求)。
 
-### Vapor.Protocol.Tests(43 个测试)
+### Vapor.Protocol.Tests(46 个测试)
+全平台 REST/WS 消息的共享 JSON 序列化契约(JsonDefaults.Options——camelCase 命名/camelCase 枚举字符串/null 省略是 wire 契约而非实现细节)+ 全部协议模型逐字段往返。
+
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| ProtocolModelsRoundTripTests | 20 | 核心协议模型逐字段往返(JobSchedule 含策略/Job 含 schedule 与 nextRun/JobTask payload+output/CreateJobRequest/AccountSpec 含 desired state 与 farm 排除 apps/TradePolicy 白名单与 disabled 显式序列化/AccountConfig 密码格式/GlobalConfig/SessionEvent/AuthChallengeEvent 不带 code;camelCase 命名抽查) |
+| ProtocolRecordsEdgeTests | 15 | wire record 边界(ActionParamSchema/ActionDescriptor 默认与全填充/PluginEvent 带/不带 payload/TaskResult/TaskHeartbeat/TaskCancel 带/不带 reason/JobWithTasks/ErrorResponse camelCase 往返/Event/AgentHello capabilities+meta/WSMessage 全帧变体与最小帧可选成员省略/CreateJobResponse) |
+| JsonDefaultsContractTests | 7 | 共享序列化契约钉死(camelCase 属性名/枚举 camelCase 字符串/null 属性省略/非 null 默认值保留/camelCase JSON 反序列化/枚举字符串大小写不敏感/往返恒等) |
+| ProtocolJsonRoundTripPropertyTests | 4 | FsCheck property:任意字段值序列化→反序列化精确恢复 record(心跳/取消/错误/握手模型;object? payload 字典模型刻意排除——STJ 读回 JsonElement 是已知接受的损失,非本门追踪的回归;任意 long 折入 DateTimeOffset 可表示域 year 1..9999 再取任意偏移) |
+
+### Vapor.KeyRotation.Tests(28 个测试)
+凭据轮换 CLI 壳(Program):参数解析、key spec 四格式全臂、退出码契约(0/1/2)与真实旋转三态。
+
+| 测试类 | 数量 | 说明 |
+|--------|------|------|
+| ProgramCliTests | 28 | CLI 全臂(help 双旗 0/缺必参与未知参与坏 base64 钥与同钥返回 2/store 缺失返回 1/dry-run 零改动/真实旋转 applied+备份+新钥可解 0/不可解账户与损坏 store 返回 1)、key spec 四格式(base64 前缀大小写不敏感/文件缺失以解析后路径抛错/文件 base64 过短回退 raw/纯文本 UTF-8 字节/env 未设抛错/trim)、路径展开(`~/` 与 `~\\` 取 HOME/其余转全路径)、GetValue 推进索引;`--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost |
+
+### 插件体系(500 个测试)
+- **Plugins.Core(152)**:清单解析(13)、发现(5)、加载(14)+加载器(8)、卸载与 ALC 回收(9,含 DisposeAsync 卸载自身抛错隔离)、信任与权限(18)、事件分发(14)、配置扩展(21)、能力(10)、插件 API 与 SemVer 兼容(20,含 TryParseVersion theory 展开与 official 插件 API 精确锁定 MatchesExactly:缺省组件归零等价/越 build 拒绝/null 抛出)、管理器并发(1)、故障 fixture 库(7)+ 异常 ctor 契约(1)、构造守卫(6:DefaultPluginHostServices/PluginManager/PluginEventDispatcher 的 paramName 抛出/重复 Add 同实例只计一次/坏 Version-ApiVersion 回退 0.0/缺入口发现告警)、TestPlugin 表面直测(5:echo action 反射 payload/plugin-ping 回 pong/初始化与关停标记文件——staged 副本不带 PDB,直实例化保覆盖可见)
+- **CaseOpening(107)**:开箱引擎(29:RarityFor 已公示概率窗边界 10 臂(625/125/25/5/2,总权 782)/PickItem tier 内取模环绕与空 tier 守卫/Open 全序列脚本化随机按文档化 roll 顺序(稀有度→物品→StatTrak→float→seed)逐字段断言/无 StatTrak 变体跳掷/1:10 未中不置位/float 映射入物品自身 [min,max]/磨损阈值 10 臂(FN<0.07≤MW<0.15≤FT<0.38≤WW<0.45≤BS)/Random 注入 null 抛出/种子与无参公共构造/20 万开粗粒度统计 sanity——五 tier 实测率含于宽松界(均值±4σ+))、目录(42:默认目录双案例每案例五 tier 齐备/Find 大小写不敏感+空白拒绝/全字段 schema 解析含默认值(0.06-0.80/stattrak=true)/畸形文档 13 臂 theory(空 cases/字面 null/缺对象/缺 id/缺名/无 items/物品缺 id/物品缺名/未知 rarity/坏 float 域×4)/缺 tier 首个缺失点名/重复 case id 与 item id(大小写不敏感)/未知成员拒收(Disallow)/坏 JSON/空输入/LoadFile 读写与缺失路径/rarity 别名解析 14 臂+拒绝 4 臂/RarityName 规范名)、结果记录(12:插入序保持/null 拒收/容量环淘汰最旧/容量非正拒收/JSONL 追加+重启回灌+容量界回灌/畸形行与空白行跳过/不可读归档(Path.Exists 目录臂)吞并/不可写归档(文件挡路)吞并/空统计/逐案例逐 tier 聚合含零填充与率/ToDto 全字段+null 拒收/归档往返逐字段恒等)、插件面(24:宿主实战加载 trust=official+actions/web 授权+4 路由+1 动作/backend 白名单拒绝(指 docs ToS 边界)/cases.path 替换默认目录+results.path 归档落盘/缺失目录初始化 PluginException 包装/注入 backend Same 断言/空白 caseId 拒绝/未知 case null+count 钳制 1..100/action happy path 模式+计数+落账/action 缺失-非串-未知 caseId 失败/count payload 六形状强制(3L/4m/JsonElement/"5"/JsonElement 串 caseId/1.5 双精度回退默认)/cases 路由列出双案例+tier 分组/open 路由 7 臂(空体 400/缺 caseId 400/count 非整数 400/未知 404/坏 JSON 400/null 400/happy 200)/results 路由 limit 钳制与默认 50/stats 路由聚合 JSON/四路由取消臂/渲染器 null 拒收×2/action ctor null 拒收/SimulationBackend 守卫(种子构造/null 定义/取消臂/OpenMany 0 拒绝+3 连发))
+- **MobileAuthenticator(137)**:动作含 save_shared_secret/save_identity_secret/confirm_trade_offer/confirm_all_confirmations(45)+ 动作边界:payload 形状/失败语义/冷却与并发(44)、确认客户端会话分支(21)+ 解析含 type 归一化(10)、确认哈希(8 + FsCheck property 3:HMAC oracle 交叉验证/确定性 + 四 tag 互异/空 tag 与空 secret 的 ParamName 契约)、设备 ID(3)、插件加载与 9-action 断言(3)、shared/identity secret 存储行为(7,位于 Steam.Core 的 FileCredentialStoreTests)
+- **MarketWatch(62)**:watch 存储(18)/插件动作与轮询告警(13:三个 watch action kind=price/free+阈值评估)/边缘与 webhook(29:free_game_alert 与 price_alert/传输崩溃吞并/周期中取消干净停机/手动驱动前 drain-and-stop 测试钩子/单 app 抓取失败隔离/阈值 payload 值形状/无参构造 Info)/插件宿主实战加载(2)
+- **Monitoring(42)**:指标注册表(10)/HTTP 服务(20)/插件生命周期(12)
+
+### Agent(141 个测试)
+重连退避策略(30,含不变量 property 5——曲线单调非减/初值下界与 max 上界/重试谓词单调且 unlimited 恒假/构造器四参往返/单约束违约必抛 ArgumentOutOfRange;生成器陷阱两处:swap 法造 max<initial 会撞 max==initial 合法域,大 factor 上减 1 可能仍 ≥1——违约臂都必须构造出严格越界的值)、任务看门狗策略(29:example 25——默认 900s/正负与零启停/TimeoutError 格式/环境解析默认-空白-合法-非正-坏值全臂含变量名点名与 null accessor/取消源分类真值表五行含禁用恒假;property 4——任意整数环境往返(启停等价于 >0)、TimeoutError 恒携秒数、谓词可靠性(报超时 ⇒ 已启用∧执行 token 已取消∧非全局∧非服务端)、启用的谓词完备性(唯一三元组组合必报))、任务执行器(18,含 QR 登录与 password+refreshToken 组合 payload 解析与优先级)、插件 host action(43:IHostAction 执行器 6——跨 agent target 拒绝/无会话执行/异常包装/取消透传/声明超时 1s 挂起动作结构化 action timeout/未声明超时动作不自-cancel 且调用方 token 干净;包安装器 21——zip-slip/根 manifest/URL 与校验和预检/校验和不符零痕迹/清单 id-version 核对/替换热重载/下载失败/PluginsRoot 属性/取消透传/64 位非 hex/无根 manifest 全链/坏 manifest JSON/入口 DLL 缺失/显式目录条目/http 下载成功/声明长度超限/默认 HttpClient 工厂失败臂;install action 5——元数据/url-sha256 必填与 sha_256 别名/宿主未初始化/成功全清单输出/失败仍带镜像;uninstall action 8——元数据/pluginId 必填/幂等 removed=false/卸载热卸载/宿主未初始化/缺失目录早退/只读根降级;list action 3——元数据/空清单/带元数据清单;set_proxy action 5——payload account 必需校验/仅 account 即清除语义/带 proxy 透传 SessionManager 且输出 masked 形态/畸形端点 fail-fast 静态文案不回显凭据/声明元数据(login: no,timeout: 120s))、maFile 离线导入 CLI(10,含幽灵路径点名)、WS URI 构造(4)、追踪注入(2)
+
+### E2E(11 个测试)
+真实双进程:`E2EStack` 启动真实 ControlPlane 进程 + Agent 子进程(独立 HOME、WS 隧道、SQLite)。分类:ControlPlaneAgentE2ETests(5,健康检查/job 全链路/任务取消/SSE 事件流/2FA 挑战人工提交)、AccountOrchestrationE2ETests(1,账户声明→自动分配→kill agent→重平衡)、StaticPagesE2ETests(5,静态页守护:E2E 的 CP 进程是"bin dll + 测试器 cwd"的裸部署形态,守护 admin/dashboard/gamedata/favicon 匿名 200 与 `/`→admin UI 落地——曾因 Web SDK 只在 publish 复制 wwwroot + WebRoot 锚 cwd 导致部署态全 404 而全测试套件无一页面请求)。
+
+### Vapor.Protocol.Tests(46 个测试)
 
 全平台 REST/WS 消息的共享 JSON 序列化契约(JsonDefaults.Options——camelCase 命名/camelCase 枚举字符串/null 省略是 wire 契约而非实现细节)+ 全部协议模型逐字段往返。
 
@@ -666,240 +695,202 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 
 ## 附录：逐类测试计数（2026-09-28 十一项目 TRX 实测,`scripts/classify-trx.sh` 机械生成;后续轮次动类集合必重生成并同步明细区）
 
-> 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（最近全量重跑 2026-09-28,十一项目 `--logger trx` 全量;合计与统计表一致：3254）。再生成方式见脚本头注释。本表是逐类计数的权威源;明细区与该表逐轮同步,若与本表冲突以本表为准。
+> 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（最近全量重跑 2026-09-28,十一项目 `--logger trx` 全量;合计与统计表一致：3300）。再生成方式见脚本头注释。本表是逐类计数的权威源;明细区与该表逐轮同步,若与本表冲突以本表为准。
 
 ### Vapor.Steam.Core.Tests（1536 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
+| SessionManagerTests | 51 |
 | TradeOfferActionExecutionTests | 47 |
 | SteamStoreApiClientTests | 42 |
-| SessionManagerTests | 51 |
 | ModelsTests | 41 |
 | RedisVaporCacheTests | 38 |
-| FileCredentialStoreTests | 37 |
 | DataActionsTests | 37 |
+| FileCredentialStoreTests | 37 |
 | TradeOfferStateMachineTests | 35 |
 | RedeemKeyActionTests | 34 |
 | ProxyOptionsTests | 32 |
-| SteamMarketClientTests | 27 |
-| GetGameInfoBatchActionTests | 27 |
 | BotSessionTests | 27 |
+| GetGameInfoBatchActionTests | 27 |
+| SteamMarketClientTests | 27 |
 | SwapDuplicatesActionTests | 26 |
-| SteamClientManagerTests | 25 |
 | BotSessionBranchTests | 25 |
-| VaporCryptoHelperMethodTests | 24 |
+| SteamClientManagerTests | 25 |
 | MemoryVaporCacheTests | 24 |
-| LootInventoryActionTests | 23 |
-| IdleActionTests | 23 |
+| VaporCryptoHelperMethodTests | 24 |
 | EdgeCaseTests | 23 |
-| FindDuplicatesActionTests | 22 |
+| IdleActionTests | 23 |
+| LootInventoryActionTests | 23 |
 | CreateMarketListingActionTests | 22 |
+| FindDuplicatesActionTests | 22 |
 | AddLicenseActionTests | 20 |
-| TradeRateLimiterTests | 19 |
-| SessionWorkflowTests | 19 |
-| CheckAccountStandingActionTests | 19 |
-| ActionRegistryTests | 18 |
-| SteamWebHandlerRequestTests | 17 |
-| PayloadReaderTests | 17 |
-| MaFileParserTests | 17 |
-| LoginActionTests | 17 |
-| CancelMarketListingsActionTests | 17 |
-| SensitiveDataRedactorTests | 16 |
-| SensitiveDataRedactorPropertyTests | 8 |
-| TradeActionValidationTests | 15 |
-| SteamBadgesClientTests | 15 |
-| GetPlaytimeActionTests | 15 |
-| EchoActionTests | 15 |
-| ClaimPointsShopItemsActionTests | 15 |
-| SteamTransportContractTests | 14 |
-| SteamTotpTests | 14 |
-| RedactingLoggerProviderTests | 14 |
-| GetCardDropsActionTests | 14 |
-| TradeAssetValidatorTests | 13 |
-| SteamAccountStandingClientTests | 13 |
-| VaporCryptoHelperEncryptionTests | 12 |
-| SteamProfileGamesClientTests | 12 |
-| SteamAchievementsPageContractTests | 12 |
-| PlayGamesPayloadParserTests | 12 |
-| PingActionTests | 12 |
-| GetPointsShopSummaryActionTests | 12 |
-| GetInventoryActionTests | 12 |
-| GetInventoryActionBranchTests | 12 |
-| CardSwapMatcherTests | 12 |
-| UnlockAchievementsActionTests | 11 |
 | AchievementsWritePayloadTests | 19 |
-| RedisVaporCacheIntegrationTests | 11 |
-| RedisCacheEntryTests | 11 |
-| MarketFeeCalculatorTests | 11 |
+| CheckAccountStandingActionTests | 19 |
+| SessionWorkflowTests | 19 |
+| TradeRateLimiterTests | 19 |
+| ActionRegistryTests | 18 |
+| CancelMarketListingsActionTests | 17 |
+| LoginActionTests | 17 |
+| MaFileParserTests | 17 |
+| PayloadReaderTests | 17 |
+| SteamWebHandlerRequestTests | 17 |
+| SensitiveDataRedactorTests | 16 |
 | CheckProxyActionTests | 15 |
-| GetAchievementsActionTests | 10 |
-| CredentialStoreRotatorTests | 10 |
+| ClaimPointsShopItemsActionTests | 15 |
+| EchoActionTests | 15 |
+| GetPlaytimeActionTests | 15 |
+| SteamBadgesClientTests | 15 |
+| TradeActionValidationTests | 15 |
+| GetCardDropsActionTests | 14 |
+| RedactingLoggerProviderTests | 14 |
+| SteamTotpTests | 14 |
+| SteamTransportContractTests | 14 |
+| SteamAccountStandingClientTests | 13 |
+| TradeAssetValidatorTests | 13 |
+| CardSwapMatcherTests | 12 |
+| GetInventoryActionBranchTests | 12 |
+| GetInventoryActionTests | 12 |
+| GetPointsShopSummaryActionTests | 12 |
+| PingActionTests | 12 |
+| PlayGamesPayloadParserTests | 12 |
+| SteamAchievementsPageContractTests | 12 |
+| SteamProfileGamesClientTests | 12 |
+| VaporCryptoHelperEncryptionTests | 12 |
+| MarketFeeCalculatorTests | 11 |
+| RedisCacheEntryTests | 11 |
+| RedisVaporCacheIntegrationTests | 11 |
+| UnlockAchievementsActionTests | 11 |
 | AchievementStatsBitmapTests | 10 |
-| UserStatsProtocolRecordsTests | 9 |
-| SteamTimeSynchronizerTests | 9 |
-| PlayGamesActionTests | 9 |
-| HttpCircuitBreakerTests | 9 |
-| GetTradeOffersActionTests | 9 |
+| CredentialStoreRotatorTests | 10 |
+| GetAchievementsActionTests | 10 |
 | ConcurrencyTests | 9 |
-| TwoFactorAutoResponderTests | 8 |
-| TradeModelsEdgeTests | 8 |
-| SteamWebHandlerResilienceTests | 8 |
-| ResetAchievementsActionTests | 8 |
-| GuardClauseTests | 8 |
-| GetMyMarketListingsActionTests | 8 |
+| GetTradeOffersActionTests | 9 |
+| HttpCircuitBreakerTests | 9 |
+| PlayGamesActionTests | 9 |
+| SteamTimeSynchronizerTests | 9 |
+| UserStatsProtocolRecordsTests | 9 |
 | BotSessionQrLoginTests | 8 |
-| TradeParsingPropertyTests | 7 |
-| TradeAssetValidatorPropertyTests | 7 |
-| TradeAssetParsingPropertyTests | 7 |
+| GetMyMarketListingsActionTests | 8 |
+| GuardClauseTests | 8 |
+| ResetAchievementsActionTests | 8 |
+| SensitiveDataRedactorPropertyTests | 8 |
+| SteamWebHandlerResilienceTests | 8 |
+| TradeModelsEdgeTests | 8 |
+| TwoFactorAutoResponderTests | 8 |
 | PayloadReaderPropertyTests | 7 |
+| TradeAssetParsingPropertyTests | 7 |
+| TradeAssetValidatorPropertyTests | 7 |
+| TradeParsingPropertyTests | 7 |
 | SteamTotpPropertyTests | 6 |
-| VaporCryptoHelperTests | 5 |
-| TradeUrlParamsTests | 5 |
-| SteamMarketMyListingsContractTests | 5 |
-| SessionManagerProxyTests | 5 |
-| SessionManagerLifecycleTests | 5 |
-| MarketFeeCalculatorPropertyTests | 5 |
 | CardSwapMatcherPropertyTests | 5 |
-| WebRequestMetricsTests | 4 |
-| SteamWebApiKeyFetcherTests | 4 |
-| SteamStoreApiContractTests | 4 |
-| SendTradeOfferActionTests | 4 |
-| ProxyOptionsPropertyTests | 4 |
-| AgentReconnectPolicyTests | 4 |
-| ActionRegistryExecutionObserverTests | 4 |
+| MarketFeeCalculatorPropertyTests | 5 |
+| SessionManagerLifecycleTests | 5 |
+| SessionManagerProxyTests | 5 |
+| SteamMarketMyListingsContractTests | 5 |
+| TradeUrlParamsTests | 5 |
+| VaporCryptoHelperTests | 5 |
 | AcceptTradeOfferActionTests | 4 |
-| VaporCryptoRoundTripPropertyTests | 3 |
-| SteamProfileGamesContractTests | 3 |
-| SteamBadgesPageContractTests | 3 |
-| GameModelsTests | 3 |
+| ActionRegistryExecutionObserverTests | 4 |
+| AgentReconnectPolicyTests | 4 |
+| ProxyOptionsPropertyTests | 4 |
+| SendTradeOfferActionTests | 4 |
+| SteamStoreApiContractTests | 4 |
+| SteamWebApiKeyFetcherTests | 4 |
+| WebRequestMetricsTests | 4 |
 | ExceptionContractTests | 3 |
-| ValueStopwatchTests | 2 |
-| TradeUrlParamsExtendedTests | 2 |
-| TokenRefreshTests | 2 |
-| SteamCacheTtlTests | 2 |
-| SteamAchievementsClientTests | 2 |
-| RedeemKeyFlowTests | 2 |
-| DeclineTradeOfferActionTests | 2 |
-| CancelTradeOfferActionTests | 2 |
-| CacheBenchmarks | 2 |
+| GameModelsTests | 3 |
+| SteamBadgesPageContractTests | 3 |
+| SteamProfileGamesContractTests | 3 |
+| VaporCryptoRoundTripPropertyTests | 3 |
 | BotSessionProxyTests | 2 |
+| CacheBenchmarks | 2 |
+| CancelTradeOfferActionTests | 2 |
+| DeclineTradeOfferActionTests | 2 |
+| RedeemKeyFlowTests | 2 |
+| SteamAchievementsClientTests | 2 |
+| SteamCacheTtlTests | 2 |
+| TokenRefreshTests | 2 |
+| TradeUrlParamsExtendedTests | 2 |
+| ValueStopwatchTests | 2 |
 | LoginFlowTests | 1 |
 
-### Vapor.ControlPlane.Tests（995 个测试）
+### Vapor.ControlPlane.Tests（1038 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
+| AccountApiTests | 145 |
 | DesiredStateReconcilerTests | 143 |
-| AccountApiTests | 132 |
-| SystemStatusApiTests | 41 |
 | ProgramBranchCoverageTests | 79 |
+| AccountStoreTests | 64 |
 | ConfigEnvironmentTests | 56 |
-| AccountStoreTests | 53 |
+| SystemStatusApiTests | 41 |
 | CrawlApiTests | 40 |
 | CrawlRunWorkerTests | 33 |
 | SqliteJobStoreTests | 32 |
+| FaultApiTests | 27 |
 | NotificationTests | 23 |
-| FaultApiTests | 28 |
 | SqliteCrawlStoreTests | 21 |
-| SqliteConfigStoreTests | 11 |
 | PluginApiTests | 20 |
 | ApiKeyExpiryTests | 18 |
-| FaultInjectorTests | 17 |
-| TaskSchedulerServiceTests | 15 |
+| FaultInjectorTests | 18 |
+| StorageCollectRunnerTests | 18 |
+| DashboardStaticTests | 16 |
 | ScheduleClockTests | 16 |
-| ScheduleClockPropertyTests | 6 |
-| DashboardStaticTests | 15 |
+| TaskSchedulerServiceTests | 15 |
 | ControlPlaneApiTests | 13 |
 | RecurringJobSchedulerTests | 12 |
-| EventBrokerTests | 11 |
 | CrawlShardPlannerTests | 11 |
+| EventBrokerTests | 11 |
+| SqliteConfigStoreTests | 11 |
 | SqliteAuditStoreTests | 9 |
 | SystemStatusPropertyTests | 9 |
-| TradePolicyPropertyTests | 8 |
-| AuthTests | 8 |
 | AgentRegistryTests | 8 |
-| WsProtocolReplayTests | 7 |
-| PluginInventoryTests | 7 |
-| PluginEcosystemPropertyTests | 7 |
 | ApiEdgeMiddlewareTests | 8 |
+| ApiRequestMetricsTests | 8 |
+| AuthTests | 8 |
+| TradePolicyPropertyTests | 8 |
 | ApiKeyRateLimiterTests | 7 |
 | ApiLatencyBenchmarks | 7 |
-| PluginCatalogServiceTests | 6 |
-| AuditApiTests | 6 |
-| ApiRequestMetricsTests | 8 |
-| TracingTests | 5 |
 | ConfigStoreTests | 7 |
-| RecurringJobSchedulerRetireTests | 4 |
+| PluginEcosystemPropertyTests | 7 |
+| PluginInventoryTests | 7 |
+| WsProtocolReplayTests | 7 |
+| AuditApiTests | 6 |
+| PluginCatalogServiceTests | 6 |
+| ScheduleClockPropertyTests | 6 |
+| CompositionRootSmokeTests | 5 |
+| TracingTests | 5 |
 | ControlPlaneBenchmarks | 4 |
 | FarmPolicyPropertyTests | 4 |
-| CompositionRootSmokeTests | 5 |
-| SessionTrackerTests | 3 |
-| HostTargetedDispatchTests | 3 |
-| AuthChallengeTrackerTests | 3 |
+| RecurringJobSchedulerRetireTests | 4 |
 | AccountTaskRunnerTests | 3 |
-| WebSocketJsonTests | 1 |
-| ResourceFootprintBenchmarks | 1 |
+| AuthChallengeTrackerTests | 3 |
+| HostTargetedDispatchTests | 3 |
+| SessionTrackerTests | 3 |
 | ExceptionContractTests | 1 |
+| ResourceFootprintBenchmarks | 1 |
+| WebSocketJsonTests | 1 |
 
 ### Vapor.Plugins.Core.Tests（152 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
 | PluginConfigurationExtensionsTests | 21 |
-| PluginTrustTests | 18 |
 | PluginApiTests | 20 |
+| PluginTrustTests | 18 |
 | PluginEventDispatcherTests | 14 |
-| PluginManifestTests | 13 |
 | PluginLoadTests | 14 |
+| PluginManifestTests | 13 |
 | PluginCapabilitiesTests | 10 |
 | PluginUnloadTests | 9 |
 | PluginLoaderTests | 8 |
 | TestFixturesTests | 7 |
 | GuardClauseTests | 6 |
-| TestPluginSurfaceTests | 5 |
 | PluginDiscoveryTests | 5 |
-| PluginManagerConcurrencyTests | 1 |
+| TestPluginSurfaceTests | 5 |
 | PluginExceptionTests | 1 |
-
-### Vapor.Plugins.MobileAuthenticator.Tests（137 个测试）
-
-| 测试类 | case 数 |
-|--------|--------:|
-| AuthenticatorActionTests | 45 |
-| AuthenticatorActionEdgeCaseTests | 44 |
-| MobileConfirmationClientTests | 21 |
-| MobileConfirmationClientParseTests | 10 |
-| ConfirmationHashGeneratorTests | 8 |
-| SteamDeviceIdTests | 3 |
-| MobileAuthenticatorPluginTests | 3 |
-| ConfirmationHashGeneratorPropertyTests | 3 |
-
-### Vapor.Plugins.MarketWatch.Tests（62 个测试）
-
-| 测试类 | case 数 |
-|--------|--------:|
-| MarketWatchPluginEdgeTests | 29 |
-| MarketWatchStoreTests | 18 |
-| MarketWatchPluginTests | 13 |
-| PluginHostLoadTests | 2 |
-
-### Vapor.Plugins.Monitoring.Tests（42 个测试）
-
-| 测试类 | case 数 |
-|--------|--------:|
-| MetricsHttpServerTests | 20 |
-| MonitoringPluginTests | 12 |
-| MetricsRegistryTests | 10 |
-
-### Vapor.Plugins.CaseOpening.Tests（107 个测试）
-
-| 测试类 | case 数 |
-|--------|--------:|
-| CaseCatalogTests | 42 |
-| CaseOpeningEngineTests | 29 |
-| CaseOpeningPluginTests | 24 |
-| CaseOpeningStoreTests | 12 |
+| PluginManagerConcurrencyTests | 1 |
 
 ### Vapor.Agent.Tests（141 个测试）
 
@@ -912,21 +903,61 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | MaFileImportCliTests | 10 |
 | PluginUninstallActionTests | 8 |
 | HostActionExecutorTests | 6 |
+| AgentReconnectPolicyPropertyTests | 5 |
 | PluginInstallActionTests | 5 |
 | SetProxyActionTests | 5 |
-| AgentReconnectPolicyPropertyTests | 5 |
-| TaskTimeoutPolicyPropertyTests | 4 |
 | AgentWebSocketUriTests | 4 |
+| TaskTimeoutPolicyPropertyTests | 4 |
 | PluginListActionTests | 3 |
 | TracingTests | 2 |
-### Vapor.Protocol.Tests（43 个测试）
+
+### Vapor.Plugins.MobileAuthenticator.Tests（137 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
-| ProtocolModelsRoundTripTests | 17 |
+| AuthenticatorActionTests | 45 |
+| AuthenticatorActionEdgeCaseTests | 44 |
+| MobileConfirmationClientTests | 21 |
+| MobileConfirmationClientParseTests | 10 |
+| ConfirmationHashGeneratorTests | 8 |
+| ConfirmationHashGeneratorPropertyTests | 3 |
+| MobileAuthenticatorPluginTests | 3 |
+| SteamDeviceIdTests | 3 |
+
+### Vapor.Plugins.CaseOpening.Tests（107 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| CaseCatalogTests | 42 |
+| CaseOpeningEngineTests | 29 |
+| CaseOpeningPluginTests | 24 |
+| CaseOpeningStoreTests | 12 |
+
+### Vapor.Plugins.MarketWatch.Tests（62 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| MarketWatchPluginEdgeTests | 29 |
+| MarketWatchStoreTests | 18 |
+| MarketWatchPluginTests | 13 |
+| PluginHostLoadTests | 2 |
+
+### Vapor.Protocol.Tests（46 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| ProtocolModelsRoundTripTests | 20 |
 | ProtocolRecordsEdgeTests | 15 |
 | JsonDefaultsContractTests | 7 |
 | ProtocolJsonRoundTripPropertyTests | 4 |
+
+### Vapor.Plugins.Monitoring.Tests（42 个测试）
+
+| 测试类 | case 数 |
+|--------|--------:|
+| MetricsHttpServerTests | 20 |
+| MonitoringPluginTests | 12 |
+| MetricsRegistryTests | 10 |
 
 ### Vapor.KeyRotation.Tests（28 个测试）
 
@@ -938,6 +969,6 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 
 | 测试类 | case 数 |
 |--------|--------:|
-| StaticPagesE2ETests | 5 |
 | ControlPlaneAgentE2ETests | 5 |
+| StaticPagesE2ETests | 5 |
 | AccountOrchestrationE2ETests | 1 |

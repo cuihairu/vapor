@@ -133,6 +133,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection); parallel multi-account egress needs a per-account
   SteamClient pool (future direction).
 
+- Per-account proxy assignment from the console (todo §39 P-a):
+  `POST /v1/accounts/{name}/proxy` relays a proxy endpoint to the account's
+  pinned agent and only audits the masked form — a credential relay, never
+  storage control-plane side. The new `set_proxy` host action persists it
+  through the existing `FileCredentialStore.SaveProxyAsync` and rebuilds a live
+  session so the new egress takes effect at once, and a follow-up `check_proxy`
+  self-check reports the new exit ip and the masked endpoint (a failed
+  verification is reported, not rolled back). The secret only ever lands on the
+  machine that already holds the account's credentials, which is why the
+  dispatch targets `agent:{id}` rather than the account. No automatic rotation
+  and no proxy pool: "assign once, change rarely" is the design stance.
+
+- Storage accounts and collect orchestration (todo §39 P-b): every account
+  spec carries a `role` (`farm` — the default, so specs declared before the
+  field existed read back unchanged — or `storage`) and an optional `steam_id`
+  (public operational data: the partner address a storage account is collected
+  into; credentials stay out of the control plane by doctrine).
+  `POST /v1/orchestration/storage/collect` fans one `loot_inventory` task per
+  enabled farm account into a single job — the existing per-job SSE stream is
+  therefore the progress channel — with the storage account as the trade
+  partner, waits (bounded, like the other synchronous account endpoints) for
+  every source to settle and then chains the sender-side mobile confirmations
+  exactly the way the single-account loot endpoint does: an unconfirmed offer
+  never reaches the storage account. Pacing is rate-limit aware by
+  construction — the agent-side trade rate limiter throttles offer creation per
+  sender, the binding Steam constraint — while cross-sender concurrency is
+  intentional, because each farm account has its own session and its own
+  budget. A run still in flight when the wait window closes answers `202` with
+  the job id; unfinished loot simply re-runs on the next collect, because
+  unaccepted offers expire and the items stay where they are.
+  `GET /v1/orchestration/storage/snapshot` reports each account's most recent
+  collect (status, item count, offer id, confirmation outcome) rebuilt from
+  recent collect jobs — the jobs are the record, so there is no dedicated
+  warehouse table. The admin console gains role / steam id fields in the
+  account editor and a 仓库归集 panel.
+
 - Achievement listing, unlock and reset (todo §33): achievements are listed
   via the community per-game stats page (`get_achievements` +
   `GET /v1/accounts/{name}/achievements?appId=`) — API names are inferred

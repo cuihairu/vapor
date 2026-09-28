@@ -81,6 +81,21 @@ public sealed record FarmPolicy(
 );
 
 /// <summary>
+/// The account's role in the fleet economy. <see cref="Farm"/> accounts play
+/// and farm cards (the loot sources); a <see cref="Storage"/> account is the
+/// warehouse the loot flows into (§39 P-b). The default is <see cref="Farm"/>
+/// so specs persisted before the field existed read back unchanged.
+/// </summary>
+public enum AccountRole
+{
+	/// <summary>Plays/farms cards and acts as a loot source.</summary>
+	Farm = 0,
+
+	/// <summary>Holds the loot: the target of storage-collect runs.</summary>
+	Storage = 1
+}
+
+/// <summary>
 /// Conservative auto-accept policy for incoming trade offers (todo §32).
 /// Deliberately gifts-only: offers where the partner gives anything back are
 /// never auto-accepted — value equivalence is not judged automatically (the
@@ -111,5 +126,7 @@ public sealed record AccountSpec(
 	bool MarketListingsEnabled = false,
 	IReadOnlyList<BoostTarget>? BoostTargets = null,
 	TradePolicy? TradePolicy = null,
-	FarmPolicy? FarmPolicy = null
+	FarmPolicy? FarmPolicy = null,
+	AccountRole Role = AccountRole.Farm,
+	string? SteamId = null
 );

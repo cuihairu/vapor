@@ -173,6 +173,43 @@ public sealed class ProtocolModelsRoundTripTests
 	}
 
 	[Fact]
+	public void AccountSpec_RoundTrips_StorageRoleAndSteamId()
+	{
+		var spec = new AccountSpec(
+			"warehouse", Enabled: true, AccountDesiredState.Offline,
+			Role: AccountRole.Storage, SteamId: "76561197960265728");
+
+		AccountSpec parsed = RoundTrip(spec);
+
+		Assert.Equal("warehouse", parsed.AccountName);
+		Assert.Equal(AccountRole.Storage, parsed.Role);
+		Assert.Equal("76561197960265728", parsed.SteamId);
+	}
+
+	[Fact]
+	public void AccountRole_SerializesAsCamelCaseName()
+	{
+		string json = JsonSerializer.Serialize(
+			new AccountSpec("warehouse", Enabled: true, AccountDesiredState.Offline, Role: AccountRole.Storage),
+			JsonDefaults.Options);
+
+		Assert.Contains("\"role\":\"storage\"", json);
+	}
+
+	[Fact]
+	public void AccountSpec_MissingRoleField_ReadsBackAsFarm()
+	{
+		// Backward compat: specs persisted before the role field existed have no
+		// "role" in their JSON — reading them back must not flip the account.
+		const string legacy = """{"accountName":"alice","enabled":true,"desiredState":"online"}""";
+
+		AccountSpec parsed = JsonSerializer.Deserialize<AccountSpec>(legacy, JsonDefaults.Options)!;
+
+		Assert.Equal(AccountRole.Farm, parsed.Role);
+		Assert.Null(parsed.SteamId);
+	}
+
+	[Fact]
 	public void TradePolicy_RoundTrips_WithWhitelist()
 	{
 		var spec = new AccountSpec(

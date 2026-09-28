@@ -158,13 +158,31 @@ curl -sS -X PUT http://127.0.0.1:8080/v1/accounts/acct-1 \
 
 Playtime is measured from the profile games tab, so hours earned outside Vapor count toward the target. When every target is met the account falls back to `Idle`.
 
-## 8. Watch it operate
+## 8. Collect items into a storage account
+
+Card drops and other tradables can be swept out of every farming account into one warehouse account. Declare the warehouse (its own SteamID64 is the partner address the loot offers are made to), then run a one-shot collect:
+
+```bash
+# the warehouse: role=storage + its own SteamID64 (not a credential)
+curl -sS -X PUT http://127.0.0.1:8080/v1/accounts/warehouse \
+  -H "Authorization: Bearer admin-dev-token" -H "Content-Type: application/json" \
+  -d '{"enabled":true,"desiredState":"Offline","role":"storage","steamId":"76561197960265728","updatedBy":"me"}'
+
+# one job, one loot task per enabled farm account, mobile confirmations chained
+curl -sS -X POST http://127.0.0.1:8080/v1/orchestration/storage/collect \
+  -H "Authorization: Bearer admin-dev-token" -H "Content-Type: application/json" \
+  -d '{"storage":"warehouse","message":"storage sweep"}'
+```
+
+The run is one job, so `GET /v1/jobs/<jobId>/events` streams its progress live. Offers that Steam wants confirmed are confirmed on the sender side automatically; a run that outlives the wait window answers `202` with the job id, and anything still unfinished simply re-loots on the next collect (unaccepted offers expire, the items stay put). `GET /v1/orchestration/storage/snapshot` shows each source account's last collect. The admin console does the same from its *仓库归集* panel.
+
+## 9. Watch it operate
 
 - **Metrics**: agent Prometheus endpoint (compose default on host `:9700`) — action counters/durations, session states, cache stats; Grafana auto-provisions the *Vapor Overview* dashboard. The control plane exposes `/metrics` with orchestration-level gauges.
 - **Audit**: every config change, task result, code submission and dispatch decision is persisted and queryable: `GET /v1/audit/logs` (redacted before storage).
 - **Tracing**: set `OTEL_EXPORTER_OTLP_ENDPOINT` to export traces; the W3C `traceparent` flows through the agent tunnel, so a job is traceable end-to-end.
 
-## 9. Add capabilities with plugins
+## 10. Add capabilities with plugins
 
 The agent image ships with Monitoring preinstalled. Plugins are ALC-isolated, trust-checked, permission-scoped, and hot-loadable. Install one at runtime from a catalog or a direct URL+checksum:
 
@@ -176,7 +194,7 @@ curl -sS -X POST http://127.0.0.1:8080/v1/plugins/install \
 
 Uninstall is symmetric (`POST /v1/plugins/uninstall/{pluginId}`), and `GET /v1/plugins/installed` shows per-agent state — the admin console's *PluginStore* panel does all of this with buttons. Packaging and the trust model: [plugins.md](plugins.md).
 
-## 10. Where to next
+## 11. Where to next
 
 - **Hardening for real use**: [production.md](production.md) — TLS, `VAPOR_ENCRYPTION_KEY` management, per-role API keys, backups, upgrades, rollback.
 - **Something broke?**: [troubleshooting.md](troubleshooting.md) — symptom → diagnosis → fix checklists.

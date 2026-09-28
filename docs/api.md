@@ -146,11 +146,13 @@ Legend for the account-task pattern: many `/v1/accounts/{name}/...` endpoints di
 
 ### 4.2 Accounts (declared farm accounts, trade, market, inventory, duplicates, achievements, points shop, loot, standing, licenses, confirmations)
 
-Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, idleApps?, region?, agentId?, note?, version?, marketListingsEnabled, boostTargets?, tradePolicy?, farmPolicy? }` where
+Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, idleApps?, region?, agentId?, note?, version?, marketListingsEnabled, boostTargets?, tradePolicy?, farmPolicy?, role, steamId? }` where
 `version = { version: int, updatedAt, updatedBy? }` (`ConfigVersion`),
 `boostTargets = [ { appId: uint, targetHours: double } ]` (`BoostTarget`),
 `tradePolicy = { autoAcceptGifts: bool, partnerWhitelist?: ulong[] }` (`TradePolicy`),
-`farmPolicy = { perGameHourBudget?: double, priorityOrder: "cardsDescending"|"cardsAscending"|"appIdAscending", priorityApps?: uint[] }` (`FarmPolicy`).
+`farmPolicy = { perGameHourBudget?: double, priorityOrder: "cardsDescending"|"cardsAscending"|"appIdAscending", priorityApps?: uint[] }` (`FarmPolicy`),
+`role = "farm"|"storage"` (`AccountRole`, default `farm` — farm accounts are the loot sources, a storage account is the warehouse collect runs target; the default keeps specs persisted before the field existed unchanged),
+`steamId?` — the account's own SteamID64, the loot partner address a storage account is collected into (validated positive 64-bit; blank normalizes to null — declaring the role ahead of knowing the id is fine, the collect endpoint refuses to run without it).
 
 #### `GET /v1/accounts`
 - Purpose: list declared accounts with filters.
@@ -181,6 +183,8 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
   - `boostTargets` — `[{ appId: uint, targetHours: number }]`, optional; required to be non-empty when `desiredState = "boost"` (→ 400 otherwise); duplicate app with different targetHours → 400
   - `tradePolicy` — `{ autoAcceptGifts: bool (default false), partnerWhitelist?: string(ulong)[] }`, optional; `autoAcceptGifts=true` with empty whitelist → 400
   - `farmPolicy` — `{ perGameHourBudget?: number, priorityOrder?: string, priorityApps?: uint[] }`, optional; non-finite/≤0 budget → 400
+  - `role` — string enum, default `"farm"` (`farm`|`storage`; other values → 400 `account role must be farm or storage, got <value>`)
+  - `steamId` — string (SteamID64), optional; must parse as `ulong > 0` when present (else 400 `steam_id must be a positive 64-bit SteamID, got '<value>'`); blank normalizes to null
 - 200: `{ "spec": AccountSpec }`
 - Errors: 400 (blank name or validation via `ArgumentException` message), 401.
 - Audit: `account.spec.updated`.
@@ -375,6 +379,24 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
 - Purpose: farm-loop snapshot for every tracked account (queue, progress, efficiency counters).
 - Auth: admin. Body: none. Query: none.
 - 200: `{ "farm": [ FarmAccountView ] }` — `FarmAccountView = { accountName, farmingAppId?: uint, queue?: uint[], cardsRemaining?: int, cardsCollected: int, cardsPerHour?: double, completedApps?: uint[], skippedApps?: uint[], queueRefreshedAt?, statsStartedAt? }`.
+- Errors: 401.
+
+#### `POST /v1/orchestration/storage/collect`
+- Purpose: collect the farm fleet's tradable items into a declared storage account (§39 P-b): one job with a `loot_inventory` task per source (`partner_steam_id` = the storage account's declared SteamId64), bounded wait, then chained sender-side `confirm_trade_offer` tasks for offers Steam requires confirming (an unconfirmed offer never reaches the storage partner). The job's existing SSE stream is the progress channel. Pacing is rate-limit aware by construction: the agent-side per-sender `TradeRateLimiter` throttles offer creation (the binding Steam constraint); cross-source concurrency is intentional (each farm account has its own session and rate budget).
+- Auth: admin.
+- Body (`StorageCollectRequest`):
+  - `storage` — string, **required** (blank/absent → 400 `storage (target account name) is required`); must name a declared account (else 404 `account '<name>' is not declared`) with `role = "storage"` (else 400 `account '<name>' is not declared as a storage account (role=storage)`) and a declared SteamId64 (else 400 `storage account '<name>' has no steam_id declared; set steamId on the account before collecting`)
+  - `message` — string, optional (trade message carried on every offer)
+  - `appIds` — int[], optional filter of which games' items to send
+- Sources: enabled farm accounts (`role=farm`, `enabled=true`) not declared offline — an offline account is logged out, there is nothing to loot from it. No sources available → 400 `no enabled farm accounts to collect from (sources are enabled farm accounts not declared offline)`.
+- 200: `{ "job_id", "storage", "storage_steam_id", "farm_accounts", "results": [ CollectTaskResult ] }` where `CollectTaskResult = { account, status, error?, itemCount?, tradeOfferId?, confirmed?: bool, confirmJobId?, confirmError? }` — every task settled inside the wait window; per-source failures are reported in `results`, never a blanket 502.
+- 202: `Location: /v1/jobs/{id}`, body `{ "job_id", "storage", "storage_steam_id", "farm_accounts", "status": "pending" }` — the window closed with tasks still in flight; keep polling the job. Unfinished loot re-runs on the next collect because unaccepted offers expire and the items stay in place.
+- Errors: 400, 404, 401. Audit: `storage.collect`.
+
+#### `GET /v1/orchestration/storage/snapshot`
+- Purpose: per-account last-collect statistics, rebuilt from recent collect jobs (no dedicated warehouse table — the jobs are the record). The most recent loot task per source account wins; the matching confirmation job (same target + offer id in its payload) contributes the `confirmed` flag.
+- Auth: admin. Body: none. Query: none.
+- 200: `{ "accounts": [ CollectSnapshotEntry ] }` — `CollectSnapshotEntry = { account, storage?, jobId, at, status, error?, itemCount?, tradeOfferId?, confirmed?: bool, confirmJobId?, confirmError? }` (`at` = the loot task's `updatedAt`).
 - Errors: 401.
 
 (See also `AccountOrchestrationView` embedded in `GET /v1/accounts/{name}`: `{ assignedAgent?, activeJobId?, activeJobAction?, loginAttempts, nextAttemptAt?, idling, farmingAppId?, farmQueue?, farmQueueCheckedAt?, boostUnmetApps?, boostCheckedAt?, tradeOffersToAccept?: ulong[], tradeOfferCheckedAt?, lastAction?, lastActionAt?, lastDeviation?, standing?, standingQuarantined, standingCheckedAt?, farmCompletedApps?, farmSkippedApps?, farmAppStartedAt?, farmStatsStartedAt?, farmCardsRemaining?, farmCardsCollected, farmCardsPerHour? }`.)
@@ -744,6 +766,6 @@ Plane-mismatched selectors are rejected (400): `route`/`method` with `task-dispa
 
 ## 5. Audit actions reference (written by these endpoints)
 
-`account.spec.updated`, `account.spec.removed`, `account.enabled`, `account.disabled`, `account.loot`, `account.proxy_set`, `account.proxy_check`, `account.add_license`, `standing_check_requested`, `trade_offers.read`, `trade_offer.accept`, `trade_offer.decline`, `trade_offer.confirm`, `trade.swap_offer`, `trade_confirmations.accept_all`, `inventory.read`, `inventory.duplicates`, `achievement.read`, `achievement.unlock`, `achievement.reset`, `market_listings.read`, `market_listings.create`, `market_listings.cancel`, `points_shop.summary`, `points_shop.claim`, `job.created`, `job.canceled`, `session.event.received`, `session.login`, `auth.code.submitted`, `config.global.updated`, `config.account.updated`, `plugin_install_dispatched`, `plugin_uninstall_dispatched`, `crawl.plan.created`, `crawl.plan.updated`, `crawl.plan.deleted`, `crawl.plan.triggered`, plus task-result audits (`task.result.reported` for sensitive actions: `SendTradeOffer*`, `AcceptTradeOffer*`, `DeclineTradeOffer*`, `CancelTradeOffer*`, `GetInventory*`, `RedeemKey*`) and crawl-run audits from the worker.
+`account.spec.updated`, `account.spec.removed`, `account.enabled`, `account.disabled`, `account.loot`, `account.proxy_set`, `account.proxy_check`, `account.add_license`, `storage.collect`, `standing_check_requested`, `trade_offers.read`, `trade_offer.accept`, `trade_offer.decline`, `trade_offer.confirm`, `trade.swap_offer`, `trade_confirmations.accept_all`, `inventory.read`, `inventory.duplicates`, `achievement.read`, `achievement.unlock`, `achievement.reset`, `market_listings.read`, `market_listings.create`, `market_listings.cancel`, `points_shop.summary`, `points_shop.claim`, `job.created`, `job.canceled`, `session.event.received`, `session.login`, `auth.code.submitted`, `config.global.updated`, `config.account.updated`, `plugin_install_dispatched`, `plugin_uninstall_dispatched`, `crawl.plan.created`, `crawl.plan.updated`, `crawl.plan.deleted`, `crawl.plan.triggered`, plus task-result audits (`task.result.reported` for sensitive actions: `SendTradeOffer*`, `AcceptTradeOffer*`, `DeclineTradeOffer*`, `CancelTradeOffer*`, `GetInventory*`, `RedeemKey*`) and crawl-run audits from the worker.
 
 Actor = `X-Forwarded-For` header when present, else the remote IP; details are redacted before persistence (`SensitiveDataRedactor`).

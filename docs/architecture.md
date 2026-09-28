@@ -302,6 +302,26 @@ loop (default 15s) that converges actual session state onto it:
   `POST /v1/accounts/{name}/standing-check` and read per-account standing via
   `GET /v1/orchestration/standing`.
 
+Account specs also carry a fleet `role`: `farm` (the default, so specs persisted
+before the field existed read back unchanged) marks a loot source, `storage`
+marks a warehouse. `POST /v1/orchestration/storage/collect` is the one-shot
+collect run: it fans one `loot_inventory` task per enabled farm source into a
+single job — the job's existing SSE stream is therefore the progress channel —
+addressed to the storage account's declared SteamID64 (public operational data
+on the spec, not a credential), bounded-waits for every source, then chains the
+sender-side `confirm_trade_offer` tasks for offers Steam requires confirming,
+mirroring the single-account loot endpoint's interlock: an unconfirmed offer
+never reaches the storage partner. Pacing needs no control-plane scheduler
+because the agent-side trade rate limiter already throttles offer creation per
+sender (the binding Steam constraint), while cross-source concurrency is
+deliberate — each farm account has its own session and its own budget. A run
+still in flight when the wait window closes answers `202` with the job id;
+unfinished loot simply re-runs on the next collect, because unaccepted offers
+expire and the items stay where they are. `GET /v1/orchestration/storage/snapshot`
+rebuilds per-account last-collect statistics from the collect jobs themselves
+(marker: job meta `origin = storage-collect`) — the jobs are the record, so no
+dedicated warehouse table exists.
+
 All orchestration decisions are audited (`account.reconciled`,
 `account.spec.updated/enabled/disabled/removed`) and exported as Prometheus
 metrics (`vapor_controlplane_reconcile_actions_total`,

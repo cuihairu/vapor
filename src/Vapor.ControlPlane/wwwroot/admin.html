@@ -925,6 +925,19 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="field-grid">
+                            <div class="field">
+                                <label for="editRole">仓库角色</label>
+                                <select id="editRole">
+                                    <option value="farm">farm（打卡源，loot 来源）</option>
+                                    <option value="storage">storage（仓库号，归集目标）</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="editSteamId">SteamID64（storage 号的归集目标地址）</label>
+                                <input id="editSteamId" type="text" placeholder="7656119...">
+                            </div>
+                        </div>
                         <div class="field">
                             <label for="editIdleApps">Idle 白名单 / Farm 排除名单（app 名 CSV）</label>
                             <input id="editIdleApps" type="text" placeholder="730, 570">
@@ -1109,6 +1122,44 @@
                     <div class="list" id="swapResultBox">
                         <div class="empty-state">先「查重复卡方案」审阅配对，再「按方案发送报价」。</div>
                     </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title">仓库归集</h2>
+                            <div class="panel-subtitle">把全部启用中的 farm 号可交易物品统一归集到指定 storage 仓库号（一次性任务，逐源 loot + 自动续派 mobile 确认）。</div>
+                        </div>
+                        <div class="field">
+                            <label for="storageAccountSelect">仓库号（role=storage）</label>
+                            <select id="storageAccountSelect">
+                                <option value="">正在加载账户...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="collectMessageInput">报价留言（可选）</label>
+                            <input id="collectMessageInput" type="text" placeholder="storage collect">
+                        </div>
+                        <div class="field">
+                            <label for="collectAppIdsInput">限定 app（CSV，留空为全部可交易物品）</label>
+                            <input id="collectAppIdsInput" type="text" placeholder="753, 730">
+                        </div>
+                    </div>
+                    <div class="button-row">
+                        <button class="btn btn-danger btn-small" id="runStorageCollectButton">执行归集</button>
+                    </div>
+                    <div class="helper" id="storageCollectStatus"></div>
+                    <div class="list" id="storageCollectResultBox" hidden></div>
+                    <div class="row-head" style="margin-top: 16px;">
+                        <div class="strong">归集快照（每源账户最近一次）</div>
+                        <button class="btn btn-secondary btn-small" id="refreshStorageSnapshotButton">刷新快照</button>
+                    </div>
+                    <div class="list" id="storageSnapshotBox">
+                        <div class="empty-state">点击「刷新快照」查看各 farm 号最近一次归集结果。</div>
+                    </div>
+                    <div class="helper">限流由 agent 侧按发送账户的报价速率限制执行（每个源号独立预算）；未确认的报价过期后物品仍在源账户，下次归集会重新发送。仓库号须先声明 SteamID64（账户编辑器）。</div>
                 </section>
 
                 <section class="panel fade-in">
@@ -1518,6 +1569,8 @@
             document.getElementById("saveAccountButton").addEventListener("click", () => saveAccountEdits());
             document.getElementById("applyProxyButton").addEventListener("click", () => applyProxyAssignment());
             document.getElementById("cancelEditButton").addEventListener("click", () => closeAccountEditor());
+            document.getElementById("runStorageCollectButton").addEventListener("click", () => runStorageCollect());
+            document.getElementById("refreshStorageSnapshotButton").addEventListener("click", () => loadStorageSnapshot());
             document.getElementById("loadAchievementsButton").addEventListener("click", () => loadAchievements());
             document.getElementById("selectAllAchievementsButton").addEventListener("click", () => toggleAllAchievements());
             document.getElementById("unlockSelectedAchievementsButton").addEventListener("click", () => submitAchievementWrite(true));
@@ -2150,6 +2203,7 @@
             renderAccounts();
             populateTradeAccountSelect();
             populateAchievementAccountSelect();
+            populateStorageAccountSelect();
         }
 
         function populateTradeAccountSelect() {
@@ -2291,6 +2345,8 @@
             document.getElementById("editRegion").value = account.region || "";
             document.getElementById("editAgentId").value = account.agentId || "";
             document.getElementById("editNote").value = account.note || "";
+            document.getElementById("editRole").value = String(account.role || "farm").toLowerCase();
+            document.getElementById("editSteamId").value = account.steamId || "";
             document.getElementById("editEnabled").checked = Boolean(account.enabled);
             document.getElementById("editMarketListings").checked = Boolean(account.marketListingsEnabled);
             // 凭据不进控制面：代理从不回显，编辑器每次打开都从空输入开始。
@@ -2315,6 +2371,20 @@
                 ? accounts.map((account) => `<option value="${escapeHtml(account.accountName)}">${escapeHtml(account.accountName)}${account.enabled ? "" : "（已禁用）"}</option>`).join("")
                 : '<option value="">暂无账户</option>';
             if (current && accounts.some((account) => account.accountName === current)) {
+                select.value = current;
+            }
+        }
+
+        function populateStorageAccountSelect() {
+            const select = document.getElementById("storageAccountSelect");
+            const current = select.value;
+            const storages = state.accounts
+                .filter((account) => String(account.role || "farm").toLowerCase() === "storage")
+                .sort((a, b) => String(a.accountName).localeCompare(String(b.accountName), "zh-CN"));
+            select.innerHTML = storages.length
+                ? storages.map((account) => `<option value="${escapeHtml(account.accountName)}">${escapeHtml(account.accountName)}${account.steamId ? "" : "（缺 SteamID64）"}</option>`).join("")
+                : '<option value="">暂无 storage 仓库号</option>';
+            if (current && storages.some((account) => account.accountName === current)) {
                 select.value = current;
             }
         }
@@ -2560,7 +2630,9 @@
                 // PUT is a full replace: carry the declared trade policy through
                 // untouched until the panel grows dedicated editing for it, or
                 // every unrelated edit would silently disable auto-accept.
-                tradePolicy: state.accounts.find((item) => item.accountName === accountName)?.tradePolicy ?? null
+                tradePolicy: state.accounts.find((item) => item.accountName === accountName)?.tradePolicy ?? null,
+                role: document.getElementById("editRole").value,
+                steamId: document.getElementById("editSteamId").value.trim() || null
             };
 
             try {
@@ -2620,6 +2692,111 @@
                 addEvent("task", `账户 ${accountName} 代理变更完成`);
             } catch (error) {
                 status.textContent = `代理变更失败: ${error.message}`;
+            }
+        }
+
+        function parseCollectAppIds(raw) {
+            const ids = parseCsvInput(raw);
+            for (const id of ids) {
+                if (!/^\d+$/.test(id) || Number(id) <= 0) {
+                    throw new Error(`限定 app 必须是正整数 appid，收到「${id}」`);
+                }
+            }
+            return ids.length ? ids.map(Number) : null;
+        }
+
+        async function runStorageCollect() {
+            const storage = document.getElementById("storageAccountSelect").value;
+            const status = document.getElementById("storageCollectStatus");
+            const box = document.getElementById("storageCollectResultBox");
+            if (!storage) {
+                alert("请先声明一个 storage 仓库号（账户编辑器 → 仓库角色）");
+                return;
+            }
+
+            let appIds;
+            try {
+                appIds = parseCollectAppIds(document.getElementById("collectAppIdsInput").value);
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+
+            if (!window.confirm(`归集会把全部启用中 farm 号的可交易物品转给 ${storage}，且不可逆。确认执行？`)) {
+                return;
+            }
+
+            box.hidden = true;
+            status.textContent = "正在派发归集任务（逐源 loot + 自动续派 mobile 确认）...";
+            try {
+                const response = await apiFetch("/v1/orchestration/storage/collect", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        storage,
+                        message: document.getElementById("collectMessageInput").value.trim() || null,
+                        appIds
+                    })
+                });
+                const pending = response.status === "pending";
+                if (pending) {
+                    status.textContent = `归集仍在进行中（任务 ${response.job_id ?? "?"}），稍后在任务面板查看`;
+                } else {
+                    status.textContent = `归集完成（任务 ${response.job_id ?? "?"}）`;
+                }
+                renderCollectResults(box, response);
+                box.hidden = false;
+                addEvent("task", pending ? `仓库 ${storage} 归集排队中` : `仓库 ${storage} 归集完成`);
+            } catch (error) {
+                status.textContent = `归集失败: ${error.message}`;
+            }
+        }
+
+        function renderCollectResults(box, response) {
+            const results = response.results || [];
+            box.innerHTML = results.length
+                ? results.map((task) => {
+                    const lines = [`<div class="strong">${escapeHtml(task.account)}：${escapeHtml(task.status || "?")}`];
+                    if (task.error) {
+                        lines.push(`<div class="helper">失败：${escapeHtml(task.error)}</div>`);
+                    }
+                    if (task.tradeOfferId) {
+                        lines.push(`<div class="helper">报价 ${escapeHtml(task.tradeOfferId)}${task.itemCount != null ? `，${task.itemCount} 件物品` : ""}</div>`);
+                    }
+                    if (task.confirmed === true) {
+                        lines.push('<div class="helper">mobile 确认已完成</div>');
+                    } else if (task.confirmed === false) {
+                        lines.push(`<div class="helper">确认未完成${task.confirmError ? `：${escapeHtml(task.confirmError)}` : "（稍后重试或手动确认）"}</div>`);
+                    }
+                    lines.push("</div>");
+                    return lines.join("");
+                }).join("")
+                : '<div class="empty-state">任务仍在进行中，本轮未返回逐源结果。</div>';
+        }
+
+        async function loadStorageSnapshot() {
+            const box = document.getElementById("storageSnapshotBox");
+            try {
+                const data = await apiFetch("/v1/orchestration/storage/snapshot");
+                const entries = data.accounts || [];
+                box.innerHTML = entries.length
+                    ? entries.map((entry) => {
+                        const parts = [`<div class="strong">${escapeHtml(entry.account)} → ${escapeHtml(entry.storage || "?")}：${escapeHtml(entry.status || "?")}`];
+                        if (entry.error) {
+                            parts.push(`<div class="helper">失败：${escapeHtml(entry.error)}</div>`);
+                        }
+                        if (entry.tradeOfferId) {
+                            const confirm = entry.confirmed === true ? "已确认" : entry.confirmed === false ? "确认未完成" : "无需确认";
+                            parts.push(`<div class="helper">报价 ${escapeHtml(entry.tradeOfferId)}${entry.itemCount != null ? `，${entry.itemCount} 件物品` : ""}，${confirm}</div>`);
+                        }
+                        if (entry.at) {
+                            parts.push(`<div class="helper">时间：${escapeHtml(String(entry.at))}</div>`);
+                        }
+                        parts.push("</div>");
+                        return parts.join("");
+                    }).join("")
+                    : '<div class="empty-state">尚无归集记录。</div>';
+            } catch (error) {
+                box.innerHTML = `<div class="empty-state">快照拉取失败: ${escapeHtml(error.message)}</div>`;
             }
         }
 

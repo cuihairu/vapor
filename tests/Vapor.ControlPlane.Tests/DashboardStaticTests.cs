@@ -193,6 +193,31 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_StorageCollectPanel_PicksStorageAccountAndRendersPerSourceResults()
+	{
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		// §39 P-b contract: the account editor declares the role plus the
+		// storage account's own SteamID64 (the loot partner address), and the
+		// collect panel only offers declared storage accounts. A collect is a
+		// confirmed, irreversible one-shot (not the account PUT save) and both
+		// the per-source outcome and the last-collect snapshot render from the
+		// two orchestration endpoints.
+		Assert.Contains("id=\"editRole\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"editSteamId\"", html, StringComparison.Ordinal);
+		Assert.Contains("role: document.getElementById(\"editRole\").value", html, StringComparison.Ordinal);
+		Assert.Contains("steamId: document.getElementById(\"editSteamId\").value.trim() || null", html, StringComparison.Ordinal);
+		Assert.Contains("populateStorageAccountSelect", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"runStorageCollectButton\"", html, StringComparison.Ordinal);
+		Assert.Contains("runStorageCollect", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/orchestration/storage/collect", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/orchestration/storage/snapshot", html, StringComparison.Ordinal);
+		Assert.Contains("loadStorageSnapshot", html, StringComparison.Ordinal);
+		Assert.Contains("renderCollectResults", html, StringComparison.Ordinal);
+		Assert.Contains("不可逆", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void AdminHtml_FarmPanel_ShowsProgressBadgeAndPolicyFields()
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));

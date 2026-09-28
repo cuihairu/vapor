@@ -64,9 +64,11 @@ public sealed class AccountStore
 		bool? marketListingsEnabled = null,
 		IReadOnlyList<BoostTarget>? boostTargets = null,
 		TradePolicy? tradePolicy = null,
-		FarmPolicy? farmPolicy = null)
+		FarmPolicy? farmPolicy = null,
+		AccountRole role = AccountRole.Farm,
+		string? steamId = null)
 	{
-		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, boostTargets, tradePolicy, farmPolicy, out var normalizedAccountName);
+		var spec = Build(accountName, enabled, desiredState, idleApps, region, agentId, note, updatedBy, boostTargets, tradePolicy, farmPolicy, role, steamId, out var normalizedAccountName);
 
 		lock (_gate)
 		{
@@ -148,6 +150,8 @@ public sealed class AccountStore
 		IReadOnlyList<BoostTarget>? boostTargets,
 		TradePolicy? tradePolicy,
 		FarmPolicy? farmPolicy,
+		AccountRole role,
+		string? steamId,
 		out string normalizedAccountName)
 	{
 		if (string.IsNullOrWhiteSpace(accountName))
@@ -177,8 +181,49 @@ public sealed class AccountStore
 			Version: new ConfigVersion(1, DateTimeOffset.UtcNow, string.IsNullOrWhiteSpace(updatedBy) ? null : updatedBy),
 			BoostTargets: normalizedTargets,
 			TradePolicy: NormalizeTradePolicy(tradePolicy),
-			FarmPolicy: NormalizeFarmPolicy(farmPolicy)
+			FarmPolicy: NormalizeFarmPolicy(farmPolicy),
+			Role: NormalizeRole(role),
+			SteamId: NormalizeSteamId(steamId)
 		);
+	}
+
+	/// <summary>
+	/// Validates the declared role: only the defined enum members are accepted
+	/// (a cast-in garbage value would silently read as a role the fleet never
+	/// declared). Farm is the default, so an omitted role stays a plain farm
+	/// account — specs declared before the field existed need no migration.
+	/// </summary>
+	private static AccountRole NormalizeRole(AccountRole role)
+	{
+		if (role is not (AccountRole.Farm or AccountRole.Storage))
+		{
+			throw new ArgumentException($"account role must be farm or storage, got {role}", nameof(role));
+		}
+
+		return role;
+	}
+
+	/// <summary>
+	/// Validates and normalizes the account's own SteamID64 — the loot partner
+	/// address a storage account is collected into. Blank normalizes to null
+	/// (declaring the role ahead of knowing the id is fine; the collect
+	/// endpoint refuses to run without it), anything else must be a positive
+	/// 64-bit integer (zero is not a usable SteamId).
+	/// </summary>
+	private static string? NormalizeSteamId(string? steamId)
+	{
+		string? trimmed = NormalizeOptional(steamId);
+		if (trimmed is null)
+		{
+			return null;
+		}
+
+		if (!ulong.TryParse(trimmed, out ulong parsed) || parsed == 0)
+		{
+			throw new ArgumentException($"steam_id must be a positive 64-bit SteamID, got '{trimmed}'", nameof(steamId));
+		}
+
+		return parsed.ToString(System.Globalization.CultureInfo.InvariantCulture);
 	}
 
 	/// <summary>

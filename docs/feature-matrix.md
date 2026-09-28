@@ -61,6 +61,7 @@
 |------|-----|------|-----|----------------|-----------|
 | 库存读取 | ✅ | ✅ | ✅ | ✅ | ✅(`GET /v1/accounts/{name}/inventory`,多 app 扫描 + tradable/marketable 过滤) |
 | 库存管理(API/UI/重复物清单) | ⚠️ | ✅ | ✅ | ➖ | ⚠️(重复物清单 API:`GET /v1/accounts/{name}/duplicates`;无 UI) |
+| 仓库号统一归集(loot 到公共仓库) | ❌(loot 各自归档) | ➖ | ➖ | ➖ | ✅(§39-P-b 账户 `role=farm/storage` 声明 + `POST /v1/orchestration/storage/collect` 一次归集全部启用 farm 号:单 job 逐源 `loot_inventory`(SSE 进度)+ sender 侧 mobile 确认链 + agent 侧 per-sender 限流 + 快照端点按源账户回读最近归集;无专用仓库表,jobs 即记录) |
 
 ### 3.5 市场
 

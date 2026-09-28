@@ -587,6 +587,86 @@ public sealed class AccountStoreTests
 		Assert.NotNull(store.Get("alice"));
 	}
 
+	[Fact]
+	public void Upsert_OmittedRole_DefaultsToFarm()
+	{
+		// Backward compat: pre-role declarations need no migration — an omitted
+		// role stays a plain farm account.
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null);
+
+		Assert.Equal(AccountRole.Farm, spec.Role);
+		Assert.Null(spec.SteamId);
+	}
+
+	[Fact]
+	public void Upsert_StorageRoleAndSteamId_RoundTrip()
+	{
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"warehouse", enabled: true, AccountDesiredState.Offline, null, null, null, null,
+			role: AccountRole.Storage, steamId: "76561197960265728");
+
+		Assert.Equal(AccountRole.Storage, spec.Role);
+		Assert.Equal("76561197960265728", spec.SteamId);
+	}
+
+	[Theory]
+	[InlineData((AccountRole)2)]
+	[InlineData((AccountRole)99)]
+	[InlineData((AccountRole)(-1))]
+	public void Upsert_CastInRole_Throws(AccountRole role)
+	{
+		// A cast-in garbage value would silently read as a role the fleet never
+		// declared, so only the defined members are accepted.
+		var store = new AccountStore();
+
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null, role: role));
+	}
+
+	[Theory]
+	[InlineData("0")]
+	[InlineData("-76561197960265728")]
+	[InlineData("not-a-number")]
+	[InlineData("76561197960265728.5")]
+	public void Upsert_UnusableSteamId_Throws(string steamId)
+	{
+		var store = new AccountStore();
+
+		Assert.Throws<ArgumentException>(
+			() => store.Upsert("alice", enabled: true, AccountDesiredState.Online, null, null, null, null, steamId: steamId));
+	}
+
+	[Fact]
+	public void Upsert_WhitespaceSteamId_NormalizesToNull()
+	{
+		// Declaring the storage role ahead of knowing the id is fine; the
+		// collect endpoint refuses to run without it.
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"warehouse", enabled: true, AccountDesiredState.Offline, null, null, null, null,
+			role: AccountRole.Storage, steamId: "   ");
+
+		Assert.Equal(AccountRole.Storage, spec.Role);
+		Assert.Null(spec.SteamId);
+	}
+
+	[Fact]
+	public void Upsert_SteamId_TrimsAndNormalizesToCanonicalDigits()
+	{
+		var store = new AccountStore();
+
+		AccountSpec spec = store.Upsert(
+			"warehouse", enabled: true, AccountDesiredState.Offline, null, null, null, null,
+			role: AccountRole.Storage, steamId: " 76561197960265728 ");
+
+		Assert.Equal("76561197960265728", spec.SteamId);
+	}
+
 	private static async Task CleanupRootAsync(string root)
 	{
 		for (int attempt = 0; attempt < 5; attempt++)
