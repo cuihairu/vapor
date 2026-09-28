@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Utilities;
 using Vapor.Steam.Core.Web;
@@ -33,6 +32,9 @@ public sealed class CheckProxyAction : IAction
 
 	// Test seam: stands in for the live network probes.
 	internal Func<ProxyOptions, CancellationToken, Task<ProxyProbeResult>>? ProbeOverride { get; set; }
+
+	// Test seam: stands in for the live proxy transport (see ProbeAsync).
+	internal Func<System.Net.Http.HttpMessageHandler>? HandlerOverride { get; set; }
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -97,13 +99,12 @@ public sealed class CheckProxyAction : IAction
 	}
 
 	/// <summary>Live probes: exit IP via the standard echo endpoint, then Steam reachability.</summary>
-	[ExcludeFromCodeCoverage]
-	internal static async Task<ProxyProbeResult> ProbeAsync(ProxyOptions options, CancellationToken cancellationToken)
+	internal async Task<ProxyProbeResult> ProbeAsync(ProxyOptions options, CancellationToken cancellationToken)
 	{
 		// CA2000 suppressed: ownership of both handler and client transfers to the
 		// using-scoped HttpClient below.
 #pragma warning disable CA2000
-		var handler = new System.Net.Http.SocketsHttpHandler
+		var handler = HandlerOverride?.Invoke() ?? new System.Net.Http.SocketsHttpHandler
 		{
 			ConnectTimeout = TimeSpan.FromSeconds(8),
 			Proxy = options.ToWebProxy(),

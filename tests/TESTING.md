@@ -8,7 +8,7 @@
 
 ```
 tests/
-├── Vapor.Steam.Core.Tests/               (1504 tests)
+├── Vapor.Steam.Core.Tests/               (1508 tests)
 │   ├── Unit/                             动作/会话/交易/安全/数据/Web 客户端
 │   ├── Integration/                      会话工作流 + Redis 缓存(门控)
 │   └── Performance/                      并发与压力
@@ -31,7 +31,7 @@ tests/
 
 | 测试项目 | 数量 | 覆盖范围 |
 |----------|------|----------|
-| Vapor.Steam.Core.Tests | 1504 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检)、异常账号体检(standing 客户端 + check_account_standing action)、脱敏/日志消毒纯函数 property 扩面(控制字符三律/proxy URI 凭据/JSON 键敏感) |
+| Vapor.Steam.Core.Tests | 1508 | 动作、会话状态机、交易校验、凭据/加密(含轮换器)、maFile 解析、数据缓存(Redis mock 离线全覆盖)、Steam Web 客户端 + 契约回放、徽章页解析、报价列表、loot、addlicense、库存多 app 扫描、重复卡分析与 1:1 换卡匹配、QR 扫码登录会话流、市场挂单创建/撤单与手续费、积分商店、games tab 播放时间数据源、成就列表(社区页解析)与解锁/重置(client stats 协议位图数学/载荷门控/逐条结果/协议 records 契约)、auth token 反射桥、payload 值形状与分支加固(payload 读取器 property)、trade 资产载荷解析与资产校验 property、Steam TOTP property、熔断器/限流器边界、每账号代理(ProxyOptions 解析 property + 存取透传 + check_proxy 自检含活探测 fake transport 全链路)、异常账号体检(standing 客户端 + check_account_standing action)、脱敏/日志消毒纯函数 property 扩面(控制字符三律/proxy URI 凭据/JSON 键敏感) |
 | Vapor.ControlPlane.Tests | 982 | REST API、SQLite job/审计/抓取存储、任务派发(含 `agent:{id}` 定向派发)、账户编排(boost/trade 策略,§35 编排守卫/审计隔离/payload 解析/结算回读深化,§36 trade 策略规范化 property 测试)、周期任务、异常账号体检编排(周期体检/隔离/解除/强制体检/快照)、挂卡 ASF 式增强(farm 策略规范化/队列排序/预算跳过/队列 diff 完成标记/累计统计/farm 快照端点)、插件生态(PluginStore REST/catalog 索引源/镜像/定向派发 + §38 维护轮 property 扩面:target 往返/checksum 归一/索引解析不变量)、通知、追踪 + WS 协议回放、报价查询/接受/拒绝/批量确认/loot/免费认领/库存读取/重复查询/换卡报价、数据抓取计划/执行/分片、静态面板契约(含 admin 写操作确认锚)、坏 JSON 边界、QR 挑战归类、Program 分支加固、Bearer 鉴权解析、内部状态聚合端点 `/v1/system/status`(overall 推导/自检/代理探测聚合/账号一致性)、API 边缘中间件(RED 指标聚合/排序/不变 culture 渲染 + trace exemplar 双臂(有 Activity 渲染 32hex 链接/无 Activity 裸样本) + 按键滑动窗限流假钟全臂/TestServer 429/Retry-After/非 /v1 不限流/路由模式标签)、API 密钥过期(@ISO-8601 后缀解析全臂/env 建图/注入钟到期边界强制)、故障注入 API(FaultInjector 单元全臂 + /v1/faults 四端点 e2e:验证/默认值/预算自愈/TTL/豁免面/跨面选择器 400/审计/指标族 + 派发面注入走真实 requeue 机器 + 组装根装配)及纯函数 property 扩面(SystemStatus 词表与 overall、ScheduleClock 校验/触发点计数/接受域、FarmPolicy 规范化幂等/接受域/保序)、声明态持久化(SqliteConfigStore 单元全臂 + AccountStore/ConfigStore 重启回灌与写穿失败原子性 + 组装根双生命周期重启演练) |
 | Vapor.Plugins.Core.Tests | 152 | 插件发现/清单/SemVer 兼容/加载(含 official 插件 API 精确版本锁定 MatchesExactly)/卸载/ALC 回收/事件分发/配置/信任与权限/故障 fixture 库 + 测试插件面直调(echo action/pong command/marker 生命周期/fixture 契约) |
 | Vapor.Plugins.MobileAuthenticator.Tests | 137 | TOTP、确认哈希(含 FsCheck property:HMAC oracle 交叉验证)、移动交易确认(单个/批量)、shared/identity secret 持久化、报价确认闭环、插件宿主实战加载 + 动作边界(payload 形状/失败语义/冷却)与确认客户端解析分支 |
@@ -42,7 +42,7 @@ tests/
 | Vapor.Protocol.Tests | 43 | JsonDefaults 序列化契约(camelCase/枚举字符串/null 省略/前向兼容)+ 全部协议模型逐字段往返 + record 边界(畸形 JSON/缺字段/默认值)+ FsCheck property 往返(任意字段值的心跳/取消/错误/握手模型恒等) |
 | Vapor.E2E.Tests | 11 | 真实双进程闭环:CP 进程 + Agent 子进程(job 派发、任务回报、SSE、账户编排重平衡、静态页守护) |
 | Vapor.KeyRotation.Tests | 28 | 凭据轮换 CLI 壳:参数解析(缺失/未知/help 双旗/dry-run)、key spec 四格式全臂、退出码契约(0/1/2,含 `--new-key` 缺值臂以 dotnet 子进程驱动并断言退出码 2——进程内直调会终止 testhost)、真实旋转三态(dry-run 不落盘/applied+备份+新钥可解/aborted+FAILED 上报)、损坏 store 异常路径 |
-| **合计** | **3204** | (2026-09-27 实测(插件轮实测:CaseOpening 107 新增、Core 147→152;ControlPlane 982 为声明态持久化轮实测;Agent 136 为 2026-09-25 watchdog 轮实测;Steam.Core 1504 为 2026-09-24 基线实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
+| **合计** | **3208** | (2026-09-28 实测(覆盖率轮实测:Steam.Core 1504→1508;此前 2026-09-27 插件轮实测:CaseOpening 107 新增、Core 147→152;ControlPlane 982 为声明态持久化轮实测;Agent 136 为 2026-09-25 watchdog 轮实测,其余项目沿用 2026-09-23 r13 基线计数);另 E2E 以真实子进程覆盖 Agent 主循环,单测统计测不到) |
 
 > 基线刷新方式(用 TRX 精确计数;`--list-tests` 会在终端宽度处折行长 theory 名,grep 计数会漏掉折行的用例):
 > ```bash
@@ -72,7 +72,7 @@ tests/
 - Vapor.Steam.Core
 <!-- /verify-coverage-inventory:asms -->
 
-### 排除登记([ExcludeFromCodeCoverage],14 处)
+### 排除登记([ExcludeFromCodeCoverage],13 处)
 
 <!-- verify-coverage-inventory:exclusions -->
 | 文件 | 符号 | 理由 |
@@ -89,7 +89,6 @@ tests/
 | src/Vapor.Steam.Core/SessionManager.cs | RunTokenRefreshLoopAsync | 循环仅经取消退出,条件退出臂无进程内确定性触发器(Task.Delay 先于条件检查) |
 | src/Vapor.Steam.Core/SessionManager.cs | RefreshTimerLoopAsync | PeriodicTimer 泵,同上 |
 | src/Vapor.Steam.Core/BotSession.cs | RunSteamCallbacksAsync | 同族:循环体内 RunCallbacks 在 Task.Delay 之前,取消经 Delay 的 OCE 表面化,条件退出臂不可达 |
-| src/Vapor.Steam.Core/Actions/CheckProxyAction.cs | ProbeAsync | 真网络探针(出口 IP/Steam 可达/延迟);判定逻辑经 ProbeOverride seam 测试 |
 | src/Vapor.Plugins.MarketWatch/MarketWatchPlugin.cs | PollOnceGuardedAsync | 真实时钟轮询守卫循环;PollOnce 本体与告警逻辑另测 |
 <!-- /verify-coverage-inventory:exclusions -->
 
@@ -97,7 +96,7 @@ tests/
 
 > 章节总数与文末「附录：逐类测试计数」均为 2026-09-24 专项盘点 TRX 实测（合计 2879；2026-09-24 内部状态轮 +43、维护轮九 property +9、维护轮十二 property +14(ScheduleClock 6/脱敏器 8)后 ControlPlane 866、Steam.Core 1504,维护轮十八 farm 策略 property +4 后 ControlPlane 870,合计 2949——ControlPlane 与 Steam.Core 部分为基线实测,其余项目沿用盘点基线）。逐类明细已与附录对齐（2026-09-24 重构轮：存量计数刷新 51 行、合并行正名 6 组、23 个漂移期新增类补行——新增类说明均从测试源码逐文件提炼,非反推）。后续轮次若动到类集合,以 `scripts/classify-trx.sh` 重生成附录并同步明细区。
 
-### Steam.Core(1504 个测试)
+### Steam.Core(1508 个测试)
 
 #### 动作(Actions)
 | 测试类 | 数量 | 说明 |
@@ -131,7 +130,7 @@ tests/
 | UnlockAchievementsActionTests / ResetAchievementsActionTests | 19 | 成就解锁/重置(位图载荷门控/显式 names 双格式与不可用形状/reset 双 confirm/transport 抛异常与无响应/无 client/逐条结果与 verified 透传) |
 | GetPlaytimeActionTests | 15 | 游戏时长读取(games tab fixture 驱动真实 client/小时降序+零小时尾按 appid/games 过滤只回查询 appid/steam_id 缺省 cookie 反解/非数字 steam_id 拒绝/cache_ttl 正值覆盖窗口/force_refresh 绕过缓存/ttl=0 每次都拉/缓存 miss 落空表回退且零请求/元数据 RequiresLogin) |
 | CheckAccountStandingActionTests | 19 | 账号状态查询 action(FetchOverride seam/steam_id 覆盖会话身份/垃圾 SteamID 不解析为 0/clean-restricted-banned 分类矩阵/失败信息透传含 Web API key/无 web handler 短路/取消重抛 OCE/cookie 兜底自身 ID/工厂 seam 走真实 client happy path) |
-| CheckProxyActionTests | 11 | 代理探测 action(ProbeOverride seam/无代理短路 proxyEnabled=false/payload 代理覆盖配置代理/畸形代理抛解析错误/成功输出仅带遮掩端点/探测失败映射 success=false+error/无 error 回退通用文案/探测异常不外泄/取消重抛 OCE/活探测把取消折叠为失败结果) |
+| CheckProxyActionTests | 15 | 代理探测 action(ProbeOverride seam/无代理短路 proxyEnabled=false/payload 代理覆盖配置代理/畸形代理抛解析错误/成功输出仅带遮掩端点/探测失败映射 success=false+error/无 error 回退通用文案/探测异常不外泄/取消重抛 OCE/活探测 fake transport 全链路:双端点成功含 URI 序/Steam 5xx 不可达保留出口 IP/Steam 异常保留出口 IP 与延迟/出口 IP 失败止步于单请求/活探测把取消折叠为失败结果) |
 
 #### 会话与核心组件
 | 测试类 | 数量 | 说明 |
@@ -385,7 +384,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 
 9 个测试项目统一接入 coverlet.collector；`run-tests.sh -c` 在收集前清理历史残留报告（清理必须在测试之前——测试结束后这些路径上的文件就是本次结果），覆盖整个解决方案。全量运行（无过滤器）委托 `scripts/collect-coverage-serial.sh` 逐项目串行收集并逐报告校验；Windows 侧 `run-tests.ps1 -Coverage` 为原生移植（不依赖 bash/python）。带过滤器的运行只跑匹配子集，保留单次收集路径、覆盖率仅作现场排查参考——必须带 `--settings tests/coverlet.runsettings`，否则测试程序集计入分母（§38 教训）。
 
-### 当前基线（2026-09-27，行覆盖 100.0% / 分支覆盖 100.0%）
+### 当前基线（2026-09-28，行覆盖 100.0% / 分支覆盖 100.0%）
 
 合并全部报告计算：`./scripts/coverage-summary.py`（按程序集归一化文件路径后，以 (程序集, 文件, 行) 去重取最大命中；分支覆盖按分支行的 condition-coverage 统计，同一行多次观察取已覆盖条件数的最大值）：
 
@@ -394,15 +393,15 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 | Agent | 100.0% | 100.0% (208/208) |
 | MobileAuthenticator | 100.0% | 100.0% (316/316) |
 | Monitoring | 100.0% | 100.0% (106/106) |
-| Plugins.Core | 100.0% | 100.0% (256/256) |
+| Plugins.Core | 100.0% | 100.0% (260/260) |
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
 | ControlPlane | 100.0% | 100.0% (2304/2304) |
-| Steam.Core | 100.0%（取消臂经确定性测试收尾；TryAdd 竞态臂 2026-09-24 起由注入缝确定性测试覆盖，见下） | 100.0% (3005/3005) |
+| Steam.Core | 100.0%（取消臂经确定性测试收尾；TryAdd 竞态臂 2026-09-24 起由注入缝确定性测试覆盖，见下） | 100.0% (3009/3009) |
 | MarketWatch | 100.0% | 100.0% (142/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |
-| **合计** | **100.0%** (16741/16741) | **100.0%** (6393/6393) |
+| **合计** | **100.0%** (17300/17300) | **100.0%** (6639/6639) |
 
 分支覆盖门禁：CI `--min-branch 100`（基线 6135/6135 精确满覆盖——任何分支位未覆盖即红；2026-09-23 分支缺口冲刺第十三轮后设点，全解决方案分支探测位清零，百分比一律工具计算）。行覆盖 100% 不蕴含分支覆盖 100%：一行执行过不等于它的每个布尔子条件结果都被取到。
 
@@ -510,6 +509,8 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 > 2026-09-27 官方插件机制+CS:GO 开箱轮(用户指派两件事:①GitHub 调研 ASF ArchiPlugin 官方插件 API 对齐设计 vapor 插件抽象、落 docs 再实现;②CS:GO 开箱做成第一个 dry-run 官方插件,Valve 公示概率为算法依据;3092→**3204** 全绿:Plugins.Core 147→152(+5)、CaseOpening 0→107)。**①ASF 对齐(docs/plugins.md "Alignment with ASF" 映射表)**:Vapor 既有面(manifest/trust/permissions/ALC/PluginStore)对 ArchiPlugin 逐项映射后识别唯一实质 gap=**官方插件 API 版本精确锁定**(ASF HasSameVersion 约定:官方插件与宿主同 ship,精确 pin;社区插件走宽松兼容)——新增 `PluginApi.MatchesExactly`(缺省 Version 组件归零后比较,.NET `1.0`<`1.0.0` 陷阱归零等价)与 PluginManager 加载期强制(Trust=Official 且 ApiVersion≠host 即拒,错误信息点名精确 pin 语义;社区插件旧 minor 照常加载有专测钉住)。**②CaseOpening 官方插件(vapor.caseopening,纯模拟 dry-run)**:**算法依据=Valve 中国官网概率公示(2017-09)**——MilSpec 79.923%/Restricted 15.985%/Classified 3.197%/Covert 0.639%/rare-special 0.256%,精确滚动权重 625:125:25:5:2(总权 782);无保底 i.i.d.;StatTrak 独立 1:10(不含 rare-special);tier 内均匀;float 均匀采样线性映射到物品自身 [min,max](磨损阈值 FN<0.07/MW<0.15/FT<0.38/WW<0.45/BS);paint seed 均匀 0–1000。**实现**:引擎五掷定序(稀有度→物品→StatTrak→float→seed)、`ScriptedRandom` 注入逐字段确定性断言+20 万开统计 sanity(宽松 4σ 界,tripwire 非卡方);目录 JSON 严格 schema(Disallow 未知成员/五 tier 齐备/float 域校验/唯一 id/大小写不敏感 Find)内嵌双示例 case;结果记录=内存环(默认 1000)+JSONL 归档追加+启动回灌,归档 I/O 故障**吞并设计**(模拟器结果文件不得成为运维依赖,编排审计在 CP);插件面=1 action(case_open)+4 路由(cases/open/results/stats);backend seam `ICaseOpeningBackend` 接口留出真实库存实现位但**唯一 backend=SimulationBackend**,config/env(backend 字段)白名单拒绝一切他值并指 docs ToS 边界(真实开箱是游戏客户端事务非公开 API,SSA §4.C 禁自动化——接口留出、默认 dry-run)。**测试 +112**(Core +5:MatchesExactly 三臂+official pin 拒/准/社区豁免;CaseOpening 107=Catalog 42/Engine 29/Plugin 24/Store 12;staged-dll 实战宿主加载 trust=official 钉官方 pin 生效面)。**坑位入册**:①**首趟串行轮 CaseOpening 分支 243/248 现形 5 缺口**(本地预检零缺口的假阴性=测试项目当时不在 sln,`dotnet build Vapor.sln` 不编译它,`--no-build` 用 stale 二进制 105≠107)——其中 3 个是**构造性死分支**:GetString 在 String kind 下保证非 null 的 `?? string.Empty`、ParseBodyOrNull 契约(null 结果必带 error)下的 `?? "invalid JSON body"`、Store 聚合里与首个 TryGetValue 字典成员完全重复的第二个 TryGetValue 三元(opens==0 臂亦构造不可达:byCase 条目只在 Record 时创建)——**修法=删死分支优于造不可达测试**(nullable 用 `!`+契约注释编码不变量,聚合复用 count 变量);另 2 个是真漏测(字面 JSON "null" 文档→`document?.Cases is null` 的 document-null 臂;rarity 别名 "rarespecial" 臂),补理论行。②CA5394(Random 作仿真 RNG)按仓库先例 .editorconfig 永久降级(可种子可注入是确定性测试要求);`[NotNullWhen]` 只能挂参数不能挂 return;`JsonElement.TryGetInt32` 对非 Number kind 是 throw 不是 false(先查 ValueKind);`Path.Exists` 替 `File.Exists` 让「归档路径是目录」确定性进容错臂(三平台一致);**新测试项目必须 dotnet sln add**——收集脚本 glob 发现不依赖 sln,但显式 build/--no-build 与 verify-coverage-inventory 依赖 sln 成员。**验证**:显式 Release build 0 警 0 错、全量串行覆盖率轮全绿、行 **17274/17274**(+533)、分支 **6635/6635**(+242) 双 100% 门禁 GATE=0;verify 四脚本 ALL GREEN;format 过。docs/plugins.md 对齐映射+开箱节+官方表第 4 行;todo.md 轮二十九入册。红线:无 tag/release/publish,只 push main。
 
 > 2026-09-27 备份/恢复文档实跑复验轮(维护轮;「todo 无未勾项、门禁双 100%」按 §34 先例自主立项,用户指令二选一挑中候选 A=轮二十八备份/恢复命令逐条实跑、写不通当场修;零代码/测试改动,测试计数与覆盖率分母不变)。**实跑环境**:本机 docker + sqlite3 3.46.1 均可用,验证做全真——真命名卷、真 WAL 模式库、逐字提取文档代码块执行;compose 级 stop/up 与迁移幂等由既有 E2E 覆盖,本轮火力集中在轮二十八命令所在的 docker+sqlite 层。**发现并修复两处**:①**`alpine/sqlite3` 镜像不存在**(pull 被拒 repository does not exist)——四库备份循环逐字不可跑(轮二十八只修 `:ro` 挂载没拉镜像);换官方 `alpine`+`apk add --no-cache sqlite` 现场装(零第三方镜像信任;实测 keinos/sqlite3 uid 100 写不进 root 卷且 args 全量替换 CMD 需显式首参 `sqlite3`,文档足迹更差,弃);修复后从 production.md **原样提取代码块逐字跑**:四库 .backup 全成+integrity ok+种子行可读。②**卷名前缀硬编码**(compose 无顶层 name:,前缀=检出目录名,`vapor_*` 只对文档 clone 路径成立)——不改 compose(固定 name: 让异名目录既有部署下次 up 静默换新卷,拒),文档加前缀说明+`docker volume ls` 自查。**其余实跑全过**:agent 卷 tar 逐字(`:ro`+$PWD 无冲突、tar tzf 内容正确);恢复语义(植陈旧 WAL→rm -f→回拷→integrity ok+内容回卷备份点);WORKDIR=/app 证 crawl 默认路径与卷表同卷一致。文档:production.md 备份节两处+todo 轮三十入册。红线:无 tag/release/publish,只 push main,push 前 fetch --rebase。
+
+> 2026-09-28 覆盖率会话轮(用户指令三步:①跑既有覆盖率管道取真实基线;②挑覆盖最低且可达的程序集/文件补单测,不需真网络/Redis/Steam 的用内存 fake,结构性不可测按既有口径登记不造假;③测试全绿+门禁不回退+TESTING.md 基线刷新;3204→**3208** 全绿:Steam.Core 1504→1508,+4)。**①基线复跑**:全量串行覆盖率轮 12 程序集全绿全 attempt 1——行 **17274/17274**、分支 **6635/6635** 双 100% GATE=0,即轮三十后真实基线。**②候选评估(全量盘点 [ExcludeFromCodeCoverage] 16 处×登记册交叉核对后逐个定性)**:**CheckProxyAction.ProbeAsync 最强**——登记行中唯一「fake 可破除」者:44 行真编排(双端点探测/延迟计时/两段容错)被整方法排除,而文件内已有 ProbeOverride seam 惯例、缺的只是传输层缝;`QuerySteamServerTimeAsync`(1 行无分支转发器,登记合理,留)、StaticPages(整类排除因 Directory.Exists 宿主分支,体量小,不做)、PeriodicTimer/Task.Delay 真实时钟泵族(结构性,留)。**改造**:摘 ProbeAsync 的排除注解,加实例属性 seam `HandlerOverride`(Func<HttpMessageHandler>?,与 ProbeOverride 同款注释惯例);ProbeAsync 静态→实例方法(避免静态可变状态跨测试泄漏;`ProbeOverride ?? ProbeAsync` 方法组绑定对实例方法照常成立);handler 行改 `HandlerOverride?.Invoke() ?? new SocketsHttpHandler{...}`(CA2000 pragma 保留)。既有预取消 token 活探测测试**天然覆盖 seam null 臂**(真实 SocketsHttpHandler 构造但预取消使 GetAsync 触网前抛,零网络)。**测试 +4**(私有 FakeHandler:HttpMessageHandler 记录请求 URI 序+按调用序脚本响应,两段探测流程零触网):双端点全成功(exitIp/latencyMs/双 URI 序断言)、Steam 5xx(reachable=false+exitIp 保留+通用文案回退)、Steam 异常(steam probe failed+exitIp 与 latency 保留)、出口 IP 失败(exit-ip probe failed+仅 1 请求——Steam 探测止步)。**坑位入册**:①**HttpClient 规范化空路径加尾斜杠**(`https://steamcommunity.com` 请求时成 `.../`)——URI 全等断言首跑 14/15 红,恰证 URI 序断言有牙;②**活覆盖率表比轮次日志旧一拍**(轮二十九日志记了 17274/6635 但合计表与 Plugins.Core 分支行 256 停在持久化轮)——本轮对齐到 **17300/17300/6639**;③「改码后单段快验不能出全局数字」纪律再守一轮(两趟全量串行轮,src 编辑严格串行于两轮之间)。**验证**:显式 Release build 0 警 0 错;CheckProxyActionTests 15/15;全量串行覆盖率轮 11 段全 attempt 1,行 **17300/17300**(+26)、分支 **6639/6639**(+4)双 100% GATE=0;Steam.Core asm 6145/6145 行、3009/3009 分支;verify 四脚本 ALL GREEN(含摘除登记行后的双向 inventory 校验 13⇄13);format 过;TRX 实测 Steam.Core 1508。红线:无 tag/release/publish,只 push main,push 前 fetch --rebase。
 
 - 测试项目自身与 `Vapor.Plugins.TestPlugin`
 - xUnit / Moq 框架程序集
@@ -665,7 +666,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 
 > 由 `scripts/classify-trx.sh` 聚合各项目 `count.trx` 生成（2026-09-24 十项目 `--logger trx` 全量重跑——盘点轮先跑七项目,复测轮补 Protocol/E2E/KeyRotation 三项目;合计与统计表一致：2879）。再生成方式见脚本头注释。本表是逐类计数的权威源;明细区已于 2026-09-24 重构对齐（计数/类集合/说明）,若与本表冲突以本表为准。
 
-### Vapor.Steam.Core.Tests（1504 个测试）
+### Vapor.Steam.Core.Tests（1508 个测试）
 
 | 测试类 | case 数 |
 |--------|--------:|
@@ -728,7 +729,7 @@ xUnit 默认**类间并行**（每个测试类一个 collection，不同 collect
 | RedisVaporCacheIntegrationTests | 11 |
 | RedisCacheEntryTests | 11 |
 | MarketFeeCalculatorTests | 11 |
-| CheckProxyActionTests | 11 |
+| CheckProxyActionTests | 15 |
 | GetAchievementsActionTests | 10 |
 | CredentialStoreRotatorTests | 10 |
 | AchievementStatsBitmapTests | 10 |
