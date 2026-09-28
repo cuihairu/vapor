@@ -74,6 +74,7 @@ nav:
       - Architecture: architecture.md
       - Session engine: session-engine.md
       - Plugin development: plugins.md
+      - Valve game plugins: game-plugins.md
       - Feature matrix (vs. ASF): feature-matrix.md
       - Performance: performance.md
   - Reference:

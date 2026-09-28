@@ -331,6 +331,10 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
 | Case Opening | `vapor.caseopening` | Actions + web routes + configuration + result recording/archive; the dry-run CS:GO case simulator (see its section above) |
 
+Per-title plugin coverage — what exists for CS:GO/CS2, Dota 2 and TF2, what is
+deliberately a non-goal, and what a future per-game plugin looks like — is
+tracked separately in [Valve game plugins](game-plugins.md).
+
 ## Packaging checklist
 
 1. Class library targeting the same .NET version as the host, `Vapor.Plugins.Core`
