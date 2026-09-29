@@ -1077,7 +1077,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		await reconciler.ReconcileOnce(CancellationToken.None);
 
 		// Only the initial card-drops query ran; the interval gates further queries.
-		Assert.Single(jobs.Created.Where(j => j.Action == "get_card_drops"));
+		Assert.Single(jobs.Created, j => j.Action == "get_card_drops");
 	}
 
 	[Fact]
@@ -1272,7 +1272,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		await reconciler.ReconcileOnce(CancellationToken.None);
 
 		// Only the initial playtime query ran; the interval gates further queries.
-		Assert.Single(jobs.Created.Where(j => j.Action == "get_playtime"));
+		Assert.Single(jobs.Created, j => j.Action == "get_playtime");
 	}
 
 	[Fact]

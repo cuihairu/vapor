@@ -203,7 +203,7 @@ public sealed class FaultInjectorTests
 		Assert.NotNull(injector.TryInjectApiRequest("/v1/jobs", "GET"));
 		Assert.Null(injector.TryInjectApiRequest("/v1/agents", "GET"));
 		// second stays armed after one fire of its two-shot budget.
-		Assert.Single(injector.List().Where(f => f.Id == second.Id));
+		Assert.Single(injector.List(), f => f.Id == second.Id);
 	}
 
 	[Fact]
