@@ -549,6 +549,25 @@
             margin-top: 12px;
         }
 
+        .qr-image {
+            margin-top: 10px;
+            line-height: 0;
+        }
+
+        .qr-image img {
+            width: 160px;
+            height: 160px;
+            background: #ffffff;
+            border-radius: var(--radius-md);
+            image-rendering: pixelated;
+        }
+
+        .qr-image .qr-fallback {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
         .empty-state {
             padding: 18px;
             border: 1px dashed var(--border);
@@ -1804,6 +1823,51 @@
             }
         }
 
+        // First-party QR rendering: the control plane renders the challenge URL
+        // into an SVG (POST /v1/qr) so the login token never leaves the box —
+        // no third-party image service. Challenge URLs rotate, so the cache is
+        // keyed by URL with a small cap; on any failure the copyable URL below
+        // the image stays as the fallback.
+        const qrSvgCache = new Map();
+
+        async function renderQrImages() {
+            const containers = document.querySelectorAll("[data-qr-url]");
+            for (const container of containers) {
+                const url = container.dataset.qrUrl || "";
+                if (!url) {
+                    continue;
+                }
+
+                if (qrSvgCache.has(url)) {
+                    container.innerHTML = qrSvgCache.get(url);
+                    continue;
+                }
+
+                try {
+                    const response = await fetch(`${API_BASE}/v1/qr`, {
+                        method: "POST",
+                        headers: authHeaders(),
+                        body: JSON.stringify({ text: url })
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const svg = await response.text();
+                    // encodeURIComponent keeps "#" and quotes from breaking the data URI.
+                    const html = `<img alt="扫码登录二维码" src="data:image/svg+xml;utf8,${encodeURIComponent(svg)}">`;
+                    if (qrSvgCache.size >= 16) {
+                        qrSvgCache.delete(qrSvgCache.keys().next().value);
+                    }
+
+                    qrSvgCache.set(url, html);
+                    container.innerHTML = html;
+                } catch {
+                    container.innerHTML = '<div class="qr-fallback">二维码渲染失败，请复制下方链接手动生成。</div>';
+                }
+            }
+        }
+
         async function refreshAuthChallenges() {
             const data = await apiFetch("/v1/auth/challenges");
             const items = data.challenges || [];
@@ -2169,7 +2233,8 @@
                                 </div>
                                 <span class="badge queued">${escapeHtml(formatRelative(challenge.timestamp))}</span>
                             </div>
-                            <div class="helper">扫码登录挑战：用 Steam 手机 App 的扫码登录扫描此链接生成的二维码。挑战链接会自动轮转，以下方最新一条为准；会话连上后挑战自动消失。</div>
+                            <div class="helper">扫码登录挑战：用 Steam 手机 App 的扫码登录扫描此二维码。挑战会自动轮转，以下方最新一条为准；会话连上后挑战自动消失。</div>
+                            <div class="qr-image" data-qr-url="${escapeHtml(url)}"><div class="qr-fallback">二维码生成中……（失败时仍可复制下方链接）</div></div>
                             <div class="tiny mono qr-url">${escapeHtml(url)}</div>
                             <div class="challenge-actions">
                                 <button class="btn" data-copy-qr="1">复制挑战链接</button>
@@ -2219,6 +2284,8 @@
                     }
                 });
             });
+
+            renderQrImages();
         }
 
         async function refreshAccounts() {

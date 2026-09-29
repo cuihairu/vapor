@@ -31,7 +31,7 @@
 | 2FA 代码生成(TOTP) | ✅ | ✅ | ✅ | ✅ | ✅(SteamTotp + 时间同步) |
 | 2FA 登录 challenge 自动应答 | ✅ | ✅ | ✅ | ✅ | ✅(TwoFactorAutoResponder,显式开启) |
 | 交易/市场**确认**接受 | ✅ | ✅(批量) | ✅ | ✅ | ✅(mobile 确认闭环 + `confirm_all` 批量;identity secret 不出 agent) |
-| QR 扫码登录 | ❌ | ✅ | ✅ | ✅ | ✅(login 任务 qr_login 触发,挑战 URL 上浮) |
+| QR 扫码登录 | ❌ | ✅ | ✅ | ✅ | ✅(login 任务 qr_login 触发,挑战 URL 上浮;admin 面板内嵌一方渲染二维码) |
 | .maFile 导入互操作(SDA/steamguard-cli) | ✅(ASF 2FA) | ✅ | ➖ | ✅ | ✅(agent 本地 CLI `import-mafile`,兼容 SDA 嵌套/steamguard-cli 平铺) |
 | 本地 Steam 客户端账号切换 | ➖ | ✅ | ✅ | ➖ | ➖(服务端架构不适用) |
 

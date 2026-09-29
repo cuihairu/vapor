@@ -142,6 +142,14 @@ Legend for the account-task pattern: many `/v1/accounts/{name}/...` endpoints di
 - 200: `text/event-stream`, frames `event: auth.<challengeType>` with `AuthChallengeEvent` JSON payloads (see §2). Initial `event: ready`.
 - Errors: 401 (no body).
 
+#### `POST /v1/qr`
+- Purpose: render text as a QR-code SVG for the console — the admin page embeds it in `qr_required` challenge cards so a Steam mobile app can scan the rotating challenge URL directly. The renderer is first-party (in-repo QR encoder, byte mode / ECC M / versions 1-6, ≤ 106 UTF-8 bytes): the login token stays inside the control plane, and no third-party image service is involved (todo §18 red line).
+- Auth: admin.
+- Body: `{ "text": "<string>" }` — required (blank → 400 `text is required`; > 106 UTF-8 bytes → 400 naming the capacity).
+- 200: `image/svg+xml` — self-contained `<svg>` with a 4-module quiet zone (state-free render).
+- Errors: 400 (blank text / over capacity / unparseable body), 401.
+- Audit: none — the render is state-free and side-effect-free.
+
 ---
 
 ### 4.2 Accounts (declared farm accounts, trade, market, inventory, duplicates, achievements, points shop, loot, standing, licenses, confirmations)

@@ -2712,6 +2712,35 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", async (
 	.Produces<ErrorResponse>(400)
 	.Produces<ErrorResponse>(401);
 
+// First-party QR rendering for console challenge URLs: the SVG is produced
+// in-process so the login token never leaves the control plane (a third-party
+// image service would leak it). State-free render, hence no audit entry.
+app.MapPost("/v1/qr", (HttpContext ctx, Config cfg, QrRenderRequest? body) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	string? text = body?.Text?.Trim();
+	if (string.IsNullOrWhiteSpace(text))
+	{
+		return Results.BadRequest(new ErrorResponse("text is required"));
+	}
+
+	if (System.Text.Encoding.UTF8.GetByteCount(text) > QrEncoder.MaxByteLength)
+	{
+		return Results.BadRequest(new ErrorResponse($"text exceeds the {QrEncoder.MaxByteLength}-byte QR capacity"));
+	}
+
+	return Results.Text(QrEncoder.ToSvg(QrEncoder.Encode(text)), "image/svg+xml", System.Text.Encoding.UTF8);
+})
+	.WithTags("Auth")
+	.WithSummary("Render text as a QR-code SVG (admin console helper for challenge URLs)")
+	.Produces(200, contentType: "image/svg+xml")
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
+
 // List active agents with their sessions
 app.MapGet("/v1/agents/status", (HttpContext ctx, Config cfg, AgentRegistry agents) =>
 {
@@ -4084,6 +4113,9 @@ public sealed record StorageCollectRequest(
 );
 
 public sealed record SetProxyRequest(string? Proxy = null);
+
+// Request body for the first-party QR render endpoint
+public sealed record QrRenderRequest(string? Text = null);
 
 // Request body for the 1:1 swap endpoint (match duplicates and offer a swap)
 public sealed record SwapOfferRequest(

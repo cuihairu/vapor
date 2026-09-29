@@ -126,6 +126,25 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_QrChallengePanel_RendersFirstPartyQrImage()
+	{
+		// Round-37 anchor: the qr_required card must render an in-page QR image
+		// through the first-party /v1/qr endpoint (token stays on the control
+		// plane — no third-party image service), keep the copyable URL as the
+		// failure fallback, and cache rendered SVGs (challenge URLs rotate, the
+		// panel re-renders on every SSE event).
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		Assert.Contains("renderQrImages", html, StringComparison.Ordinal);
+		Assert.Contains("/v1/qr", html, StringComparison.Ordinal);
+		Assert.Contains("data:image/svg+xml;utf8,", html, StringComparison.Ordinal);
+		Assert.Contains("encodeURIComponent(svg)", html, StringComparison.Ordinal);
+		Assert.Contains("qrSvgCache", html, StringComparison.Ordinal);
+		Assert.Contains("复制挑战链接", html, StringComparison.Ordinal);
+		Assert.Contains("二维码渲染失败", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void AdminHtml_DestructiveWrites_RequireExplicitConfirmation()
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));

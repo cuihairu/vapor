@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- First-party in-page QR rendering for Steam QR login (round 37): an in-repo
+  QR encoder (`QrEncoder`, byte mode, ECC level M, versions 1-6, up to 106
+  UTF-8 bytes — no new NuGet packages) behind `POST /v1/qr`, which renders an
+  `image/svg+xml` QR code for admin callers. The admin console embeds the SVG
+  in `qr_required` challenge cards (cached per rotating URL, copyable link
+  kept as fallback), so a Steam mobile app can scan the challenge directly
+  and the login token never leaves the control plane — resolving the todo §18
+  deferral that rejected third-party image services and untested embedded
+  encoders.
+
 - Agent task-execution watchdog (`AGENT_TASK_TIMEOUT_SECONDS`, default 900 s,
   `<= 0` disables): bounds any single dispatched task on the agent, cancels
   it, reports a structured `task timeout after Ns` failure to the control
