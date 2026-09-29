@@ -82,6 +82,7 @@ nav:
       - Actions catalog: actions.md
       - Data dictionary: data-dictionary.md
       - Testing: testing.md
+      - Dependency policy: dependencies.md
       - Releasing: releasing.md
       - Troubleshooting: troubleshooting.md
 

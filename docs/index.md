@@ -88,7 +88,7 @@ Vapor reuses the proven ASF concepts — bot sessions, actions, farming — but 
 |---------|----------|
 | **Getting Started** | [Walkthrough](getting-started.md) · [Local run](running.md) · [Docker & Compose](docker.md) · [Production deployment](production.md) |
 | **Design** | [Architecture](architecture.md) · [Session engine](session-engine.md) · [Plugins](plugins.md) · [Feature matrix](feature-matrix.md) · [Performance](performance.md) |
-| **Reference** | [REST API](api.md) · [Actions catalog](actions.md) · [Data dictionary](data-dictionary.md) · [Testing](testing.md) · [Releasing](releasing.md) · [Troubleshooting](troubleshooting.md) |
+| **Reference** | [REST API](api.md) · [Actions catalog](actions.md) · [Data dictionary](data-dictionary.md) · [Testing](testing.md) · [Dependency policy](dependencies.md) · [Releasing](releasing.md) · [Troubleshooting](troubleshooting.md) |
 
 ## Status
 

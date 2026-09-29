@@ -178,6 +178,13 @@ jobs:
     - name: Verify coverage denominator inventory consistency
       run: python3 scripts/verify-coverage-inventory.py
 
+    # Dependency fleet: docs/dependencies.md 版本表 ⇄ 全部 csproj,plus the audit
+    # posture it rests on (NuGetAuditMode=all + TreatWarningsAsErrors). 依赖漂移
+    # 是覆盖率门禁的同类盲区——单个测试项目停在旧 runner 上,测试照样全绿、
+    # 覆盖率照样 100%,没有任何门禁会红。§36 收官点名的可迭代项(见 todo.md)。
+    - name: Verify dependency version consistency
+      run: python3 scripts/verify-dependency-versions.py
+
     - name: Setup .NET
       uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
       with:

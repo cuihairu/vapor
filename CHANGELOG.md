@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dependency version fleet guard (round 38): `docs/dependencies.md` is now
+  the single source of truth for every `PackageReference` version in the
+  repository — a registered version table (`test-fleet` / `any` scopes)
+  plus the audit posture it rests on, the Dependabot policy, and the
+  manual checklist for semver-major upgrades. The table is enforced
+  mechanically by `scripts/verify-dependency-versions.py` (registration
+  closure, fleet completeness, version agreement, `PrivateAssets` on the
+  test runner, `NuGetAuditMode=all` + `TreatWarningsAsErrors` intact,
+  `*.Tests` projects self-identifying via `IsTestProject`), wired into the
+  CI format job. Documented drift that motivated it:
+  `Vapor.ControlPlane.Tests` had sat on xunit 2.6.2 / test SDK 17.8.0 /
+  runner 2.5.4 for its entire life while the other eleven test projects
+  ran 2.9.3 / 17.14.1 / 2.8.2 — with every existing gate green.
+
 - First-party in-page QR rendering for Steam QR login (round 37): an in-repo
   QR encoder (`QrEncoder`, byte mode, ECC level M, versions 1-6, up to 106
   UTF-8 bytes — no new NuGet packages) behind `POST /v1/qr`, which renders an
@@ -18,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the login token never leaves the control plane — resolving the todo §18
   deferral that rejected third-party image services and untested embedded
   encoders.
+
+### Changed
+
+- `Vapor.ControlPlane.Tests` aligned to the test fleet: xunit 2.6.2 → 2.9.3,
+  `Microsoft.NET.Test.Sdk` 17.8.0 → 17.14.1, `xunit.runner.visualstudio`
+  2.5.4 → 2.8.2 — matching the other eleven test projects. The newer xunit
+  analyzers flagged three `Assert.Single(collection.Where(pred))` call
+  sites in previously-committed tests; rewritten to the equivalent
+  `Assert.Single(collection, pred)` overload. Three plugin test projects
+  (`CaseOpening`, `GameData`, `MarketWatch`) now set
+  `<IsTestProject>true</IsTestProject>` explicitly, closing the gap where
+  file-name-based detection was the only signal.
 
 - Agent task-execution watchdog (`AGENT_TASK_TIMEOUT_SECONDS`, default 900 s,
   `<= 0` disables): bounds any single dispatched task on the agent, cancels
