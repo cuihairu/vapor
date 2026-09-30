@@ -154,6 +154,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   console's account cards show a standing badge (clean/restricted/banned/
   unchecked), a quarantine flag, and a manual "体检" button.
 
+- Standing quarantine now gates explicit dispatch paths (round 40): manual
+  `POST /v1/accounts/{name}/loot` and `POST /v1/orchestration/storage/collect`
+  previously dispatched regardless of quarantine — only the orchestrator's
+  automatic trade loop was gated. Loot on a quarantined account now returns
+  400 unless the caller passes the new `force=true` (audited as
+  `forced_quarantine`); storage collect skips quarantined farm sources
+  (reported in the new `skipped_quarantined` response field), rejects a
+  quarantined warehouse target with 400 unless forced (force applies to the
+  warehouse only — farm sources are still skipped), and returns 400 when all
+  sources are quarantined. Accounts that have never been reconciled are
+  treated as unknown, not bad, and never blocked; accounts with a
+  quarantined-but-summaryless state surface as `standing=unknown`.
+
 - Per-account proxy support (todo §38 P1): every account can route all Steam
   traffic — CM login (WebSocket-only via the SteamKit2 3.4.0
   `WithHttpClientFactory` path, socks5 remote DNS included), web API, trades

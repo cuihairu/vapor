@@ -707,7 +707,7 @@ app.MapGet("/v1/orchestration/farm", (HttpContext ctx, Config cfg, DesiredStateR
 // bounded, then chains sender-side mobile confirmations. The loot+partner
 // semantics are reused deliberately — no dedicated warehouse table, the jobs
 // are the record (the snapshot endpoint reads them back).
-app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, StorageCollectRequest? req) =>
+app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, DesiredStateReconciler reconciler, StorageCollectRequest? req) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
 	{
@@ -741,13 +741,33 @@ app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config 
 		return Results.BadRequest(new ErrorResponse($"storage account '{storage.AccountName}' has no steam_id declared; set steamId on the account before collecting"));
 	}
 
+	// Standing quarantine (§38-P2) gates explicit dispatches too: a warehouse
+	// with a detected ban must not receive a batch of offers unless the
+	// operator forces it. Never-checked accounts (no reconcile history) are
+	// unknown, not bad, and pass.
+	AccountStandingView? storageStanding = reconciler.GetStandingView(storage.AccountName);
+	bool storageQuarantined = storageStanding is { Quarantined: true };
+	if (storageQuarantined && !request.Force)
+	{
+		return Results.BadRequest(new ErrorResponse(
+			$"storage account '{storage.AccountName}' is quarantined by the standing check (standing={storageStanding!.Standing ?? "unknown"}); pass force=true to override"));
+	}
+
 	IReadOnlyList<AccountSpec> farms = StorageCollectRunner.SelectFarmSources(accounts.List());
 	if (farms.Count == 0)
 	{
 		return Results.BadRequest(new ErrorResponse("no enabled farm accounts to collect from (sources are enabled farm accounts not declared offline)"));
 	}
 
-	CollectRun run = await StorageCollectRunner.DispatchCollectAsync(store, storage, farms, request.Message, request.AppIds, ctx.RequestAborted);
+	(List<AccountSpec> eligibleFarms, List<string> skippedFarms) =
+		StorageCollectRunner.PartitionByStanding(farms, name => reconciler.GetStandingView(name) is { Quarantined: true });
+	if (eligibleFarms.Count == 0)
+	{
+		return Results.BadRequest(new ErrorResponse(
+			$"all {skippedFarms.Count} farm account(s) are quarantined by the standing check; loot one individually with force=true or wait for a clean re-check"));
+	}
+
+	CollectRun run = await StorageCollectRunner.DispatchCollectAsync(store, storage, eligibleFarms, request.Message, request.AppIds, ctx.RequestAborted);
 
 	await WriteAuditLog(
 		auditLogger,
@@ -760,7 +780,9 @@ app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config 
 		{
 			["storage"] = storage.AccountName,
 			["steamId"] = storage.SteamId,
-			["farmCount"] = farms.Count,
+			["farmCount"] = eligibleFarms.Count,
+			["skippedQuarantined"] = skippedFarms,
+			["forcedQuarantine"] = storageQuarantined,
 			["completed"] = run.Completed,
 			["succeeded"] = run.Tasks.Count(t => t.Status == JobTaskStatus.Finished),
 			["failed"] = run.Tasks.Count(t => t.Status != JobTaskStatus.Finished)
@@ -773,7 +795,8 @@ app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config 
 			job_id = run.JobId,
 			storage = storage.AccountName,
 			storage_steam_id = storage.SteamId,
-			farm_accounts = farms.Select(f => f.AccountName),
+			farm_accounts = eligibleFarms.Select(f => f.AccountName),
+			skipped_quarantined = skippedFarms,
 			status = "pending"
 		});
 	}
@@ -783,7 +806,8 @@ app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config 
 		job_id = run.JobId,
 		storage = storage.AccountName,
 		storage_steam_id = storage.SteamId,
-		farm_accounts = farms.Select(f => f.AccountName),
+		farm_accounts = eligibleFarms.Select(f => f.AccountName),
+		skipped_quarantined = skippedFarms,
 		results = run.Tasks
 	});
 })
@@ -1921,7 +1945,7 @@ app.MapPost("/v1/accounts/{name}/proxy", async (HttpContext ctx, Config cfg, IAu
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);
 
-app.MapPost("/v1/accounts/{name}/loot", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, LootRequest? req) =>
+app.MapPost("/v1/accounts/{name}/loot", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, DesiredStateReconciler reconciler, string name, LootRequest? req) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
 	{
@@ -1932,6 +1956,18 @@ app.MapPost("/v1/accounts/{name}/loot", async (HttpContext ctx, Config cfg, IAud
 	if (spec is null)
 	{
 		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	// Standing quarantine (§38-P2) gates explicit dispatches too: an account
+	// with a detected ban must not create offers in its name unless the
+	// operator forces the (audited) rescue. Never-checked accounts (no
+	// reconcile history) are unknown, not bad, and pass.
+	AccountStandingView? standing = reconciler.GetStandingView(spec.AccountName);
+	bool quarantined = standing is { Quarantined: true };
+	if (quarantined && req?.Force != true)
+	{
+		return Results.BadRequest(new ErrorResponse(
+			$"account '{spec.AccountName}' is quarantined by the standing check (standing={standing!.Standing ?? "unknown"}); pass force=true to override"));
 	}
 
 	string? partnerSteamId = req?.PartnerSteamId?.Trim();
@@ -1980,6 +2016,7 @@ app.MapPost("/v1/accounts/{name}/loot", async (HttpContext ctx, Config cfg, IAud
 		{
 			["partner"] = string.IsNullOrWhiteSpace(partnerSteamId) ? "trade_url" : partnerSteamId,
 			["appIds"] = req?.AppIds,
+			["forced_quarantine"] = quarantined,
 			["outcome"] = run.Status.ToString()
 		});
 
@@ -4095,21 +4132,29 @@ public sealed record PointsShopClaimRequest(
 	bool? Force = null
 );
 
-// Request body for the loot endpoint (send tradable inventory to a partner)
+// Request body for the loot endpoint (send tradable inventory to a partner).
+// force=true overrides a standing-check quarantine on the source account
+// (audited) — the rescue path for emptying an account Steam has already
+// flagged; default false keeps flagged accounts quiet.
 public sealed record LootRequest(
 	string? PartnerSteamId = null,
 	string? TradeUrl = null,
 	string? Message = null,
-	int[]? AppIds = null
+	int[]? AppIds = null,
+	bool Force = false
 );
 
 // Request body for the §39 P-b storage-collect orchestration: the storage
 // account is named explicitly (role=storage + its own SteamId64 declared on
-// the spec), the sources are derived from the declared fleet.
+// the spec), the sources are derived from the declared fleet. force=true
+// overrides a standing-check quarantine on the storage target (audited);
+// quarantined farm sources are skipped regardless — loot one individually
+// with the loot endpoint's force to reach it.
 public sealed record StorageCollectRequest(
 	string? Storage = null,
 	string? Message = null,
-	int[]? AppIds = null
+	int[]? AppIds = null,
+	bool Force = false
 );
 
 public sealed record SetProxyRequest(string? Proxy = null);

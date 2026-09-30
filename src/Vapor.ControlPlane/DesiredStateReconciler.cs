@@ -2254,6 +2254,38 @@ public sealed class DesiredStateReconciler : BackgroundService
 		return true;
 	}
 
+	/// <summary>
+	/// Standing view for one account, or null when the account has never been
+	/// reconciled (never checked ⇒ never quarantined). Explicit dispatch paths
+	/// (manual loot, storage collect) gate on this — a null or healthy view must
+	/// never block an operator.
+	/// </summary>
+	internal AccountStandingView? GetStandingView(string accountName) =>
+		!_runtime.TryGetValue(accountName, out AccountRuntime? runtime)
+			? null
+			: new AccountStandingView(
+				accountName,
+				runtime.StandingSummary,
+				runtime.StandingQuarantined,
+				runtime.StandingCheckedAt == DateTimeOffset.MinValue ? null : runtime.StandingCheckedAt);
+
+	/// <summary>
+	/// Test seam: seeds standing state without driving a reconcile cycle
+	/// (same precedent as CheckProxyAction.ProbeOverride — the production settle
+	/// path keeps its own tests in DesiredStateReconcilerTests). CheckedAt stays
+	/// untouched unless given, so default seeds keep the never-checked shape.
+	/// </summary>
+	internal void SetStandingForTests(string accountName, bool quarantined, string? summary = "banned", DateTimeOffset? checkedAt = null)
+	{
+		AccountRuntime runtime = _runtime.GetOrAdd(accountName, _ => new AccountRuntime());
+		runtime.StandingSummary = summary;
+		runtime.StandingQuarantined = quarantined;
+		if (checkedAt.HasValue)
+		{
+			runtime.StandingCheckedAt = checkedAt.Value;
+		}
+	}
+
 	/// <summary>Standing snapshot for every tracked account (dashboard account list).</summary>
 	internal IReadOnlyList<AccountStandingView> GetStandingSummaries() =>
 		_runtime.OrderBy(kv => kv.Key, StringComparer.Ordinal)

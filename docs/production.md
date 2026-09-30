@@ -317,15 +317,20 @@ The orchestrator periodically runs `check_account_standing`
 (`GetPlayerBans`: VAC / community / trade / economy bans plus the limited
 mark) on every declared account — cadence
 `Vapor_RECONCILE_STANDING_REFRESH_SECONDS`, default 6 h. An account with an
-adverse result is **quarantined from the reconciler's trade scheduling** (the
-gift-offer query / auto-accept / confirm cycle) until a later clean check
-releases it; each transition is published as an
-`account.standing_alert` / `account.standing_released` event and the
-quarantine itself is recorded (`standing_quarantined`). Scope note: the
-quarantine gates the reconciler's
-automated scheduling only — explicitly operator-invoked trade endpoints
-(loot, storage collect, direct offer creation) do not re-check standing at
-dispatch time, so screen sources after fresh bans before collecting.
+adverse result is **quarantined from trade dispatch** until a later clean
+check releases it: the reconciler's automated scheduling (gift-offer
+query / auto-accept / confirm cycle) skips quarantined accounts outright, and
+the explicit dispatch paths respect the quarantine too — manual loot refuses
+a quarantined source, and storage collect skips quarantined farm sources and
+refuses a quarantined warehouse. Both expose an audited `force=true` escape
+(loot: forced dispatch, `forced_quarantine` in the audit details; collect:
+warehouse override, while quarantined farm sources are always skipped — loot
+one individually with force to reach it). Each quarantine transition is
+published as an `account.standing_alert` / `account.standing_released` event
+and recorded (`standing_quarantined`). Accounts never reconciled have no
+standing history: unknown is treated as not bad, so a fresh declaration is
+never blocked — the first periodic check closes that gap within the refresh
+cadence.
 
 ### Farm / storage separation
 

@@ -43,6 +43,35 @@ internal static class StorageCollectRunner
 			.ToList();
 
 	/// <summary>
+	/// Splits farm sources into (eligible, skipped) by standing quarantine.
+	/// Quarantine is a detected-bad signal from the standing check — a banned
+	/// source must not have offers created in its name on a manual collect.
+	/// The lookup is expected to answer false for accounts never reconciled:
+	/// an account without standing history is unknown, not bad, and is never
+	/// blocked.
+	/// </summary>
+	internal static (List<AccountSpec> Eligible, List<string> Skipped) PartitionByStanding(
+		IReadOnlyList<AccountSpec> farms,
+		Func<string, bool> isQuarantined)
+	{
+		List<AccountSpec> eligible = new();
+		List<string> skipped = new();
+		foreach (AccountSpec farm in farms)
+		{
+			if (isQuarantined(farm.AccountName))
+			{
+				skipped.Add(farm.AccountName);
+			}
+			else
+			{
+				eligible.Add(farm);
+			}
+		}
+
+		return (eligible, skipped);
+	}
+
+	/// <summary>
 	/// Creates the collect job (one loot task per farm source, partner = the
 	/// storage account's SteamId), waits for every task to settle and chains
 	/// mobile confirmations. <see cref="CollectRun.Completed"/> false means the
