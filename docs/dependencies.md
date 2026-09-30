@@ -67,7 +67,7 @@ here. `Scope` is one of:
 | `test-fleet` | Every test project **must** declare it, at exactly this version |
 | `any` | A project that declares it **must** use exactly this version (declaring it at all is optional) |
 
-A *test project* here is a `*.Tests` project, and every one of the 12 of
+A *test project* here is a `*.Tests` project, and every one of the 13 of
 them also sets `<IsTestProject>true</IsTestProject>` — the script checks
 that property too, because it is what `Directory.Build.props` keys the
 coverage defaults off. Three plugin test projects were created without
@@ -77,7 +77,7 @@ the fleet check below, so the script accepts a project as a test project
 on either signal and fails when the two disagree.
 
 `test-fleet` exists because the test toolchain has to behave identically
-in all 12 test projects: a single project left on an older runner is how
+in all 13 test projects: a single project left on an older runner is how
 you get a test that passes locally and reports nothing, or a coverage
 denominator that quietly changes shape. The canonical example is in
 `todo.md` — `Vapor.ControlPlane.Tests` sat on xunit 2.6.2 / test SDK
@@ -92,8 +92,8 @@ denominator that quietly changes shape. The canonical example is in
 | `xunit.runner.visualstudio` | 2.8.2 | test-fleet | VSTest adapter. Must ship `<PrivateAssets>all</PrivateAssets>` (checked mechanically) — it drags in the whole `Microsoft.TestPlatform.*` set plus build assets. |
 | `Microsoft.NET.Test.Sdk` | 17.14.1 | test-fleet | Test host + discovery. Drives `--blame-hang`, which the coverage job relies on. |
 | `coverlet.collector` | 6.0.4 | test-fleet | Coverage collector. `PrivateAssets` is deliberately *not* required here: test projects are `IsPackable=false` and nothing references them, so there is no dependency graph for it to leak into. |
-| `FsCheck.Xunit` | 2.16.6 | any | Property-based testing. Only 5 of 12 test projects use it. |
-| `Moq` | 4.21.0 | any | Mocking. Only 2 test projects use it. |
+| `FsCheck.Xunit` | 2.16.6 | any | Property-based testing. Only 5 of 13 test projects use it. |
+| `Moq` | 4.21.0 | any | Mocking. Only 3 test projects use it. |
 | `Microsoft.AspNetCore.Mvc.Testing` | 10.0.12 | any | `WebApplicationFactory` host for the control-plane tests. |
 | `Microsoft.Extensions.Logging.Abstractions` | 10.0.12 | any | Also a `src/` package; one version for the whole tree. |
 | `Microsoft.Extensions.Logging.Console` | 10.0.12 | any | `src/Vapor.Agent`, `src/Vapor.Steam.Core`. |

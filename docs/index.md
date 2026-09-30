@@ -36,7 +36,7 @@ hide:
 
     ---
 
-    Load-context isolated plugins with manifest, SemVer API contract, permission grants and an event dispatcher — Monitoring and MobileAuthenticator ship in-tree.
+    Load-context isolated plugins with manifest, SemVer API contract, permission grants and an event dispatcher — six official plugins ship in-tree (Monitoring, MobileAuthenticator, MarketWatch, CaseOpening, GameData, GameAccess).
 
     [:arrow-right: Plugin development](plugins.md)
 

@@ -30,6 +30,7 @@ DETAIL_MAP = {
         "Vapor.Plugins.Monitoring.Tests",
         "Vapor.Plugins.CaseOpening.Tests",
         "Vapor.Plugins.GameData.Tests",
+        "Vapor.Plugins.GameAccess.Tests",
     ],
     "Agent": ["Vapor.Agent.Tests"],
     "E2E": ["Vapor.E2E.Tests"],

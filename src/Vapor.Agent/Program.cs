@@ -73,18 +73,6 @@ var serviceCollection = new ServiceCollection()
 	.AddSingleton<CheckProxyAction>()
 	.AddSingleton<CheckAccountStandingAction>()
 	.AddSingleton<LoginAction>()
-	.AddSingleton<PlayGamesAction>()
-	.AddSingleton<RedeemKeyAction>()
-	.AddSingleton<GetInventoryAction>()
-	.AddSingleton<GetAchievementsAction>()
-	.AddSingleton<UnlockAchievementsAction>()
-	.AddSingleton<ResetAchievementsAction>()
-	.AddSingleton<GetCardDropsAction>(p => new GetCardDropsAction(
-		p.GetRequiredService<ILogger<GetCardDropsAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
-	.AddSingleton<GetPlaytimeAction>(p => new GetPlaytimeAction(
-		p.GetRequiredService<ILogger<GetPlaytimeAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Caching.IVaporCache>()))
 	.AddSingleton<SendTradeOfferAction>(p => new SendTradeOfferAction(
 		p.GetRequiredService<ILogger<SendTradeOfferAction>>(),
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
@@ -108,21 +96,7 @@ var serviceCollection = new ServiceCollection()
 		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
 	.AddSingleton<CancelTradeOfferAction>(p => new CancelTradeOfferAction(
 		p.GetRequiredService<ILogger<CancelTradeOfferAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
-	.AddSingleton<LootInventoryAction>(p => new LootInventoryAction(
-		p.GetRequiredService<ILogger<LootInventoryAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
-	.AddSingleton<SwapDuplicatesAction>(p => new SwapDuplicatesAction(
-		p.GetRequiredService<ILogger<SwapDuplicatesAction>>(),
-		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()))
-	.AddSingleton<FindDuplicatesAction>(p => new FindDuplicatesAction(
-		p.GetRequiredService<ILogger<FindDuplicatesAction>>()))
-	.AddSingleton<AddLicenseAction>(p => new AddLicenseAction(
-		p.GetRequiredService<ILogger<AddLicenseAction>>()))
-	.AddSingleton<GetPointsShopSummaryAction>(p => new GetPointsShopSummaryAction(
-		p.GetRequiredService<ILogger<GetPointsShopSummaryAction>>()))
-	.AddSingleton<ClaimPointsShopItemsAction>(p => new ClaimPointsShopItemsAction(
-		p.GetRequiredService<ILogger<ClaimPointsShopItemsAction>>()));
+		p.GetRequiredService<Vapor.Steam.Core.Trading.TradeRateLimiter>()));
 
 // Cache backend: Redis when VAPOR_REDIS points at a server, in-memory otherwise.
 string redisConfiguration = Environment.GetEnvironmentVariable("VAPOR_REDIS") ?? string.Empty;
@@ -202,14 +176,6 @@ actionRegistry.Register(serviceProvider.GetRequiredService<EchoAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CheckProxyAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CheckAccountStandingAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<LoginAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<PlayGamesAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<RedeemKeyAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<GetInventoryAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<GetAchievementsAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<UnlockAchievementsAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<ResetAchievementsAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<GetCardDropsAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<GetPlaytimeAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SendTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetTradeOffersAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetMyMarketListingsAction>());
@@ -218,12 +184,6 @@ actionRegistry.Register(serviceProvider.GetRequiredService<CreateMarketListingAc
 actionRegistry.Register(serviceProvider.GetRequiredService<AcceptTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<DeclineTradeOfferAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<CancelTradeOfferAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<LootInventoryAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<FindDuplicatesAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<SwapDuplicatesAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<AddLicenseAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<GetPointsShopSummaryAction>());
-actionRegistry.Register(serviceProvider.GetRequiredService<ClaimPointsShopItemsAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<GetGameInfoBatchAction>());
 actionRegistry.Register(serviceProvider.GetRequiredService<SearchGamesAction>());

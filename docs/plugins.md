@@ -4,7 +4,7 @@ Vapor's agent ships with a full plugin system: isolated loading, SemVer-gated AP
 compatibility, a trust/permission model and a small, explicit API surface. This guide
 walks through building, declaring, configuring and debugging a plugin.
 
-Everything described here is exercised by five official plugins and the test suites —
+Everything described here is exercised by six official plugins and the test suites —
 `Vapor.Plugins.TestPlugin` (infrastructure tests), `Vapor.Plugins.MarketWatch` (the
 richest example), and the load/unload tests in `Vapor.Plugins.Core.Tests`.
 
@@ -331,6 +331,7 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
 | Case Opening | `vapor.caseopening` | Actions + web routes + configuration + result recording/archive; the dry-run CS:GO case simulator (see its section above) |
 | Game Data | `vapor.game-data` | Actions only; read-only Steam Web API digests (Dota 2 matches/heroes/items, TF2/CS2 schema) with agent-side key handling (see its section below) |
+| Game Access | `vapor.game-access` | Actions only; the fourteen game-access actions (farming, licenses & keys, achievements, inventory, loot, points shop) split out of the host with unchanged names/payloads — the wire-compatible extraction precedent (see its section below) |
 
 Per-title plugin coverage — what exists for CS:GO/CS2, Dota 2 and TF2, what is
 deliberately a non-goal, and what a future per-game plugin looks like — is
@@ -447,6 +448,59 @@ a numbered successor interface ships instead of mutating the old one (ASF's
 least one release before removal. The core `IPlugin`/`IPluginContext` pair and
 the `PluginApi` SemVer rule above are the only contracts a plugin may rely on —
 everything else in the host is free to change.
+
+
+## Game access plugin (`vapor.game-access`)
+
+The sixth official plugin is a **wire-compatible extraction**: the fourteen
+game-access actions that used to be registered by the agent host directly
+(`play_games`, `get_card_drops`, `get_playtime`, `add_license`, `redeem_key`,
+`get_achievements`, `unlock_achievements`, `reset_achievements`,
+`get_inventory`, `loot_inventory`, `find_duplicates`, `swap_duplicates`,
+`get_points_shop_summary`, `claim_points_shop_items`) now live in an
+independent official plugin assembly, ASF-style.
+
+### Why it exists
+
+ASF ships `ArchiSteamFarm.OfficialPlugins.*` as separate assemblies that ride
+with the host; Vapor's game-access surface had grown to half the agent's
+action registry, and owning it as a plugin makes the boundary explicit: the
+host keeps the session engine, trading/market/store surfaces and
+diagnostics; the plugin owns "what the account plays, owns and unlocks".
+
+### The compatibility contract
+
+- **Names and payload schemas are byte-for-byte unchanged.** Deployed jobs,
+  schedules and control-plane code paths dispatch by the same strings.
+- **The agent Docker image bundles the plugin** into
+  `/app/plugins/vapor.game-access` (the Monitoring mechanism, now with a
+  second resident), so the default hello capability set is unchanged.
+- **Without the plugin** the agent stops advertising the fourteen names; the
+  control-plane scheduler only routes actions a connected agent declared in
+  hello, so affected jobs fail at dispatch ("no agent declares the action") —
+  and a force-routed task would fail with the regular `action not found`
+  session error. No silent no-ops either way.
+- Source runs stage nothing automatically: point `VAPOR_PLUGINS_DIR` at a
+  directory containing the built plugin output to get the full action set.
+
+### Host-service wiring, unchanged
+
+The plugin resolves the same host singletons the deleted host wiring did —
+loggers from the host factory, `IVaporCache` for the cached card-drop/playtime
+actions and `TradeRateLimiter` for loot/swap from the host service provider.
+A host without a rate limiter logs a warning and the throttled actions run
+unthrottled (their constructors accept a null limiter) instead of failing the
+load. The only core change the split needed: `SendTradeOfferAction.NoopLease`
+became public so loot/swap could keep acquiring leases the same way after
+leaving the host assembly.
+
+### Tests
+
+The migrated action suites live in `Vapor.Plugins.GameAccess.Tests`, with
+`PluginHostLoadTests` loading the compiled plugin through a real
+`PluginManager` (discovery, isolated ALC, official-trust gating) and
+asserting the fourteen unchanged names — the MarketWatch host-load precedent
+applied to an extraction.
 
 ## Case opening plugin (`vapor.caseopening`)
 

@@ -27,7 +27,6 @@ public class SessionWorkflowTests : IDisposable
 		_actionRegistry.Register(new EchoAction(NullLogger<EchoAction>.Instance));
 		_actionRegistry.Register(new LoginAction(NullLogger<LoginAction>.Instance));
 		_actionRegistry.Register(new IdleAction(NullLogger<IdleAction>.Instance));
-		_actionRegistry.Register(new RedeemKeyAction(NullLogger<RedeemKeyAction>.Instance));
 	}
 
 	[Fact]
@@ -197,46 +196,6 @@ public class SessionWorkflowTests : IDisposable
 
 		// Assert
 		Assert.True(result.Success);
-	}
-
-	[Fact]
-	public async Task Workflow_RedeemKeyWithValidKey_ReturnsStubResponse()
-	{
-		// Arrange
-		var accountName = "test_account";
-		var credentials = new AccountCredentials(accountName, "password");
-		var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
-
-		// Act
-		var payload = new Dictionary<string, object?> { ["key"] = "AAAAA-BBBBB-CCCCC" };
-		var result = await session.ExecuteActionAsync("redeem_key", payload, CancellationToken.None);
-
-		// Assert - In stub mode (no SteamClientManager), action returns error
-		Assert.NotNull(result.Output);
-		Assert.Equal("redeem_key", result.Output["action"]?.ToString());
-
-		var maskedKey = result.Output["key"]?.ToString() ?? "";
-		Assert.DoesNotContain("BBBBB", maskedKey);
-
-		// Verify stub mode error
-		Assert.False(result.Success);
-		Assert.Contains("Steam client not available", result.Error);
-	}
-
-	[Fact]
-	public async Task Workflow_RedeemKeyWithMissingKey_ReturnsFailure()
-	{
-		// Arrange
-		var accountName = "test_account";
-		var credentials = new AccountCredentials(accountName, "password");
-		var session = await _sessionManager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
-
-		// Act
-		var result = await session.ExecuteActionAsync("redeem_key", new Dictionary<string, object?>(), CancellationToken.None);
-
-		// Assert
-		Assert.False(result.Success);
-		Assert.Equal("key is required", result.Error);
 	}
 
 	[Fact]

@@ -11,9 +11,11 @@ COPY src/Vapor.Protocol/Vapor.Protocol.csproj src/Vapor.Protocol/
 COPY src/Vapor.Steam.Core/Vapor.Steam.Core.csproj src/Vapor.Steam.Core/
 COPY src/Vapor.Plugins.Core/Vapor.Plugins.Core.csproj src/Vapor.Plugins.Core/
 COPY src/Vapor.Plugins.Monitoring/Vapor.Plugins.Monitoring.csproj src/Vapor.Plugins.Monitoring/
+COPY src/Vapor.Plugins.GameAccess/Vapor.Plugins.GameAccess.csproj src/Vapor.Plugins.GameAccess/
 COPY src/Vapor.Agent/Vapor.Agent.csproj src/Vapor.Agent/
 RUN dotnet restore src/Vapor.Agent/Vapor.Agent.csproj \
-	&& dotnet restore src/Vapor.Plugins.Monitoring/Vapor.Plugins.Monitoring.csproj
+	&& dotnet restore src/Vapor.Plugins.Monitoring/Vapor.Plugins.Monitoring.csproj \
+	&& dotnet restore src/Vapor.Plugins.GameAccess/Vapor.Plugins.GameAccess.csproj
 
 COPY src/ src/
 RUN dotnet publish src/Vapor.Agent/Vapor.Agent.csproj \
@@ -23,6 +25,10 @@ RUN dotnet publish src/Vapor.Agent/Vapor.Agent.csproj \
 	&& dotnet publish src/Vapor.Plugins.Monitoring/Vapor.Plugins.Monitoring.csproj \
 	-c Release \
 	-o /app/publish/plugins/vapor.monitoring \
+	/p:UseAppHost=false \
+	&& dotnet publish src/Vapor.Plugins.GameAccess/Vapor.Plugins.GameAccess.csproj \
+	-c Release \
+	-o /app/publish/plugins/vapor.game-access \
 	/p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final

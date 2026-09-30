@@ -1,0 +1,13 @@
+{
+  "id": "vapor.game-access",
+  "name": "Vapor Game Access",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "description": "Official game-access actions split out of the agent host (ASF-style): play/idle/card-drop farming, playtime, licenses & keys, achievements read/write, inventory reads, duplicate scans & 1:1 swaps, loot (trade-to-self) and points shop. Action names and payload schemas are unchanged; the agent Docker image bundles this plugin so out-of-the-box behavior is identical.",
+  "trust": "official",
+  "permissions": [
+    "actions"
+  ],
+  "entryAssembly": "Vapor.Plugins.GameAccess.dll",
+  "entryType": "Vapor.Plugins.GameAccess.GameAccessPlugin"
+}

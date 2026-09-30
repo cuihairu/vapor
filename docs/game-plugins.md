@@ -14,8 +14,10 @@ exist, which do not, and why**. The short version:
 ## The game-agnostic base already covers most of it
 
 Almost everything an operator does with a Valve title is game-independent and
-already ships in the agent's core action catalog
-([Actions catalog](actions.md)):
+already ships in the agent's action catalog
+([Actions catalog](actions.md)) — the game-access rows below live in the
+official `vapor.game-access` plugin since the host/plugin split; names and
+payloads are unchanged:
 
 | Surface | Core coverage (works for any Valve title) |
 |---------|-------------------------------------------|

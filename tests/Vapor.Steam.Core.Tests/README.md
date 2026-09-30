@@ -11,8 +11,10 @@ tests/Vapor.Steam.Core.Tests/
 │   │   ├── PingActionTests.cs        # PingAction 测试 (15 个测试)
 │   │   ├── EchoActionTests.cs        # EchoAction 测试 (15 个测试)
 │   │   ├── LoginActionTests.cs       # LoginAction 测试 (12 个测试)
-│   │   ├── IdleActionTests.cs        # IdleAction 测试 (16 个测试)
-│   │   └── RedeemKeyActionTests.cs   # RedeemKeyAction 测试 (19 个测试)
+│   │   └── IdleActionTests.cs        # IdleAction 测试 (16 个测试)
+│   │
+│   │   # 游戏访问类动作测试已随动作拆分迁往官方插件工程
+│   │   # (tests/Vapor.Plugins.GameAccess.Tests，含 RedeemKeyActionTests)
 │   ├── ActionRegistryTests.cs        # ActionRegistry 测试 (13 个测试)
 │   ├── BotSessionTests.cs            # BotSession 测试 (22 个测试)
 │   ├── SessionManagerTests.cs        # SessionManager 测试 (21 个测试)
@@ -27,7 +29,7 @@ tests/Vapor.Steam.Core.Tests/
 - **EchoActionTests**: 测试回显功能，验证 payload 正确回显
 - **LoginActionTests**: 测试登录动作，验证输出结构
 - **IdleActionTests**: 测试空闲动作，验证持续参数处理
-- **RedeemKeyActionTests**: 测试 Key 激活，验证 Key 遮罩和必需参数检查
+- 游戏访问类动作（redeem_key 等 14 个）的测试已随 GameAccess 插件拆分迁至 `tests/Vapor.Plugins.GameAccess.Tests`
 
 ### 核心组件测试
 - **ActionRegistryTests**: 动作注册表测试，包括注册、查找、大小写不敏感等功能
@@ -76,12 +78,11 @@ reportgenerator -reports:**/coverage.cobertura.xml -targetdir:**/TestResults/cov
 | EchoActionTests | 15 |
 | LoginActionTests | 12 |
 | IdleActionTests | 16 |
-| RedeemKeyActionTests | 19 |
 | ActionRegistryTests | 13 |
 | BotSessionTests | 22 |
 | SessionManagerTests | 21 |
 | SteamClientManagerTests | 15 |
-| **总计** | **148** |
+| **总计** | **129**（历史小节口径；RedeemKeyActionTests 已迁往 GameAccess 插件测试工程） |
 
 ## 测试原则
 

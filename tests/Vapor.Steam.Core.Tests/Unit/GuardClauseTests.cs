@@ -34,12 +34,19 @@ public sealed class GuardClauseTests
 	}
 
 	[Fact]
-	public void SteamProfileGamesClient_NullDependencies_ThrowWithParamName()
+	public void SteamProfileGamesClient_Dependencies_ThrowOnNull_AndAcceptValid()
 	{
 		Assert.Equal("webHandler", Assert.Throws<ArgumentNullException>(
 			() => new SteamProfileGamesClient(null!, null!)).ParamName);
 		Assert.Equal("logger", Assert.Throws<ArgumentNullException>(
 			() => new SteamProfileGamesClient(CreateWebHandler(), null!)).ParamName);
+		// The complements of both guard arms: valid dependencies take the
+		// assign side of each coalesce. GetPlaytimeActionTests builds this
+		// client too, but it moved to GameAccess.Tests — the coverage merge
+		// takes a per-report maximum, so this assembly's own report has to
+		// carry both arms of the logger coalesce to stay at 2/2.
+		Assert.NotNull(new SteamProfileGamesClient(
+			CreateWebHandler(), NullLogger<SteamProfileGamesClient>.Instance));
 	}
 
 	[Fact]

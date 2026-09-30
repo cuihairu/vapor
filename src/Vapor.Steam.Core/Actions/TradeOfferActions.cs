@@ -226,7 +226,8 @@ public sealed class SendTradeOfferAction : IAction
 		return await _rateLimiter.AcquireAsync(accountName, cancellationToken).ConfigureAwait(false);
 	}
 
-	internal static readonly TradeRateLease NoopLease = new(static () => { });
+	/// <summary>Shared no-limiter sentinel lease (public: the game-access plugin's loot/swap actions acquire the same way).</summary>
+	public static readonly TradeRateLease NoopLease = new(static () => { });
 
 	// Internal for property-based coverage (tests act as a TryParse oracle
 	// over the per-field parse semantics); behavior is unchanged.

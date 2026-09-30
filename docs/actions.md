@@ -1,10 +1,10 @@
 # Actions catalog
 
-Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **55 shipped actions** — 34 Steam-domain actions, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 4 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
+Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **55 shipped actions** — 20 host actions from the Steam.Core assembly, 14 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 4 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
-Source map, for reference: Steam-domain actions live in `src/Vapor.Steam.Core/Actions/*.cs`, agent host actions in `src/Vapor.Agent/HostActions/*.cs`, plugin actions in `src/Vapor.Plugins.*`, and the job envelope in `src/Vapor.ControlPlane/Program.cs` + `src/Vapor.Protocol/Models.cs`. Field names below are copied verbatim from the payload-parsing / output-building code.
+Source map, for reference: host Steam-domain actions live in `src/Vapor.Steam.Core/Actions/*.cs`, the game-access actions in the official `src/Vapor.Plugins.GameAccess/` plugin (bundled into the agent image; same names), agent host actions in `src/Vapor.Agent/HostActions/*.cs`, the remaining plugin actions in `src/Vapor.Plugins.*`, and the job envelope in `src/Vapor.ControlPlane/Program.cs` + `src/Vapor.Protocol/Models.cs`. Field names below are copied verbatim from the payload-parsing / output-building code.
 
 ## Conventions
 
@@ -74,7 +74,6 @@ Most REST wrappers under `/v1/accounts/{name}/...` are thin: they build the payl
 
 # Steam.Core actions (`Vapor.Steam.Core` assembly, `src/Vapor.Steam.Core/Actions/`)
 
-## Session & diagnostics
 
 ### `login` — `LoginAction.cs` (login: no, timeout: 60s)
 Logs the account's session in to Steam. No payload fields.
@@ -93,73 +92,6 @@ Simulates being online for a period (returns immediately; the session stays idle
 Payload: `duration` int, optional, default `60` (seconds).
 Output: `action` (`"idle"`), `duration`, `state`.
 
-## Farming / playtime
-
-### `play_games` — `PlayGamesAction.cs` (login: yes, timeout: 30s)
-Starts or stops playing games on the session.
-Payload:
-- `games` string, optional — CSV of AppIDs; also accepts the `id/12345` per-item format (`"12345,67890"`, `"id/220,730"`).
-- `action` string, optional — `play` (default) | `stop` | `idle`. `idle` and `stop` both stop all games. At least one of `games`/`action` is required.
-Output: `action` (`"play"` | `"stop"`), `games` (set of AppIDs, play only), `account`.
-
-### `get_card_drops` — `GetCardDropsAction.cs` (login: yes, timeout: 120s)
-Lists games with remaining trading-card drops (community badges page); stale-while-revalidate cached (default TTL 10 min, stale 30 min).
-Payload:
-- `steam_id` string, optional — SteamID64; defaults to the session's own SteamID resolved from its cookies.
-- `cache_ttl_seconds` int, optional — `0` disables caching entirely; `>0` overrides TTL (stale window derived).
-- `force_refresh` bool, optional (default `false`) — bypass the cache and repopulate it.
-Output: `steam_id`, `apps_with_drops`, `total_drops_remaining`, `drops[]` `{ app_id, name, drops_remaining }` (sorted by drops desc, then app id).
-
-### `get_playtime` — `GetPlaytimeAction.cs` (login: yes, timeout: 120s)
-Owned games with total playtime (profile games tab); cached (default TTL 30 min, stale 60 min).
-Payload: `steam_id` (optional, as above), `games` string optional (CSV AppID filter, same parser as `play_games`), `cache_ttl_seconds`, `force_refresh` (same semantics as `get_card_drops`).
-Output: `steam_id`, `games_count`, `total_hours`, `playtimes[]` `{ app_id, name, hours }`.
-
-## Licenses & keys
-
-### `add_license` — `AddLicenseAction.cs` (login: yes, timeout: 120s)
-Claims free Steam content on the account (addlicense flow). App IDs go through the client protocol (free-on-demand apps); sub IDs through the store checkout endpoint the website's "Add to account" button uses.
-Payload:
-- `app_ids` uint array, optional — client-protocol free license (needs a connected Steam client).
-- `sub_ids` uint array, optional — store checkout (needs a web session). At least one of the two is required; entries must be `> 0`, deduplicated; a single bare value is accepted.
-Output: `app_ids`, `sub_ids`, `apps_result` (Steam result string), `granted_app_ids`, `granted_package_ids` (when granted), `purchases[]` `{ id, success, detail }` (sub path).
-
-### `redeem_key` — `RedeemKeyAction.cs` (login: yes, timeout: 60s)
-Redeems a Steam product key; retries transient failures up to 3 attempts (250 ms × attempt backoff).
-Payload: `key` string, **required**.
-Output: `action`, `key` (**masked** — middle segments `*`-ed), `result` (Steam result name), `resultCode` (int), `attempts`, `success`, `requestId`, `durationMs`, `grantedAppIds`, `grantedPackageIds`, `receiptDetails` (each present when non-empty/non-null).
-Safety: `RateLimitExceeded` surfaces as "Too many key redemption attempts"; `AlreadyOwned` and `DuplicateRequest` count as success.
-
-## Achievements
-
-### `get_achievements` — `GetAchievementsAction.cs` (login: yes, timeout: 120s)
-Lists one game's achievements with unlock state (community stats page). Read-only; `api_name` values are the write-side identifiers for `unlock_achievements`.
-Payload: `app_id` string, **required** (positive); `steam_id` string optional (session default).
-Output: `steam_id`, `app_id`, `unlocked_count`, `total_count`, `achievements[]` `{ api_name, display_name, description, unlocked, icon_url }`.
-
-### `unlock_achievements` — `UnlockAchievementsAction.cs` (login: yes, timeout: 180s)
-Sets the named achievements to unlocked via the client stats protocol. **No "unlock everything" path exists** — names must be explicit.
-Payload: `app_id` string **required** (positive); `names` string array **required, non-empty** (deduplicated case-insensitively; a single string is accepted).
-Output: `app_id`, `unlock` (`true`), `requested_count`, `results[]` `{ name, success, detail }`, `succeeded_count`, `failed_count`, `verified`. One failure never stops the rest.
-
-### `reset_achievements` — `UnlockAchievementsAction.cs` (`ResetAchievementsAction` class) (login: yes, timeout: 180s)
-Clears the named achievements. **Destructive; double-gated**: requires an explicit non-empty `names` list **and** `confirm: true`, enforced independently at the action layer *and* the control-plane API.
-Payload: `app_id` (as above), `names` (as above), `confirm` bool — must be explicitly `true`.
-Output: same shape as `unlock_achievements` with `unlock: false`.
-
-## Inventory & trading
-
-### `get_inventory` — `GetInventoryAction.cs` (login: yes, timeout: 60s)
-Reads a Steam inventory. Two modes: classic single app or an `app_ids` multi-app scan (max 5 apps; context rules: 753 → 6, else 2).
-Payload:
-- `steam_id` string, optional (session default).
-- `app_ids` uint array, optional — multi-app scan; takes precedence over the classic pair; max 5 per call.
-- `app_id` string, optional — default `730` (CS2).
-- `context_id` string, optional — default `2`.
-- `tradable_only` bool, optional (default `false`) — keep only items tradable right now.
-- `marketable_only` bool, optional (default `false`) — keep only marketable items.
-Output (classic): `steam_id`, `app_id`, `context_id`, `total_count`, `items[]` `{ asset_id, class_id, instance_id, app_id, amount, name, market_name, market_hash_name, type, tradable, marketable }`.
-Output (multi-app): `steam_id`, `total_count`, `items[]` (same shape), `apps[]` `{ app_id, context_id, item_count }`. Pagination is capped defensively at 50 000 items.
 
 ### `get_trade_offers` — `GetTradeOffersAction.cs` (login: yes, timeout: 30s)
 Lists incoming and outgoing trade offers (IEconService). Read side of the trade loop.
@@ -194,31 +126,6 @@ Cancels an offer the account sent.
 Payload: `trade_offer_id` string **required**; `verify_state` bool optional default `true` (validates the offer was sent by us and is still Active; `false` bypasses).
 Output: `trade_offer_id`, `state_verified`. Rate-limited.
 
-### `loot_inventory` — `LootAction.cs` (`LootInventoryAction`) (login: yes, timeout: 120s)
-Sends **all** of the account's currently-tradable items to a partner (ASF/Watt "loot" flow).
-Payload:
-- `partner_steam_id` string or `trade_url` string — one **required**.
-- `message` string, optional.
-- `app_ids` uint array, optional — **default `[753]`** (Steam community items — where trading cards land); max 5 apps; 50 inventory pages per app cap.
-Output: `trade_offer_id`, `partner_steam_id`, `item_count`, `apps_scanned[]` `{ app_id, context_id, tradable_items }`, `requires_mobile_confirmation`.
-Safety: only items tradable *now* are offered; rate-limiter lease before sending; fails when nothing tradable was found.
-
-### `find_duplicates` — `FindDuplicatesAction.cs` (login: yes, timeout: 60s)
-Scans inventories for duplicate items and reports the tradable copies beyond `keep` (TradeMatcher-style analysis; no offer is sent).
-Payload: `app_ids` uint array optional (default `[753]`, max 5); `keep` int optional, default `1`, must be 1–100.
-Output: `steam_id`, `keep`, `apps_scanned[]` `{ app_id, context_id, scanned_items }`, `duplicates[]` `{ app_id, class_id, instance_id, name, total, excess_count, excess_asset_ids }`, `excess_count`.
-
-### `swap_duplicates` — `SwapDuplicatesAction.cs` (login: yes, timeout: 120s)
-Pairs the account's duplicate copies against the partner's duplicates of cards the account lacks (and vice versa); **dry run by default**, sends a symmetric 1:1 offer with `send=true`.
-Payload:
-- `partner_steam_id` string or `trade_url` string — one **required**; must differ from the account's own SteamID.
-- `message` string, optional.
-- `send` bool, optional (default `false`) — **the dry-run switch**; `false` reports matches only, `true` sends the offer.
-- `app_ids` uint array optional (default `[753]`, max 5); `keep` int 1–100 default `1`; `max_swaps` int 1–100 default `25`.
-Output: `partner_steam_id`, `keep`, `matches[]` `{ give: {app_id, context_id, asset_id, class_id, instance_id, name}, receive: {…} }`, `give_count`, `receive_count`, `dry_run`; when sent also `trade_offer_id`, `requires_mobile_confirmation`.
-Safety: dry-run default; rate-limiter when sending.
-
-## Community market
 
 ### `get_my_market_listings` — `GetMyMarketListingsAction.cs` (login: yes, timeout: 30s)
 Lists the account's own market listings (login-gated mylistings page — the only source for own-listing ids and the fee split). **One page per dispatch**; page by issuing further dispatches until `start` reaches `total_count`.
@@ -251,7 +158,6 @@ Payload:
 Output: `dry_run`, `matched`, `scanned`, `succeeded` (null in dry runs), `failed` (null in dry runs), `listings[]` `{ listing_id, market_hash_name, price_cents, would_cancel | succeeded }`.
 Safety: 20 pages × 500 listings defensive fetch cap.
 
-## Store data (read-only; tiered cache: `cache_ttl_seconds` `0` disables caching, `>0` overrides; `force_refresh` bypasses and repopulates)
 
 ### `get_game_info` — `DataActions.cs` (`GetGameInfoAction`) (login: no, timeout: 30s)
 Full store details for one game.
@@ -283,21 +189,6 @@ Invalidates cached store data by key prefix or clears everything (lets jobs expi
 Payload: `prefix` string optional (e.g. `"price:730"`); `clear_all` bool optional (`true` wipes the whole cache). One of the two is required.
 Output: `prefix` (null on clear-all), `cleared_all`, `removed` (entry count). Fails when the agent has no cache configured.
 
-## Points shop
-
-### `get_points_shop_summary` — `GetPointsShopSummaryAction.cs` (login: yes, timeout: 60s)
-Points-shop balance and reward definitions (discovery feed for `claim_points_shop_items`; free claimables are `point_cost == 0`).
-Payload: `definition_ids` uint array optional (look up specific definitions); `free_only` bool optional default `false` (client-side filter; `items_total` still reports what Steam returned).
-Output: `points`, `points_earned`, `points_spent`, `items[]` `{ defid, app_id, point_cost, active, type?, description?, free_until? }` (optional keys present when non-default), `items_total`.
-
-### `claim_points_shop_items` — `ClaimPointsShopItemsAction.cs` (login: yes, timeout: 120s)
-Redeems points-shop reward definitions (the points-shop flavor of `add_license`; mirrors ASF "RP").
-Payload:
-- `definition_ids` uint array **required**.
-- `force` bool optional default `false` — **safety gate**: without `force` the whole batch is validated first and **any paid definition (`point_cost != 0`) or unknown id rejects the batch before anything is redeemed**; with `force=true` paid items are redeemed too.
-Output: `force`, `requested`, `succeeded`, `failed`, `results[]` `{ defid, success, result, community_item_id? }` (64-bit id kept as string), `points_after` (best-effort balance refresh).
-
-## Account health
 
 ### `check_account_standing` — `CheckAccountStandingAction.cs` (login: yes, timeout: 60s)
 Health probe for ban/standing state (GetPlayerBans + limited-account marker). Orchestration quarantines accounts from trade/market work based on `standing`.
@@ -313,9 +204,117 @@ Note: exit IP via `api.ipify.org`, then `steamcommunity.com` reachability; succe
 
 ---
 
+# Game Access plugin actions (`Vapor.Plugins.GameAccess` official plugin, `src/Vapor.Plugins.GameAccess/`)
+
+The fourteen game-access actions shipped inside the host until the plugin split; action names and payload schemas are unchanged, the agent Docker image bundles the plugin, and a host without it simply stops advertising these names in hello (dispatch fails with a capability mismatch / `action not found`, never a silent no-op). See the plugin README for the split contract.
+
+## Farming / playtime
+
+### `play_games` — `src/Vapor.Plugins.GameAccess/PlayGamesAction.cs` (login: yes, timeout: 30s)
+Starts or stops playing games on the session.
+Payload:
+- `games` string, optional — CSV of AppIDs; also accepts the `id/12345` per-item format (`"12345,67890"`, `"id/220,730"`).
+- `action` string, optional — `play` (default) | `stop` | `idle`. `idle` and `stop` both stop all games. At least one of `games`/`action` is required.
+Output: `action` (`"play"` | `"stop"`), `games` (set of AppIDs, play only), `account`.
+
+### `get_card_drops` — `src/Vapor.Plugins.GameAccess/GetCardDropsAction.cs` (login: yes, timeout: 120s)
+Lists games with remaining trading-card drops (community badges page); stale-while-revalidate cached (default TTL 10 min, stale 30 min).
+Payload:
+- `steam_id` string, optional — SteamID64; defaults to the session's own SteamID resolved from its cookies.
+- `cache_ttl_seconds` int, optional — `0` disables caching entirely; `>0` overrides TTL (stale window derived).
+- `force_refresh` bool, optional (default `false`) — bypass the cache and repopulate it.
+Output: `steam_id`, `apps_with_drops`, `total_drops_remaining`, `drops[]` `{ app_id, name, drops_remaining }` (sorted by drops desc, then app id).
+
+### `get_playtime` — `src/Vapor.Plugins.GameAccess/GetPlaytimeAction.cs` (login: yes, timeout: 120s)
+Owned games with total playtime (profile games tab); cached (default TTL 30 min, stale 60 min).
+Payload: `steam_id` (optional, as above), `games` string optional (CSV AppID filter, same parser as `play_games`), `cache_ttl_seconds`, `force_refresh` (same semantics as `get_card_drops`).
+Output: `steam_id`, `games_count`, `total_hours`, `playtimes[]` `{ app_id, name, hours }`.
+
+## Licenses & keys
+
+### `add_license` — `src/Vapor.Plugins.GameAccess/AddLicenseAction.cs` (login: yes, timeout: 120s)
+Claims free Steam content on the account (addlicense flow). App IDs go through the client protocol (free-on-demand apps); sub IDs through the store checkout endpoint the website's "Add to account" button uses.
+Payload:
+- `app_ids` uint array, optional — client-protocol free license (needs a connected Steam client).
+- `sub_ids` uint array, optional — store checkout (needs a web session). At least one of the two is required; entries must be `> 0`, deduplicated; a single bare value is accepted.
+Output: `app_ids`, `sub_ids`, `apps_result` (Steam result string), `granted_app_ids`, `granted_package_ids` (when granted), `purchases[]` `{ id, success, detail }` (sub path).
+
+### `redeem_key` — `src/Vapor.Plugins.GameAccess/RedeemKeyAction.cs` (login: yes, timeout: 60s)
+Redeems a Steam product key; retries transient failures up to 3 attempts (250 ms × attempt backoff).
+Payload: `key` string, **required**.
+Output: `action`, `key` (**masked** — middle segments `*`-ed), `result` (Steam result name), `resultCode` (int), `attempts`, `success`, `requestId`, `durationMs`, `grantedAppIds`, `grantedPackageIds`, `receiptDetails` (each present when non-empty/non-null).
+Safety: `RateLimitExceeded` surfaces as "Too many key redemption attempts"; `AlreadyOwned` and `DuplicateRequest` count as success.
+
+## Achievements
+
+### `get_achievements` — `src/Vapor.Plugins.GameAccess/GetAchievementsAction.cs` (login: yes, timeout: 120s)
+Lists one game's achievements with unlock state (community stats page). Read-only; `api_name` values are the write-side identifiers for `unlock_achievements`.
+Payload: `app_id` string, **required** (positive); `steam_id` string optional (session default).
+Output: `steam_id`, `app_id`, `unlocked_count`, `total_count`, `achievements[]` `{ api_name, display_name, description, unlocked, icon_url }`.
+
+### `unlock_achievements` — `src/Vapor.Plugins.GameAccess/UnlockAchievementsAction.cs` (login: yes, timeout: 180s)
+Sets the named achievements to unlocked via the client stats protocol. **No "unlock everything" path exists** — names must be explicit.
+Payload: `app_id` string **required** (positive); `names` string array **required, non-empty** (deduplicated case-insensitively; a single string is accepted).
+Output: `app_id`, `unlock` (`true`), `requested_count`, `results[]` `{ name, success, detail }`, `succeeded_count`, `failed_count`, `verified`. One failure never stops the rest.
+
+### `reset_achievements` — `src/Vapor.Plugins.GameAccess/UnlockAchievementsAction.cs` (`ResetAchievementsAction` class) (login: yes, timeout: 180s)
+Clears the named achievements. **Destructive; double-gated**: requires an explicit non-empty `names` list **and** `confirm: true`, enforced independently at the action layer *and* the control-plane API.
+Payload: `app_id` (as above), `names` (as above), `confirm` bool — must be explicitly `true`.
+Output: same shape as `unlock_achievements` with `unlock: false`.
+
+## Inventory (plugin half)
+
+### `get_inventory` — `src/Vapor.Plugins.GameAccess/GetInventoryAction.cs` (login: yes, timeout: 60s)
+Reads a Steam inventory. Two modes: classic single app or an `app_ids` multi-app scan (max 5 apps; context rules: 753 → 6, else 2).
+Payload:
+- `steam_id` string, optional (session default).
+- `app_ids` uint array, optional — multi-app scan; takes precedence over the classic pair; max 5 per call.
+- `app_id` string, optional — default `730` (CS2).
+- `context_id` string, optional — default `2`.
+- `tradable_only` bool, optional (default `false`) — keep only items tradable right now.
+- `marketable_only` bool, optional (default `false`) — keep only marketable items.
+Output (classic): `steam_id`, `app_id`, `context_id`, `total_count`, `items[]` `{ asset_id, class_id, instance_id, app_id, amount, name, market_name, market_hash_name, type, tradable, marketable }`.
+Output (multi-app): `steam_id`, `total_count`, `items[]` (same shape), `apps[]` `{ app_id, context_id, item_count }`. Pagination is capped defensively at 50 000 items.
+
+### `loot_inventory` — `src/Vapor.Plugins.GameAccess/LootAction.cs` (`LootInventoryAction`) (login: yes, timeout: 120s)
+Sends **all** of the account's currently-tradable items to a partner (ASF/Watt "loot" flow).
+Payload:
+- `partner_steam_id` string or `trade_url` string — one **required**.
+- `message` string, optional.
+- `app_ids` uint array, optional — **default `[753]`** (Steam community items — where trading cards land); max 5 apps; 50 inventory pages per app cap.
+Output: `trade_offer_id`, `partner_steam_id`, `item_count`, `apps_scanned[]` `{ app_id, context_id, tradable_items }`, `requires_mobile_confirmation`.
+Safety: only items tradable *now* are offered; rate-limiter lease before sending; fails when nothing tradable was found.
+
+### `find_duplicates` — `src/Vapor.Plugins.GameAccess/FindDuplicatesAction.cs` (login: yes, timeout: 60s)
+Scans inventories for duplicate items and reports the tradable copies beyond `keep` (TradeMatcher-style analysis; no offer is sent).
+Payload: `app_ids` uint array optional (default `[753]`, max 5); `keep` int optional, default `1`, must be 1–100.
+Output: `steam_id`, `keep`, `apps_scanned[]` `{ app_id, context_id, scanned_items }`, `duplicates[]` `{ app_id, class_id, instance_id, name, total, excess_count, excess_asset_ids }`, `excess_count`.
+
+### `swap_duplicates` — `src/Vapor.Plugins.GameAccess/SwapDuplicatesAction.cs` (login: yes, timeout: 120s)
+Pairs the account's duplicate copies against the partner's duplicates of cards the account lacks (and vice versa); **dry run by default**, sends a symmetric 1:1 offer with `send=true`.
+Payload:
+- `partner_steam_id` string or `trade_url` string — one **required**; must differ from the account's own SteamID.
+- `message` string, optional.
+- `send` bool, optional (default `false`) — **the dry-run switch**; `false` reports matches only, `true` sends the offer.
+- `app_ids` uint array optional (default `[753]`, max 5); `keep` int 1–100 default `1`; `max_swaps` int 1–100 default `25`.
+Output: `partner_steam_id`, `keep`, `matches[]` `{ give: {app_id, context_id, asset_id, class_id, instance_id, name}, receive: {…} }`, `give_count`, `receive_count`, `dry_run`; when sent also `trade_offer_id`, `requires_mobile_confirmation`.
+Safety: dry-run default; rate-limiter when sending.
+
+## Points shop
+
+### `get_points_shop_summary` — `src/Vapor.Plugins.GameAccess/GetPointsShopSummaryAction.cs` (login: yes, timeout: 60s)
+Points-shop balance and reward definitions (discovery feed for `claim_points_shop_items`; free claimables are `point_cost == 0`).
+Payload: `definition_ids` uint array optional (look up specific definitions); `free_only` bool optional default `false` (client-side filter; `items_total` still reports what Steam returned).
+Output: `points`, `points_earned`, `points_spent`, `items[]` `{ defid, app_id, point_cost, active, type?, description?, free_until? }` (optional keys present when non-default), `items_total`.
+
+### `claim_points_shop_items` — `src/Vapor.Plugins.GameAccess/ClaimPointsShopItemsAction.cs` (login: yes, timeout: 120s)
+Redeems points-shop reward definitions (the points-shop flavor of `add_license`; mirrors ASF "RP").
+Payload:
+- `definition_ids` uint array **required**.
+- `force` bool optional default `false` — **safety gate**: without `force` the whole batch is validated first and **any paid definition (`point_cost != 0`) or unknown id rejects the batch before anything is redeemed**; with `force=true` paid items are redeemed too.
+Output: `force`, `requested`, `succeeded`, `failed`, `results[]` `{ defid, success, result, community_item_id? }` (64-bit id kept as string), `points_after` (best-effort balance refresh).
 # Plugin-contributed actions
 
-## Mobile Authenticator plugin (`vapor.mobile-authenticator`, `src/Vapor.Plugins.MobileAuthenticator/AuthenticatorActions.cs`)
 
 ### `generate_totp` (login: no, timeout: 15s)
 Current Steam mobile authenticator code from a base64 shared secret (uses the synced Steam time offset when available).
@@ -362,7 +361,6 @@ Responds to every pending mobile confirmation in one shot (Watt/ASF "accept all"
 Payload: `operation` string optional default `"allow"` — `allow | cancel`; `type` string optional — `all` (default) | `trade` | `market` filter.
 Output: `operation`, `total`, `succeeded`, `failed`, `results[]` `{ confirmation_id, type, succeeded, error? }`.
 
-## Market Watch plugin (`vapor.market-watch`, `src/Vapor.Plugins.MarketWatch/MarketWatchPlugin.cs`)
 
 ### `market_watch_add` (login: no, timeout: 10s)
 Starts watching a game: `kind=price` alerts on threshold moves (default), `kind=free` alerts when the game turns free. Background poll interval/threshold defaults come from plugin config (`market.check_interval_seconds` 300, `market.threshold_percent` 10, `market.country` "us").
@@ -378,7 +376,6 @@ Output: `app_id`, `watched` (remaining count). Fails if not watched.
 Lists watched games with baselines and last observed prices. No payload fields.
 Output: `watches[]` `{ app_id, kind, threshold_percent, cc, currency, baseline, last_price, last_known_free, last_checked_at, alerts }`, `count`, `interval_seconds`.
 
-## Monitoring plugin (`vapor.monitoring`, `src/Vapor.Plugins.Monitoring/GetMetricsAction.cs`)
 
 ### `get_metrics` (login: no, timeout: 10s)
 Returns the current metrics snapshot so the control plane can pull monitoring data through normal task execution (the plugin also serves it on its own HTTP endpoint). No payload fields.
@@ -438,7 +435,8 @@ Note: this action is host-scoped (`agent:{id}` target) but keyed by account — 
 
 | Provider | Count |
 |---|---|
-| Steam.Core (`src/Vapor.Steam.Core/Actions/`) | 34 |
+| Steam.Core host actions (`src/Vapor.Steam.Core/Actions/`) | 20 |
+| Game Access plugin (`vapor.game-access`) | 14 |
 | Mobile Authenticator plugin (`vapor.mobile-authenticator`) | 9 |
 | Market Watch plugin (`vapor.market-watch`) | 3 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |

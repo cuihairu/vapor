@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Official GameAccess plugin (round 41): the fourteen game-access actions
+  (`play_games`, `get_card_drops`, `get_playtime`, `add_license`,
+  `redeem_key`, `get_achievements`, `unlock_achievements`,
+  `reset_achievements`, `get_inventory`, `loot_inventory`,
+  `find_duplicates`, `swap_duplicates`, `get_points_shop_summary`,
+  `claim_points_shop_items`) moved out of the agent host into an
+  independent official plugin assembly (`Vapor.Plugins.GameAccess`,
+  manifest `vapor.game-access`, trust official, actions permission),
+  ASF-style. Action names and payload schemas are byte-for-byte unchanged;
+  the agent Docker image bundles the plugin into
+  `/app/plugins/vapor.game-access` (the Monitoring mechanism), so the
+  default hello capability set is identical. A host without the plugin
+  stops advertising the names and dispatch fails with the regular
+  capability mismatch / `action not found` errors — never a silent no-op.
+  The plugin resolves host `IVaporCache` / `TradeRateLimiter` exactly as
+  the deleted host wiring did (missing limiter logs a warning and runs
+  loot/swap unthrottled); the only host-assembly change needed was
+  making `SendTradeOfferAction.NoopLease` public so loot/swap keep
+  acquiring leases the same way. The migrated action suites (274 tests)
+  live in `Vapor.Plugins.GameAccess.Tests` together with plugin lifecycle
+  tests and a real-`PluginManager`/ALC host-load test asserting the
+  fourteen unchanged names.
+
 - Dependency version fleet guard (round 38): `docs/dependencies.md` is now
   the single source of truth for every `PackageReference` version in the
   repository — a registered version table (`test-fleet` / `any` scopes)
