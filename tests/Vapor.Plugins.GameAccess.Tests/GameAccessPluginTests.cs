@@ -12,7 +12,7 @@ namespace Vapor.Plugins.GameAccess.Tests;
 public sealed class GameAccessPluginTests
 {
 	[Fact]
-	public async Task InitializeAsync_BuildsAllFourteenActions_WithoutHostLimiter()
+	public async Task InitializeAsync_BuildsAllSixteenActions_WithoutHostLimiter()
 	{
 		GameAccessPlugin plugin = new();
 		await plugin.InitializeAsync(CreateContext(new ServiceProviderStub()), CancellationToken.None);
@@ -25,6 +25,8 @@ public sealed class GameAccessPluginTests
 			"play_games",
 			"redeem_key",
 			"get_inventory",
+			"get_game_inventory",
+			"get_item_details",
 			"get_achievements",
 			"unlock_achievements",
 			"reset_achievements",
@@ -48,7 +50,7 @@ public sealed class GameAccessPluginTests
 		await plugin.InitializeAsync(
 			CreateContext(new ServiceProviderStub(cache.Object, limiter)), CancellationToken.None);
 
-		Assert.Equal(14, plugin.GetActions().Count());
+		Assert.Equal(16, plugin.GetActions().Count());
 	}
 
 	[Fact]

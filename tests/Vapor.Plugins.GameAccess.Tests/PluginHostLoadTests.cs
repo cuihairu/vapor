@@ -7,8 +7,9 @@ namespace Vapor.Plugins.GameAccess.Tests;
 /// <summary>
 /// Loads the real compiled GameAccess plugin through the plugin host (discovery,
 /// isolated load context, permission gating, action registration) — the split's
-/// wire-compat proof: the fourteen formerly-host actions come back through a real
-/// PluginManager load with unchanged names. Mirrors the MarketWatch precedent.
+/// wire-compat proof: the sixteen actions (fourteen formerly-host plus the two
+/// game-economy additions) come back through a real PluginManager load with
+/// unchanged names. Mirrors the MarketWatch precedent.
 /// </summary>
 public sealed class PluginHostLoadTests : IDisposable
 {
@@ -66,7 +67,9 @@ public sealed class PluginHostLoadTests : IDisposable
 				"find_duplicates",
 				"get_achievements",
 				"get_card_drops",
+				"get_game_inventory",
 				"get_inventory",
+				"get_item_details",
 				"get_playtime",
 				"get_points_shop_summary",
 				"loot_inventory",

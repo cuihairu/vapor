@@ -1,6 +1,6 @@
 # Actions catalog
 
-Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **55 shipped actions** — 20 host actions from the Steam.Core assembly, 14 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 4 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
+Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **57 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 4 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
@@ -276,6 +276,27 @@ Payload:
 Output (classic): `steam_id`, `app_id`, `context_id`, `total_count`, `items[]` `{ asset_id, class_id, instance_id, app_id, amount, name, market_name, market_hash_name, type, tradable, marketable }`.
 Output (multi-app): `steam_id`, `total_count`, `items[]` (same shape), `apps[]` `{ app_id, context_id, item_count }`. Pagination is capped defensively at 50 000 items.
 
+### `get_game_inventory` — `src/Vapor.Plugins.GameAccess/GetGameInventoryAction.cs` (login: yes, timeout: 60s)
+The game-economy view of one app's inventory: pages the same source as `get_inventory`, then folds items into per-(class, instance) stacks — counts, tradable/marketable splits — largest first. Read-only: no trade or market call is ever made.
+Payload:
+- `steam_id` string, optional (session default).
+- `app_id` string, optional — default `730` (CS2); Dota 2 is `570`.
+- `context_id` string, optional — default `2`.
+- `tradable_only` / `marketable_only` bool, optional (default `false`) — filtered out before aggregation.
+- `value` bool, optional (default `false`) — attach market valuation.
+- `currency` string, optional — priceoverview currency id, passed through when valuing.
+- `cc` string, optional — country code for the app-level price (default `us`).
+Output: `steam_id`, `app_id`, `context_id` (string), `total_items`, `stack_count`, `stacks[]` `{ class_id, instance_id, name, market_name, market_hash_name, type, count, tradable_count, marketable_count, amount_total }`; with `value=true` also `valuation` `{ currency, priced_stacks, unpriced_stacks, truncated, items[] { market_hash_name, count, lowest_price, median_price, volume, error }, game_price }`. Prices come from the community market `priceoverview` endpoint per stack — cached under the `SteamCacheTtl.Price` tier, capped at the 50 largest marketable stacks (past-cap stacks are skipped, not failed) — and are returned verbatim as Steam formats them (currency symbol included, never parsed into numbers). `game_price` mirrors `get_price` (same endpoint, same `price:{appId}:{cc}` cache key, so the two actions share one warm cache) and is supplementary: a store failure lands in `game_price.error` without sinking the per-stack valuation.
+
+### `get_item_details` — `src/Vapor.Plugins.GameAccess/GetItemDetailsAction.cs` (login: yes, timeout: 60s)
+Per-item metadata and valuation for specific inventory items: give `asset_ids` (exact items) or `class_ids` (all items of a kind) and the action pages the inventory once and returns the matching entries, optionally with market prices. Read-only: no trade or market call is ever made.
+Payload:
+- `steam_id` string, optional (session default).
+- `app_id` string, optional — default `730`; `context_id` string, optional — default `2`.
+- `asset_ids` / `class_ids` uint64 list (a single scalar is accepted) — at least one id required; unparsable or non-positive entries are dropped silently, duplicates deduplicated.
+- `value` bool, optional (default `false`) — attach market prices per item; `currency` string, optional.
+Output: `steam_id`, `app_id`, `context_id` (string), `matched_count`, `items[]` `{ asset_id, class_id, instance_id, app_id, amount, name, market_name, market_hash_name, type, tradable, marketable }` (64-bit ids as strings); with `value=true` also `valuation` `{ currency, priced_count, failed_count, items[] { asset_id, market_hash_name, lowest_price, median_price, volume, error } }` — non-marketable entries carry `error: "not marketable"` and get no price lookup; prices as in `get_game_inventory`.
+
 ### `loot_inventory` — `src/Vapor.Plugins.GameAccess/LootAction.cs` (`LootInventoryAction`) (login: yes, timeout: 120s)
 Sends **all** of the account's currently-tradable items to a partner (ASF/Watt "loot" flow).
 Payload:
@@ -436,10 +457,10 @@ Note: this action is host-scoped (`agent:{id}` target) but keyed by account — 
 | Provider | Count |
 |---|---|
 | Steam.Core host actions (`src/Vapor.Steam.Core/Actions/`) | 20 |
-| Game Access plugin (`vapor.game-access`) | 14 |
+| Game Access plugin (`vapor.game-access`) | 16 |
 | Mobile Authenticator plugin (`vapor.mobile-authenticator`) | 9 |
 | Market Watch plugin (`vapor.market-watch`) | 3 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |
 | Game Data plugin (`vapor.game-data`) | 4 |
 | Agent host (`Vapor.Agent/HostActions/`) | 4 |
-| **Total** | **55** |
+| **Total** | **57** |

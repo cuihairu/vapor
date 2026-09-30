@@ -11,7 +11,10 @@ namespace Vapor.Plugins.GameAccess;
 /// Official plugin carrying the game-access action surface that used to be
 /// wired into the agent host directly (play/idle/card-drop farming, playtime,
 /// licenses &amp; keys, achievements, inventory reads, duplicate scans/swaps,
-/// loot and points shop — fourteen actions in total). The split is wire-
+/// loot and points shop — fourteen actions in total) plus the game-economy
+/// view layered on top (get_game_inventory stack aggregation with optional
+/// market valuation, get_item_details per-item metadata and pricing — two
+/// more). The split is wire-
 /// compatible by construction: action names and payload schemas are untouched,
 /// so already-deployed jobs, schedules and control-plane code paths keep
 /// dispatching by the same names. The agent's Docker image bundles this plugin
@@ -62,6 +65,8 @@ public sealed class GameAccessPlugin : IPlugin, IActionPlugin
 			new PlayGamesAction(loggerFactory.CreateLogger<PlayGamesAction>()),
 			new RedeemKeyAction(loggerFactory.CreateLogger<RedeemKeyAction>()),
 			new GetInventoryAction(loggerFactory.CreateLogger<GetInventoryAction>()),
+			new GetGameInventoryAction(loggerFactory.CreateLogger<GetGameInventoryAction>(), cache),
+			new GetItemDetailsAction(loggerFactory.CreateLogger<GetItemDetailsAction>()),
 			new GetAchievementsAction(loggerFactory.CreateLogger<GetAchievementsAction>()),
 			new UnlockAchievementsAction(),
 			new ResetAchievementsAction(),

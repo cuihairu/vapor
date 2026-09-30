@@ -25,7 +25,7 @@ payloads are unchanged:
 | Trading cards | `get_card_drops` + the farm desired state (two-phase engine) — applies to titles that have card sets (e.g. Dota 2 does; CS:GO/CS2 never had them) |
 | Licenses & keys | `add_license`, `redeem_key` |
 | Achievements | `get_achievements`, `unlock_achievements`, `reset_achievements` |
-| Inventory & trading | `get_inventory`, `find_duplicates`, `swap_duplicates`, trade offers, `loot_inventory` (+ §39 storage-role collect orchestration) |
+| Inventory & trading | `get_inventory`, `find_duplicates`, `swap_duplicates`, trade offers, `loot_inventory` (+ §39 storage-role collect orchestration); game-economy aggregation/valuation via `get_game_inventory` / `get_item_details` |
 | Community market | `get_my_market_listings`, `create_market_listing`, `cancel_market_listings`, `get_price` |
 | Store data | `get_game_info` (batch), `search_games`, market listings — tiered cache |
 | Points shop | `get_points_shop_summary`, `claim_points_shop_items` |
@@ -33,6 +33,27 @@ payloads are unchanged:
 A dedicated per-game plugin is justified **only** when a title has mechanics
 this catalog cannot express. Everything above runs today for CS2, Dota 2, TF2
 and any other title with no per-game code at all.
+
+### Where the economy actions get their data (honest boundaries)
+
+`get_game_inventory` and `get_item_details` are read-only, but their data
+sources deserve the same precision as everything on this page:
+
+- **Inventory reads** go through the same `steamcommunity.com` inventory
+  endpoint `get_inventory` always used — an undocumented community surface,
+  not the key-gated Steam Web API. Format and availability are Valve's to
+  change without notice; pagination is capped defensively (50 000 items).
+- **Item prices** come from the community market `priceoverview` endpoint —
+  likewise undocumented and keyless, rate-limited, and answered on Steam's
+  terms (HTML-style localized price strings, `success:false` for anything not
+  listed). Prices are reported verbatim, never parsed or converted.
+- Neither endpoint is the Steam Web API, neither is covered by any Steam
+  guarantee, and hammering them from a bot fleet carries the usual account
+  -safety exposure described in [production.md](production.md) (Account
+  safety posture): the actions stay behind the web handler's rate limiter and
+  the price cache tier, and they never write — no trade, no market listing,
+  no case opening. Real (non-simulated) case opening remains a **non-goal**
+  per the section above.
 
 ## Why some gaps cannot be closed by a plugin
 

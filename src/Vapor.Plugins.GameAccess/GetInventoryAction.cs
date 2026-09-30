@@ -222,33 +222,8 @@ public sealed class GetInventoryAction : IAction
 		CancellationToken cancellationToken)
 	{
 		var tradeClient = _tradeClientFactory(webHandler);
-		var allItems = new List<InventoryItem>();
-		ulong? startAssetId = null;
-		bool hasMore;
-
-		do
-		{
-			var response = await tradeClient.GetInventoryAsync(steamId, appId, contextId, startAssetId, cancellationToken).ConfigureAwait(false);
-
-			if (!response.Success)
-			{
-				return ([], response.Error ?? "Failed to get inventory");
-			}
-
-			allItems.AddRange(response.Items);
-			hasMore = response.HasMore;
-			startAssetId = response.LastAssetId;
-
-			// Safety limit to prevent infinite loops
-			if (allItems.Count > 50000)
-			{
-				_logger.LogWarning("Inventory size exceeded 50000 items, stopping pagination");
-				break;
-			}
-		}
-		while (hasMore && startAssetId.HasValue);
-
-		return (allItems, null);
+		return await InventoryPaginator.FetchAsync(
+			tradeClient, steamId, appId, contextId, _logger, cancellationToken).ConfigureAwait(false);
 	}
 
 	private static List<InventoryItem> ApplyFilters(List<InventoryItem> items, bool tradableOnly, bool marketableOnly) =>

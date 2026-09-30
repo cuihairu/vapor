@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Game-economy inventory actions (round 42): two read-only actions joined the
+  GameAccess plugin (now sixteen actions). `get_game_inventory` pages an
+  app's inventory (CS2 730 / Dota 2 570 defaults) and folds it into
+  per-(class, instance) stacks — counts, tradable/marketable splits — with
+  optional `value=true` valuation: per-stack prices from the community market
+  `priceoverview` endpoint (cached at the `SteamCacheTtl.Price` tier, capped
+  at the 50 largest marketable stacks, prices reported verbatim as Steam
+  formats them) plus the app-level store price under the same cache key
+  `get_price` uses, so the two actions share one warm cache; a store failure
+  is reported inside `game_price.error` without sinking the per-stack
+  valuation. `get_item_details` resolves explicit `asset_ids` (exact items)
+  or `class_ids` (item kinds) against a single inventory pass and returns
+  metadata per matched entry, optionally priced per item (non-marketable
+  entries report `error: "not marketable"` and skip the lookup). Both
+  actions are strictly read-only — no trade, market or GC call is ever made —
+  and `ItemPriceClient` (the new priceoverview client) keeps Steam's
+  locale-formatted price strings unparsed. Boundary disclosure lives in
+  game-plugins.md: the inventory and priceoverview endpoints are
+  undocumented community surfaces, not the key-gated Steam Web API.
+
 - Official GameAccess plugin (round 41): the fourteen game-access actions
   (`play_games`, `get_card_drops`, `get_playtime`, `add_license`,
   `redeem_key`, `get_achievements`, `unlock_achievements`,

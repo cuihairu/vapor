@@ -331,7 +331,7 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
 | Case Opening | `vapor.caseopening` | Actions + web routes + configuration + result recording/archive; the dry-run CS:GO case simulator (see its section above) |
 | Game Data | `vapor.game-data` | Actions only; read-only Steam Web API digests (Dota 2 matches/heroes/items, TF2/CS2 schema) with agent-side key handling (see its section below) |
-| Game Access | `vapor.game-access` | Actions only; the fourteen game-access actions (farming, licenses & keys, achievements, inventory, loot, points shop) split out of the host with unchanged names/payloads — the wire-compatible extraction precedent (see its section below) |
+| Game Access | `vapor.game-access` | Actions only; sixteen game-access actions — the fourteen split out of the host with unchanged names/payloads (farming, licenses & keys, achievements, inventory, loot, points shop) plus the game-economy pair `get_game_inventory`/`get_item_details` — the wire-compatible extraction precedent (see its section below) |
 
 Per-title plugin coverage — what exists for CS:GO/CS2, Dota 2 and TF2, what is
 deliberately a non-goal, and what a future per-game plugin looks like — is
@@ -458,7 +458,10 @@ game-access actions that used to be registered by the agent host directly
 `get_achievements`, `unlock_achievements`, `reset_achievements`,
 `get_inventory`, `loot_inventory`, `find_duplicates`, `swap_duplicates`,
 `get_points_shop_summary`, `claim_points_shop_items`) now live in an
-independent official plugin assembly, ASF-style.
+independent official plugin assembly, ASF-style. The game-economy pair
+`get_game_inventory` / `get_item_details` (inventory aggregation and
+per-item market valuation) was added to the same plugin afterwards,
+bringing it to sixteen actions.
 
 ### Why it exists
 
@@ -475,7 +478,7 @@ diagnostics; the plugin owns "what the account plays, owns and unlocks".
 - **The agent Docker image bundles the plugin** into
   `/app/plugins/vapor.game-access` (the Monitoring mechanism, now with a
   second resident), so the default hello capability set is unchanged.
-- **Without the plugin** the agent stops advertising the fourteen names; the
+- **Without the plugin** the agent stops advertising the sixteen names; the
   control-plane scheduler only routes actions a connected agent declared in
   hello, so affected jobs fail at dispatch ("no agent declares the action") —
   and a force-routed task would fail with the regular `action not found`
@@ -499,7 +502,7 @@ leaving the host assembly.
 The migrated action suites live in `Vapor.Plugins.GameAccess.Tests`, with
 `PluginHostLoadTests` loading the compiled plugin through a real
 `PluginManager` (discovery, isolated ALC, official-trust gating) and
-asserting the fourteen unchanged names — the MarketWatch host-load precedent
+asserting the sixteen names — the MarketWatch host-load precedent
 applied to an extraction.
 
 ## Case opening plugin (`vapor.caseopening`)
