@@ -60,7 +60,7 @@
 | 能力 | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
 | 库存读取 | ✅ | ✅ | ✅ | ✅ | ✅(`GET /v1/accounts/{name}/inventory`,多 app 扫描 + tradable/marketable 过滤) |
-| 库存管理(API/UI/重复物清单) | ⚠️ | ✅ | ✅ | ➖ | ⚠️(重复物清单 API:`GET /v1/accounts/{name}/duplicates`;无 UI) |
+| 库存管理(API/UI/重复物清单) | ⚠️ | ✅ | ✅ | ➖ | ✅(重复物清单 API:`GET /v1/accounts/{name}/duplicates` + admin 背包面板 UI;`find_duplicates`/`swap_duplicates` 动作) |
 | 仓库号统一归集(loot 到公共仓库) | ❌(loot 各自归档) | ➖ | ➖ | ➖ | ✅(§39-P-b 账户 `role=farm/storage` 声明 + `POST /v1/orchestration/storage/collect` 一次归集全部启用 farm 号:单 job 逐源 `loot_inventory`(SSE 进度)+ sender 侧 mobile 确认链 + agent 侧 per-sender 限流 + 快照端点按源账户回读最近归集;无专用仓库表,jobs 即记录) |
 
 ### 3.5 市场
@@ -87,7 +87,7 @@
 
 | 能力 | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
-| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(50 条 `/v1` 路由 / 58 个操作 + OpenAPI) |
+| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(70 条 `/v1` 路由 / 57 个操作 + OpenAPI) |
 | Web UI | ✅(ASF-ui) | ✅ | ✅ | ➖ | ✅(只读 dashboard + 全功能管理台 admin + 游戏数据字典页,静态托管,零构建链) |
 | 插件系统 | ✅ | ✅ | ➖ | ➖ | ✅(ALC 隔离 + SemVer + 信任/权限 + 运行时 PluginStore:目录源→agent 定向安装/卸载/热加载,ASF 插件需手动放置) |
 | 多节点舰队(CP 集中调度) | ❌(单进程) | ❌ | ❌ | ❌ | ✅(**独有**) |
@@ -109,6 +109,7 @@
 > **2026-09-15**:P8 积分商店认领落地——`get_points_shop_summary` + `claim_points_shop_items` + `GET/POST /v1/accounts/{name}/points-shop/*`(SteamKit2 LoyaltyRewards unified service,语义对齐 ASF RP 命令):免费定义默认认领、付费需 `force=true` 且缺省整批前置拒绝、defid 仅来自调用方显式输入(不做扫描全部可认领的自动化)。矩阵最后一个非后置非定位外缺口收口,§3.6 仅余后置的成就管理。见 `todo.md` §13。
 > **2026-09-18**:成就解锁/管理落地(§33,P1 成就读取 + P2 写入通道 + P3 admin 面板),§3.6 最后一个后置项闭环。写入为显式单发 REST(显式 names 清单,无全量隐式路径;reset 双 confirm),布尔置位划线——成就/stat 数值编辑维持「明确不采用」。见 `todo.md` §33。
 > **2026-09-22**:矩阵回填两处滞后——①§3.7 插件系统行补运行时 PluginStore(§37:目录源→agent 定向安装/卸载/热加载 + admin 面板,ASF 插件需手动放置);②REST API 行 34→50 条 `/v1` 路由(58 个操作;§31 admin 写端点 + §33 成就 + §35/§36 编排 + §37 插件生态五端点累计)。见 `todo.md` §37。
+> **2026-09-30**:矩阵回填两处滞后——①§3.4 库存管理行 Vapor 列「无 UI」更正(轮三十六已交付 admin 背包面板含 duplicates 表,API+UI+动作三件齐全);②§3.7 REST API 行路由 50→70、操作 58→57(轮三十七 QR 端点 + 轮三十八后累计;轮四十二游戏经济双动作后 57)。见 `todo.md` 轮四十五。
 
 ### P6-1 卡牌 farming 闭环(GA 出口条件,平台杠杆最大)✅ 全部完成
 
