@@ -165,8 +165,15 @@ curl -sS -X PUT http://127.0.0.1:8080/v1/config/global \
 curl -sS -X PUT http://127.0.0.1:8080/v1/config/account/acct-1 \
   -H "Authorization: Bearer dev-admin" \
   -H "Content-Type: application/json" \
-  -d '{"enabled":true,"region":"local","labels":["vip"],"settings":{"proxy":"auto"}}'
+  -d '{"enabled":true,"region":"local","labels":["vip"]}'
 ```
+
+`settings` is a free-form key/value bag — stored and echoed back, and nothing
+in the control plane acts on individual keys. A per-account **egress proxy is
+not a config setting**: it is an agent-side credential pinned with
+`POST /v1/accounts/{name}/proxy` (see `docs/api.md` §4.x), which dispatches a
+`set_proxy` host action to the account's pinned agent and chains a `check_proxy`
+verification of the live exit.
 
 ### Cancel a job
 

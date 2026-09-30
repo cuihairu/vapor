@@ -329,6 +329,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- Account-safety operations guide (round 39): `docs/production.md` gains an
+  "Account safety posture" section consolidating the ban-prevention
+  features — per-account egress proxies (credential-not-setting, the
+  pin-once/rarely-change stance, `check_proxy` verification), standing
+  checks with reconciler trade quarantine
+  (`Vapor_RECONCILE_STANDING_REFRESH_SECONDS`, scope limited to automated
+  scheduling), and farm/storage role separation with storage collect.
+  `docs/running.md`'s account-config example no longer implies
+  `settings.proxy` assigns an exit — config `settings` is an inert
+  free-form bag; the egress proxy is pinned via
+  `POST /v1/accounts/{name}/proxy` (the example predated the feature).
 - New docs: a zero-to-farming walkthrough (`docs/getting-started.md`),
   a REST API reference covering all 50 `/v1` endpoints
   (`docs/api.md`) and an actions catalog with payload/output fields for

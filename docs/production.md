@@ -284,6 +284,62 @@ the console can perform; treat it accordingly (see the checklist below).
 - [ ] Containers run as non-root (default in both images)
 - [ ] Audit log (`Vapor_AUDIT_DB_PATH`) retained per your compliance policy
 
+## Account safety posture
+
+Steam correlates accounts that share an exit IP and flags them together —
+running a fleet through one address links every account to every ban. Vapor's
+mitigations are three features used together; none of them is automatic, and
+none of them makes automation of game-coordinator transactions acceptable
+(see `docs/game-plugins.md` for that boundary).
+
+### Per-account egress proxies
+
+Each account can pin its own exit proxy (`http|https|socks5://[user:pass@]host:port`),
+applied to the whole egress path for that account: CM connection, web API,
+trade and mobile-conf traffic all leave through it. Two properties matter for
+fleet safety:
+
+- **The proxy is a credential, not a setting.** It lives encrypted in the
+  pinned agent's credential store; the control plane stores nothing and only
+  ever logs the masked form. Assign it per account with
+  `POST /v1/accounts/{name}/proxy` (or the account editor's proxy field in the
+  admin console); the endpoint chains a `check_proxy` verification and reports
+  the live exit IP, Steam reachability and latency.
+- **Pin once, change rarely.** Every proxy change drops the account's session
+  and re-logs it from the new exit — an IP change on a farmed account is
+  exactly the correlation event this feature exists to avoid. Proxy rotation
+  is an explicit, audited action (`account.proxy_set`); there is no proxy pool
+  and no automatic rotation by design.
+
+### Standing checks with automatic quarantine
+
+The orchestrator periodically runs `check_account_standing`
+(`GetPlayerBans`: VAC / community / trade / economy bans plus the limited
+mark) on every declared account — cadence
+`Vapor_RECONCILE_STANDING_REFRESH_SECONDS`, default 6 h. An account with an
+adverse result is **quarantined from the reconciler's trade scheduling** (the
+gift-offer query / auto-accept / confirm cycle) until a later clean check
+releases it; each transition is published as an
+`account.standing_alert` / `account.standing_released` event and the
+quarantine itself is recorded (`standing_quarantined`). Scope note: the
+quarantine gates the reconciler's
+automated scheduling only — explicitly operator-invoked trade endpoints
+(loot, storage collect, direct offer creation) do not re-check standing at
+dispatch time, so screen sources after fresh bans before collecting.
+
+### Farm / storage separation
+
+Accounts declare a `role`: `farm` (default) or `storage`. Farm accounts hold
+the card-drop and playtime workload; a storage account is the warehouse that
+`POST /v1/orchestration/storage/collect` gathers tradable items into
+(trade-rate-limited per sender, offers confirmed on the sender side, progress
+on the job's SSE stream). Keeping tradable inventory on designated storage
+accounts bounds what a farm-account compromise can lose, and mirrors how ASF
+operators separate "works the market" bots from "sits on items" bots. Assign
+roles in the account editor (or `PUT /v1/accounts/{name}`); see
+`docs/api.md` for the collect and snapshot endpoints and
+`docs/getting-started.md` for a walkthrough.
+
 ## Data, backup and upgrades
 
 State lives in two named volumes:
