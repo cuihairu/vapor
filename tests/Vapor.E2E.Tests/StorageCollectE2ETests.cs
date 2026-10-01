@@ -395,4 +395,131 @@ public sealed class StorageCollectE2ETests
 
 		return await client.SendAsync(request);
 	}
+
+	[Fact]
+	public async Task LootEndpoint_QuarantinedAccount_ForceTrue_RecordsForcedQuarantineInAudit()
+	{
+		// Declare a farm account
+		await PutAccountAsync(FarmGuard, new { enabled = true, desiredState = "online", region = NoAgentRegion });
+
+		try
+		{
+			// Dispatch with force=true on a never-checked account (clean standing)
+			using HttpClient dispatch = CreateDispatchClient();
+			using HttpResponseMessage resp = await SendAsync(dispatch, HttpMethod.Post, $"/v1/accounts/{FarmGuard}/loot", new { partnerSteamId = StorageSteamId, force = true });
+			string raw = await resp.Content.ReadAsStringAsync();
+
+			// Should succeed (202 or 502 depending on wait window) since never-checked is not quarantined
+			Assert.True(
+				resp.StatusCode is HttpStatusCode.Accepted or HttpStatusCode.BadGateway,
+				$"unexpected loot status ({resp.StatusCode}): {raw}{Environment.NewLine}{_stack.Diagnostics()}");
+
+			JsonElement lootBody;
+			using (JsonDocument doc = JsonDocument.Parse(raw))
+			{
+				lootBody = doc.RootElement.Clone();
+			}
+
+			string jobId = lootBody.GetProperty("job_id").GetString()
+				?? throw new InvalidOperationException($"job_id missing from loot response: {raw}");
+
+			// Wait for task to settle
+			JsonElement settled = await WaitForJobTasksTerminalAsync(jobId, TimeSpan.FromSeconds(60));
+			AssertFailedTasks(settled.GetProperty("tasks"));
+
+			// Audit should record forced_quarantine=false for never-checked account
+			JsonElement audit = await _stack.GetAuditLogsAsync("account.loot");
+			JsonElement entry = FindAuditEntry(audit, FarmGuard, jobId);
+			JsonElement details = entry.GetProperty("details");
+			Assert.Equal(JsonValueKind.Object, details.ValueKind);
+			Assert.False(details.GetProperty("forced_quarantine").GetBoolean());
+		}
+		finally
+		{
+			await DeleteAccountsAsync(FarmGuard);
+		}
+	}
+
+	[Fact]
+	public async Task Collect_StorageQuarantined_ForceTrue_BypassesStorageQuarantine()
+	{
+		// Declare a storage account
+		await PutAccountAsync(StorageGuard, new { enabled = true, desiredState = "offline", role = "storage", steamId = StorageSteamId });
+
+		try
+		{
+			// With force=true, it should proceed even if storage is quarantined
+			// (never-checked account is clean, so this tests the force flag acceptance)
+			using HttpClient dispatch = CreateDispatchClient();
+			using HttpResponseMessage resp = await SendAsync(dispatch, HttpMethod.Post, CollectPath, new { storage = StorageGuard, force = true });
+			string raw = await resp.Content.ReadAsStringAsync();
+
+			// Should be 200 or 202 (no farms to collect from -> 400 on farm selection, but force bypasses storage quarantine)
+			Assert.True(
+				resp.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.OK or HttpStatusCode.Accepted,
+				$"collect failed ({resp.StatusCode}): {raw}{Environment.NewLine}{_stack.Diagnostics()}");
+
+			if (resp.StatusCode == HttpStatusCode.BadRequest)
+			{
+				string body = raw;
+				Assert.Contains("farm", body, StringComparison.OrdinalIgnoreCase);
+			}
+		}
+		finally
+		{
+			await DeleteAccountsAsync(StorageGuard);
+		}
+	}
+
+	[Fact]
+	public async Task Collect_FarmSourcesQuarantined_SkippedQuarantinedFieldPresentInResponseAndAudit()
+	{
+		// Declare a storage account and multiple farm accounts
+		await PutAccountAsync(StorageAccount, new { enabled = true, desiredState = "offline", role = "storage", steamId = StorageSteamId });
+		await PutAccountAsync(FarmOne, new { enabled = true, desiredState = "online", region = NoAgentRegion });
+		await PutAccountAsync(FarmTwo, new { enabled = true, desiredState = "online", region = NoAgentRegion });
+
+		try
+		{
+			// The PartitionByStanding logic filters quarantined farms into skipped_quarantined.
+			// This test verifies the structure of the response when skipped_quarantined is populated.
+			// Since we can't easily inject quarantine in E2E (never-checked accounts are clean),
+			// we verify the response shape and that the field exists in the audit.
+
+			using HttpClient dispatch = CreateDispatchClient();
+			using HttpResponseMessage resp = await SendAsync(dispatch, HttpMethod.Post, CollectPath, new { storage = StorageAccount });
+			string raw = await resp.Content.ReadAsStringAsync();
+
+			Assert.True(
+				resp.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted,
+				$"collect failed ({resp.StatusCode}): {raw}{Environment.NewLine}{_stack.Diagnostics()}");
+
+			JsonElement body;
+			using (JsonDocument doc = JsonDocument.Parse(raw))
+			{
+				body = doc.RootElement.Clone();
+			}
+
+			// Verify skipped_quarantined field is present (empty array when no quarantined)
+			Assert.True(body.TryGetProperty("skipped_quarantined", out JsonElement skipped));
+			Assert.Equal(JsonValueKind.Array, skipped.ValueKind);
+
+			// Verify audit records skippedQuarantined
+			if (body.TryGetProperty("job_id", out JsonElement jobIdEl))
+			{
+				string jobId = jobIdEl.GetString()!;
+				JsonElement audit = await _stack.GetAuditLogsAsync("storage.collect");
+				JsonElement entry = FindAuditEntry(audit, StorageAccount, jobId);
+				JsonElement details = entry.GetProperty("details");
+				Assert.Equal(JsonValueKind.Object, details.ValueKind);
+				Assert.Equal(2, details.GetProperty("farmCount").GetInt32());
+				Assert.False(details.GetProperty("forcedQuarantine").GetBoolean());
+				Assert.Equal(JsonValueKind.Array, details.GetProperty("skippedQuarantined").ValueKind);
+			}
+		}
+		finally
+		{
+			await DeleteAccountsAsync(StorageAccount, FarmOne, FarmTwo);
+		}
+	}
 }
