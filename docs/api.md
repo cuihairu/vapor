@@ -1,6 +1,6 @@
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 50 routes (58 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 57 routes (67 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
