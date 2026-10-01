@@ -15,16 +15,32 @@ verify-testing-docs.py（测试计数）同型：新代码无测试即红 → �
   4. 文档有代码无 → FAIL（僵尸端点）。
   5. 两侧任一解析零条目 → FAIL（文件结构变化时显式失败，不静默绿）。
 
+轮四十八新增——引言/矩阵计数对守护（轮四十七实证两处滞后散文行无人守：
+api.md 引言 `50 routes (58 operations)` 长期 stale；feature-matrix §3.7 REST
+行被回填成「70 路由 / 57 操作」字段张冠李戴。口径定谳见 todo 轮四十七）：
+  6. 计数口径：路由 = distinct `/v1` path；操作 = `/v1` (METHOD, path) 对。
+     `/`、`/healthz`、`/metrics` 三条非 `/v1` 不计入（api.md 引言「plus ...」
+     同一口径）。
+  7. api.md 引言「N routes (M operations)」应恰出现 1 次，且 N/M 与代码口径
+     逐字段相等；出现 0 次或多次 → FAIL（结构变化显式失败）。
+  8. feature-matrix `| REST API |` 行应恰有 1 条，行内「N 条 `/v1` 路由 /
+     M 个操作」与代码口径逐字段相等；解析不出 → FAIL。历史注记区（§4）
+     不在守护范围——该行锚定表格行，注释散文写错不红也不绿。
+
 文档端点行只写路由路径——query 参数写在正文 Query 行（achievements 小节
 先例），把 `?x=` 拼进端点标题会被判定漂移。
 
-用法：python3 scripts/verify-api-docs.py [Program.cs] [api.md]
+用法：python3 scripts/verify-api-docs.py [Program.cs] [api.md] [feature-matrix.md]
 退出码：0 = ALL GREEN，1 = 有 FAIL（逐条打印）。
 """
 import re
 import sys
 
 METHOD = {"Get": "GET", "Post": "POST", "Put": "PUT", "Delete": "DELETE"}
+
+INTRO_RE = re.compile(r"(\d+) routes \((\d+) operations\)")
+
+MATRIX_RE = re.compile(r"(\d+) 条\s*`/v1`\s*路由\s*/\s*(\d+)\s*个操作")
 
 
 def parse_code(text):
@@ -40,22 +56,63 @@ def parse_doc(text):
 def main():
     cs_path = sys.argv[1] if len(sys.argv) > 1 else "src/Vapor.ControlPlane/Program.cs"
     md_path = sys.argv[2] if len(sys.argv) > 2 else "docs/api.md"
+    mx_path = sys.argv[3] if len(sys.argv) > 3 else "docs/feature-matrix.md"
     with open(cs_path, encoding="utf-8") as fh:
         code = parse_code(fh.read())
     with open(md_path, encoding="utf-8") as fh:
-        doc = parse_doc(fh.read())
+        md_text = fh.read()
+    doc = parse_doc(md_text)
+    with open(mx_path, encoding="utf-8") as fh:
+        mx_text = fh.read()
+
+    # 口径（轮四十八定谳，见 todo 轮四十七）：`/`、`/healthz`、`/metrics` 三条
+    # 非 /v1 不计入——api.md 引言「plus /, /healthz and /metrics」同口径。
+    v1_pairs = {(m, p) for m, p in code if p.startswith("/v1")}
+    v1_paths = {p for _, p in v1_pairs}
 
     failures = []
     if not code:
         failures.append(f"{cs_path}: 未解析到任何 Map(Get|Post|Put|Delete) 字面量路由")
     if not doc:
         failures.append(f"{md_path}: 未解析到任何 `METHOD /path` 端点行")
+    if not v1_pairs:
+        failures.append(f"{cs_path}: 未解析到任何 /v1 路由（口径要求 /v1 子集非空）")
     for entry in sorted(code - doc):
         failures.append(f"代码有文档无: {entry[0]} {entry[1]}（新端点缺 api.md 条目）")
     for entry in sorted(doc - code):
         failures.append(f"文档有代码无: {entry[0]} {entry[1]}（僵尸端点，路由已不存在）")
 
-    print(f"代码路由 {len(code)} 个，api.md 端点行 {len(doc)} 个")
+    intros = INTRO_RE.findall(md_text)
+    if len(intros) != 1:
+        failures.append(
+            f"{md_path}: 引言「N routes (M operations)」应恰出现 1 次，实见 {len(intros)} 次（结构变化需同步本脚本）")
+    else:
+        intro_routes, intro_ops = (int(x) for x in intros[0])
+        if intro_routes != len(v1_paths):
+            failures.append(
+                f"{md_path}: 引言 routes={intro_routes} ≠ 代码口径 distinct /v1 path={len(v1_paths)}")
+        if intro_ops != len(v1_pairs):
+            failures.append(
+                f"{md_path}: 引言 operations={intro_ops} ≠ 代码口径 /v1 方法+路径对={len(v1_pairs)}")
+
+    rest_rows = [ln for ln in mx_text.splitlines() if ln.startswith("| REST API |")]
+    if len(rest_rows) != 1:
+        failures.append(f"{mx_path}: `| REST API |` 表格行应恰有 1 条，实见 {len(rest_rows)} 条")
+    else:
+        mrow = MATRIX_RE.search(rest_rows[0])
+        if mrow is None:
+            failures.append(
+                f"{mx_path}: REST 行未解析出「N 条 `/v1` 路由 / M 个操作」形态（结构变化需同步本脚本）")
+        else:
+            mx_routes, mx_ops = (int(x) for x in mrow.groups())
+            if mx_routes != len(v1_paths):
+                failures.append(
+                    f"{mx_path}: 矩阵路由={mx_routes} ≠ 代码口径 distinct /v1 path={len(v1_paths)}（字段张冠李戴家族，见 todo 轮四十七）")
+            if mx_ops != len(v1_pairs):
+                failures.append(
+                    f"{mx_path}: 矩阵操作={mx_ops} ≠ 代码口径 /v1 方法+路径对={len(v1_pairs)}（字段张冠李戴家族，见 todo 轮四十七）")
+
+    print(f"代码路由 {len(code)} 个，api.md 端点行 {len(doc)} 个；口径核对: /v1 路由 {len(v1_paths)} / 操作 {len(v1_pairs)}（api.md 引言与 feature-matrix REST 行同此口径）")
     if failures:
         for f in failures:
             print(f"FAIL: {f}")
