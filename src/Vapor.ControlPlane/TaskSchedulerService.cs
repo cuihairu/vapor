@@ -166,7 +166,7 @@ public sealed class TaskSchedulerService : BackgroundService
 	/// </summary>
 	private async Task HandleUndispatchableTaskAsync(JobTask task, string failureEvent, string error, CancellationToken cancellationToken, string? agentId = null, Activity? dispatch = null, TimeSpan? retryDelayOverride = null)
 	{
-		if (_cfg.HasDispatchAttemptLimit && task.Attempt >= _cfg.TaskMaxDispatchAttempts)
+		if (_cfg.HasDispatchAttemptLimit && task.Attempt >= ActionSemantics.MaxDispatchAttempts(task.Action, _cfg.TaskMaxDispatchAttempts))
 		{
 			Interlocked.Increment(ref _attemptsExhaustedFailures);
 			(JobTask failedTask, Job job) = await _store.FailRunningTask(task.Id, $"dispatch failed after {task.Attempt} attempts: {error}", cancellationToken).ConfigureAwait(false);

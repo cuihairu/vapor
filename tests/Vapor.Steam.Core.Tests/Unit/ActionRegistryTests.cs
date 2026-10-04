@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Moq;
+using Vapor.Protocol;
 
 namespace Vapor.Steam.Core.Tests.Unit;
 
@@ -233,10 +234,52 @@ public class ActionRegistryTests
 		Assert.Single(_registry.ListNames()); // Only one entry
 	}
 
+	[Fact]
+	public void Register_UnknownSafety_LogsWarning()
+	{
+		// P0-A (40.1-1): an action without an execution-safety classification is
+		// tolerated (plugin compatibility) but must be loudly flagged.
+		_registry.Register(new TestAction("unclassified_action", "No safety"));
+
+		_loggerMock.Verify(
+			x => x.Log(LogLevel.Warning, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Once);
+	}
+
+	[Fact]
+	public void Register_ClassifiedSafety_LogsNoWarning()
+	{
+		var action = new TestAction("classified_action", "Safe");
+
+		action.Metadata = action.Metadata with { Safety = ActionSafety.ReadOnly };
+		_registry.Register(action);
+
+		_loggerMock.Verify(
+			x => x.Log(LogLevel.Warning, It.IsAny<EventId>(), It.IsAny<It.IsAnyType>(), It.IsAny<Exception?>(),
+				It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+			Times.Never);
+	}
+
+	[Fact]
+	public void ActionMetadata_SafetyDefaultsToUnknown_AndIsInitOnly()
+	{
+		// Binary compatibility insurance: the field is an init-only property with a
+		// default, so plugin assemblies built against the 4-parameter metadata still
+		// construct and load (IAction.cs P0-A note).
+		var metadata = new ActionMetadata("name", "description", RequiresLogin: true, TimeoutSeconds: 30);
+
+		Assert.Equal(ActionSafety.Unknown, metadata.Safety);
+
+		var classified = metadata with { Safety = ActionSafety.GuardedWrite };
+		Assert.Equal(ActionSafety.GuardedWrite, classified.Safety);
+		Assert.Equal(ActionSafety.Unknown, metadata.Safety); // original record unchanged
+	}
+
 	private sealed class TestAction : IAction
 	{
 		public string Name { get; }
-		public ActionMetadata Metadata { get; }
+		public ActionMetadata Metadata { get; set; }
 
 		public TestAction(string name, string description)
 		{

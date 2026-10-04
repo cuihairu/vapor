@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 
 namespace Vapor.Steam.Core;
 
@@ -20,7 +21,16 @@ public sealed record ActionMetadata(
 	string Description,
 	bool RequiresLogin = false,
 	int? TimeoutSeconds = null
-);
+)
+{
+	/// <summary>
+	/// Execution-safety classification (see <see cref="ActionSafety"/>). Defaults to
+	/// <see cref="ActionSafety.Unknown"/>, which the scheduler treats conservatively
+	/// (bounded redelivery). Added as an init-only property rather than a positional
+	/// parameter so plugin assemblies built against older metadata keep loading.
+	/// </summary>
+	public ActionSafety Safety { get; init; } = ActionSafety.Unknown;
+}
 
 public sealed record ActionResult(
 	bool Success,
@@ -51,6 +61,12 @@ public sealed class ActionRegistry : IActionRegistry
 	{
 		_actions[action.Name] = action;
 		_logger.LogInformation("Registered action: {ActionName}", action.Name);
+		if (action.Metadata.Safety == ActionSafety.Unknown)
+		{
+			_logger.LogWarning(
+				"Registered action {ActionName} without an execution-safety classification; the scheduler treats it conservatively (bounded redispatch)",
+				action.Name);
+		}
 	}
 
 	public bool Unregister(string name)

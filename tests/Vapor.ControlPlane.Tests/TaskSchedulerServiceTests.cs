@@ -117,6 +117,95 @@ public sealed class TaskSchedulerServiceTests
 	}
 
 	[Fact]
+	public async Task DispatchOnce_NonIdempotentAction_FailsPermanentlyAtConservativeCeiling()
+	{
+		// P0-A (40.1-2): an unsafe action must never redispatch up to the configured
+		// ceiling — duplicate execution could double the external side effect.
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "send_trade_offer", attempt: ActionSemantics.ConservativeMaxDispatchAttempts));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "task-1" }, store.FailedTaskIds);
+		Assert.Empty(store.RequeuedTaskIds);
+	}
+
+	[Theory]
+	[InlineData("accept_trade_offer")] // GuardedWrite
+	[InlineData("no_such_action")] // Unknown — also conservatively bounded
+	public async Task DispatchOnce_UnsafeOrUnknownAction_FailsPermanentlyAtConservativeCeiling(string action)
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", action, attempt: ActionSemantics.ConservativeMaxDispatchAttempts));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "task-1" }, store.FailedTaskIds);
+	}
+
+	[Fact]
+	public async Task DispatchOnce_UnsafeAction_StillRequeuesBelowConservativeCeiling()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "send_trade_offer", attempt: 1));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Empty(store.FailedTaskIds);
+	}
+
+	[Fact]
+	public async Task DispatchOnce_IdempotentAction_StillRequeuesAtConservativeCeiling()
+	{
+		// A safe action keeps the configured budget even at the cap where an unsafe
+		// action would already be terminal.
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: ActionSemantics.ConservativeMaxDispatchAttempts));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Empty(store.FailedTaskIds);
+	}
+
+	[Fact]
 	public async Task DispatchOnce_EnqueueRejected_WithTracingListener_ClosesDispatchActivity()
 	{
 		// Same as above for the requeue path: a live Activity must still be
