@@ -1024,6 +1024,47 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 
 > **轮四十八(2026-10-01)——维护轮:api.md 引言/全矩阵 REST 计数对纳入 verify 机械守护(scripts-only;轮四十七留作下轮候选的直接落地,「todo 无未勾项、门禁双百稳态」按 §34 先例自主立项,一次只做这一件)**:**改动**:verify-api-docs.py 扩两断言(零 .NET 依赖不变)——①api.md 引言「N routes (M operations)」应恰出现 1 次(0/多次→结构 FAIL),N/M 与代码口径逐字段相等;②feature-matrix `| REST API |` 表格行应恰有 1 条,行内「N 条 \`/v1\` 路由 / M 个操作」与代码口径逐字段相等(锚定表格行,§4 历史注记区不在守护范围——50 条 \`/v1\` 路由(58 个操作 等历史散文不误伤)。**口径固化进脚本**(轮四十七定谳):路由=distinct \`/v1\` path、操作=\`/v1\` (METHOD, path) 对,\`/\`、\`/healthz\`、\`/metrics\` 三条非 \`/v1\` 不计入(与引言「plus ...」同口径);脚本摘要行新增口径核对输出。**验证**:正探针 ALL GREEN(70 对/57 路由/67 操作);负探针三条全 EXIT=1 且 FAIL 行逐字段精确——A 引言 stale(50/58)双 FAIL、B 矩阵错位(70/57)双 FAIL 带「字段张冠李戴家族」标记(**恰好复现并拦截 33d5b24 的错位形态**)、C 引言删除→结构 FAIL;fail-fast 语义保留(其余 1-5 项校验不受影响)。**门禁**:scripts-only 零 src/测试变更,五 verify ALL GREEN、format EXIT=0、全量串行覆盖率轮全绿+GATE_EXIT=0(分母不变)、CI 十 job+docs+codeql。**红线**:无 tag/release/force push,push 前 fetch && rebase origin/main。**假设注记**:①守护落在既有 verify-api-docs.py 而非新脚本——路由计数单一事实源同文件,五 verify 调用面零变化;②矩阵行形态正则以现行写法为准,若未来改写 REST 行措辞脚本显式 FAIL 并提示同步(不静默绿);③argv 第三参加 feature-matrix.md 路径(可探针),默认 docs/feature-matrix.md;④轮号撞号:并行会话的「轮四十八 基线绿波确认」条目已先于本条随 f58c11c 提交推送(HEAD 即含),工作树另有其对该条的未提交修订与新增「轮四十八附」勘误——按不碰他人未提交工作原则不改其文不代其让号,本条按派发独占四十八落册,撞号取舍留台账维护者,提交面仅含本条(外科暂存,他人未提交行保持原样)。
 
-> **轮四十八(2026-10-01)——维护轮:基线/台账一致性核查,全量绿波确认(§17 先例,候选「基线/台账一致性核查」)**:立项依据**:①项目已连续多轮 reach GATE_EXIT=0 与五 verify ALL GREEN(轮四十五-四十七),台账 3495→3498 计数链持续平稳;②todo.md 17 未勾项、所有测试项目全通过、覆盖率双 100% 为既定稳态;③基线一致性检查先例:轮四十三验证 E2E/覆盖率收敛、轮四十五定位 Tracing.cs:25 缺口、轮四十六验证 E2E 归属、轮四十七验证 feature-matrix,本轮承接基线锚点验证。**审计方法与结果**:全链路一致性核查——测试总计 3498 通过 0 失败(144 Agent + 338 GameAccess + 17 E2E + 1258 Core + 1136 ControlPlane);覆盖率双百口径 18808/18808 行 + 7260/7260 分支,14 程序集全满;五 verify ALL GREEN(api-docs 70/70、api-auth、testing-docs、coverage-inventory 14⇄14、dependency-versions)、format EXIT=0;GATE_EXIT=0。唯一偏差:todo.md 17 未勾项全检视后确认均为已完成/归属产物,零悬空。**唯一实锤**:基线已确认 stable——无未解缺口、无未提交并行会话工作、无代码/测试倒退。**修复**:零(src/测试变更),全量一致性已确认。**门禁**:无 tag/release/force push,push 前 fetch --rebase origin/main,CI 十 job+docs+codeql 全 success。**假设注记**:①本轮确认「todo 无未勾项」先例有效(§17);②下轮候选「缺口回归监测」——确保 GATE_EXIT 如持续 0 时保持计数链不回退;③如出现新项目立项,优先按 §34/§17 先例先行 baseline check 再并行会话动态处理。
+> **轮四十八(2026-10-01)——维护轮:基线/台账一致性核查,全量绿波确认(§17 先例,候选「基线/台账一致性核查」)**:立项依据**:①项目已连续多轮 reach GATE_EXIT=0 与五 verify ALL GREEN(轮四十五-四十七),台账 3495→3498 计数链持续平稳;②todo.md 无未勾项(269/269 全勾)、所有测试项目全通过、覆盖率双 100% 为既定稳态;③基线一致性检查先例:轮四十三验证 E2E/覆盖率收敛、轮四十五定位 Tracing.cs:25 缺口、轮四十六验证 E2E 归属、轮四十七验证 feature-matrix,本轮承接基线锚点验证。**审计方法与结果**:全链路一致性核查——测试总计 3498 通过 0 失败(13 项全列:Agent 144、GameAccess 338、E2E 17、Steam.Core 1258、ControlPlane 1136、KeyRotation 28、CaseOpening 107、Plugins.Core 152、GameData 31、MarketWatch 62、MobileAuthenticator 137、Monitoring 42、Protocol 46);覆盖率双百口径 18808/18808 行 + 7260/7260 分支,14 程序集全满;五 verify ALL GREEN(api-docs 70/70、api-auth、testing-docs、coverage-inventory 14⇄14、dependency-versions)、format EXIT=0;GATE_EXIT=0。唯一偏差:无——todo.md 无未勾项(269/269 全勾),全检视后确认均为已完成/归属产物,零悬空。**唯一实锤**:基线已确认 stable——无未解缺口、无未提交并行会话工作、无代码/测试倒退。**修复**:零(src/测试变更),全量一致性已确认。**门禁**:无 tag/release/force push,push 前 fetch --rebase origin/main,CI 十 job+codeql 全 success(docs 未触发:todo.md 不在 docs paths)。**假设注记**:①本轮确认「todo 无未勾项」先例有效(§17);②下轮候选「缺口回归监测」——确保 GATE_EXIT 如持续 0 时保持计数链不回退;③如出现新项目立项,优先按 §34/§17 先例先行 baseline check 再并行会话动态处理。
+
+> **轮四十八附:计数与状态勘误(2026-10-01)——上条两处表述更正:①「测试总计」括号原列五项合计 2893(144+338+17+1258+1136),漏列余 8 项合计 605(KeyRotation 28、CaseOpening 107、Plugins.Core 152、GameData 31、MarketWatch 62、MobileAuthenticator 137、Monitoring 42、Protocol 46),总计 3498 不变;括号已补全 13 项(源:TestResults/coverage-serial 各 attempt1.log,2026-10-01 07:16-07:19 实测)。②「17 未勾项」系误——todo.md 实测 0 未勾/269 全勾,与本条假设注记①「todo 无未勾项」自相矛盾,两处「17 未勾项」已更正为「无未勾项」。commit message 原式保留(禁 force push 不改写);f58c11c 的 docs workflow 未触发(todo.md 不在 docs paths),CI 实为 ci 十 job+codeql 双 success。**
 
 > **轮四十九(2026-10-01)——维护轮:缺口回归监测(轮四十八假设注记②留下的下轮候选,纯门禁核验零代码变更)**:**核验**:①全量串行 13 段 attempt1 全绿——COLLECT_EXIT=0,测试 3498/0(Agent 144、ControlPlane 1136、E2E 17、KeyRotation 28、CaseOpening 107、Plugins.Core 152、GameAccess 338、GameData 31、MarketWatch 62、MobileAuthenticator 137、Monitoring 42、Protocol 46、Steam.Core 1258),计数链与轮四十六→四十八持平;`coverage-summary.py TestResults/coverage-serial --min 100 --min-branch 100` → GATE_EXIT=0,行 18808/18808、分支 7260/7260 双 100%,14 程序集逐项全满(Agent 539/539、ControlPlane 8674/8674、KeyRotation 103/103、CaseOpening 522/522、Plugins.Core 539/539、GameAccess 1794/1794、GameData 218/218、MarketWatch 370/370、MobileAuthenticator 591/591、Monitoring 320/320、TestFixtures 63/63、TestPlugin 38/38、Protocol 199/199、Steam.Core 4838/4838)——四锚点(3498 测试/18808 行/7260 分支/14 程序集)与基线逐项一致,无回退。②五 verify ALL GREEN(api-docs 70/70 且口径核对 57 路由/67 操作、api-auth 70/70、testing-docs 13 段合计 3498、coverage-inventory 14⇄14、dependency-versions 27 csproj/19 依赖)+ `dotnet format --verify-no-changes` EXIT=0。**实测记录(口径踩坑一笔)**:首跑汇总漏传 root 位置参数——coverage-summary 默认根为 `tests`(glob `tests/*/TestResults/*`),读到历史残留报告得 22.1%(1361/6153)假红 GATE_EXIT=1;按 ci.yml 规范调用补根 `TestResults/coverage-serial` 重跑即 GATE_EXIT=0——13 段报告已在盘,测试无需重跑。**修复**:零(无 src/测试/脚本变更,纯核验轮,不进 CHANGELOG 按 test/docs-only 先例)。**红线**:无 tag/release/force push,push 前 fetch && rebase origin/main;并行会话 todo.md 未提交行与 untracked coverage.log 不碰不删不提交,本条仅追加文件尾部,不代他人让号不改写既有条目。**假设注记**:①「缺口回归」判据=四锚点与 TESTING.md 2026-09-30 基线逐项比对,本轮全持平;②下轮候选:coverage-summary 默认根与串行收集根不一致的防呆——collect-coverage-serial.sh 尾注附规范 summary 调用(或 summary 对非规范根给显式提示),防漏传根假红再踩。
+
+## 40. Vapor V-next 收敛改造（2026-10-04 用户拍板开工；依据 docs/vnext-convergence-plan.md + docs/review/chatgpt-review-2026-10-04-recheck.md；复查结论:属实 30/已过时 3/观察 1/不成立 0）
+
+> 执行纪律：按批次执行（每批一轮,轮号顺延,先例 §34/§17 自主立项）；批内小步提交推送（契约/标注/文档脚本各一 commit,本地红→绿,不推红态）；门禁=全量串行双百（行/分支基线随 TESTING.md 滚动）+五 verify ALL GREEN+format EXIT=0+新 verify 脚本负探针；红线=无 tag/release/force push,push 前 fetch --rebase origin/main,并行会话未提交行（todo.md 轮四十八勘误/coverage.log）与 stash@{0} 不碰不删不改写；验收标准逐包见计划书对应节。
+
+### 40.1 P0-A Action Execution Semantics（计划书 §2;审核 §8/§11/§7）——首启,当前进行中
+- [ ] 40.1-1 契约:Protocol 增 `ActionSafety{Unknown,ReadOnly,Idempotent,GuardedWrite,NonIdempotent}`;`ActionMetadata.Safety` init 默认 Unknown(二进制兼容,插件 API 旧制品不破);`ActionRegistry.Register` 对 Unknown 记 warning(渐进,不拒—社区插件兼容);测试先行
+- [ ] 40.1-2 CP 侧 `ActionSemantics` 表(57 动作 name→safety 全量,未知动作防御回落到配置制)+ `TaskSchedulerService` 派发重试上限按分类生效(ReadOnly/Idempotent=配置上限;GuardedWrite/NonIdempotent 最多 2 次总派发);测试:NonIdempotent attempt=2 即终 Fail/Idempotent attempt=10 仍重派
+- [ ] 40.1-3 57 动作全量标注(分类决策:ReadOnly 29/Idempotent 11/GuardedWrite 12/NonIdempotent 5,明细随轮条目入册)+ 六官方插件 load/unload 与各插件动作元数据回归(Plugin API 兼容:仅 init 属性,不改位置构造)
+- [ ] 40.1-4 actions.md 每动作补 Safety 列(单源=代码)+ `verify-actions-safety.py`(源码标注⊆CP 表⊆目录列三元一致;负探针 EXIT=1)+ 五 verify 链接线;CHANGELOG 条目
+### 40.2 P0-B 核心领域模型字典（计划书 §2;审核 §33-P0/§5/§14/§15/§9/§23）
+- [ ] 40.2-1 新增 docs/domain-model.md:十对象(Account/Session/Agent/Job/Task/Attempt/Action/Capability/Event/Plugin)五要素(Owner/Lifecycle/Persistence/Identity/Consistency)+ §31 关系图骨架 + 代码类型索引 + AuthChallenge 文档级定义(代码保持 transient)
+- [ ] 40.2-2 与 consistency.md §1/architecture/actions 逐项核对零矛盾(核对清单附文档尾);README 文档索引补行;只写文档不重构
+### 40.3 P0-C Desired-State 收敛面收口（计划书 §2;审核 §19/§33-P0）
+- [ ] 40.3-1 账户视图带 observed+reason(reconciler 最近决议;契约入 api.md+verify-api-docs 守护);不新增强收敛逻辑
+- [ ] 40.3-2 dashboard 账户行渲染 reason+「Reconcile」操作(触发强制收敛+审计可查);E2E 覆盖
+### 40.4 P1-A 计数与 README 同步数字化（计划书 §3;审核 §29/§10）
+- [ ] 40.4-1 README.md:22,43 "37+ actions"→57、:34 "50 endpoints"→"57 routes / 67 operations"(真值源 api.md:3;feature-matrix 顺手对账)
+- [ ] 40.4-2 verify-actions-safety.py 纳入五 verify 本地+CI 链(ci.yml 步骤);动作计数与分类单一事实源
+### 40.5 P1-B 品牌定位句调整（计划书 §3;审核 §30;推荐默认=README 首行「Distributed Steam Automation Control Plane」+副句 ASF-inspired,feature-matrix 标题维持;用户确认后执行）
+- [ ] 40.5-1 README.md:5 定位句调整(依用户对推荐默认的确认)
+### 40.6 P1-C Plugin 平台补丁（计划书 §3;审核 §12/§33-P1;C3 降 P3 不排期）
+- [ ] 40.6-1 C1 配置 schema:manifest 增可选 `configurationSchema`,`configuration` 初始化前校验,失败=结构化发现错误;树内一插件示例
+- [ ] 40.6-2 C2 依赖声明:manifest 增可选 `dependencies`(pluginId+apiVersion),启用时构建依赖图:缺依赖/循环/版本不匹配→发现失败
+- [x] 40.6-3 C3(升级/回滚/健康/资源策略)降 P3 仅入册不排期;进程化 sandbox 明确不做
+### 40.7 P1-D FakeSteam 确定性测试后端（计划书 §3;审核 §27）
+- [ ] 40.7-1 BotSession 传输层接口 audit(不足=改模拟器扩展并知会缩小范围);六状态机场景(登录/断线重连/挑战/超时/错误/受限)确定性覆盖,不依赖真实网络
+### 40.8 P2 降级包（待信号启动不排期;计划书 §4;启动一个勾一个）
+- [ ] 40.8 待信号:①webhook 投递记录(§25 残余)②AuthChallenge 代码化(§23)③Event 三层分桶文档化(§24)④secret version 语义(§22)⑤vapor backup CLI(§21)⑥Placement/Capability matcher(§16/§17)⑦统一 Execution ID 字段约定(§18 残余)⑧Operations Console 增强(§19 残余)⑨容量画像 100/1k/10k(§28 残余)⑩残余故障注入场景(SQLite 损坏/CP 全链路重启)(§26 残余)
+### 40.9 过时条目清理（复查报告:已过时 3/观察 1;入册即闭环,不投入）
+- [x] 40.9-1 §13 ALC 安全表述——已过时(文档现用词即 load isolation,无整改对象)
+- [x] 40.9-2 §26 故障注入——已过时(/v1/faults+测试已落地),残余场景转 40.8-⑩
+- [x] 40.9-3 §28 性能基准——已过时(已是系统级基线),残余容量画像转 40.8-⑨
+- [x] 40.9-4 §32 评分观察项——不适用整改
+- [x] 40.9-5 §19/§21/§22/§23/§24/§25 部分已落地项——按残余归入 40.8 对应行
+### 40.10 保留清单（计划书 §1;入册即完成,只维护不动）
+- [x] 40.10 保留 11 类不动:CP/Agent 分离+outbound WSS、Job→Task→Agent→Session→Action 链、Desired State+ConfigVersion 收敛、Lease+fencing+at-least-once、SQLite single-writer、Plugin collectible ALC、Session Engine 五层、Account/Session 分离、secret 留 Agent、SSE best-effort+HMAC webhook、系统级性能基线(§1-§7/§14/§15/§20-§22/§24/§25/§28 主体)
+### 40.11 删除/非目标（计划书 §5;入册重申,与 roadmap.md 非目标一致）
+- [x] 40.11 明确不做:分布式 CP(PostgreSQL/Redis/NATS/leader election)、gRPC/mTLS mesh、multi-tenancy/RBAC/OIDC、进程化 Plugin 沙箱、「Action 数量」成长指标(加载即申报 Capability 化决策)
