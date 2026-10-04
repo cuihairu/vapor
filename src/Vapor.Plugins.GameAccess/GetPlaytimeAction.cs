@@ -52,7 +52,8 @@ public sealed class GetPlaytimeAction : IAction
 		"List owned games with total playtime (profile games tab)",
 		RequiresLogin: true,
 		TimeoutSeconds: 120
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

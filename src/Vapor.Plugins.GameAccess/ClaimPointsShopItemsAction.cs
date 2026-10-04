@@ -32,7 +32,8 @@ public sealed class ClaimPointsShopItemsAction : IAction
 		Name,
 		"Redeem points shop reward definitions (free ones by default; force=true for paid ones)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120) { Safety = ActionSafety.GuardedWrite };
+		TimeoutSeconds: 120)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

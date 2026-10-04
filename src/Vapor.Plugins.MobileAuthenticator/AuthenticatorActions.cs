@@ -28,7 +28,8 @@ public sealed class GenerateTotpAction : IAction
 		Name,
 		"Generate a Steam mobile authenticator TOTP code from a shared secret",
 		RequiresLogin: false,
-		TimeoutSeconds: 15) { Safety = ActionSafety.ReadOnly };
+		TimeoutSeconds: 15)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -101,7 +102,8 @@ public sealed class GenerateConfirmationHashAction : IAction
 		Name,
 		"Generate a mobile confirmation hash from an identity secret",
 		RequiresLogin: false,
-		TimeoutSeconds: 15) { Safety = ActionSafety.ReadOnly };
+		TimeoutSeconds: 15)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -163,7 +165,8 @@ public sealed class SyncSteamTimeAction : IAction
 		Name,
 		"Synchronize the local clock offset against Steam server time",
 		RequiresLogin: false,
-		TimeoutSeconds: 30) { Safety = ActionSafety.Idempotent };
+		TimeoutSeconds: 30)
+	{ Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -222,7 +225,8 @@ public sealed class GetTradeConfirmationsAction : IAction
 		Name,
 		"List pending mobile trade/market confirmations",
 		RequiresLogin: true,
-		TimeoutSeconds: 30) { Safety = ActionSafety.ReadOnly };
+		TimeoutSeconds: 30)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -305,7 +309,8 @@ public sealed class RespondTradeConfirmationAction : IAction
 		Name,
 		"Accept or cancel a pending mobile trade/market confirmation",
 		RequiresLogin: true,
-		TimeoutSeconds: 30) { Safety = ActionSafety.NonIdempotent };
+		TimeoutSeconds: 30)
+	{ Safety = ActionSafety.NonIdempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -433,7 +438,8 @@ public sealed class SaveSharedSecretAction : IAction
 		Name,
 		"Store the account's mobile authenticator shared secret for automatic 2FA answers",
 		RequiresLogin: false,
-		TimeoutSeconds: 10) { Safety = ActionSafety.GuardedWrite };
+		TimeoutSeconds: 10)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -493,7 +499,8 @@ public sealed class SaveIdentitySecretAction : IAction
 		Name,
 		"Store the account's mobile authenticator identity secret for local trade confirmation signing",
 		RequiresLogin: false,
-		TimeoutSeconds: 10) { Safety = ActionSafety.GuardedWrite };
+		TimeoutSeconds: 10)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -572,7 +579,8 @@ public sealed class ConfirmTradeOfferAction : IAction
 		Name,
 		"Approve or cancel the pending mobile confirmation of a trade offer (uses the stored identity secret)",
 		RequiresLogin: true,
-		TimeoutSeconds: 60) { Safety = ActionSafety.GuardedWrite };
+		TimeoutSeconds: 60)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -754,7 +762,8 @@ public sealed class ConfirmAllConfirmationsAction : IAction
 		Name,
 		"Respond to all pending mobile confirmations (optionally filtered by type) using the stored identity secret",
 		RequiresLogin: true,
-		TimeoutSeconds: 120) { Safety = ActionSafety.NonIdempotent };
+		TimeoutSeconds: 120)
+	{ Safety = ActionSafety.NonIdempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

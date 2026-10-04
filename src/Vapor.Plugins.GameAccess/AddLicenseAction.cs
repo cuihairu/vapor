@@ -43,7 +43,8 @@ public sealed class AddLicenseAction : IAction
 		Name,
 		"Claim free apps or store subs on this account (addlicense)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120) { Safety = ActionSafety.Idempotent };
+		TimeoutSeconds: 120)
+	{ Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

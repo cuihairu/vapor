@@ -24,7 +24,8 @@ public sealed class RedeemKeyAction : IAction
 		"Redeem a Steam product key",
 		RequiresLogin: true,
 		TimeoutSeconds: 60
-	) { Safety = ActionSafety.GuardedWrite };
+	)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

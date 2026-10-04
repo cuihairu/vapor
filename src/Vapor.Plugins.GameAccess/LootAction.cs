@@ -52,7 +52,8 @@ public sealed class LootInventoryAction : IAction
 		Name,
 		"Send all tradable inventory items to another Steam user (loot)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120) { Safety = ActionSafety.GuardedWrite };
+		TimeoutSeconds: 120)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

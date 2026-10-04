@@ -69,15 +69,18 @@ public sealed class ControlPlaneAgentE2ETests
 			?? throw new InvalidOperationException("job id missing from create response");
 
 		// The scheduler only routes actions a connected agent declared in its hello, so an
-		// unknown action is never dispatched. After exhausting the dispatch attempt limit
-		// (configured to 3 fast retries for this stack) the task must reach a terminal
-		// Failed state instead of blocking the queue forever.
+		// unknown action is never dispatched. The task must reach a terminal Failed state
+		// instead of blocking the queue forever. This stack configures a 3-attempt ceiling,
+		// but unknown actions have no execution-safety classification, so the conservative
+		// P0-A cap (2 total dispatch attempts) overrides the configured ceiling — a
+		// redelivery that could double an external side effect must never spin at the
+		// configured limit.
 		var (status, task) = await _stack.WaitForJobCompletionAsync(jobId, terminalStatuses: ["Failed"], timeout: TimeSpan.FromSeconds(30));
 
 		Assert.Equal("failed", status, ignoreCase: true);
 		string error = task.GetProperty("error").GetString() ?? string.Empty;
 		Assert.Contains("no capable agent available", error, StringComparison.OrdinalIgnoreCase);
-		Assert.True(task.GetProperty("attempt").GetInt32() >= 3, "task should have retried before failing");
+		Assert.True(task.GetProperty("attempt").GetInt32() >= 2, "task should have retried before failing");
 
 		var (jobStatus, _, _, _) = await _stack.GetJobStateAsync(jobId);
 		Assert.Equal("failed", jobStatus, ignoreCase: true);

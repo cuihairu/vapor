@@ -50,7 +50,8 @@ public sealed class GetCardDropsAction : IAction
 		"List games with remaining card drops (community badges page)",
 		RequiresLogin: true,
 		TimeoutSeconds: 120
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

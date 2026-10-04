@@ -80,7 +80,13 @@ Anchors: `SqliteJobStore.ClaimNextQueuedTask`, `RequeueStaleRunningTasks`,
 - Dispatch failures (no capable agent, enqueue failure) retry with
   `TaskDispatchRetryDelayMs` (default 2000 ms) as the next-attempt gate
   (`next_attempt_at_ms`), up to `TaskMaxDispatchAttempts` (default 10;
-  `<= 0` = unlimited) before the task fails permanently.
+  `<= 0` = unlimited) before the task fails permanently. The effective cap
+  is per-action since the execution-safety classification: `GuardedWrite` /
+  `NonIdempotent` actions — and any action without a classification
+  (`Unknown`, e.g. third-party plugin actions) — cap at 2 total dispatch
+  attempts regardless of the configured ceiling, so a redelivery that could
+  double an external side effect never spins at the configured limit;
+  `ReadOnly` / `Idempotent` actions use the configured ceiling unchanged.
 - Task-level cancellation flows CP → agent over the tunnel as `task_cancel`
   keyed by `(taskId, attempt)`; the agent suppresses the stale-task report and
   the store has already recorded the cancel.

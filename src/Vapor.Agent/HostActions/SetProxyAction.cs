@@ -29,7 +29,8 @@ public sealed class SetProxyAction : IHostAction
 		"Assigns (or clears) the egress proxy for an account and rebuilds its live session through the new exit",
 		RequiresLogin: false,
 		TimeoutSeconds: 120
-	) { Safety = ActionSafety.GuardedWrite };
+	)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		IReadOnlyDictionary<string, object?> payload,

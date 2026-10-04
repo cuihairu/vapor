@@ -47,7 +47,8 @@ public sealed class FindDuplicatesAction : IAction
 		Name,
 		"Find duplicate items (cards) in this account's inventories, beyond keep copies",
 		RequiresLogin: true,
-		TimeoutSeconds: 60) { Safety = ActionSafety.ReadOnly };
+		TimeoutSeconds: 60)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

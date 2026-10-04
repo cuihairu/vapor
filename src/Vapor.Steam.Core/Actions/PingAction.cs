@@ -19,7 +19,8 @@ public sealed class PingAction : IAction
 		"Pings the session and returns pong",
 		RequiresLogin: false,
 		TimeoutSeconds: 10
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

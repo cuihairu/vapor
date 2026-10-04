@@ -45,7 +45,8 @@ public sealed class GetItemDetailsAction : IAction
 		Name,
 		"Get per-item metadata and market valuation for specific inventory items",
 		RequiresLogin: true,
-		TimeoutSeconds: 60) { Safety = ActionSafety.ReadOnly };
+		TimeoutSeconds: 60)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

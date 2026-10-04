@@ -54,7 +54,8 @@ public sealed class SwapDuplicatesAction : IAction
 		Name,
 		"Match duplicate items against a partner's duplicates and offer a 1:1 swap (dry run unless send=true)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120) { Safety = ActionSafety.NonIdempotent };
+		TimeoutSeconds: 120)
+	{ Safety = ActionSafety.NonIdempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

@@ -21,7 +21,8 @@ public sealed class PlayGamesAction : IAction
 		"Play, stop or idle games on Steam",
 		RequiresLogin: true,
 			TimeoutSeconds: 30
-	) { Safety = ActionSafety.Idempotent };
+	)
+	{ Safety = ActionSafety.Idempotent };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

@@ -29,7 +29,8 @@ public sealed class CheckProxyAction : IAction
 		"Checks the account's proxy: verifies reachability and reports the exit IP, Steam reachability and latency",
 		RequiresLogin: false,
 		TimeoutSeconds: 30
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	// Test seam: stands in for the live network probes.
 	internal Func<ProxyOptions, CancellationToken, Task<ProxyProbeResult>>? ProbeOverride { get; set; }

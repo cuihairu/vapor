@@ -27,7 +27,8 @@ public sealed class PluginListAction : IHostAction
 		"Lists the plugins currently loaded on this agent",
 		RequiresLogin: false,
 		TimeoutSeconds: 15
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		IReadOnlyDictionary<string, object?> payload,

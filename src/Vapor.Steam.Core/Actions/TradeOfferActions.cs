@@ -48,7 +48,8 @@ public sealed class SendTradeOfferAction : IAction
 		"Send a trade offer to another Steam user",
 		RequiresLogin: true,
 		TimeoutSeconds: 60
-	) { Safety = ActionSafety.NonIdempotent };
+	)
+	{ Safety = ActionSafety.NonIdempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -363,7 +364,8 @@ public sealed class AcceptTradeOfferAction : IAction
 		"Accept a trade offer",
 		RequiresLogin: true,
 		TimeoutSeconds: 30
-	) { Safety = ActionSafety.GuardedWrite };
+	)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -499,7 +501,8 @@ public sealed class DeclineTradeOfferAction : IAction
 		"Decline a trade offer",
 		RequiresLogin: true,
 		TimeoutSeconds: 30
-	) { Safety = ActionSafety.GuardedWrite };
+	)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -619,7 +622,8 @@ public sealed class CancelTradeOfferAction : IAction
 		"Cancel a trade offer you sent",
 		RequiresLogin: true,
 		TimeoutSeconds: 30
-	) { Safety = ActionSafety.GuardedWrite };
+	)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

@@ -19,7 +19,8 @@ public sealed class IdleAction : IAction
 		"Idles the session (simulates being online)",
 		RequiresLogin: true,
 		TimeoutSeconds: 300
-	) { Safety = ActionSafety.Idempotent };
+	)
+	{ Safety = ActionSafety.Idempotent };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

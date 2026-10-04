@@ -45,7 +45,8 @@ public sealed class CheckAccountStandingAction : IAction
 		"Check ban/standing state (VAC, community, game, economy bans; limited marker)",
 		RequiresLogin: true,
 		TimeoutSeconds: 60
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

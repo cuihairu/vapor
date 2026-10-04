@@ -19,7 +19,8 @@ public sealed class LoginAction : IAction
 		"Login to Steam",
 		RequiresLogin: false,
 		TimeoutSeconds: 60
-	) { Safety = ActionSafety.Idempotent };
+	)
+	{ Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

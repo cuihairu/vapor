@@ -41,7 +41,8 @@ public sealed class GetAchievementsAction : IAction
 		"List one game's achievements and their unlock state (community stats page)",
 		RequiresLogin: true,
 		TimeoutSeconds: 120
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

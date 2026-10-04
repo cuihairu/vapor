@@ -49,7 +49,8 @@ public sealed class GetInventoryAction : IAction
 		"Get a user's Steam inventory",
 		RequiresLogin: true,
 		TimeoutSeconds: 60
-	) { Safety = ActionSafety.ReadOnly };
+	)
+	{ Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

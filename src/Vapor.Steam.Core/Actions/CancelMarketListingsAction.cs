@@ -50,7 +50,8 @@ public sealed class CancelMarketListingsAction : IAction
 		"Cancel own market listings matching a filter (dry_run by default; per-listing pacing; one failure does not abort the batch)",
 		RequiresLogin: true,
 		TimeoutSeconds: 600
-	) { Safety = ActionSafety.GuardedWrite };
+	)
+	{ Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

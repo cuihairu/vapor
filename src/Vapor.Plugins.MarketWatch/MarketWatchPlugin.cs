@@ -382,7 +382,8 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 			Name: "market_watch_add",
 			Description: "Start watching a game: kind=price alerts on threshold moves (default), kind=free alerts when the game turns free",
 			RequiresLogin: false,
-			TimeoutSeconds: 10) { Safety = ActionSafety.Idempotent };
+			TimeoutSeconds: 10)
+		{ Safety = ActionSafety.Idempotent };
 
 		public Task<ActionResult> ExecuteAsync(
 			BotSession session,
@@ -445,7 +446,8 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 			Name: "market_watch_remove",
 			Description: "Stop watching a game's price",
 			RequiresLogin: false,
-			TimeoutSeconds: 10) { Safety = ActionSafety.Idempotent };
+			TimeoutSeconds: 10)
+		{ Safety = ActionSafety.Idempotent };
 
 		public Task<ActionResult> ExecuteAsync(
 			BotSession session,
@@ -478,7 +480,8 @@ public sealed class MarketWatchPlugin : IPlugin, IActionPlugin, IAsyncDisposable
 			Name: "market_watch_list",
 			Description: "List watched games with their baselines and last observed prices",
 			RequiresLogin: false,
-			TimeoutSeconds: 10) { Safety = ActionSafety.ReadOnly };
+			TimeoutSeconds: 10)
+		{ Safety = ActionSafety.ReadOnly };
 
 		public Task<ActionResult> ExecuteAsync(
 			BotSession session,
