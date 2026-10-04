@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Steam;
@@ -31,7 +32,7 @@ public sealed class ClaimPointsShopItemsAction : IAction
 		Name,
 		"Redeem points shop reward definitions (free ones by default; force=true for paid ones)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120);
+		TimeoutSeconds: 120) { Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

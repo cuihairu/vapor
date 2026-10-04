@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Web;
@@ -49,7 +50,7 @@ public sealed class CancelMarketListingsAction : IAction
 		"Cancel own market listings matching a filter (dry_run by default; per-listing pacing; one failure does not abort the batch)",
 		RequiresLogin: true,
 		TimeoutSeconds: 600
-	);
+	) { Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Web;
@@ -40,7 +41,7 @@ public sealed class GetAchievementsAction : IAction
 		"List one game's achievements and their unlock state (community stats page)",
 		RequiresLogin: true,
 		TimeoutSeconds: 120
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Utilities;
 using Vapor.Steam.Core.Web;
@@ -28,7 +29,7 @@ public sealed class CheckProxyAction : IAction
 		"Checks the account's proxy: verifies reachability and reports the exit IP, Steam reachability and latency",
 		RequiresLogin: false,
 		TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	// Test seam: stands in for the live network probes.
 	internal Func<ProxyOptions, CancellationToken, Task<ProxyProbeResult>>? ProbeOverride { get; set; }

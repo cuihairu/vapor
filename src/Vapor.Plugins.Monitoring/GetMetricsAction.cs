@@ -1,4 +1,5 @@
 using Vapor.Steam.Core;
+using Vapor.Protocol;
 
 namespace Vapor.Plugins.Monitoring;
 
@@ -23,7 +24,7 @@ public sealed class GetMetricsAction : IAction
 		Name: "get_metrics",
 		Description: "Returns the current metrics snapshot (Prometheus text format and JSON summary).",
 		RequiresLogin: false,
-		TimeoutSeconds: 10);
+		TimeoutSeconds: 10) { Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

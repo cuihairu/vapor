@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Caching;
@@ -51,7 +52,7 @@ public sealed class GetPlaytimeAction : IAction
 		"List owned games with total playtime (profile games tab)",
 		RequiresLogin: true,
 		TimeoutSeconds: 120
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

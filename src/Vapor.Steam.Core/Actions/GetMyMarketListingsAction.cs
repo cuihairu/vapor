@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Web;
@@ -42,7 +43,7 @@ public sealed class GetMyMarketListingsAction : IAction
 		"List the account's own community market listings (mylistings page)",
 		RequiresLogin: true,
 		TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

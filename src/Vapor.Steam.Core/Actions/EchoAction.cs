@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 
 namespace Vapor.Steam.Core.Actions;
 
@@ -18,7 +19,7 @@ public sealed class EchoAction : IAction
 		"Echos back the provided payload",
 		RequiresLogin: false,
 		TimeoutSeconds: 10
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

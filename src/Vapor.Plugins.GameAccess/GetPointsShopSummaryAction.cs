@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Vapor.Steam.Core.Steam;
@@ -29,7 +30,7 @@ public sealed class GetPointsShopSummaryAction : IAction
 		Name,
 		"Read the account's points shop balance and reward definitions",
 		RequiresLogin: true,
-		TimeoutSeconds: 60);
+		TimeoutSeconds: 60) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

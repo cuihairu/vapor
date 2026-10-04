@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -46,7 +47,7 @@ public sealed class FindDuplicatesAction : IAction
 		Name,
 		"Find duplicate items (cards) in this account's inventories, beyond keep copies",
 		RequiresLogin: true,
-		TimeoutSeconds: 60);
+		TimeoutSeconds: 60) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

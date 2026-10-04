@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Caching;
@@ -110,7 +111,7 @@ public sealed class GetGameInfoAction : StoreDataActionBase, IAction
 		"Get Steam store details for a game",
 		RequiresLogin: false,
 		TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -206,7 +207,7 @@ public sealed class GetGameInfoBatchAction : StoreDataActionBase, IAction
 		"Fetch Steam store details for a batch of apps (per-app errors do not abort the batch)",
 		RequiresLogin: false,
 		TimeoutSeconds: 240
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	/// <summary>
 	/// Parses <c>app_ids</c> from a CSV string, an in-memory list, or a JSON array
@@ -408,7 +409,7 @@ public sealed class SearchGamesAction : StoreDataActionBase, IAction
 		"Search the Steam store catalog",
 		RequiresLogin: false,
 		TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -495,7 +496,7 @@ public sealed class GetPriceAction : StoreDataActionBase, IAction
 		"Get current price information for a game",
 		RequiresLogin: false,
 		TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -581,7 +582,7 @@ public sealed class GetMarketListingsAction : StoreDataActionBase, IAction
 		"Get Steam Community Market listings for a game",
 		RequiresLogin: false,
 		TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -667,7 +668,7 @@ public sealed class InvalidateCacheAction : IAction
 		"Invalidate cached store data by key prefix, or clear the whole cache",
 		RequiresLogin: false,
 		TimeoutSeconds: 10
-	);
+	) { Safety = ActionSafety.Idempotent };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 
 using Vapor.Steam.Core.Steam;
 
@@ -23,7 +24,7 @@ public sealed class RedeemKeyAction : IAction
 		"Redeem a Steam product key",
 		RequiresLogin: true,
 		TimeoutSeconds: 60
-	);
+	) { Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

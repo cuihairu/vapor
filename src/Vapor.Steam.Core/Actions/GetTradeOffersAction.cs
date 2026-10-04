@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Models;
 using Vapor.Steam.Core.Web;
@@ -38,7 +39,7 @@ public sealed class GetTradeOffersAction : IAction
 		"List incoming and outgoing trade offers",
 		RequiresLogin: true,
 		TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

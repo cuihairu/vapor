@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
 
@@ -26,7 +27,7 @@ public sealed class PluginListAction : IHostAction
 		"Lists the plugins currently loaded on this agent",
 		RequiresLogin: false,
 		TimeoutSeconds: 15
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		IReadOnlyDictionary<string, object?> payload,

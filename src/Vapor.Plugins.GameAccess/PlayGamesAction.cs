@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 
 using Vapor.Steam.Core;
 
@@ -20,7 +21,7 @@ public sealed class PlayGamesAction : IAction
 		"Play, stop or idle games on Steam",
 		RequiresLogin: true,
 			TimeoutSeconds: 30
-	);
+	) { Safety = ActionSafety.Idempotent };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 
 namespace Vapor.Steam.Core.Actions;
 
@@ -18,7 +19,7 @@ public sealed class LoginAction : IAction
 		"Login to Steam",
 		RequiresLogin: false,
 		TimeoutSeconds: 60
-	);
+	) { Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

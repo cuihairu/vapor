@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -48,7 +49,7 @@ public sealed class GetInventoryAction : IAction
 		"Get a user's Steam inventory",
 		RequiresLogin: true,
 		TimeoutSeconds: 60
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

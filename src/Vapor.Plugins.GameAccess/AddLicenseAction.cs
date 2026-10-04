@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,7 +43,7 @@ public sealed class AddLicenseAction : IAction
 		Name,
 		"Claim free apps or store subs on this account (addlicense)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120);
+		TimeoutSeconds: 120) { Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

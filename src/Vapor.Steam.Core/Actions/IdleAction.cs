@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 
 namespace Vapor.Steam.Core.Actions;
 
@@ -18,7 +19,7 @@ public sealed class IdleAction : IAction
 		"Idles the session (simulates being online)",
 		RequiresLogin: true,
 		TimeoutSeconds: 300
-	);
+	) { Safety = ActionSafety.Idempotent };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,

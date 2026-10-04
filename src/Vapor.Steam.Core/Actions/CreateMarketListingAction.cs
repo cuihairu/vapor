@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Web;
@@ -51,7 +52,7 @@ public sealed class CreateMarketListingAction : IAction
 		"Create one market listing (dry run by default reporting the fee-aware pricing plan; a real listing needs send=true plus the account and agent switches)",
 		RequiresLogin: true,
 		TimeoutSeconds: 120
-	);
+	) { Safety = ActionSafety.NonIdempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

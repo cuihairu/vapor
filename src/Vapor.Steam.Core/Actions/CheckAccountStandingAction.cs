@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core.Web;
 
@@ -44,7 +45,7 @@ public sealed class CheckAccountStandingAction : IAction
 		"Check ban/standing state (VAC, community, game, economy bans; limited marker)",
 		RequiresLogin: true,
 		TimeoutSeconds: 60
-	);
+	) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

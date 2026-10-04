@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Steam.Core;
@@ -58,7 +59,7 @@ public sealed class GetGameInventoryAction : IAction
 		Name,
 		"Aggregate an app's inventory into per-class stacks with optional market valuation",
 		RequiresLogin: true,
-		TimeoutSeconds: 60);
+		TimeoutSeconds: 60) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

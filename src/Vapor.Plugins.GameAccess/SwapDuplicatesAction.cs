@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -53,7 +54,7 @@ public sealed class SwapDuplicatesAction : IAction
 		Name,
 		"Match duplicate items against a partner's duplicates and offer a 1:1 swap (dry run unless send=true)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120);
+		TimeoutSeconds: 120) { Safety = ActionSafety.NonIdempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

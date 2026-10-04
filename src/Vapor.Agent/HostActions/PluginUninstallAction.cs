@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
 
@@ -29,7 +30,7 @@ public sealed class PluginUninstallAction : IHostAction
 		"Unloads a plugin by id and removes its directory from the agent's plugins root",
 		RequiresLogin: false,
 		TimeoutSeconds: 60
-	);
+	) { Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		IReadOnlyDictionary<string, object?> payload,

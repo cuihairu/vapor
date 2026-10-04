@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Vapor.Protocol;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
 
@@ -30,7 +31,7 @@ public sealed class PluginInstallAction : IHostAction
 		"Installs a plugin package from a URL after verifying its SHA-256 checksum and hot-loads it",
 		RequiresLogin: false,
 		TimeoutSeconds: 300
-	);
+	) { Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		IReadOnlyDictionary<string, object?> payload,

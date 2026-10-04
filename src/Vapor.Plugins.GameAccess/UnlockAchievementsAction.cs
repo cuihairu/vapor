@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Vapor.Steam.Core.Steam;
 
@@ -20,7 +21,7 @@ public sealed class UnlockAchievementsAction : IAction
 		Name,
 		"Unlock the named achievements of one game on this account (explicit name list required)",
 		RequiresLogin: true,
-		TimeoutSeconds: 180);
+		TimeoutSeconds: 180) { Safety = ActionSafety.Idempotent };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -74,7 +75,7 @@ public sealed class ResetAchievementsAction : IAction
 		Name,
 		"Reset (clear) the named achievements of one game on this account (explicit names + confirm: true required)",
 		RequiresLogin: true,
-		TimeoutSeconds: 180);
+		TimeoutSeconds: 180) { Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

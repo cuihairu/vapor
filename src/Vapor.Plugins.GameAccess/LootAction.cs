@@ -1,4 +1,5 @@
 using System.Globalization;
+using Vapor.Protocol;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -51,7 +52,7 @@ public sealed class LootInventoryAction : IAction
 		Name,
 		"Send all tradable inventory items to another Steam user (loot)",
 		RequiresLogin: true,
-		TimeoutSeconds: 120);
+		TimeoutSeconds: 120) { Safety = ActionSafety.GuardedWrite };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,

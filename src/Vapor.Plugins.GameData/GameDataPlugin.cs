@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Vapor.Protocol;
 using Microsoft.Extensions.Logging;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
@@ -226,7 +227,7 @@ public sealed class Dota2MatchHistoryAction : IAction
 		Name: "dota2_match_history",
 		Description: "Fetches public Dota 2 match history from the Steam Web API (optional heroId/gameMode filters, up to 100 matches). Read-only.",
 		RequiresLogin: false,
-		TimeoutSeconds: 30);
+		TimeoutSeconds: 30) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -312,7 +313,7 @@ public sealed class Dota2HeroesAction : IAction
 		Name: "dota2_heroes",
 		Description: "Fetches the Dota 2 hero catalog from the Steam Web API. Read-only.",
 		RequiresLogin: false,
-		TimeoutSeconds: 30);
+		TimeoutSeconds: 30) { Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -359,7 +360,7 @@ public sealed class Dota2GameItemsAction : IAction
 		Name: "dota2_game_items",
 		Description: "Fetches the Dota 2 item catalog from the Steam Web API. Read-only.",
 		RequiresLogin: false,
-		TimeoutSeconds: 30);
+		TimeoutSeconds: 30) { Safety = ActionSafety.ReadOnly };
 
 	public Task<ActionResult> ExecuteAsync(
 		BotSession session,
@@ -406,7 +407,7 @@ public sealed class EconItemSchemaAction : IAction
 		Name: "econ_item_schema",
 		Description: "Fetches a TF2 (440) or CS2 (730) item-schema summary (status and item count) from the Steam Web API. Read-only.",
 		RequiresLogin: false,
-		TimeoutSeconds: 60);
+		TimeoutSeconds: 60) { Safety = ActionSafety.ReadOnly };
 
 	public async Task<ActionResult> ExecuteAsync(
 		BotSession session,
