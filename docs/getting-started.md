@@ -178,9 +178,9 @@ The run is one job, so `GET /v1/jobs/<jobId>/events` streams its progress live. 
 
 ## 9. Watch it operate
 
-- **Metrics**: agent Prometheus endpoint (compose default on host `:9700`) — action counters/durations, session states, cache stats; Grafana auto-provisions the *Vapor Overview* dashboard. The control plane exposes `/metrics` with orchestration-level gauges.
-- **Audit**: every config change, task result, code submission and dispatch decision is persisted and queryable: `GET /v1/audit/logs` (redacted before storage).
-- **Tracing**: set `OTEL_EXPORTER_OTLP_ENDPOINT` to export traces; the W3C `traceparent` flows through the agent tunnel, so a job is traceable end-to-end.
+- Metrics: agent Prometheus endpoint (compose default on host `:9700`) — action counters/durations, session states, cache stats; Grafana auto-provisions the *Vapor Overview* dashboard. The control plane exposes `/metrics` with orchestration-level gauges.
+- Audit: every config change, task result, code submission and dispatch decision is persisted and queryable: `GET /v1/audit/logs` (redacted before storage).
+- Tracing: set `OTEL_EXPORTER_OTLP_ENDPOINT` to export traces; the W3C `traceparent` flows through the agent tunnel, so a job is traceable end-to-end.
 
 ## 10. Add capabilities with plugins
 
@@ -196,10 +196,10 @@ Uninstall is symmetric (`POST /v1/plugins/uninstall/{pluginId}`), and `GET /v1/p
 
 ## 11. Where to next
 
-- **Hardening for real use**: [production.md](production.md) — TLS, `VAPOR_ENCRYPTION_KEY` management, per-role API keys, backups, upgrades, rollback.
-- **Something broke?**: [troubleshooting.md](troubleshooting.md) — symptom → diagnosis → fix checklists.
-- **Writing plugins**: [plugins.md](plugins.md).
-- **What Vapor does and doesn't do vs. ASF**: [feature-matrix.md](feature-matrix.md).
+- Hardening for real use: [production.md](production.md) — TLS, `VAPOR_ENCRYPTION_KEY` management, per-role API keys, backups, upgrades, rollback.
+- Something broke?: [troubleshooting.md](troubleshooting.md) — symptom → diagnosis → fix checklists.
+- Writing plugins: [plugins.md](plugins.md).
+- What Vapor does and doesn't do vs. ASF: [feature-matrix.md](feature-matrix.md).
 
 ## Ground rules worth knowing from day one
 

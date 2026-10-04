@@ -18,12 +18,12 @@ are in [docker.md](docker.md).
                                                        └──────────────┘
 ```
 
-- **Control plane**: stateless HTTP service; all state lives in two SQLite
+- Control plane: stateless HTTP service; all state lives in two SQLite
   databases (jobs/audit) mounted at `/app/data`.
-- **Agent**: stateful worker holding Steam sessions and per-machine
+- Agent: stateful worker holding Steam sessions and per-machine
   credentials at `/app/.vapor`. Connects out to the control plane — no
   inbound ports required except the metrics endpoint (`:9700`).
-- **Observability** (optional profile): Prometheus scrapes both services;
+- Observability (optional profile): Prometheus scrapes both services;
   Grafana ships pre-provisioned dashboards.
 
 ## Configuration
@@ -299,13 +299,13 @@ applied to the whole egress path for that account: CM connection, web API,
 trade and mobile-conf traffic all leave through it. Two properties matter for
 fleet safety:
 
-- **The proxy is a credential, not a setting.** It lives encrypted in the
+- The proxy is a credential, not a setting. It lives encrypted in the
   pinned agent's credential store; the control plane stores nothing and only
   ever logs the masked form. Assign it per account with
   `POST /v1/accounts/{name}/proxy` (or the account editor's proxy field in the
   admin console); the endpoint chains a `check_proxy` verification and reports
   the live exit IP, Steam reachability and latency.
-- **Pin once, change rarely.** Every proxy change drops the account's session
+- Pin once, change rarely. Every proxy change drops the account's session
   and re-logs it from the new exit — an IP change on a farmed account is
   exactly the correlation event this feature exists to avoid. Proxy rotation
   is an explicit, audited action (`account.proxy_set`); there is no proxy pool
@@ -483,16 +483,16 @@ The admin-only `/v1/faults` API (see `api.md` §4.12) arms runtime error/delay
 drills against the real machinery — task dispatch (requeue/retry path) or
 `/v1` API requests (edge middleware). Operational rules of thumb:
 
-- **Every fault self-heals**: a budget (injections left, auto-remove at
+- Every fault self-heals: a budget (injections left, auto-remove at
   exhaustion) and a TTL (default 15 min) bound each drill. Nothing you arm
   can degrade the system indefinitely, and a control-plane restart disarms
   everything (state is in-memory).
-- **The control surface is never faulted**: `/v1/faults`, `/healthz` and
+- The control surface is never faulted: `/v1/faults`, `/healthz` and
   `/metrics` are exempt from api-request injection, so a drill is always
   observable and stoppable.
-- **Panic button**: `DELETE /v1/faults` disarms everything at once and
+- Panic button: `DELETE /v1/faults` disarms everything at once and
   reports how many were armed.
-- **Every arm/disarm is audited** (`faults.enable` / `faults.disable` /
+- Every arm/disarm is audited (`faults.enable` / `faults.disable` /
   `faults.clear` in `/v1/audit/logs`) and visible in the
   `vapor_controlplane_fault_injections_total` counter and
   `vapor_controlplane_faults_armed` gauge.

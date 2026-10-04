@@ -26,17 +26,17 @@ Header convention (matching the OpenAPI security definition `bearer`): `Authoriz
 
 - `Auth.TryAdmin` — token equals `AdminApiKey` exactly (ordinal).
 - `Auth.TryAgent` — token is a member of `AgentApiKeys` (ordinal).
-- **Key expiry** (`Config.ParseApiKey`): any configured key may carry an
+- Key expiry (`Config.ParseApiKey`): any configured key may carry an
   `@<ISO-8601>` suffix — `VAPOR_AGENT_API_KEYS=new-key,old-key@2026-12-31T23:59:59Z`.
   The suffix is stripped from the credential (only a date parses as an expiry; a key
   whose text after the last `@` is not a date stays a literal key). A key is valid
-  strictly **before** its expiry instant; from that instant on the bearer token is
+  strictly before its expiry instant; from that instant on the bearer token is
   rejected with the same empty-body 401 as an unknown key. Expiry is the rotation
   mechanism: stage the new key alongside the old one with a deadline, and the old key
   dies on schedule without a second restart (see `production.md` § Secrets).
-- **Query-string fallback** (`GetAuthorization`): when the `Authorization` header is absent, a `?authorization=` query parameter is accepted, with or without the `Bearer ` prefix (added if missing). This exists for SSE/WebSocket clients that cannot set headers.
-- **Exempt from auth** (public): `GET /`, `GET /healthz`, `GET /metrics`, static files under `wwwroot` (`/admin.html`, …), `/swagger` (when enabled).
-- **Dual-auth endpoints** (admin OR agent key): `POST /v1/sessions/events`, `GET /v1/auth/challenges/events` (agents see a filtered view), `GET /v1/agent/ws` (agent key only).
+- Query-string fallback (`GetAuthorization`): when the `Authorization` header is absent, a `?authorization=` query parameter is accepted, with or without the `Bearer ` prefix (added if missing). This exists for SSE/WebSocket clients that cannot set headers.
+- Exempt from auth (public): `GET /`, `GET /healthz`, `GET /metrics`, static files under `wwwroot` (`/admin.html`, …), `/swagger` (when enabled).
+- Dual-auth endpoints (admin OR agent key): `POST /v1/sessions/events`, `GET /v1/auth/challenges/events` (agents see a filtered view), `GET /v1/agent/ws` (agent key only).
 - Every other `/v1` endpoint requires the **admin** key.
 
 Unauthorized responses: `Results.Unauthorized()` / `TypedResults.Unauthorized()` / bare status-code write on SSE — a **401 with an empty body** (some `.Produces<ErrorResponse>(401)` metadata exists on routes, but the handlers emit no body).
@@ -77,17 +77,17 @@ Shared by `GET /v1/jobs/{jobId}/events`, `GET /v1/jobs/events`, `GET /v1/session
 
 Event payload shapes:
 
-- **Job events** (`Event` record): `{ id, jobId, type, ts, payload? }` where `payload` is an open `Dictionary<string, object?>`. Frame `event:` name equals the event `type`. Types published by the code:
+- Job events (`Event` record): `{ id, jobId, type, ts, payload? }` where `payload` is an open `Dictionary<string, object?>`. Frame `event:` name equals the event `type`. Types published by the code:
   - `job.created` (payload `action`, `targets`), `job.canceled` (no payload)
   - `task.dispatched` (`taskId`, `agentId`), `task.finished` (`taskId`, `success`, `job`), `task.failed` (`taskId`, `error`, `job`), `task.dispatch_failed` / `task.enqueue_failed` (`taskId`, `attempt`, `error`, `agentId?`)
   - `job.scheduled_triggered` / `job.scheduled_skipped` / `job.scheduled_completed` (recurring scheduler)
   - `trade.auto_accepted`, `account.farm_progress`, `account.standing_alert`, `account.standing_released`, `account.reconciled` (orchestrator; some with `jobId`, some global)
   - `agent.connected` / `agent.disconnected` (`agentId`, `region`; `jobId` null)
   - `crawl.run_triggered`, `crawl.run_completed`, `crawl.run_skipped` (crawl worker; payload `plan_id`, `run_id`, `status` (`completed`|`failed`|`timeout`|`skipped`), `total`, `ok`, `failed` — snake_case keys). Note: `crawl.run_failed` (dispatch exception) is written to the audit log only, never to the SSE broker.
-- **Session events** (`SessionEvent` record): frame `event: session.<eventType>`; payload `{ id, accountName, eventType, state, message?, timestamp }`.
-- **Auth challenge events** (`AuthChallengeEvent` record): frame `event: auth.<challengeType>`; payload `{ id, accountName, challengeType, message?, code?, timestamp, jobId? }`. Access rules:
+- Session events (`SessionEvent` record): frame `event: session.<eventType>`; payload `{ id, accountName, eventType, state, message?, timestamp }`.
+- Auth challenge events (`AuthChallengeEvent` record): frame `event: auth.<challengeType>`; payload `{ id, accountName, challengeType, message?, code?, timestamp, jobId? }`. Access rules:
   - Admin: sees all challenges, but `code_provided_*` events have `code` stripped (`null`) before sending.
-  - Agent: sees **only** `code_provided_*` events, with the `code` intact (that is the delivery channel to the agent).
+  - Agent: sees only `code_provided_*` events, with the `code` intact (that is the delivery channel to the agent).
   - `challengeType` values: `auth_code_required`, `2fa_required`, `qr_required`, `code_provided_email`, `code_provided_totp`, `code_provided_2fa`.
 
 ---
@@ -480,7 +480,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 - Errors: 401 (no body), 404 `{ "error": "job not found" }` (before the stream opens).
 
 #### `GET /v1/jobs/events` (SSE)
-- Purpose: SSE stream of lifecycle events across **all** jobs (broker key `*`; also carries agent/account/crawl events with null `jobId`).
+- Purpose: SSE stream of lifecycle events across all jobs (broker key `*`; also carries agent/account/crawl events with null `jobId`).
 - Auth: admin. Body: none. Query: none.
 - 200 `text/event-stream`. Errors: 401 (no body).
 

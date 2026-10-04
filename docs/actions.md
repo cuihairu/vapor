@@ -8,17 +8,17 @@ Source map, for reference: host Steam-domain actions live in `src/Vapor.Steam.Co
 
 ## Conventions
 
-- **Payload key naming**: the control-plane envelope is camelCase (`action`, `payload`, `targets`, …), but the *keys inside `payload`* are written **snake_case** in the action code (`app_id`, `steam_id`, `items_to_give`, …). Most lookups go through `PayloadReader`, which matches keys **case-insensitively**, so `appIds` also resolves to `app_id`. Exception: `send_trade_offer`'s `items_to_give` / `items_to_receive` (and their nested fields) are read with an exact, case-**sensitive** dictionary lookup. This catalog records the exact keys as written in code.
-- **Output key naming**: output dictionary keys are literal (mostly snake_case; a few actions use camelCase keys — noted per action). Values that are embedded .NET model objects (e.g. `GameInfo`, `PriceOverview`) serialize with the standard camelCase JSON policy.
-- **Payload value types**: after the SQLite/WebSocket round-trip, payload values arrive as `JsonElement`s; every parser accepts numbers, strings, arrays or a single bare value unless noted.
-- **Metadata**: every action declares `RequiresLogin` and `TimeoutSeconds`; noted as `login: yes/no`, `timeout: Ns`. `login: yes` actions need the account's session to be logged in; dispatching them to an offline account fails the task with a login error.
-- **Execution safety**: every action declares an `ActionSafety` class (noted as `safety:` in each header) — `ReadOnly` (never mutates anything), `Idempotent` (repeating converges to the same state), `GuardedWrite` (mutates, but a bounded retry is safe), `NonIdempotent` (repeating doubles the external side effect). The source of truth is the `IAction.Metadata.Safety` annotation next to each action; the control plane mirrors it in `ActionSemantics.cs` and bounds redispatch accordingly: `GuardedWrite`/`NonIdempotent` (and unclassified/`Unknown` actions, e.g. third-party plugins) cap dispatch attempts at 2 regardless of the configured ceiling, while `ReadOnly`/`Idempotent` actions use the configured ceiling unchanged. The three surfaces are kept in agreement by `scripts/verify-actions-safety.py`.
+- Payload key naming: the control-plane envelope is camelCase (`action`, `payload`, `targets`, …), but the *keys inside `payload`* are written **snake_case** in the action code (`app_id`, `steam_id`, `items_to_give`, …). Most lookups go through `PayloadReader`, which matches keys **case-insensitively**, so `appIds` also resolves to `app_id`. Exception: `send_trade_offer`'s `items_to_give` / `items_to_receive` (and their nested fields) are read with an exact, case-**sensitive** dictionary lookup. This catalog records the exact keys as written in code.
+- Output key naming: output dictionary keys are literal (mostly snake_case; a few actions use camelCase keys — noted per action). Values that are embedded .NET model objects (e.g. `GameInfo`, `PriceOverview`) serialize with the standard camelCase JSON policy.
+- Payload value types: after the SQLite/WebSocket round-trip, payload values arrive as `JsonElement`s; every parser accepts numbers, strings, arrays or a single bare value unless noted.
+- Metadata: every action declares `RequiresLogin` and `TimeoutSeconds`; noted as `login: yes/no`, `timeout: Ns`. `login: yes` actions need the account's session to be logged in; dispatching them to an offline account fails the task with a login error.
+- Execution safety: every action declares an `ActionSafety` class (noted as `safety:` in each header) — `ReadOnly` (never mutates anything), `Idempotent` (repeating converges to the same state), `GuardedWrite` (mutates, but a bounded retry is safe), `NonIdempotent` (repeating doubles the external side effect). The source of truth is the `IAction.Metadata.Safety` annotation next to each action; the control plane mirrors it in `ActionSemantics.cs` and bounds redispatch accordingly: `GuardedWrite`/`NonIdempotent` (and unclassified/`Unknown` actions, e.g. third-party plugins) cap dispatch attempts at 2 regardless of the configured ceiling, while `ReadOnly`/`Idempotent` actions use the configured ceiling unchanged. The three surfaces are kept in agreement by `scripts/verify-actions-safety.py`.
 
 ---
 
 ## Generic job invocation envelope
 
-**Create a job** — `POST /v1/jobs` (admin auth header; `CreateJobRequest` in `src/Vapor.Protocol/Models.cs`):
+Create a job — `POST /v1/jobs` (admin auth header; `CreateJobRequest` in `src/Vapor.Protocol/Models.cs`):
 
 ```json
 {
@@ -42,9 +42,9 @@ Source map, for reference: host Steam-domain actions live in `src/Vapor.Steam.Co
 
 Response: `202 Accepted`, `Location: /v1/jobs/{id}`, body `{ "job": { id, action, region, targets, meta, status, createdAt, updatedAt, schedule?, nextRunAt? } }`. Status enum: `queued | running | scheduled | finished | failed | canceled`.
 
-**Dispatch**: `TaskSchedulerService` polls every 250 ms; account-targeted tasks go to the deterministic pick (lowest agent id) among the region's connected agents that advertise the action in their hello `capabilities`; `agent:{id}` targets go to that exact agent (capability-checked).
+Dispatch: `TaskSchedulerService` polls every 250 ms; account-targeted tasks go to the deterministic pick (lowest agent id) among the region's connected agents that advertise the action in their hello `capabilities`; `agent:{id}` targets go to that exact agent (capability-checked).
 
-**Read results** — `GET /v1/jobs/{jobId}` returns `JobWithTasks`:
+Read results — `GET /v1/jobs/{jobId}` returns `JobWithTasks`:
 
 ```json
 {
@@ -67,9 +67,9 @@ Most REST wrappers under `/v1/accounts/{name}/...` are thin: they build the payl
 
 ## Registry / namespacing note
 
-- `ActionRegistry` (`src/Vapor.Steam.Core/IAction.cs`) is a **single flat, case-insensitive dictionary**. Core actions are registered at agent startup; plugin actions are registered into the *same* dictionary via `PluginManager.PluginLoaded` (`actionRegistry.Register(action)`) and removed on `PluginUnloading`.
-- **There is no namespace prefixing.** Plugin action names (`market_watch_add`, `get_metrics`, …) live alongside core names (`get_inventory`, …). Collisions are not detected: a plugin action whose `Name` equals a core action's name **silently overwrites** it (last writer wins), and when the plugin unloads, the name is unregistered entirely — the shadowed core action does not come back. Convention: plugins prefix their names (`market_watch_*`, `get_metrics`) and none of the shipped plugins collide with core names.
-- **Agent host actions** (`plugin_install` / `plugin_uninstall` / `plugin_list`) are *not* in the registry; they live in a separate dictionary checked **before** the registry in the agent's task executor, and are advertised in hello capabilities like any other action. They additionally require the task target to be exactly `agent:{thisAgentId}` (defense in depth — a misrouted delivery fails loudly instead of mutating the wrong machine's plugin directory).
+- `ActionRegistry` (`src/Vapor.Steam.Core/IAction.cs`) is a single flat, case-insensitive dictionary. Core actions are registered at agent startup; plugin actions are registered into the *same* dictionary via `PluginManager.PluginLoaded` (`actionRegistry.Register(action)`) and removed on `PluginUnloading`.
+- There is no namespace prefixing. Plugin action names (`market_watch_add`, `get_metrics`, …) live alongside core names (`get_inventory`, …). Collisions are not detected: a plugin action whose `Name` equals a core action's name **silently overwrites** it (last writer wins), and when the plugin unloads, the name is unregistered entirely — the shadowed core action does not come back. Convention: plugins prefix their names (`market_watch_*`, `get_metrics`) and none of the shipped plugins collide with core names.
+- Agent host actions (`plugin_install` / `plugin_uninstall` / `plugin_list`) are *not* in the registry; they live in a separate dictionary checked before the registry in the agent's task executor, and are advertised in hello capabilities like any other action. They additionally require the task target to be exactly `agent:{thisAgentId}` (defense in depth — a misrouted delivery fails loudly instead of mutating the wrong machine's plugin directory).
 
 ---
 
@@ -129,13 +129,13 @@ Output: `trade_offer_id`, `state_verified`. Rate-limited.
 
 
 ### `get_my_market_listings` — `GetMyMarketListingsAction.cs` (login: yes, timeout: 30s, safety: ReadOnly)
-Lists the account's own market listings (login-gated mylistings page — the only source for own-listing ids and the fee split). **One page per dispatch**; page by issuing further dispatches until `start` reaches `total_count`.
+Lists the account's own market listings (login-gated mylistings page — the only source for own-listing ids and the fee split). One page per dispatch; page by issuing further dispatches until `start` reaches `total_count`.
 Payload: `start` int optional default `0`; `count` int optional default `100`.
 Output: `start`, `count`, `total_count`, `active_count`, `on_hold_count`, `to_be_confirmed_count`, `listings[]` `{ listing_id, app_id, context_id, asset_id, class_id, market_hash_name, market_name, game_name, price_cents, fee_cents, seller_proceeds_cents, currency_id, icon_url, time_created, cancel_requested }`.
 (Distinct from `get_market_listings`, the public per-app market search.)
 
 ### `create_market_listing` — `CreateMarketListingAction.cs` (login: yes, timeout: 120s, safety: NonIdempotent)
-Puts one inventory item up for sale — **the ToS-gray-zone core of the market loop, triple-gated**:
+Puts one inventory item up for sale — the ToS-gray-zone core of the market loop, triple-gated:
 1. `send` defaults to `false` → **dry run** that only computes the fee-aware pricing plan (zero requests to Steam).
 2. A real listing additionally requires this agent's explicit opt-in env `AGENT_MARKET_LISTINGS_ENABLED=true` — a direct dispatch with `send=true` is refused without it.
 3. And the per-account switch (control-plane account spec `marketListingsEnabled=true`, enforced by `POST /v1/accounts/{name}/market/listings` before dispatch; default off).
@@ -299,7 +299,7 @@ Payload:
 Output: `steam_id`, `app_id`, `context_id` (string), `matched_count`, `items[]` `{ asset_id, class_id, instance_id, app_id, amount, name, market_name, market_hash_name, type, tradable, marketable }` (64-bit ids as strings); with `value=true` also `valuation` `{ currency, priced_count, failed_count, items[] { asset_id, market_hash_name, lowest_price, median_price, volume, error } }` — non-marketable entries carry `error: "not marketable"` and get no price lookup; prices as in `get_game_inventory`.
 
 ### `loot_inventory` — `src/Vapor.Plugins.GameAccess/LootAction.cs` (`LootInventoryAction`) (login: yes, timeout: 120s, safety: GuardedWrite)
-Sends **all** of the account's currently-tradable items to a partner (ASF/Watt "loot" flow).
+Sends all of the account's currently-tradable items to a partner (ASF/Watt "loot" flow).
 Payload:
 - `partner_steam_id` string or `trade_url` string — one **required**.
 - `message` string, optional.

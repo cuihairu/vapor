@@ -1,6 +1,6 @@
 # Vapor Plugin Development Guide
 
-Vapor's agent ships with a full plugin system: isolated loading, SemVer-gated API
+Vapor's agent ships a plugin system: isolated loading, SemVer-gated API
 compatibility, a trust/permission model and a small, explicit API surface. This guide
 walks through building, declaring, configuring and debugging a plugin.
 
@@ -143,7 +143,7 @@ Plugins declare *what they are* and *what they need*; the host decides what they
 | `web` | `IWebApiPlugin.GetRoutes()` results are served |
 | `events` | The plugin is subscribed to session events |
 
-The enforcement model is **minimal trust by default**:
+The enforcement model is minimal trust by default:
 
 - A capability interface implemented without the matching permission declaration is
   **stripped** — the actions/routes/commands are never registered and the plugin does
@@ -307,16 +307,16 @@ startup and log what you resolved.
 
 Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 
-- **Shared contracts are fine**: types from `Vapor.Plugins.Core` and
+- Shared contracts are fine: types from `Vapor.Plugins.Core` and
   `Vapor.Steam.Core` resolve to the host's copies, so `IAction` instances you hand out
   are the same types the host knows.
-- **Your private dependencies are yours**: ship your own NuGet DLLs in the plugin
+- Your private dependencies are yours: ship your own NuGet DLLs in the plugin
   directory; they load into your context and unload with it.
-- **Clean up on shutdown**: cancel your background loops and wait for them in
+- Clean up on shutdown: cancel your background loops and wait for them in
   `ShutdownAsync` (see `MarketWatchPlugin`), remove observers you registered on host
   services, dispose owned `HttpClient`/handlers. The host removes your registry
   contributions before calling `ShutdownAsync`.
-- **Don't leak static state**: statics survive unload and prevent collection. Prefer
+- Don't leak static state: statics survive unload and prevent collection. Prefer
   instance fields; use `LoadedPlugin.UnloadTracker` in tests to verify collection.
 
 ## Debugging tips
@@ -372,7 +372,7 @@ ControlPlane never brokers the binary.
 
 ### Package format
 
-A package is a plain zip whose **root contains `plugin.json`** plus the entry
+A package is a plain zip whose root contains `plugin.json` plus the entry
 assembly and any private dependency DLLs (the same layout as a plugin directory).
 Every install request must carry the package's SHA-256 hex digest; a mismatch
 fails before anything is written under the plugins root.
@@ -395,7 +395,7 @@ task-target prefix) cover the lifecycle:
 | `plugin_uninstall` | `pluginId` | unload + retire the directory (renamed aside then deleted); uninstalling an unknown id is idempotent success (`removed: false`) |
 | `plugin_list` | — | report the current inventory |
 
-Every action's output carries the agent's **full installed list** under
+Every action's output carries the agent's full installed list under
 `plugins`, so the ControlPlane mirror stays current even for failed installs.
 The install pipeline validates before touching the real plugins root: URL
 scheme (`http`/`https`/`file`), digest hex, zip-slip entries, manifest-at-root,
@@ -421,7 +421,7 @@ jobs to the named agents:
 - `POST /v1/plugins/uninstall/{pluginId}` — uninstall from the named agents
 - `POST /v1/plugins/inventory/refresh` — re-run `plugin_list` to re-sync the mirror
 
-The admin console's **插件管理** panel (PluginStore) renders the catalog with
+The admin console's `插件管理` panel (PluginStore) renders the catalog with
 per-agent targeting and one-click batch install.
 
 ### Trust boundary, stated plainly
@@ -536,7 +536,7 @@ session endpoints — see [ToS boundary](#tos-boundary).
 
 ### Algorithm and sources
 
-The odds are **Valve's own published disclosure** — the official Chinese CS:GO
+The odds are Valve's own published disclosure — the official Chinese CS:GO
 site's 概率公示 page (probability disclosure, 2017-09-11,
 [csgo.com.cn](https://www.csgo.com.cn/news/gamebroad/20170911/206155.shtml)),
 which is the only primary source for case odds:
@@ -551,9 +551,9 @@ which is the only primary source for case odds:
 
 The same disclosure fixes the remaining structure, which the engine follows
 exactly: each tier is 1:5 against the next-higher tier (2:5 gold:covert),
-items of equal rarity are equally likely, and **StatTrak™ is an independent
-1:10 roll** for items that have a StatTrak variant. There is **no pity
-system** — every open is an independent, identically distributed draw.
+items of equal rarity are equally likely, and StatTrak™ is an independent
+1:10 roll for items that have a StatTrak variant. There is no pity system —
+every open is an independent, identically distributed draw.
 
 Per-open roll order (deterministic, `System.Random`-backed, seed injectable
 for tests):
@@ -582,12 +582,12 @@ odds table with a cumulative roll — unlicensed, reference for approach),
 `ICaseOpeningBackend` is the single seam between "decide what was unboxed" and
 "how it came to be". The plugin ships exactly one implementation:
 
-- **`SimulationBackend`** (the default, and the only `backend` configuration
+- `SimulationBackend` (the default, and the only `backend` configuration
   value accepted today): pure local RNG. No network, no Steam calls, no
   account required. `case_open` actions report `mode: "dry-run"` in their
   output.
 
-A real backend is **deliberately not implemented**: opening a case consumes a
+A real backend is deliberately not implemented: opening a case consumes a
 key inside the CS2 game client (game coordinator traffic), which the public
 Steam Web API cannot do. Requesting any other `backend` value fails plugin
 initialization with an explicit error rather than silently simulating.
@@ -651,7 +651,7 @@ honest-degradation rule as Case Opening's backend seam.
 
 ### Boundaries
 
-- **No write path**: no trade offers, no market calls, no inventory mutation,
+- No write path: no trade offers, no market calls, no inventory mutation,
   no game-client automation — real matches, trading and battle-pass progress
   stay out (SSA §4.C, see [game-plugins.md](game-plugins.md)).
 - **`econ_item_schema` whitelists appids** 440 (TF2) and 730 (CS2); anything

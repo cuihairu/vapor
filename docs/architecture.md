@@ -447,46 +447,38 @@ Agent enables it via `AddRedactingConsole()`.
 
 ## Security & Key Management
 
-- **Encryption at rest**: credentials stored in `~/.vapor/credentials.json` use
+- Encryption at rest: credentials stored in `~/.vapor/credentials.json` use
   versioned format v2 with AES-GCM encrypted tokens. Legacy v1 (plain) files are
   migrated transparently on first load.
-- **Corruption recovery**: writes are atomic (temp file + replace); the previous
+- Corruption recovery: writes are atomic (temp file + replace); the previous
   file is backed up as `.bak` and used to recover from corruption.
-- **File permissions**: credential files are tightened to owner-only (600) on Unix.
-- **Master key sources** (priority order):
+- File permissions: credential files are tightened to owner-only (600) on Unix.
+- Master key sources (priority order):
   - `VAPOR_ENCRYPTION_KEY_BASE64` - raw key bytes as base64 (KMS/Vault workflow)
   - `VAPOR_ENCRYPTION_KEY_FILE` - key file (Docker/K8s secrets; base64 content decoded when valid)
   - `VAPOR_ENCRYPTION_KEY` - plain text
-- **Key rotation**: `tools/Vapor.KeyRotation` CLI re-encrypts the credential store
+- Key rotation: `tools/Vapor.KeyRotation` CLI re-encrypts the credential store
   from an old to a new key (supports `base64:`/`file:`/`env:` key specs, `--dry-run`,
   aborts without modification when any account fails to decrypt).
 
 ## Testing
 
-The project includes a comprehensive test suite for the Steam.Core module:
+The repository runs 3,517 tests across 13 test projects (2026-10-04
+measured), covering unit, integration, contract and performance layers, and
+the coverage gate requires 100% line and branch coverage on every CI run —
+`scripts/coverage-summary.py --min 100 --min-branch 100` is the referee.
+Property-based tests (FsCheck) pin the wire-level and parsing contracts.
 
-- **228 Fact/Theory methods** across 13 test classes
-- **~4,600 lines** of test code
-- **xUnit** + **Moq** for unit testing
-- **Coverlet** for code coverage reporting
-- **Unit**, **integration**, and **performance** coverage
-
-See `tests/TESTING.md` for detailed testing documentation.
-
-### Test Coverage
-
-- ✅ Actions: Ping, Echo, Login, Idle, RedeemKey
-- ✅ Core Components: ActionRegistry, BotSession, SessionManager, SteamClientManager, Models, edge cases
-- ✅ Integration: end-to-end workflows, multi-account scenarios
-- ✅ Performance: concurrency and stress testing
+`tests/TESTING.md` is the detailed inventory: project tree, per-class test
+counts, and the journal of what each round added.
 
 ## Distributed-systems design notes (2026-09)
 
 The capability map in `docs/roadmap.md` surveys where Vapor stands as an
 API-driven distributed system. This section records the load-bearing design
 decisions behind that map: what was chosen, what was considered and rejected,
-and why. The recurring theme: **Vapor optimizes for a single control plane
-with a fleet of dumb-ish edges**, buying transactional consistency and zero
+and why. The recurring theme: Vapor optimizes for a single control plane
+with a fleet of dumb-ish edges, buying transactional consistency and zero
 coordination at the cost of HA — a cost consciously deferred, not ignored.
 
 ### Transport: outbound WebSocket tunnel
@@ -542,14 +534,14 @@ so the single-instance failure modes get bounded first.
 **Decision.** One task at a time per agent connection; three timeout layers
 stacked:
 
-1. **Per-action declared `TimeoutSeconds`** (session path via `BotSession`,
+1. Per-action declared `TimeoutSeconds` (session path via `BotSession`,
    host path via `HostActionExecutor`) — the precise, action-aware bound that
    fires first with a structured `action timeout` result.
-2. **Agent task watchdog** (`AGENT_TASK_TIMEOUT_SECONDS`, default 900 s) —
+2. Agent task watchdog (`AGENT_TASK_TIMEOUT_SECONDS`, default 900 s) —
    the belt over actions that declare no timeout or hang below their token's
    observation points. Cancels the task, reports `task timeout after Ns`,
    keeps the loop serving.
-3. **CP lease reclaim** (`Vapor_TASK_LEASE_SECONDS`) — recovers from agent
+3. CP lease reclaim (`Vapor_TASK_LEASE_SECONDS`) — recovers from agent
    death or tunnel loss by requeueing.
 
 Each layer exists because the one below it cannot recover that failure: an

@@ -2,12 +2,12 @@
 
 ## 概述
 
-Steam Session Engine 实现了类似 ASF 的 Bot 会话架构，提供会话管理和动作执行功能。已集成 SteamKit2 用于真实的 Steam 网络通信。
+Session Engine 基于 [SteamKit2](https://github.com/SteamRE/SteamKit) 实现 ASF 式的 Bot 会话：每个账号一个长连会话，登录、质询、动作执行都收敛在这层。控制面不碰 Steam 协议，动作在 agent 上跑，会话状态与凭据也不出 agent。
 
 ## 核心组件
 
 ### BotSession
-- 会话状态机：`Disconnected -> Connecting -> Connected` 等
+- 会话状态机（十态，含 QR 登录等待态）
 - 命令队列处理
 - 事件发布
 - 错误处理和重连逻辑
@@ -16,7 +16,8 @@ Steam Session Engine 实现了类似 ASF 的 Bot 会话架构，提供会话管�
 ### SessionState 枚举
 ```
 Disconnected, Connecting, ConnectingWaitAuthCode, ConnectingWait2FA,
-Connected, Reconnecting, DisconnectedByUser, Disconnecting, FatalError
+ConnectingWaitQr, Connected, Reconnecting, DisconnectedByUser,
+Disconnecting, FatalError
 ```
 
 ### IAction 接口
@@ -30,6 +31,8 @@ Task<ActionResult> ExecuteAsync(
     CancellationToken cancellationToken
 );
 ```
+
+`ActionMetadata` 声明 `RequiresLogin` 与 `TimeoutSeconds`，另有 init-only 的 `Safety`（执行安全分类，调度器据此限制重派次数——`send_trade_offer` 这类重复执行会产生双倍外部副作用的动作，派发上限恒为 2）。
 
 ### ActionRegistry
 - 动作注册和查找
@@ -46,7 +49,9 @@ Task<ActionResult> ExecuteAsync(
 - 处理登录、认证码和 2FA 流程
 - 维护多账户登录状态
 
-## 内置动作
+## 动作
+
+全仓 57 个动作的完整目录（payload 字段、超时、安全分类）见 [actions catalog](actions.md)。这里列 5 个最小的作示例：
 
 | 动作名 | 说明 | 需要登录 | 超时 |
 |--------|------|----------|------|
@@ -65,7 +70,8 @@ public sealed class MyAction : IAction
     public string Name => "my_action";
     public ActionMetadata Metadata => new ActionMetadata(
         Name, "Description", RequiresLogin: true, TimeoutSeconds: 60
-    );
+    )
+    { Safety = ActionSafety.ReadOnly };
 
     public Task<ActionResult> ExecuteAsync(
         BotSession session,
@@ -108,14 +114,10 @@ SteamClientManager 负责与 Steam 网络通信：
 ### 认证流程
 
 1. 初始登录需要密码
-2. Steam 返回需要认证码或 2FA 时，Session 状态变为 `ConnectingWaitAuthCode` 或 `ConnectingWait2FA`
-3. 通过 `ProvideAuthCode()` 或 `Provide2FACode()` 提供代码
-4. 登录成功后，access token 和 refresh token 可保存用于后续登录
+2. Steam 返回需要认证码或 2FA 时，Session 状态变为 `ConnectingWaitAuthCode` 或 `ConnectingWait2FA`；扫码登录走 `ConnectingWaitQr`
+3. 通过 `ProvideAuthCode()` / `Provide2FACode()` 提供代码，或由 SSE 通道送达 admin 面板提交的代码；配置了移动认证器共享密钥的账号可由 agent 侧 `TwoFactorAutoResponder` 自动应答
+4. 登录成功后，access token 和 refresh token 保存用于后续登录——agent 重启后凭此恢复会话，无需人工重登
 
-## 未来扩展
+## 边界
 
-1. 实现更多实用动作：`play_game`, `trade`, `add_friend` 等
-2. 支持会话持久化和恢复
-3. 添加限流和重试策略
-4. 添加 Steam 交易处理
-5. 实现 Steam 社交功能（好友、群组等）
+会话凭据和 Steam Guard 码不离开 agent（过线只有布尔值）；好友、群组等社交动作未实现；跨区域调度是控制面的职责，本层不管。
