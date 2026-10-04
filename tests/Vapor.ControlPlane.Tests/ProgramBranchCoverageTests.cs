@@ -38,6 +38,7 @@ public sealed class ProgramBranchCoverageTests
 	[InlineData("DELETE", "/v1/accounts/alice")]
 	[InlineData("POST", "/v1/accounts/alice/enable")]
 	[InlineData("POST", "/v1/accounts/alice/disable")]
+	[InlineData("POST", "/v1/accounts/alice/reconcile")]
 	[InlineData("GET", "/v1/accounts/alice/inventory")]
 	[InlineData("POST", "/v1/accounts/alice/confirmations/accept-all")]
 	[InlineData("POST", "/v1/accounts/alice/loot")]

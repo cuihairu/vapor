@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Desired-state convergence surface (round 53, P0-C of the V-next convergence
+  plan): the per-account view (`GET /v1/accounts/{name}`) now projects
+  `observed` (the session's actual state) and `reason` (the reconciler's most
+  recent decision, `LastDeviation`) at the top level, and the
+  `/v1/system/status` mismatch rows carry the same `reason` — the dashboard
+  row renders both without parsing nested shapes. A new admin endpoint
+  `POST /v1/accounts/{name}/reconcile` forces one reconcile pass immediately
+  (the existing engine logic, not new convergence semantics) and writes an
+  `orchestration.reconcile` audit entry with the desired state and resulting
+  reason; the dashboard account row gained a Reconcile button wired to it.
+  The dashboard's read-only contract test was sharpened into a whitelist
+  (PUT/DELETE stay banned; exactly one whitelisted `method: "POST"` literal
+  for reconcile), so the mutation surface cannot grow silently.
 - Action execution-safety classification (round 50, P0-A of the V-next
   convergence plan): every shipped action now declares an `ActionSafety`
   class (`ReadOnly` / `Idempotent` / `GuardedWrite` / `NonIdempotent`) via a

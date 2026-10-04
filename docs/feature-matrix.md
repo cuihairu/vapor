@@ -87,8 +87,8 @@
 
 | 能力 | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
-| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(57 条 `/v1` 路由 / 67 个操作 + OpenAPI) |
-| Web UI | ✅(ASF-ui) | ✅ | ✅ | ➖ | ✅(只读 dashboard + 全功能管理台 admin + 游戏数据字典页,静态托管,零构建链) |
+| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(58 条 `/v1` 路由 / 68 个操作 + OpenAPI) |
+| Web UI | ✅(ASF-ui) | ✅ | ✅ | ➖ | ✅(读优先 dashboard(收敛操作白名单单写)+ 全功能管理台 admin + 游戏数据字典页,静态托管,零构建链) |
 | 插件系统 | ✅ | ✅ | ➖ | ➖ | ✅(ALC 隔离 + SemVer + 信任/权限 + 运行时 PluginStore:目录源→agent 定向安装/卸载/热加载,ASF 插件需手动放置) |
 | 多节点舰队(CP 集中调度) | ❌(单进程) | ❌ | ❌ | ❌ | ✅(**独有**) |
 | 可观测性(metrics/tracing/审计) | ⚠️ | ➖ | ➖ | ➖ | ✅(Prometheus + OTel + 审计) |
@@ -134,7 +134,7 @@
 
 ### P6-4 竞品对齐但后置(记录待决,不承诺)
 
-- [x] Web Dashboard 只读面板(对标 ASF-ui 只读部分):`wwwroot/dashboard.html` 落地——统计卡/账户/Agent/会话/作业/审计 + 双 SSE 流 + 轮询兜底,零写操作(契约测试守护);管理功能走 admin.html(2026-09-18 §31 扩展为全功能管理台:账户生命周期/交易与确认/市场与认领/爬虫计划/配置管理五个面板,写端点全覆盖,破坏性操作二次确认,契约测试守护)。
+- [x] Web Dashboard 读优先面板(对标 ASF-ui 只读部分):`wwwroot/dashboard.html` 落地——统计卡/账户/Agent/会话/作业/审计 + 双 SSE 流 + 轮询兜底,写操作白名单单写(合同测试守护:PUT/DELETE 永禁,POST 恰一处 reconcile);管理功能走 admin.html(2026-09-18 §31 扩展为全功能管理台:账户生命周期/交易与确认/市场与认领/爬虫计划/配置管理五个面板,写端点全覆盖,破坏性操作二次确认,契约测试守护)。
 - [x] 挂单创建/批量撤单(对标 SGI):ToS 灰区 + 需要库存/定价前置,后置。(2026-09-14 前置条件经 P6 补齐,立项为 P7 市场闭环,见 `todo.md` §12)
 - [x] QR 扫码登录(对标 SGI/steamguard-cli):SteamKit2 QR 挑战 + 轮询落地;挑战 URL 经 session 事件上浮供人扫码,request_key 与 token 均不出 agent;管理面 admin.html 会话面板内置"QR 扫码登录"按钮一键触发(✅ 2026-09-16 UI 按钮落地,后置项闭环)。
 - [x] 成就解锁/管理(对标 SGI):需求弱,后置。(2026-09-18 立项为 §33 并落地:读取走社区成就页,解锁/重置走 client stats 协议手工消息的显式单发 REST——显式 names + reset 双 confirm + 写后读回逐条验证;布尔置位划线,数值编辑维持不采用,见 `todo.md` §33)

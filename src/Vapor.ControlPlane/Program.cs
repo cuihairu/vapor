@@ -492,11 +492,19 @@ app.MapGet("/v1/accounts/{name}", async Task<IResult> (
 
 	IReadOnlyList<JobTask> recentTasks = await store.ListRecentTasksForTarget(spec.AccountName, 10, ctx.RequestAborted);
 
+	SessionSnapshot? session = sessions.Get(spec.AccountName);
+	AccountOrchestrationView? orchestration = reconciler.GetOrchestrationView(spec.AccountName);
+
 	return Results.Ok(new
 	{
 		spec,
-		session = sessions.Get(spec.AccountName),
-		orchestration = reconciler.GetOrchestrationView(spec.AccountName),
+		session,
+		// Convergence surface: the account's actual session state and the
+		// reconciler's most recent decision for it, projected to the top level
+		// so the dashboard row needs no knowledge of the nested shapes.
+		observed = session?.State,
+		reason = orchestration?.LastDeviation,
+		orchestration,
 		pendingChallenge = challenges.Get(spec.AccountName),
 		recentTasks
 	});
@@ -670,6 +678,42 @@ app.MapPost("/v1/accounts/{name}/disable", async (HttpContext ctx, Config cfg, I
 })
 	.WithTags("Accounts")
 	.WithSummary("Disable a declared account (stops orchestration, keeps desired state and config)")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
+app.MapPost("/v1/accounts/{name}/reconcile", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, DesiredStateReconciler reconciler, string name) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	AccountSpec? spec = accounts.Get(name);
+	if (spec is null)
+	{
+		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
+	}
+
+	// Force one reconcile pass now instead of waiting for the periodic tick —
+	// the pass is the existing engine logic, this endpoint only triggers it.
+	await reconciler.ReconcileOnce(ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"orchestration.reconcile",
+		accountName: spec.AccountName,
+		details: new Dictionary<string, object?>
+		{
+			["desiredState"] = spec.DesiredState.ToString(),
+			["reason"] = reconciler.GetOrchestrationView(spec.AccountName)?.LastDeviation
+		});
+	return Results.Ok(new { status = "reconciled" });
+})
+	.WithTags("Accounts")
+	.WithSummary("Run one reconcile pass immediately (forced convergence; audit-logged)")
 	.Produces(200)
 	.Produces<ErrorResponse>(404)
 	.Produces<ErrorResponse>(401);

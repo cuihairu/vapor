@@ -85,6 +85,46 @@ public sealed class AccountOrchestrationE2ETests
 		}
 	}
 
+	[Fact]
+	public async Task ForcedReconcile_RunsPassSurfacesReasonAndWritesAudit()
+	{
+		const string accountName = "e2e-orch-reconcile";
+		// A region no agent ever connects to: every forced pass records the same
+		// deviation, deterministically.
+		const string orphanRegion = "e2e-reconcile-orphan";
+
+		try
+		{
+			await AdminJsonAsync(HttpMethod.Put, $"/v1/accounts/{accountName}", new
+			{
+				enabled = true,
+				desiredState = "online",
+				region = orphanRegion,
+			});
+
+			// The forced pass runs synchronously inside the request and answers 200.
+			using HttpResponseMessage forced = await AdminAsync(HttpMethod.Post, $"/v1/accounts/{accountName}/reconcile");
+			forced.EnsureSuccessStatusCode();
+
+			// The projection surfaces the pass's decision at the top level of the
+			// aggregate view — the reason travels reconciler runtime → endpoint.
+			JsonElement view = await AdminJsonAsync(HttpMethod.Get, $"/v1/accounts/{accountName}");
+			Assert.Equal("no capable agent available", view.GetProperty("reason").GetString());
+
+			// The forced pass is auditable under its own action name.
+			JsonElement audit = await _stack.GetAuditLogsAsync("orchestration.reconcile");
+			bool audited = audit.GetProperty("logs").EnumerateArray().Any(entry =>
+				entry.TryGetProperty("accountName", out var entryAccount) &&
+				entryAccount.GetString() == accountName);
+			Assert.True(audited,
+				$"No 'orchestration.reconcile' audit entry found for {accountName}. Entries:{Environment.NewLine}{audit.GetRawText()}");
+		}
+		finally
+		{
+			await AdminAsync(HttpMethod.Delete, $"/v1/accounts/{accountName}");
+		}
+	}
+
 	/// <summary>Polls the account aggregate view until the orchestrator assigns the expected agent.</summary>
 	private async Task<JsonElement> WaitForAssignmentAsync(string expectedAgent)
 	{

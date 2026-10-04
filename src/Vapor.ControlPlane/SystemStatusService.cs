@@ -91,7 +91,7 @@ public sealed record AccountsStatus(
 	IReadOnlyDictionary<string, int> ChallengeTypes);
 
 /// <summary>An account whose desired state and latest session snapshot disagree.</summary>
-public sealed record AccountMismatch(string Account, string DesiredState, string? ActualSessionState, string? AssignedAgent);
+public sealed record AccountMismatch(string Account, string DesiredState, string? ActualSessionState, string? AssignedAgent, string? Reason = null);
 
 /// <summary>
 /// Builds <see cref="SystemStatusReport"/> from the live services the
@@ -255,7 +255,8 @@ public sealed class SystemStatusService(
 					Account: spec.AccountName,
 					DesiredState: desired,
 					ActualSessionState: actual,
-					AssignedAgent: spec.AgentId));
+					AssignedAgent: spec.AgentId,
+					Reason: reconciler.GetOrchestrationView(spec.AccountName)?.LastDeviation));
 			}
 		}
 		IReadOnlyList<AuthChallengeEvent> pending = challenges.List();

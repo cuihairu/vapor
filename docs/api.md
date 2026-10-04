@@ -1,6 +1,6 @@
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 57 routes (67 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 58 routes (68 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
@@ -173,7 +173,7 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
 - Purpose: aggregate view for one account: spec, live session snapshot, orchestrator view, pending challenge, 10 most recent tasks.
 - Auth: admin.
 - Body: none.
-- 200: `{ "spec": AccountSpec, "session": SessionSnapshot|null, "orchestration": AccountOrchestrationView|null, "pendingChallenge": AuthChallengeEvent|null, "recentTasks": [ JobTask ] }` (nulls omitted).
+- 200: `{ "spec": AccountSpec, "session": SessionSnapshot|null, "observed": string, "reason": string, "orchestration": AccountOrchestrationView|null, "pendingChallenge": AuthChallengeEvent|null, "recentTasks": [ JobTask ] }` (nulls omitted). `observed` is the latest session-snapshot state (`session.state` projected to the top level; absent = no snapshot), `reason` is the reconciler's most recent convergence decision for the account (`orchestration.lastDeviation` projected; absent = no pass has recorded one).
 - Errors: 404 `account '<name>' is not declared`, 401.
 
 #### `PUT /v1/accounts/{name}`
@@ -214,6 +214,11 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
 - Auth: admin. Body: none.
 - 202: `Location: /v1/accounts/{name}`, body `{ "scheduled": true }`.
 - Errors: 404, 409 `{ "error": "standing check not scheduled: a job is active or standing checks are disabled" }`, 401. Audit: `standing_check_requested`.
+
+#### `POST /v1/accounts/{name}/reconcile`
+- Purpose: run one reconcile pass immediately instead of waiting for the next periodic tick — the pass is the existing engine logic; the endpoint only triggers it and reports the resulting decision in the audit trail.
+- Auth: admin. Body: none.
+- 200: `{ "status": "reconciled" }`. Errors: 404 `account '<name>' is not declared`, 401. Audit: `orchestration.reconcile` (details: `desiredState`, the post-pass `reason`).
 
 #### `GET /v1/accounts/{name}/trade-offers`
 - Purpose: list the account's incoming trade offers (dispatches `get_trade_offers`, bounded wait).
@@ -706,7 +711,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
     - `plugins` — `{ agentsReporting, entries, byTrust: { "<trust>": count } }`.
   - `proxies` — `{ probesOk, probesFailed, proxyDisabled, recent: [ { account, success, proxy?, exitIp?, latencyMs?, error?, checkedAt } ] }`. Aggregated from recent `check_proxy` task outputs (last 100 jobs). There is no control-plane proxy pool registry — proxies are per-account agent-side configuration; the `proxy` value, when present, is the agent-side masked endpoint. Disabled-proxy and not-yet-finished tasks count toward the tallies but are not listed.
   - `agents` — `{ connected: int, regions: string[], entries: [ { id, region, connectedAt, capabilities } ] }`.
-  - `accounts` — `{ total, byDesiredState: { "<state>": count }, mismatches: [ { account, desiredState, actualSessionState?, assignedAgent? } ], sessionsTracked, pendingChallenges, challengeTypes: { "<type>": count } }`. A mismatch means the declared desired state and the latest session snapshot disagree (missing snapshot counts as "no session"; `unknown` session states are never treated as positive evidence of a live session).
+  - `accounts` — `{ total, byDesiredState: { "<state>": count }, mismatches: [ { account, desiredState, actualSessionState?, assignedAgent?, reason? } ], sessionsTracked, pendingChallenges, challengeTypes: { "<type>": count } }`. `reason` carries the reconciler's most recent convergence decision for that account (absent when no pass has recorded one). A mismatch means the declared desired state and the latest session snapshot disagree (missing snapshot counts as "no session"; `unknown` session states are never treated as positive evidence of a live session).
   - Redaction: credentials, proxy passwords (already masked agent-side) and Steam Guard / 2FA challenge **codes** never appear — challenges contribute counters only.
 - Errors: 401.
 

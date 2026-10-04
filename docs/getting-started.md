@@ -34,7 +34,7 @@ Prefer local processes? Follow [running.md](running.md) (`Vapor_ADMIN_API_KEY` /
 | URL | What it is |
 |-----|------------|
 | `http://127.0.0.1:8080/admin.html` | Full management console: accounts, sessions, jobs, trade/market/claim operations, auth challenges, plugin store, config |
-| `http://127.0.0.1:8080/dashboard.html` | Read-only dashboard: stats, agents, sessions, jobs, audit — dual SSE streams |
+| `http://127.0.0.1:8080/dashboard.html` | Read-first dashboard: stats, agents, sessions, jobs, audit — dual SSE streams, plus one whitelisted per-account reconcile action |
 | `http://127.0.0.1:8080/gamedata.html` | Game data dictionary (cached store lookups) |
 
 All API examples below work verbatim with the compose dev keys (`admin-dev-token`).

@@ -118,6 +118,30 @@ public sealed class SystemStatusApiTests
 	}
 
 	[Fact]
+	public async Task SystemStatus_MismatchCarriesReconcilerReason()
+	{
+		await using TestFactory factory = new();
+		AccountStore accountStore = factory.Services.GetRequiredService<AccountStore>();
+		accountStore.Upsert("alice", enabled: true, AccountDesiredState.Online, null, "us-east", null, null);
+		// One reconcile pass: no agent serves us-east, so the pass records the
+		// deviation that the mismatch row should carry alongside the states.
+		DesiredStateReconciler reconciler = factory.Services.GetRequiredService<DesiredStateReconciler>();
+		await reconciler.ReconcileOnce(CancellationToken.None);
+		using HttpClient client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage response = await client.GetAsync("/v1/system/status");
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		string body = await response.Content.ReadAsStringAsync();
+		using JsonDocument doc = JsonDocument.Parse(body);
+		JsonElement mismatches = doc.RootElement.GetProperty("accounts").GetProperty("mismatches");
+		JsonElement mismatch = Assert.Single(mismatches.EnumerateArray());
+		Assert.Equal("alice", mismatch.GetProperty("account").GetString());
+		Assert.Equal("no capable agent available", mismatch.GetProperty("reason").GetString());
+	}
+
+	[Fact]
 	public async Task SystemStatus_ReportsNoMismatchWhenSessionMatchesDesired()
 	{
 		await using TestFactory factory = new();

@@ -497,6 +497,90 @@ public sealed class AccountApiTests
 	}
 
 	[Fact]
+	public async Task GetAccount_ExposesObservedAndReasonProjection()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		// Online in a region no agent serves: a reconcile pass records the
+		// deviation the projection must surface.
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "online", region = "us-east" });
+
+		using HttpResponseMessage before = await client.GetAsync("/v1/accounts/alice");
+		Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+		string beforeBody = await before.Content.ReadAsStringAsync();
+		using var beforeDoc = JsonDocument.Parse(beforeBody);
+		// WhenWritingNull drops "observed"/"reason": absence means "no session
+		// snapshot" / "no reconcile decision recorded yet".
+		Assert.False(beforeDoc.RootElement.TryGetProperty("observed", out _));
+		Assert.False(beforeDoc.RootElement.TryGetProperty("reason", out _));
+
+		// One reconcile pass: no capable agent in us-east → the pass records the
+		// reason on the account's runtime, which the projection reads.
+		DesiredStateReconciler reconciler = factory.Services.GetRequiredService<DesiredStateReconciler>();
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		using HttpResponseMessage after = await client.GetAsync("/v1/accounts/alice");
+		Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+		string afterBody = await after.Content.ReadAsStringAsync();
+		using var afterDoc = JsonDocument.Parse(afterBody);
+		JsonElement root = afterDoc.RootElement;
+		Assert.Equal("no capable agent available", root.GetProperty("reason").GetString());
+		Assert.False(root.TryGetProperty("observed", out _));
+
+		// A session snapshot makes the observed state appear at the top level.
+		using HttpResponseMessage evt = await client.PostAsJsonAsync("/v1/sessions/events", new
+		{
+			accountName = "alice",
+			eventType = "state_changed",
+			state = "Connected",
+			message = "logged in"
+		});
+		Assert.Equal(HttpStatusCode.OK, evt.StatusCode);
+
+		using HttpResponseMessage withSession = await client.GetAsync("/v1/accounts/alice");
+		string withSessionBody = await withSession.Content.ReadAsStringAsync();
+		using var withSessionDoc = JsonDocument.Parse(withSessionBody);
+		Assert.Equal("Connected", withSessionDoc.RootElement.GetProperty("observed").GetString());
+		Assert.Equal("no capable agent available", withSessionDoc.RootElement.GetProperty("reason").GetString());
+	}
+
+	[Fact]
+	public async Task ReconcileAccount_RunsPassWritesAuditAndValidatesTarget()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		using var client = factory.CreateClient();
+
+		// No auth header → 401 before anything else.
+		using HttpResponseMessage anonymous = await client.PostAsync("/v1/accounts/alice/reconcile", null);
+		Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		// Unknown account → 404.
+		using HttpResponseMessage ghost = await client.PostAsync("/v1/accounts/ghost/reconcile", null);
+		Assert.Equal(HttpStatusCode.NotFound, ghost.StatusCode);
+
+		await client.PutAsJsonAsync("/v1/accounts/alice", new { desiredState = "online", region = "us-east" });
+
+		// Declared account → the endpoint runs one pass synchronously and answers.
+		using HttpResponseMessage reconciled = await client.PostAsync("/v1/accounts/alice/reconcile", null);
+		Assert.Equal(HttpStatusCode.OK, reconciled.StatusCode);
+		string body = await reconciled.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+		Assert.Equal("reconciled", doc.RootElement.GetProperty("status").GetString());
+
+		// The forced pass is auditable under its own action name.
+		using HttpResponseMessage audit = await client.GetAsync("/v1/audit/logs?action=orchestration.reconcile");
+		Assert.Equal(HttpStatusCode.OK, audit.StatusCode);
+		string auditBody = await audit.Content.ReadAsStringAsync();
+		using var auditDoc = JsonDocument.Parse(auditBody);
+		Assert.Equal(1, auditDoc.RootElement.GetProperty("total").GetInt32());
+		Assert.Equal("alice", auditDoc.RootElement.GetProperty("logs")[0].GetProperty("accountName").GetString());
+	}
+
+	[Fact]
 	public async Task GetAccount_MissingReturns404()
 	{
 		await using var factory = CreateFactory();

@@ -265,7 +265,7 @@ no sensitive data — while every data call goes through the authenticated
 | Page | Role | Writes |
 |------|------|--------|
 | `/admin.html` (default landing page) | Full operations console: account lifecycle, trades & confirmations, market & claiming, crawl plans, configuration | Yes — mirrors the admin REST surface; irreversible actions gate on explicit confirmation dialogs |
-| `/dashboard.html` | Read-only fleet monitoring (stats, sessions, jobs, audit, SSE live feed) | None — locked by contract test |
+| `/dashboard.html` | Read-first fleet monitoring (stats, sessions, jobs, audit, SSE live feed) | One whitelisted per-account reconcile action — write surface locked by contract test |
 | `/gamedata.html` | Game data dictionary & crawl results browser | None — locked by contract test |
 
 The admin console is a thin client over the REST API: the server remains the

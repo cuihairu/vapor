@@ -325,6 +325,13 @@
             gap: 12px;
         }
 
+        .row-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
         .title-group {
             display: grid;
             gap: 4px;
@@ -642,14 +649,17 @@
     </div>
 
     <script>
-        // Read-only by contract: this page only issues GET requests (fetch without a
-        // method, plus EventSource streams). No write verb appears anywhere below.
+        // Read-first by contract: data flows in via GET fetches and SSE streams. The
+        // single sanctioned write is the P0-C "Reconcile" operator action
+        // (POST /v1/accounts/{name}/reconcile, audit-logged server-side); any other
+        // mutation verb must fail the static contract test (DashboardStaticTests).
         const state = {
             apiKey: localStorage.getItem("apiKey") || "",
             accounts: [],
             agents: [],
             sessions: [],
             jobs: [],
+            mismatchReasons: new Map(),
             selectedJobId: null,
             streams: [],
             pollTimer: null
@@ -706,6 +716,7 @@
             document.getElementById("refreshAgentsButton").addEventListener("click", () => refreshAgents());
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
             document.getElementById("refreshAuditButton").addEventListener("click", () => refreshAudit());
+            bindAccountListActions();
 
             await bootstrap();
         });
@@ -862,8 +873,17 @@
                 .map(([state, count]) => `${escapeHtml(state)}×${count}`)
                 .join("，") || "无";
             const mismatchRows = (accounts.mismatches || []).slice(0, 10).map((mismatch) => `
-                <div class="helper">⚠️ ${escapeHtml(mismatch.account)}：期望 ${escapeHtml(mismatch.desiredState)}，实际 ${escapeHtml(mismatch.actualSessionState || "无会话")}</div>
+                <div class="helper">⚠️ ${escapeHtml(mismatch.account)}：期望 ${escapeHtml(mismatch.desiredState)}，实际 ${escapeHtml(mismatch.actualSessionState || "无会话")}${mismatch.reason ? ` · 原因 ${escapeHtml(mismatch.reason)}` : ""}</div>
             `).join("");
+            // The account list cards read their reason chip from this map —
+            // re-render them so a fresh system status shows up there too.
+            state.mismatchReasons = new Map(
+                (accounts.mismatches || [])
+                    .filter((mismatch) => mismatch.reason)
+                    .map((mismatch) => [mismatch.account, mismatch.reason]));
+            if (state.accounts.length) {
+                renderAccounts();
+            }
             const challengeSpread = Object.entries(accounts.challengeTypes || {})
                 .map(([type, count]) => `${escapeHtml(type)}×${count}`)
                 .join("，") || "无";
@@ -900,6 +920,30 @@
             }
 
             return response.json();
+        }
+
+        // The one sanctioned write on this page: the forced-reconcile operator
+        // action. Server-side it runs the reconcile pass and writes an audit entry.
+        async function apiPost(path) {
+            const response = await fetch(path, { method: "POST", headers: authHeaders() });
+            if (!response.ok) {
+                let detail = response.statusText;
+                try {
+                    const body = await response.json();
+                    detail = body.error || JSON.stringify(body);
+                } catch {
+                }
+                throw new Error(detail || `HTTP ${response.status}`);
+            }
+
+            return response.json();
+        }
+
+        async function reconcileAccount(accountName) {
+            await apiPost(`/v1/accounts/${encodeURIComponent(accountName)}/reconcile`);
+            // The pass may have dispatched jobs and moved the session state —
+            // refresh everything the row displays.
+            await Promise.all([refreshAccounts(), refreshSessions(), refreshSystemStatus()]);
         }
 
         async function refreshAccounts() {
@@ -964,14 +1008,18 @@
                 .map((account) => {
                     const stateClass = !account.enabled ? "mute" : (account.desiredState === "online" ? "ok" : (account.desiredState === "idle" ? "idle" : "warn"));
                     const stateText = !account.enabled ? "已禁用" : `期望 ${account.desiredState}`;
+                    const reason = state.mismatchReasons?.get(account.accountName);
                     return `
                         <article class="card-row">
                             <div class="row-head">
                                 <div class="title-group">
                                     <div class="strong">${escapeHtml(account.accountName)}</div>
-                                    <div class="tiny">${account.region ? `区域 ${escapeHtml(account.region)}` : "未指定区域"}${account.agentId ? ` · Agent ${escapeHtml(account.agentId)}` : " · 未绑定 Agent"}</div>
+                                    <div class="tiny">${account.region ? `区域 ${escapeHtml(account.region)}` : "未指定区域"}${account.agentId ? ` · Agent ${escapeHtml(account.agentId)}` : " · 未绑定 Agent"}${reason ? ` · 收敛原因 ${escapeHtml(reason)}` : ""}</div>
                                 </div>
-                                <span class="badge ${stateClass}">${escapeHtml(stateText)}</span>
+                                <span class="row-actions">
+                                    <button class="btn btn-small" data-reconcile="${escapeHtml(account.accountName)}" title="立即跑一轮收敛并写入审计">Reconcile</button>
+                                    <span class="badge ${stateClass}">${escapeHtml(stateText)}</span>
+                                </span>
                             </div>
                             <div class="summary-row">
                                 ${account.idleApps?.length ? `<span class="chip">idle apps: ${account.idleApps.length}</span>` : ""}
@@ -980,6 +1028,27 @@
                         </article>
                     `;
                 }).join("");
+        }
+
+        function bindAccountListActions() {
+            const container = document.getElementById("accountList");
+            if (!container) {
+                return;
+            }
+
+            container.addEventListener("click", (event) => {
+                const button = event.target.closest("[data-reconcile]");
+                if (!button || button.disabled) {
+                    return;
+                }
+
+                button.disabled = true;
+                reconcileAccount(button.dataset.reconcile)
+                    .catch((error) => alert(`收敛失败: ${error.message}`))
+                    .finally(() => {
+                        button.disabled = false;
+                    });
+            });
         }
 
         function renderAgents() {

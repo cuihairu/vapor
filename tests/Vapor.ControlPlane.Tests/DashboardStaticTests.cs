@@ -10,9 +10,9 @@ using Xunit;
 namespace Vapor.ControlPlane.Tests;
 
 /// <summary>
-/// Static console pages: the read-only dashboard must stay reachable and — by
-/// contract — free of any write verb, so the page can never grow mutation
-/// calls unnoticed.
+/// Static console pages: the read-first dashboard must stay reachable and — by
+/// contract — carry exactly one whitelisted write (the P0-C reconcile action),
+/// so the page can never grow mutation calls unnoticed.
 /// </summary>
 public sealed class DashboardStaticTests
 {
@@ -31,17 +31,20 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
-	public void DashboardHtml_ContainsNoWriteVerbs()
+	public void DashboardHtml_WriteVerbs_StayWhitelisted()
 	{
 		string path = FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html");
 		string html = File.ReadAllText(path);
 
-		// The page is read-only: data flows in via GET fetches and SSE. Assert on
-		// the uppercase verb literals used by fetch/axios-style calls so a future
-		// edit that adds a mutation fails here.
-		Assert.DoesNotContain("POST", html, StringComparison.Ordinal);
+		// The page is read-first: data flows in via GET fetches and SSE. The one
+		// sanctioned write is the P0-C forced-reconcile operator action
+		// (POST /v1/accounts/{name}/reconcile) — a future edit that adds any other
+		// mutation fails here. PUT/DELETE never appear; POST appears exactly once,
+		// inside the reconcile call.
 		Assert.DoesNotContain("PUT", html, StringComparison.Ordinal);
 		Assert.DoesNotContain("DELETE", html, StringComparison.Ordinal);
+		Assert.Single(System.Text.RegularExpressions.Regex.Matches(html, @"method: ""POST"""));
+		Assert.Contains("/reconcile", html, StringComparison.Ordinal);
 	}
 
 	[Fact]
