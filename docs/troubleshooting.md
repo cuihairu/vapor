@@ -62,10 +62,21 @@ requeued with a delay (`Vapor_TASK_DISPATCH_RETRY_DELAY_MS`, default 2s)
 after each attempt and permanently failed after
 `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` (default 10; `0` = retry forever).
 
+The effective ceiling is per-action since the execution-safety
+classification (round 50): `GuardedWrite` / `NonIdempotent` actions — and
+any action without a classification (`Unknown`, e.g. third-party plugin
+actions) — cap at **2 total dispatch attempts regardless of the configured
+ceiling**, so a redelivery that could double an external side effect never
+spins at the configured limit; `ReadOnly` / `Idempotent` actions use the
+configured ceiling unchanged. A task failing at `attempt: 2` that you
+expected to retry longer likely hits this cap.
+
 Tuning:
 
 - Long agent maintenance window? Raise the attempt limit or set `0` (and
-  rely on the task lease to clean up genuinely dead tasks).
+  rely on the task lease to clean up genuinely dead tasks). For actions
+  under the conservative cap, raising the configured ceiling has no effect
+  — the cap is by design, not a knob.
 - Fast-fail environments (CI/tests)? Lower the limit and the delay — the
   E2E suite uses `3` attempts / `200ms`.
 

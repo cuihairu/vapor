@@ -444,8 +444,10 @@ Scaling considerations:
   control plane's task lease (`Vapor_TASK_LEASE_SECONDS`) expires and the
   task is requeued.
 - Undispatchable tasks (no capable agent) retry with a delay and fail
-  permanently after `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` attempts — see
-  [troubleshooting.md](troubleshooting.md) for tuning.
+  permanently after `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` attempts — with
+  `GuardedWrite` / `NonIdempotent` / unclassified actions capped at 2
+  attempts regardless of that setting (execution-safety classification,
+  round 50) — see [troubleshooting.md](troubleshooting.md) for tuning.
 
 ## Monitoring
 

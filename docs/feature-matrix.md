@@ -77,7 +77,7 @@
 
 | 能力 | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
-| 任务系统(派发/重试/终态/output) | ⚠️(命令+定时) | ➖ | ✅(任务链) | ➖ | ✅(job/task + 周期任务 cron/interval) |
+| 任务系统(派发/重试/终态/output) | ⚠️(命令+定时) | ➖ | ✅(任务链) | ➖ | ✅(job/task + 周期任务 cron/interval + 执行安全分类派发上限:GuardedWrite/NonIdempotent/未分类动作恒 cap 2,轮五十) |
 | 期望状态编排 / 节点丢失重平衡 | ❌ | ❌ | ❌ | ❌ | ✅(DesiredStateReconciler,**独有**) |
 | 事件通知(webhook 等) | ⚠️(Steam 消息) | ➖ | ✅ | ➖ | ✅(HMAC webhook + 规则过滤) |
 | 免费游戏提醒 + license 认领 | ✅(addlicense) | ➖ | ✅(提醒+自动认领) | ➖ | ✅(`add_license` + MarketWatch `kind=free` 边沿告警,提醒→认领闭环) |

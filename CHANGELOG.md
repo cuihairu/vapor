@@ -402,6 +402,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- Docs-vs-implementation reconciliation pass (round 51): a full sweep of
+  README and the docs site against the current code fixed eight stale or
+  missing claims — the action count is now stated as 57 everywhere
+  (README said "37+" twice) and the REST surface as "57 routes / 67
+  operations" (was "50 endpoints"); the landing page quotes the current
+  test count (3,517); `docs/plugins.md` documents the new
+  `ActionMetadata.Safety` field from round 50; and the dispatch-retry
+  guidance in `docs/running.md`, `docs/troubleshooting.md`,
+  `docs/production.md` and `docs/feature-matrix.md` now mentions the
+  per-class effective ceiling (unsafe/unclassified actions cap at 2 total
+  attempts regardless of the configured setting). Historical errata and
+  ledger notes are intentionally left untouched.
+
+
 - Account-safety operations guide (round 39): `docs/production.md` gains an
   "Account safety posture" section consolidating the ban-prevention
   features — per-account egress proxies (credential-not-setting, the

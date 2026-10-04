@@ -19,7 +19,7 @@ Instead of one all-in-one process per machine (the ASF model), Vapor splits into
 ## Highlights
 
 - **Session engine** — persistent Steam bot sessions with credential login + token refresh, SteamGuard / 2FA challenge handling, TOTP and QR-code login, and SDA/steamguard-cli `.maFile` import.
-- **37+ actions** — card farming, playtime boosting, trading (offers, loot, 1:1 duplicate swaps), market listings (read/create/cancel with fee-aware pricing), inventory & duplicates scanning, achievement management, key redemption, free-license claiming, points-shop claiming, proxy & account standing checks, and more. See the [actions catalog](docs/actions.md).
+- **57 actions** — card farming, playtime boosting, trading (offers, loot, 1:1 duplicate swaps), market listings (read/create/cancel with fee-aware pricing), inventory & duplicates scanning, achievement management, key redemption, free-license claiming, points-shop claiming, proxy & account standing checks, and more, each with an execution-safety classification. See the [actions catalog](docs/actions.md).
 - **Desired-state orchestration** — declare `online` / `idle` / `farm` / `boost` per account; the reconciler converges reality to the spec, rotates farming targets as card drops run out, reassigns accounts when an agent disappears. `GET /v1/orchestration/farm` shows the live farm loop.
 - **Safety by default** — market listing creation and cancels ship with `dry_run` defaults and per-account + per-agent double switches; trade auto-accept requires an explicit per-account policy with a partner whitelist and gifts-only mode; every decision lands in the audit log.
 - **Plugin platform** — ALC-isolated, hot-unloadable plugins with manifests, SemVer API compatibility, trust levels and permission grants, a runtime PluginStore (catalog → agent-targeted install), and six in-tree official plugins (MobileAuthenticator, Monitoring, MarketWatch, CaseOpening, GameData, GameAccess — the latter carrying the game-access action surface as a wire-compatible extraction from the host). See [plugin development](docs/plugins.md).
@@ -31,7 +31,7 @@ Instead of one all-in-one process per machine (the ASF model), Vapor splits into
 ```
                     ┌────────────────────────────────────────────┐
                     │               Control Plane                │
-   operators ──────▶│  REST /v1 (50 endpoints) · OpenAPI · SSE   │
+   operators ──────▶│  REST /v1 (57 routes / 67 ops) · OpenAPI·SSE│
    (curl / UI)      │  SQLite: jobs · accounts · audit · crawl   │
                     │  DesiredStateReconciler · schedulers       │
                     │  admin.html · dashboard.html · gamedata    │
@@ -40,7 +40,7 @@ Instead of one all-in-one process per machine (the ASF model), Vapor splits into
                     ┌───────────────┴──────────┐  ┌──────────────┐
                     │         Agent #1         │  │   Agent #N   │   ← one per region
                     │  session engine (bots)   │  │              │
-                    │  37+ actions · plugins   │  │   plugins    │
+                    │  57 actions · plugins   │  │   plugins    │
                     │  encrypted credentials   │  │              │
                     └───────────────┬──────────┘  └──────┬───────┘
                                     │                    │

@@ -180,7 +180,8 @@ public sealed class HelloAction : IAction
         Name: "hello",
         Description: "Greets the payload subject",
         RequiresLogin: false,        // set true only if you need a live session
-        TimeoutSeconds: 10);
+        TimeoutSeconds: 10)
+    { Safety = ActionSafety.ReadOnly }; // execution-safety class (see below)
 
     public Task<ActionResult> ExecuteAsync(
         BotSession session,
@@ -201,6 +202,19 @@ normalizes JSON-sourced values so `5`, `"5"` and `5.0` all work.
 
 `RequiresLogin: false` actions still receive a `session` argument; treat it as nullable
 and never assume an authenticated Steam client unless you require login.
+
+`Safety` (`Vapor.Protocol.ActionSafety`) classifies what re-execution does to the
+outside world, and the control plane bounds redispatch by it (see the
+[actions catalog](actions.md) "Execution safety" convention): `ReadOnly` (never
+mutates) and `Idempotent` (repeating converges to the same state) use the
+configured dispatch-attempt ceiling; `GuardedWrite` (mutating, but a bounded
+retry is safe) and `NonIdempotent` (repeating doubles the external side effect)
+cap at 2 total dispatch attempts. The property is optional and defaults to
+`Unknown`, which the scheduler treats conservatively (same cap as the unsafe
+classes) and the registry logs a warning for — always classify your actions.
+The default value is what keeps plugin assemblies built against older metadata
+binaries compatible; `Safety` is an init-only property, not a positional
+parameter.
 
 ### Commands (`ICommandPlugin`)
 
