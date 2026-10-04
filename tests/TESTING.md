@@ -438,7 +438,7 @@ reportgenerator -reports:**/TestResults/*/coverage.cobertura.xml -targetdir:./Te
 | Plugins.TestFixtures | 100.0%（故障 fixture 库，已由 TestFixturesTests 全覆盖） | 100.0% (6/6) |
 | Plugins.TestPlugin | 100.0%（示例插件，fixture 程序集） | 100.0% (4/4) |
 | Protocol | 100.0% | （无分支行） |
-| ControlPlane | 100.0%（含轮三十七一方 QR 编码器：自研子集全分支在测；含轮四十 standing 隔离门：两端点门控+分区纯函数+seam 全臂在测） | 100.0% (2645/2645) |
+| ControlPlane | 100.0%（含轮三十七一方 QR 编码器：自行开发子集全分支在测；含轮四十 standing 隔离门：两端点门控+分区纯函数+seam 全臂在测） | 100.0% (2645/2645) |
 | Steam.Core | 100.0%（取消臂经确定性测试收尾；TryAdd 竞态臂 2026-09-24 起由注入缝确定性测试覆盖，见下；轮四十一迁出游戏访问 14 动作） | 100.0% (2131/2131) |
 | MarketWatch | 100.0% | 100.0% (142/142) |
 | KeyRotation | 100.0%（CLI 壳全覆盖；`GetValue` 缺值臂 `Environment.Exit(2)` 由子进程测试覆盖——测试进程内直调会终止 testhost，故以 `dotnet` 子进程驱动该臂并断言退出码 2） | 100.0% (46/46) |

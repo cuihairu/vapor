@@ -5,21 +5,21 @@ The goal is to support large-scale, multi-account operations with multi-region d
 
 ## Goals
 
-- Provide **public Internet-facing HTTP API** for submitting and managing automation jobs.
-- Execute jobs in **regional agents** close to Steam/partners/users to reduce latency and handle geo-specific routing.
-- Support **high-volume batch operations** with reliable orchestration (idempotency, retries, partial success).
-- Keep **Steam session logic** isolated and reusable (ASF-style “Bot session” + “Actions”).
-- Offer **event streaming** for state changes and interactive auth challenges (SteamGuard/2FA).
+- Provide a public Internet-facing HTTP API for submitting and managing automation jobs.
+- Execute jobs in regional agents close to Steam/partners/users to reduce latency and handle geo-specific routing.
+- Support high-volume batch operations with reliable orchestration (idempotency, retries, partial success).
+- Keep Steam session logic isolated and reusable (ASF-style "Bot session" + "Actions").
+- Offer event streaming for state changes and interactive auth challenges (SteamGuard/2FA).
 - Be secure by default (strong authN/authZ, audit logs, secret handling).
 
-Implementation language: **C#/.NET** (to stay close to ASF patterns and ecosystem).
+Implementation language: C#/.NET (to stay close to ASF patterns and the SteamKit2 ecosystem).
 
 ## Non-goals
 
 - Replacing the official Steam client UI.
 - Circumventing Steam security controls or rate limits.
 - Anything that violates Steam ToS or applicable laws.
-- **Multi-tenancy in any form** (per-tenant auth, quotas, namespacing).
+- Multi-tenancy in any form (per-tenant auth, quotas, namespacing).
   Vapor is a single-operator self-hosted system by design: one admin key, a
   set of agent keys, no tenant concept anywhere in the data model. Requests
   to "open the API surface" to multiple tenants are rejected at design level,
@@ -27,11 +27,11 @@ Implementation language: **C#/.NET** (to stay close to ASF patterns and ecosyste
 
 ## ASF concepts we reuse
 
-- **Session = Bot**: one long-lived Steam account session with its own state machine (connect/login/refresh/retry).
-- **Actions layer**: all external operations are expressed as actions invoked on a session, enabling reuse from API, CLI, or jobs.
-- **API as a first-class interface**: typed endpoints + consistent responses + OpenAPI.
-- **Events**: stream logs/state transitions to clients (ASF uses WebSocket for logs; we extend that to job/session events).
-- **Extensibility**: a real plugin system in the agent — isolated (collectible ALC) loading with a manifest, SemVer API compatibility, trust/permission gating and capability interfaces for actions, commands, web routes and session events (see `docs/plugins.md`).
+- Session = Bot: one long-lived Steam account session with its own state machine (connect/login/refresh/retry).
+- Actions layer: all external operations are expressed as actions invoked on a session, enabling reuse from API, CLI, or jobs.
+- API as a first-class interface: typed endpoints + consistent responses + OpenAPI.
+- Events: stream logs/state transitions to clients (ASF uses WebSocket for logs; we extend that to job/session events).
+- Extensibility: a real plugin system in the agent — isolated (collectible ALC) loading with a manifest, SemVer API compatibility, trust/permission gating and capability interfaces for actions, commands, web routes and session events (see `docs/plugins.md`).
 
 ## High-level architecture
 
@@ -50,7 +50,7 @@ Public interfaces:
 
 ### Regional Agents (data plane)
 
-Agents run in each region and **initiate an outbound** persistent connection to the control plane (no public inbound ports required).
+Agents run in each region and initiate an outbound persistent connection to the control plane (no public inbound ports required).
 
 Responsibilities:
 - Maintain session engine: many concurrent Steam sessions.
@@ -134,13 +134,13 @@ Development / MVP:
 
 ### Event Streaming System
 
-Enhanced event broker with support for:
+The event broker streams two categories in real time:
 
-- **Session Events**: Real-time session state changes
+- Session events (state changes)
   - `GET /v1/sessions/events` - Subscribe to session events (SSE)
   - `POST /v1/sessions/events` - Agents publish session events
 
-- **Auth Challenge Events**: Real-time authentication challenge notifications
+- Auth challenge events (authentication challenge notifications)
   - `GET /v1/auth/challenges/events` - Subscribe to auth challenge events (SSE)
   - `POST /v1/auth/challenges/{accountName}/code` - Submit auth codes
 
@@ -167,7 +167,7 @@ are cooldown-limited (60s per account).
 
 ### Admin UI
 
-Modern web-based admin interface (`/admin.html`):
+Web-based admin interface (`/admin.html`):
 
 - Dashboard with statistics (total jobs, active jobs, agents, completed)
 - Create and manage jobs
@@ -205,12 +205,12 @@ service checks due templates every second and, per trigger point,
 atomically creates a regular child job (with tasks, `meta.scheduledFrom`
 = template id) and advances the template:
 
-- **missed=skip**: trigger points lost while the control plane was down
+- `missed=skip`: trigger points lost while the control plane was down
   are dropped; the template resumes at the next future point.
-  **missed=run_once**: the newest lost point fires one catch-up run
+  `missed=run_once`: the newest lost point fires one catch-up run
   (marked `meta.scheduledMissedCount`), guarding against storm catch-up.
-- **overlap=skip**: a trigger point is deferred while the previous run is
-  still queued or running; **overlap=allow** runs in parallel.
+- `overlap=skip`: a trigger point is deferred while the previous run is
+  still queued or running; `overlap=allow` runs in parallel.
 - Canceling the template (`POST /v1/jobs/{id}/cancel`) stops the
   recurrence. Crons that can never match again retire the template
   automatically.
@@ -379,14 +379,14 @@ meaning across a transport swap.
 
 All trade actions run through three enforcement layers before touching Steam:
 
-- **`TradeOfferStateMachine`** — legal transition checks: accept requires a
+- `TradeOfferStateMachine` — legal transition checks: accept requires a
   received, `Active`, unexpired offer whose sender matches the expected partner;
   decline only applies to received offers; cancel only to sent offers
   (including `CreatedNeedsConfirmation`).
-- **`TradeAssetValidator`** — ownership verification before sending: every asset
+- `TradeAssetValidator` — ownership verification before sending: every asset
   must exist in the sender's inventory, be tradable, be off trade cooldown, and
   be available in sufficient quantity (duplicate references are aggregated).
-- **`TradeRateLimiter`** — per-account sliding-window quota (default 5 ops / 5 min)
+- `TradeRateLimiter` — per-account sliding-window quota (default 5 ops / 5 min)
   plus a concurrency gate (default 1 concurrent op) to avoid Steam rate limiting.
 
 Validation is on by default; payloads may pass `skip_verification=true`
@@ -434,14 +434,14 @@ Agent enables it via `AddRedactingConsole()`.
 
 `SteamWebHandler` applies a unified middleware-style pipeline:
 
-- **Retry with differentiated backoff**: 429 responses honor the `Retry-After`
+- Retry with differentiated backoff: 429 responses honor the `Retry-After`
   header (capped by config); 5xx responses use exponential backoff. Both stay
   within the configured retry budget.
-- **Circuit breaker** (`HttpCircuitBreaker`): opens after N consecutive
+- Circuit breaker (`HttpCircuitBreaker`): opens after N consecutive
   failures, half-opens after a cool-down allowing a single probe, closes on
   probe success. Rejected requests throw `CircuitBreakerOpenException`
   without touching the network.
-- **Metrics** (`WebRequestMetrics`): totals, successes, 429/5xx/4xx splits,
+- Metrics (`WebRequestMetrics`): totals, successes, 429/5xx/4xx splits,
   network failures, retries and circuit-breaker rejections, exposed as an
   immutable snapshot for observability pipelines.
 

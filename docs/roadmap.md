@@ -1,6 +1,6 @@
 # Vapor Roadmap — Distributed-System Capability Map
 
-Vapor is positioned as an **API-driven distributed system**: a control plane that
+Vapor is positioned as an API-driven distributed system: a control plane that
 owns state and exposes a public REST/SSE surface, and a fleet of agents that
 execute jobs close to Steam's regional endpoints over an outbound tunnel. This
 map inventories the capabilities such a system needs, marks where Vapor stands
@@ -38,7 +38,7 @@ one.
 ## 2. Routing & load balancing — 🟡 (P2)
 
 **Status.** Job dispatch is region-scoped with capability matching and random
-agent pick; the desired-state reconciler selects the **least-loaded** capable
+agent pick; the desired-state reconciler selects the least-loaded capable
 agent (deterministic tie-break by agent id) under per-agent capacity caps;
 `agent:{id}` targets route directly (plugin ops, pinned accounts); agent loss
 triggers rebalancing of its accounts.
@@ -66,7 +66,7 @@ Layer-by-layer inventory:
 | CP → webhooks | bounded retries with exponential backoff, 10 s HTTP timeout, per-sink isolation | ✅ |
 | trade operations | per-account sliding-window quota + concurrency gate | ✅ |
 | crawl | per-run hard timeout, per-batch pacing | ✅ |
-| **CP inbound REST** | per-key rate limiting | ❌ → landed this round |
+| CP inbound REST | per-key rate limiting | ❌ → landed this round |
 
 **Why these two are P0.** The watchdog closes a real deadlock: a hung action
 held the agent's serial task loop forever while its heartbeat kept the CP lease
@@ -160,8 +160,8 @@ fleets.
 **Status.** Deterministic test seams throughout (`ProbeOverride`,
 `FetchOverride`, fake Redis, injectable clocks, happens-before gates in test
 fixtures); E2E drills including kill-the-agent rebalancing and
-dispatch-failure paths against stub and real processes. **Runtime fault
-injection API landed this round**: admin-only `/v1/faults` endpoints
+dispatch-failure paths against stub and real processes. Runtime fault
+injection API landed this round: admin-only `/v1/faults` endpoints
 (`FaultInjector`) arm error/delay injections on two planes — task dispatch
 (after claim, riding the real requeue/retry machinery) and `/v1` API requests
 (edge middleware; the fault endpoints, `/healthz` and `/metrics` stay exempt
@@ -191,9 +191,9 @@ full-replacement PUT store (single writer makes CAS unnecessary); task
 claiming is lease-based with at-least-once delivery, attempt-fenced reporting
 and one terminal record per task; agent session state syncs eventually into
 the CP `SessionTracker`; caches are stale-while-revalidate with single-flight
-dedup, cross-instance when Redis is enabled. **The full model — guarantees,
+dedup, cross-instance when Redis is enabled. The full model — guarantees,
 non-guarantees, failure/restart semantics — is documented in
-[`consistency.md`](consistency.md)** (landed this round, §3's per-action
+[`consistency.md`](consistency.md) (landed this round, §3's per-action
 timeout row completed in the same round).
 
 **Gaps.** Single-instance control plane: no HA, no horizontal write scaling,
@@ -209,40 +209,35 @@ deliberately sequenced behind the P0 hardening.
 
 ## Landed this round (P0)
 
-1. **Execution-timeout completeness** (§3): every in-tree action declares a
-   `TimeoutSeconds`, and the agent gained a task-level watchdog
-   (`AGENT_TASK_TIMEOUT_SECONDS`, default 900 s, `<= 0` disables) that cancels
-   the hung task, reports a structured failure to the control plane, and keeps
-   the loop serving the next task.
-2. **API-surface observability & protection** (§6 + §3): the control plane now
-   records RED metrics for every REST request (exposed on `/metrics`) and
-   supports per-key sliding-window rate limiting
-   (`Vapor_API_RATE_LIMIT_PER_MINUTE`, default off) returning `429` with
+1. Every in-tree action now declares a `TimeoutSeconds`, and the agent gained
+   a task-level watchdog (§3): `AGENT_TASK_TIMEOUT_SECONDS`, default 900 s,
+   `<= 0` disables — it cancels the hung task, reports a structured failure to
+   the control plane, and keeps the loop serving the next task.
+2. The control plane records RED metrics for every REST request on `/metrics`
+   and supports per-key sliding-window rate limiting (§6 + §3):
+   `Vapor_API_RATE_LIMIT_PER_MINUTE`, default off, returns `429` with
    `Retry-After` and a rejection counter.
-3. **Consistency model documentation** (§9, P1-to-document): the delivery and
-   consistency guarantees — at-least-once with attempt fencing, lease
-   reclaim, convergence semantics, failure/restart behavior — are now written
-   down in [`consistency.md`](consistency.md).
-4. **API key expiry** (§4, P1 residual): every configured API key accepts an
-   optional `@<ISO-8601>` expiry suffix; expired keys fail closed with the
-   same 401 as unknown keys (admin REST/SSE and the agent tunnel handshake
-   alike), giving single-operator key rotation a deadline instead of a
-   coordinated restart.
-5. **Fault-injection API** (§8, P2): admin-only `/v1/faults` endpoints arm
-   bounded error/delay drills on the task-dispatch and api-request planes
-   (budget + TTL self-healing, panic button, exempt control surface,
-   Prometheus counters and audit trail) — see §8 above.
-6. **Metric→trace exemplars** (§6, P2 residual): each
-   `vapor_controlplane_http_requests_total` sample carries the ambient W3C
-   trace id as a Prometheus text-format exemplar — drilled errors and
-   organic ones alike are one click from a concrete trace; tail-based
-   sampling documented as collector-side policy (§6).
-7. **Declared-state durability** (§9): account specs and settings are
-   write-through-persisted to SQLite (`SqliteConfigStore`,
-   `Vapor_CONFIG_DB_PATH`) and rehydrated at startup — the control plane's
-   last non-persisted state is gone, a restart no longer erases the farm
-   declaration, and the consistency.md claim that settings "survive CP
-   restart" became true of the code instead of aspirational.
+3. Delivery and consistency guarantees — at-least-once with attempt fencing,
+   lease reclaim, convergence semantics, failure/restart behavior — are
+   written down in [`consistency.md`](consistency.md) (§9).
+4. Every configured API key accepts an optional `@<ISO-8601>` expiry suffix
+   (§4): expired keys fail closed with the same 401 as unknown keys, on admin
+   REST/SSE and the agent tunnel handshake alike, which gives single-operator
+   key rotation a deadline instead of a coordinated restart.
+5. Admin-only `/v1/faults` endpoints arm bounded error/delay drills on the
+   task-dispatch and api-request planes (§8): budget + TTL self-healing, a
+   panic button, an exempt control surface, Prometheus counters and an audit
+   trail.
+6. Each `vapor_controlplane_http_requests_total` sample carries the ambient
+   W3C trace id as a Prometheus text-format exemplar (§6), so drilled errors
+   and organic ones alike are one click from a concrete trace; tail-based
+   sampling is documented as a collector-side policy.
+7. Account specs and settings are write-through-persisted to SQLite
+   (`SqliteConfigStore`, `Vapor_CONFIG_DB_PATH`) and rehydrated at startup
+   (§9): the control plane's last non-persisted state is gone, a restart no
+   longer erases the farm declaration, and the consistency.md claim that
+   settings "survive CP restart" became true of the code instead of
+   aspirational.
 
 ## Explicit non-goals (for now)
 

@@ -14,17 +14,19 @@
 
 API-controlled, headless Steam automation platform designed for large-scale batch operations and multi-region deployment.
 
-Instead of one all-in-one process per machine (the ASF model), Vapor splits into a **centralized control plane** — public REST API, SQLite-backed orchestration, audit logs, web consoles — and a fleet of **headless agents** that execute jobs over an outbound WebSocket tunnel, close to Steam's regional endpoints. One control plane can steer agents in every region; agents reach the control plane, never the other way around.
+The Steam protocol layer is built on [SteamKit2](https://github.com/SteamRE/SteamKit); the product shape reuses ASF's bot-session concepts in a control-plane / agent split instead of one process per machine. One control plane can steer agents in every region, close to Steam's regional endpoints. Agents reach the control plane, never the other way around.
 
 ## Highlights
 
-- **Session engine** — persistent Steam bot sessions with credential login + token refresh, SteamGuard / 2FA challenge handling, TOTP and QR-code login, and SDA/steamguard-cli `.maFile` import.
-- **57 actions** — card farming, playtime boosting, trading (offers, loot, 1:1 duplicate swaps), market listings (read/create/cancel with fee-aware pricing), inventory & duplicates scanning, achievement management, key redemption, free-license claiming, points-shop claiming, proxy & account standing checks, and more, each with an execution-safety classification. See the [actions catalog](docs/actions.md).
-- **Desired-state orchestration** — declare `online` / `idle` / `farm` / `boost` per account; the reconciler converges reality to the spec, rotates farming targets as card drops run out, reassigns accounts when an agent disappears. `GET /v1/orchestration/farm` shows the live farm loop.
-- **Safety by default** — market listing creation and cancels ship with `dry_run` defaults and per-account + per-agent double switches; trade auto-accept requires an explicit per-account policy with a partner whitelist and gifts-only mode; every decision lands in the audit log.
-- **Plugin platform** — ALC-isolated, hot-unloadable plugins with manifests, SemVer API compatibility, trust levels and permission grants, a runtime PluginStore (catalog → agent-targeted install), and six in-tree official plugins (MobileAuthenticator, Monitoring, MarketWatch, CaseOpening, GameData, GameAccess — the latter carrying the game-access action surface as a wire-compatible extraction from the host). See [plugin development](docs/plugins.md).
-- **Operations** — OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics + Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, structured logs with output-level redaction of credentials and codes.
-- **Security** — AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, audit log with redaction-at-rest, and a hard rule: Steam Guard codes and credentials never leave the agent (only a boolean crosses the wire).
+Each account runs as a persistent Steam bot session: credential login with token refresh, SteamGuard / 2FA challenges, TOTP and QR-code login, and `.maFile` import from SDA or steamguard-cli. On top of that sit 57 actions — card farming, playtime boosting, trade offers, market listings with fee-aware pricing, inventory and duplicate scanning, achievement management, key redemption, free-license and points-shop claims. Every action carries an execution-safety class, which is what lets the scheduler cap redispatch at 2 attempts for actions whose repetition can double an external side effect, while read-only and idempotent actions keep the configured ceiling. The [actions catalog](docs/actions.md) lists every payload field.
+
+Declarative orchestration: you state `online` / `idle` / `farm` / `boost` per account and the reconciler converges reality to that statement, rotating farming targets as card drops run out and reassigning accounts when an agent disappears. `GET /v1/orchestration/farm` shows the live loop.
+
+Risky surfaces ship disabled. Market listing creation and cancels default to `dry_run` and need both a per-account and a per-agent switch; trade auto-accept requires an explicit per-account policy with a partner whitelist and gifts-only mode. Every one of those decisions lands in the audit log.
+
+Plugins load into isolated AssemblyLoadContexts and unload without a restart. Manifests carry a SemVer API contract, a trust level and permission grants; the runtime PluginStore installs packages agent-targeted from a catalog. Six official plugins ship in-tree: Monitoring, MobileAuthenticator, MarketWatch, CaseOpening, GameData, GameAccess — the last carrying the game-access action surface as a wire-compatible extraction from the host. See [plugin development](docs/plugins.md).
+
+For operations: OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
 
 ## Architecture at a glance
 

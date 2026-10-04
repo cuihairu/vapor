@@ -52,7 +52,7 @@ hide:
 
 ## Why Vapor?
 
-Vapor reuses the proven ASF concepts — bot sessions, actions, farming — but re-shapes the delivery model: instead of one process per machine, Vapor splits into a **centralized control plane** (public API, SQLite-backed orchestration) and **headless regional agents** (WebSocket-connected executors). That makes it a fit for fleet-style, multi-region operation where ASF's single-box model stops scaling. A detailed comparison lives in the [feature matrix](feature-matrix.md).
+Vapor reuses the proven ASF concepts — bot sessions, actions, farming — but re-shapes the delivery model: instead of one process per machine, Vapor splits into a **centralized control plane** (public API, SQLite-backed orchestration) and **headless regional agents** (WebSocket-connected executors). That makes it a fit for fleet-style, multi-region operation where ASF's single-box model stops scaling. The Steam protocol layer itself is built on [SteamKit2](https://github.com/SteamRE/SteamKit). A detailed comparison lives in the [feature matrix](feature-matrix.md).
 
 ## Quick start
 

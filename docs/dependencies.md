@@ -2,8 +2,8 @@
 
 Vapor ships a headless automation runtime that talks to Steam over
 SteamKit2, stores everything in SQLite, and is hardened to an unusual
-degree for an alpha project: the build treats **every** analyzer warning
-and **every** NuGet audit advisory as an error, and CI refuses to merge a
+degree for an alpha project: the build treats every analyzer warning
+and every NuGet audit advisory as an error, and CI refuses to merge a
 drop below 100% line and branch coverage. Dependencies are the one input
 where that strictness can quietly rot, so this page states the rules
 explicitly and pins them mechanically.
@@ -27,8 +27,8 @@ together; the script is the referee, not the other way round.
 `NuGetAuditMode=all` widens the audit from direct references to the whole
 transitive closure, and `TreatWarningsAsErrors` promotes the resulting
 `NU1901`–`NU1904` advisories from warnings to build failures. Together
-they mean **a known-vulnerable package cannot be built, let alone
-shipped** — there is no "audit warning backlog" to work through later,
+they mean a known-vulnerable package cannot be built, let alone
+shipped — there is no "audit warning backlog" to work through later,
 because it never compiles.
 
 The baseline is zero advisories across every project, direct and

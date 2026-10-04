@@ -1,6 +1,6 @@
 # Releasing
 
-This repo uses **Semantic Versioning** with tags in the form `vX.Y.Z` (and optional prereleases like `vX.Y.Z-alpha.1`).
+This repo uses Semantic Versioning with tags in the form `vX.Y.Z` (and optional prereleases like `vX.Y.Z-alpha.1`).
 
 ## Checklist
 
