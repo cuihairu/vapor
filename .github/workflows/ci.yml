@@ -163,6 +163,13 @@ jobs:
     - name: Verify api.md endpoint inventory consistency
       run: python3 scripts/verify-api-docs.py
 
+    # Action execution-safety classification (P0-A, 维护轮五十): 源码注解 ⇄
+    # ActionSemantics 镜像表 ⇄ actions.md safety 列三元比对。镜像表漏一个
+    # 动作,调度器对它静默按 Unknown 收紧重试;目录写错一列,operator 看到
+    # 的就是错的分类——两者都不会让任何测试红,所以单独设门。
+    - name: Verify actions.md safety classification consistency
+      run: python3 scripts/verify-actions-safety.py
+
     # Auth declarations vs code: an endpoint without an inline/delegated
     # Auth check — or a doc Auth line that no longer matches — goes red here.
     # Missing auth is invisible to the coverage gate (no 401 branch to miss),

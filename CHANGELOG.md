@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Action execution-safety classification (round 50, P0-A of the V-next
+  convergence plan): every shipped action now declares an `ActionSafety`
+  class (`ReadOnly` / `Idempotent` / `GuardedWrite` / `NonIdempotent`) via a
+  new init-only `ActionMetadata.Safety` property (default `Unknown`, so
+  plugin assemblies built against the older metadata keep loading), and the
+  scheduler bounds redispatch by class: `NonIdempotent` actions (repeating
+  doubles the external side effect — e.g. `send_trade_offer`,
+  `create_market_listing`) and `GuardedWrite` actions (bounded retry is
+  safe — e.g. `redeem_key`, `accept_trade_offer`) cap dispatch attempts at
+  2 instead of the configured ceiling, unclassified third-party plugin
+  actions get the same conservative cap, while `ReadOnly`/`Idempotent`
+  actions keep the configured ceiling unchanged (a ceiling of 0 preserves
+  the "unlimited" semantics). All 57 in-tree actions are classified
+  (29 read-only, 11 idempotent, 12 guarded-write, 5 non-idempotent); the
+  agent-side annotations, the `ActionSemantics` control-plane mirror table
+  and the new `safety:` column in `docs/actions.md` are kept in agreement
+  by `scripts/verify-actions-safety.py` (CI-gated, negative-probed).
 - Game-economy inventory actions (round 42): two read-only actions joined the
   GameAccess plugin (now sixteen actions). `get_game_inventory` pages an
   app's inventory (CS2 730 / Dota 2 570 defaults) and folds it into
