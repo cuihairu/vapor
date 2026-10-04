@@ -72,6 +72,7 @@ nav:
       - Production deployment: production.md
   - Design:
       - Architecture: architecture.md
+      - Domain model: domain-model.md
       - Session engine: session-engine.md
       - Plugin development: plugins.md
       - Valve game plugins: game-plugins.md

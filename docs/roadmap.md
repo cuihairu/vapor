@@ -37,8 +37,8 @@ one.
 
 ## 2. Routing & load balancing — 🟡 (P2)
 
-**Status.** Job dispatch is region-scoped with capability matching and random
-agent pick; the desired-state reconciler selects the least-loaded capable
+**Status.** Job dispatch is region-scoped with capability matching and a
+deterministic agent pick (lowest `agentId`); the desired-state reconciler selects the least-loaded capable
 agent (deterministic tie-break by agent id) under per-agent capacity caps;
 `agent:{id}` targets route directly (plugin ops, pinned accounts); agent loss
 triggers rebalancing of its accounts.
