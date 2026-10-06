@@ -112,7 +112,8 @@ public static class PluginConfigurationExtensions
 			&& (!max.HasValue || parsed <= max.Value);
 	}
 
-	private static bool TryParseBool(string? value, out bool parsed)
+	/// <summary>Shared with <see cref="PluginConfigurationSchema"/> so validation and readers agree on accepted spellings.</summary>
+	internal static bool TryParseBool(string? value, out bool parsed)
 	{
 		switch (value?.Trim().ToLowerInvariant())
 		{

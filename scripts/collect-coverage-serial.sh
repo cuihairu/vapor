@@ -13,6 +13,22 @@
 #     testhost's hit buffer never reached the collector. Vapor.Agent.Tests
 #     passed 102/102 while its report recorded nothing (both probe reruns
 #     were healthy, so it is a race, not a deterministic flag effect).
+#   - partial report: non-empty, non-zero, but a subset of the module
+#     closure — seen 2026-10-05 on Vapor.Steam.Core.Tests (1461/4863 lines
+#     after 3 attempts, 90/2634 on the surviving one). Retry as-is.
+#
+# It also validates the INPUT: this script runs `dotnet test --no-build`, so
+# a stale Release DLL silently yields a report for the old source. The
+# explicit-build discipline (see tests/TESTING.md 2026-09-22, 2026-10-05) is
+# not enough on its own: `dotnet build Vapor.sln` uses incremental up-to-date
+# checks per project, and a *dependency* copy under a test project's bin/ can
+# stay older than the dependency's own bin output — observed 2026-10-05 with
+# Vapor.Plugins.Core.dll at 08:43 under tests/Vapor.Agent.Tests/bin while
+# src's copy was 11:37, and two divergent sizes of Vapor.Protocol.dll across
+# test project bins. Mixed line-number systems then merge into phantom
+# denominator lines (the same failure the header of coverage-gaps.py
+# describes). --no-incremental is what actually guarantees one line-number
+# system across every report this script merges.
 # A report is valid when it parses and shows at least one covered line;
 # corrupt ones are deleted so the gate never reads them.
 #

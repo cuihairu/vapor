@@ -48,6 +48,20 @@ public sealed record PluginManifest
 	public IReadOnlyDictionary<string, string>? Configuration { get; init; } =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+	/// <summary>
+	/// Optional per-key validation rules for <see cref="Configuration"/>. When present, the
+	/// loader validates the configuration against it before <c>InitializeAsync</c> and a
+	/// violation fails the load with a field-level error. Null when the manifest omits it.
+	/// </summary>
+	public IReadOnlyDictionary<string, PluginConfigRule>? ConfigurationSchema { get; init; }
+
+	/// <summary>
+	/// Optional plugin dependencies. When present, enablement builds a dependency graph:
+	/// missing dependencies, circular dependencies and apiVersion mismatches fail discovery,
+	/// and plugins load after their dependencies. Null when the manifest omits it.
+	/// </summary>
+	public IReadOnlyList<PluginDependency>? Dependencies { get; init; }
+
 	private static readonly JsonSerializerOptions SerializerOptions = new()
 	{
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -102,11 +116,132 @@ public sealed record PluginManifest
 		manifest = manifest with
 		{
 			Trust = NormalizeTrust(manifest.Trust, source),
-			Permissions = NormalizePermissions(manifest.Permissions, source)
+			Permissions = NormalizePermissions(manifest.Permissions, source),
+			ConfigurationSchema = NormalizeConfigurationSchema(manifest.ConfigurationSchema, source),
+			Dependencies = NormalizeDependencies(manifest.Dependencies, manifest.Id, source)
 		};
 
 		Validate(manifest, source);
 		return manifest;
+	}
+
+	private static IReadOnlyDictionary<string, PluginConfigRule>? NormalizeConfigurationSchema(
+		IReadOnlyDictionary<string, PluginConfigRule>? schema, string source)
+	{
+		if (schema is null || schema.Count == 0)
+		{
+			return null;
+		}
+
+		var normalized = new Dictionary<string, PluginConfigRule>(StringComparer.OrdinalIgnoreCase);
+		foreach (var (key, rule) in schema)
+		{
+			if (string.IsNullOrWhiteSpace(key))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema keys must not be empty");
+			}
+
+			if (rule is null)
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema['{key}'] must be an object");
+			}
+
+			var type = rule.Type?.Trim().ToLowerInvariant();
+			if (string.IsNullOrEmpty(type))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema['{key}'].type is required");
+			}
+
+			if (!PluginConfigurationSchema.AllowedTypes.Contains(type))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema['{key}'].type '{rule.Type}' is not one of: {string.Join(", ", PluginConfigurationSchema.AllowedTypes)}");
+			}
+
+			if ((rule.Min.HasValue || rule.Max.HasValue) && type is not ("int" or "decimal"))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema['{key}'] min/max are only valid for int/decimal rules");
+			}
+
+			if (rule.Min.HasValue && rule.Max.HasValue && rule.Min.Value > rule.Max.Value)
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema['{key}'] min {rule.Min.Value} must not exceed max {rule.Max.Value}");
+			}
+
+			if (rule.Enum is not null && type != "string")
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema['{key}'] enum is only valid for string rules");
+			}
+
+			if (rule.Enum is not null && rule.Enum.Any(string.IsNullOrWhiteSpace))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': configurationSchema['{key}'] enum values must not be empty");
+			}
+
+			normalized[key] = rule with
+			{
+				Type = type,
+				Enum = rule.Enum is null ? null : rule.Enum.Select(e => e.Trim()).ToArray()
+			};
+		}
+
+		return normalized;
+	}
+
+	private static IReadOnlyList<PluginDependency>? NormalizeDependencies(
+		IReadOnlyList<PluginDependency>? dependencies, string? manifestId, string source)
+	{
+		if (dependencies is null || dependencies.Count == 0)
+		{
+			return null;
+		}
+
+		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		var normalized = new List<PluginDependency>(dependencies.Count);
+		foreach (var dependency in dependencies)
+		{
+			if (dependency is null)
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': dependencies entries must be objects");
+			}
+
+			var pluginId = dependency.PluginId?.Trim();
+			if (string.IsNullOrEmpty(pluginId))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': dependencies[].pluginId is required");
+			}
+
+			if (!seen.Add(pluginId))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': duplicate dependency '{pluginId}'");
+			}
+
+			if (string.Equals(pluginId, manifestId?.Trim(), StringComparison.OrdinalIgnoreCase))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': dependency '{pluginId}' must not be the plugin itself");
+			}
+
+			if (dependency.ApiVersion is not null && !PluginApi.TryParseVersion(dependency.ApiVersion, out _))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': dependency '{pluginId}' apiVersion '{dependency.ApiVersion}' is not a valid SemVer version");
+			}
+
+			normalized.Add(dependency with { PluginId = pluginId });
+		}
+
+		return normalized;
 	}
 
 	private static string? NormalizeTrust(string? trust, string source)

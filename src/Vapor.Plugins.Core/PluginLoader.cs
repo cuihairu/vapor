@@ -46,11 +46,17 @@ internal static class PluginLoader
 			throw;
 		}
 
-		// Evaluate permissions before InitializeAsync so strict host policy rejects the
-		// plugin before any of its lifecycle code runs.
+		// Evaluate host policy before InitializeAsync so a strict permission policy or a
+		// configurationSchema violation rejects the plugin before any of its lifecycle
+		// code runs.
 		bool grantedActions, grantedCommands, grantedRoutes, grantedEvents;
 		try
 		{
+			PluginConfigurationSchema.Validate(
+				descriptor.Manifest.Configuration ?? EmptyConfiguration,
+				descriptor.Manifest.ConfigurationSchema,
+				info.Id);
+
 			(grantedActions, grantedCommands, grantedRoutes, grantedEvents) =
 				EvaluatePermissions(descriptor, instance, options, logger);
 		}

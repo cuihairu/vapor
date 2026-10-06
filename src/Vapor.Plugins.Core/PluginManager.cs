@@ -54,10 +54,12 @@ public sealed class PluginManager : IAsyncDisposable
 	{
 		var errors = new List<string>();
 		var descriptors = Discover(pluginsDirectory, errors);
+		var (ordered, dependencyFailures) = PluginDependencyGraph.Resolve(descriptors);
 		var loaded = new List<LoadedPlugin>();
 		var failures = new List<string>(errors);
+		failures.AddRange(dependencyFailures);
 
-		foreach (var descriptor in descriptors)
+		foreach (var descriptor in ordered)
 		{
 			cancellationToken.ThrowIfCancellationRequested();
 

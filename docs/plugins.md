@@ -97,6 +97,8 @@ plugin loads at startup.
 | `trust` | no | `unknown` (default), `community` or `official` — see [Trust and permissions](#trust-and-permissions) |
 | `permissions` | no | Array of `actions` / `commands` / `web` / `events` — see below |
 | `configuration` | no | Free-form string key/values handed to the plugin at initialization |
+| `configurationSchema` | no | Per-key validation rules for `configuration` — checked before `InitializeAsync`; see [Configuration](#configuration) |
+| `dependencies` | no | Other plugins this one needs, with an optional `apiVersion` constraint — resolved at enablement; see [Dependencies](#dependencies) |
 
 Manifests are parsed leniently (comments and trailing commas allowed) but validated
 strictly: an invalid `trust` value or an unknown permission name fails discovery for
@@ -106,19 +108,23 @@ that plugin and is reported as a load failure, never a silent skip.
 
 1. **Discovery** — the host scans `VAPOR_PLUGINS_DIR`, one subdirectory per plugin, and
    parses each `plugin.json`. Invalid manifests are reported and skipped.
-2. **Compatibility check** — `PluginApi.IsCompatible` verifies the major API version
+2. **Dependency resolution** — the declared `dependencies` graph is built over the
+   discovered plugins: missing or cyclic dependencies and unsatisfied `apiVersion`
+   constraints exclude the dependent with a failure message, and the survivors load in
+   dependency order (see [Dependencies](#dependencies)).
+3. **Compatibility check** — `PluginApi.IsCompatible` verifies the major API version
    matches the host and the plugin's minor version does not exceed the host's (a plugin
    built for API 1.2 runs on a 1.4 host but not the reverse). Prerelease/build metadata
    is ignored.
-3. **Trust gate** — the host's `PluginManagerOptions.MinimumTrust` is enforced *before
+4. **Trust gate** — the host's `PluginManagerOptions.MinimumTrust` is enforced *before
    any plugin code runs*.
-4. **Permission evaluation** — capabilities implemented without a declaration are
+5. **Permission evaluation** — capabilities implemented without a declaration are
    stripped (or rejected in strict policy) *before* `InitializeAsync`.
-5. **Isolated load** — the entry assembly loads into a collectible
+6. **Isolated load** — the entry assembly loads into a collectible
    `AssemblyLoadContext`; the plugin type is instantiated and `InitializeAsync` runs.
-6. **Contribution** — the host raises `PluginLoaded`; the agent registers the granted
+7. **Contribution** — the host raises `PluginLoaded`; the agent registers the granted
    actions and hooks granted event subscribers.
-7. **Shutdown/unload** — `PluginUnloading` fires first (the host removes contributions),
+8. **Shutdown/unload** — `PluginUnloading` fires first (the host removes contributions),
    then `ShutdownAsync` runs, then the load context is unloaded and collected.
 
 Initialization and shutdown failures are isolated: one broken plugin never prevents
@@ -292,6 +298,64 @@ var threshold = config.GetDecimal("alert.threshold", 10m, "VAPOR_ALERT_THRESHOLD
 
 Unparsable or out-of-range values fall back silently — validate anything critical at
 startup and log what you resolved.
+
+To turn those silent fallbacks into load-time errors, declare a `configurationSchema`
+in the manifest. Each entry describes one configuration key and is checked by the host
+**before `InitializeAsync`** — a violation fails the load with a field-level message
+naming every offending key:
+
+```json
+"configurationSchema": {
+  "metrics.port": { "type": "int", "min": 0, "max": 65535 },
+  "alert.threshold": { "type": "decimal", "min": 0.01 },
+  "metrics.mode": { "type": "string", "enum": ["push", "pull"] },
+  "metrics.token": { "type": "string", "required": true },
+  "metrics.verbose": { "type": "bool" }
+}
+```
+
+Rule fields: `type` (`string` / `int` / `bool` / `decimal`, required), `required`
+(default false), `min` / `max` (int/decimal rules only, inclusive), `enum` (string rules
+only, case-insensitive). Blank values count as absent (mirroring the readers'
+blank-means-fallback semantics), and keys present in `configuration` but missing from
+the schema are rejected — the schema is authoritative for the plugin version that
+shipped it, so a typo'd key fails the load instead of silently doing nothing. Env-var
+overrides are not schema-checked (they resolve through the readers' fallback). The
+Market Watch plugin carries a worked example.
+
+## Dependencies
+
+A manifest may declare an optional `dependencies` array. Each entry names another
+plugin's `id` and optionally constrains the `apiVersion` that plugin must declare:
+
+```json
+"dependencies": [
+  { "pluginId": "vapor.base" },
+  { "pluginId": "vapor.other", "apiVersion": "1.2" }
+]
+```
+
+At enablement the host builds a dependency graph over the discovered plugins:
+
+- **Missing or failed dependencies** — a `pluginId` that was never discovered, or whose
+  own load failed, excludes the dependent with a message naming the reason; the failure
+  cascades transitively (if A needs B and B fails, A is excluded too).
+- **`apiVersion` constraints** — checked with the host's own compatibility rule: the
+  provider's major version must match exactly and its minor must be at least the
+  requested one (a provider of 1.3 satisfies a constraint of 1.2). A provider that
+  declares an unparseable version, a wrong major, or too low a minor excludes the
+  dependent with a message saying which rule failed.
+- **Circular dependencies** — every member of a cycle (including a plugin depending on
+  itself) fails with a message listing the cycle's members; plugins that merely depend
+  on a cycle member fail with the normal "depends on failed" message instead.
+- **Load order** — survivors load after everything they depend on; plugins without
+  dependencies keep their discovery order.
+
+Entries must be unique (case-insensitive) and must not name the plugin itself;
+`apiVersion`, when present, must be a valid SemVer version — both are rejected at
+manifest parse time like any other manifest error. Graph failures are isolated like any
+other load failure: `PluginLoadReport.Failures` names each excluded plugin while the
+rest still load.
 
 ## Host services
 

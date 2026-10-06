@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Plugin dependency graph (round 54, P1-C C2 of the V-next convergence plan):
+  plugin manifests gain an optional `dependencies` array — entries of
+  `pluginId` plus an optional `apiVersion` constraint. At enablement the
+  host builds the graph over the discovered plugins: a missing dependency,
+  a dependency that itself failed, an unsatisfied `apiVersion` constraint
+  (provider major must match, provider minor must be at least the requested
+  one — the host's own compatibility rule), or a circular dependency
+  excludes the dependent with a structured failure message naming the
+  reason (cycles list their members), and the surviving plugins load in
+  dependency order while dependency-free plugins keep discovery order.
+  Failures isolate like any other load failure: `PluginLoadReport.Failures`
+  names each excluded plugin, the rest still load. `docs/plugins.md`
+  documents the field and the rules.
+- Plugin configuration schema (round 54, P1-C C1 of the V-next convergence plan):
+  plugin manifests gain an optional `configurationSchema` — per-key rules
+  (`type` of `string`/`int`/`bool`/`decimal`, `required`, inclusive `min`/`max`,
+  string `enum`) that the loader checks **before `InitializeAsync`**. A violation
+  fails the load with one field-level message naming every offending key, and keys
+  present in `configuration` but absent from the schema are rejected so typos fail
+  loudly instead of silently doing nothing. Plugins without a schema are unaffected
+  (validation is a no-op). The Market Watch plugin ships a worked example covering
+  its four configuration keys; `docs/plugins.md` documents the rule vocabulary.
 - Desired-state convergence surface (round 53, P0-C of the V-next convergence
   plan): the per-account view (`GET /v1/accounts/{name}`) now projects
   `observed` (the session's actual state) and `reason` (the reconciler's most

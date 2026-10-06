@@ -66,7 +66,9 @@ internal static class PluginStaging
 		IReadOnlyDictionary<string, string>? configuration = null,
 		string? entryType = null,
 		IReadOnlyList<string>? permissions = null,
-		string? trust = null)
+		string? trust = null,
+		IReadOnlyDictionary<string, Dictionary<string, object?>>? configurationSchema = null,
+		IReadOnlyList<IReadOnlyDictionary<string, string?>>? dependencies = null)
 	{
 		var pluginDir = Path.Combine(rootPath, pluginDirName);
 		Directory.CreateDirectory(pluginDir);
@@ -85,7 +87,9 @@ internal static class PluginStaging
 			// not care about permissions keep their capabilities.
 			["permissions"] = permissions ?? PluginPermissions.All,
 			["trust"] = trust,
-			["configuration"] = configuration
+			["configuration"] = configuration,
+			["configurationSchema"] = configurationSchema,
+			["dependencies"] = dependencies
 		};
 
 		File.WriteAllText(

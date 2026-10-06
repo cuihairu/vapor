@@ -41,6 +41,97 @@ public class PluginLoadTests : IDisposable
 	}
 
 	[Fact]
+	public async Task LoadAllAsync_SchemaViolation_FailsWithFieldMessage()
+	{
+		PluginStaging.StageTestPlugin(
+			_root,
+			pluginDirName: "schema-bad",
+			pluginId: "vapor.schema-bad",
+			configuration: new Dictionary<string, string> { ["retries"] = "many" },
+			configurationSchema: new Dictionary<string, Dictionary<string, object?>>
+			{
+				["retries"] = new() { ["type"] = "int", ["min"] = 0 }
+			});
+
+		await using var manager = PluginStaging.CreateManager();
+		var report = await manager.LoadAllAsync(_root);
+
+		var failure = Assert.Single(report.Failures);
+		Assert.Contains("vapor.schema-bad", failure);
+		Assert.Contains("field 'retries' value 'many' is not a valid int", failure);
+		Assert.Empty(report.Loaded);
+	}
+
+	[Fact]
+	public async Task LoadAllAsync_SchemaConformingConfiguration_Loads()
+	{
+		PluginStaging.StageTestPlugin(
+			_root,
+			pluginDirName: "schema-ok",
+			pluginId: "vapor.schema-ok",
+			configuration: new Dictionary<string, string> { ["retries"] = "3" },
+			configurationSchema: new Dictionary<string, Dictionary<string, object?>>
+			{
+				["retries"] = new() { ["type"] = "int", ["min"] = 0 }
+			});
+
+		await using var manager = PluginStaging.CreateManager();
+		var report = await manager.LoadAllAsync(_root);
+
+		Assert.Empty(report.Failures);
+		// LoadedPlugin.Info comes from the instance (TestPlugin hardcodes its own id), so
+		// the manifest-declared identity lives on the descriptor.
+		Assert.Equal("vapor.schema-ok", Assert.Single(report.Loaded).Descriptor.Manifest.Id);
+	}
+
+	[Fact]
+	public async Task LoadAllAsync_MissingDependency_FailsDependentOnly()
+	{
+		PluginStaging.StageTestPlugin(
+			_root,
+			pluginDirName: "a-dependent",
+			pluginId: "vapor.dependent",
+			dependencies: [new Dictionary<string, string?> { ["pluginId"] = "vapor.ghost" }]);
+		PluginStaging.StageTestPlugin(
+			_root,
+			pluginDirName: "b-independent",
+			pluginId: "vapor.independent");
+
+		await using var manager = PluginStaging.CreateManager();
+		var report = await manager.LoadAllAsync(_root);
+
+		var failure = Assert.Single(report.Failures);
+		Assert.Equal("Plugin 'vapor.dependent' depends on missing plugin 'vapor.ghost'", failure);
+		Assert.Equal(
+			"vapor.independent",
+			Assert.Single(report.Loaded).Descriptor.Manifest.Id);
+	}
+
+	[Fact]
+	public async Task LoadAllAsync_Dependency_LoadsDependencyFirst()
+	{
+		// Directory names sort the dependent before the dependency, so only the graph
+		// reordering can make the dependency load first.
+		PluginStaging.StageTestPlugin(
+			_root,
+			pluginDirName: "a-dependent",
+			pluginId: "vapor.dependent",
+			dependencies: [new Dictionary<string, string?> { ["pluginId"] = "vapor.base" }]);
+		PluginStaging.StageTestPlugin(
+			_root,
+			pluginDirName: "b-base",
+			pluginId: "vapor.base");
+
+		await using var manager = PluginStaging.CreateManager();
+		var report = await manager.LoadAllAsync(_root);
+
+		Assert.Empty(report.Failures);
+		Assert.Equal(
+			["vapor.base", "vapor.dependent"],
+			report.Loaded.Select(p => p.Descriptor.Manifest.Id).ToArray());
+	}
+
+	[Fact]
 	public async Task ContributedAction_Executes()
 	{
 		PluginStaging.StageTestPlugin(_root);

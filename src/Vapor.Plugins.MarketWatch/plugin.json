@@ -15,5 +15,11 @@
     "market.threshold_percent": "10",
     "market.country": "us",
     "market.webhook_url": ""
+  },
+  "configurationSchema": {
+    "market.check_interval_seconds": { "type": "int", "min": 10, "max": 86400 },
+    "market.threshold_percent": { "type": "decimal", "min": 0.01, "max": 10000 },
+    "market.country": { "type": "string" },
+    "market.webhook_url": { "type": "string" }
   }
 }
