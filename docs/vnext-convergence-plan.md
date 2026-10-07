@@ -112,7 +112,7 @@ V-next 的收敛方向因此定为：
 
 ### P1-D：FakeSteam 确定性测试后端
 
-**范围**：以 BotSession 状态机为边界（登录/断线重连/挑战/超时/错误/受限 六类场景），在 `SteamCallbackSimulator`（`tests/Vapor.Steam.Core.Tests/RealSteam/`）提供的模拟设施上建立可确定性回放的后端，**不依赖真实 Steam 网络**。
+**范围**：以 BotSession 状态机为边界（登录/断线重连/挑战/超时/错误/受限 六类场景），建立可确定性回放的后端，**不依赖真实 Steam 网络**。（40.7-1 audit 2026-10-07：`ISteamClientManager`/`ISteamTransport` seam 足以表达六场景，无需"模拟器扩展"缩小范围；原点名的 `SteamCallbackSimulator` 为零引用的 NotImplemented 存根，已删除；确定性后端落地为 `tests/Vapor.Steam.Core.Tests/FakeSteam/` 的 `FakeSteamClientManager` 脚本化传输双 + `BotSessionStateMachineTests` 六场景 11 测。）
 
 **边界**：第一周先做 BotSession/SteamClientManager 接口 audit——若传输层抽象不足以支撑确定性双，调整为"模拟器扩展"并知会用户缩小范围；**不做** 1000 账号/10000 任务量级压测（归 P3 容量画像）。
 

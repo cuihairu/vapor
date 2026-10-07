@@ -6,6 +6,9 @@ Steam Session Engine 的单元测试套件，使用 xUnit 和 Moq 框架。
 
 ```
 tests/Vapor.Steam.Core.Tests/
+├── FakeSteam/
+│   ├── FakeSteamClientManager.cs     # 脚本化传输双（登录/挑战/QR/connect 全编排 + 调用日志）
+│   └── BotSessionStateMachineTests.cs # 会话状态机六场景（登录/断线重连/挑战/超时/错误/受限）
 ├── Unit/
 │   ├── Actions/
 │   │   ├── PingActionTests.cs        # PingAction 测试 (15 个测试)
@@ -30,6 +33,10 @@ tests/Vapor.Steam.Core.Tests/
 - **LoginActionTests**: 测试登录动作，验证输出结构
 - **IdleActionTests**: 测试空闲动作，验证持续参数处理
 - 游戏访问类动作（redeem_key 等 14 个）的测试已随 GameAccess 插件拆分迁至 `tests/Vapor.Plugins.GameAccess.Tests`
+
+### FakeSteam 确定性测试后端
+- **FakeSteamClientManager**:实现 `ISteamClientManager` 传输 seam 的脚本化确定性双——登录结果队列（成功/邮件 Steam Guard/2FA/任意 EResult 失败）、connect 失败注入与挂起-放行、QR 挑战 URL 序列与批准结果、每账号 staged code/token 合并；调用日志（登录尝试、connect/disconnect 计数、token 暂存、代理暂存）供断言。全部行为在 arrange 段排定，不依赖时钟与真实 Steam 网络。
+- **BotSessionStateMachineTests**:在上述 fake 上跑会话状态机六场景——登录（含 QR 变体）、断线重连（断线终结命令循环，重连=会话重建 token 重登）、挑战（auth code/2FA 暂存后自动重试）、超时（挂起 connect 的调用方取消、action 超预算）、错误（登录/连接拒绝→FatalError）、受限（RateLimitExceeded 无类型化异常，与其它登录失败同归 FatalError）。
 
 ### 核心组件测试
 - **ActionRegistryTests**: 动作注册表测试，包括注册、查找、大小写不敏感等功能
