@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Read-only viewer key for the demo site (round 55): `Vapor_VIEWER_API_KEY`
+  is a dedicated read-only console credential. Safe-method requests
+  (GET/HEAD/OPTIONS) carrying it are upgraded to the admin identity at the
+  edge, so every read endpoint and both consoles accept it without threading
+  a second key through the route table; any write — and the agent tunnel —
+  still sees the raw viewer token and returns `401`. Fails closed when unset,
+  and a viewer key configured equal to the admin key is rejected outright.
+- Demo-site deployment pipeline (round 55): `docker-image.yml` builds and
+  pushes `ghcr.io/cuihairu/vapor-controlplane` / `vapor-agent` (multi-stage,
+  non-root Dockerfiles, linux/amd64) on every green `main` push;
+  `deploy-docker.yml` runs on the self-hosted `vapor-docker100` runner —
+  gate on ci + image for the exact SHA, pull → compose up → local + online
+  health checks (including the README demo-key contract) → seeded demo data
+  → screenshot artifact, with automatic rollback to the previous image tags
+  on failure. Live at <https://vapor.cuihairu.site/> behind the Cloudflare
+  tunnel; README gains the 演示站点 (live demo) and 预览 (preview) sections.
 - Plugin dependency graph (round 54, P1-C C2 of the V-next convergence plan):
   plugin manifests gain an optional `dependencies` array — entries of
   `pluginId` plus an optional `apiVersion` constraint. At enablement the

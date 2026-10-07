@@ -76,4 +76,53 @@ public sealed class AuthTests
 		Assert.False(Auth.TryAdmin(cfg, new StringValues("Bearer anything"), out string? token));
 		Assert.Equal("anything", token);
 	}
+
+	private static Config CreateViewerConfig(string? viewerKey = "viewer-key") =>
+		new("admin-key", new Dictionary<string, DateTimeOffset?> { ["agent-1"] = null }, ":memory:", 300, false, ":memory:", ViewerApiKey: viewerKey);
+
+	[Theory]
+	[InlineData("GET")]
+	[InlineData("HEAD")]
+	[InlineData("OPTIONS")]
+	public void TryViewer_WithViewerToken_OnSafeMethod_Succeeds(string method)
+	{
+		Assert.True(Auth.TryViewer(CreateViewerConfig(), new StringValues("Bearer viewer-key"), method));
+	}
+
+	[Theory]
+	[InlineData("POST")]
+	[InlineData("PUT")]
+	[InlineData("DELETE")]
+	public void TryViewer_WithViewerToken_OnUnsafeMethod_IsRejected(string method)
+	{
+		Assert.False(Auth.TryViewer(CreateViewerConfig(), new StringValues("Bearer viewer-key"), method));
+	}
+
+	[Fact]
+	public void TryViewer_WithoutConfiguredKey_FailsClosed()
+	{
+		// The null configured key fails closed before the header is even parsed.
+		Assert.False(Auth.TryViewer(CreateViewerConfig(viewerKey: null), new StringValues("Bearer viewer-key"), "GET"));
+	}
+
+	[Fact]
+	public void TryViewer_WhenViewerEqualsAdminKey_IsRejected()
+	{
+		// A demo key misconfigured equal to the admin key must not widen into admin.
+		var cfg = CreateViewerConfig(viewerKey: "admin-key");
+
+		Assert.False(Auth.TryViewer(cfg, new StringValues("Bearer admin-key"), "GET"));
+	}
+
+	[Fact]
+	public void TryViewer_MissingBearerScheme_IsRejected()
+	{
+		Assert.False(Auth.TryViewer(CreateViewerConfig(), new StringValues("viewer-key"), "GET"));
+	}
+
+	[Fact]
+	public void TryViewer_UnknownToken_IsRejected()
+	{
+		Assert.False(Auth.TryViewer(CreateViewerConfig(), new StringValues("Bearer other"), "GET"));
+	}
 }

@@ -38,7 +38,7 @@ Implementation language: C#/.NET (to stay close to ASF patterns and the SteamKit
 ### Control Plane (public API)
 
 Responsibilities:
-- Authentication/authorization (per-role API keys for admin and agents, per-key rate limiting, audit logging).
+- Authentication/authorization (per-role API keys for admin, agents, and an optional read-only viewer, per-key rate limiting, audit logging).
 - Persisted models: accounts (metadata), regions, agents, jobs, tasks, audit records.
 - Job orchestration: split jobs into tasks, route to regions/agents, retries, cancellation.
 - Event aggregation: expose job/session events to clients (SSE/WebSocket) and webhooks.
@@ -86,7 +86,9 @@ Interfaces:
 
 - Control plane API:
   - Per-role API keys for everything (admin key for the operator, agent keys
-    for the fleet) — both humans and automation use the same mechanism. No
+    for the fleet, an optional read-only viewer key for shared/demo console
+    access — enforced at the edge, safe methods only) — both humans and
+    automation use the same mechanism. No
     OIDC/RBAC: there is one operator, and adding an identity-federation
     layer would add a dependency without removing one.
   - Per-key rate limiting (opt-in) and audit logs — quotas are per key, not

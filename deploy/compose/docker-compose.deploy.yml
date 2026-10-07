@@ -1,0 +1,72 @@
+# Vapor 演示部署栈（docker compose，全部走 GHCR 预构建镜像，无本地构建）
+#
+# 用途：在部署机（自托管 runner 所在的 docker 主机）上起一套"活的"Vapor 演示
+# 环境 —— 控制面（REST + admin 控制台）+ 一个常驻 agent（经 WebSocket 隧道
+# 接入），供 https://vapor.cuihairu.site/ 的 Cloudflare 隧道回源。
+#
+# 与仓库根 docker-compose.yml 的区别：根目录那份是"开发者一条命令起后端"
+# （本地 build、dev 令牌），本文件是"CI 拉镜像直接部"（部署机不需要 .NET
+# 工具链；密钥由 deploy-docker.yml 首次部署时生成进 .env，永不进版本库）。
+#
+# 用法（在部署目录执行，deploy_dir 内只有本文件与 .env）：
+#   docker compose --env-file .env -f docker-compose.yml pull
+#   docker compose --env-file .env -f docker-compose.yml up -d
+#
+# 端口：VAPOR_CONTROLPLANE_PORT（缺省 8085）是唯一的公网回源口——Cloudflare
+# 隧道 ingress 已把 vapor.cuihairu.site 指到部署机的这个端口；agent 的
+# metrics 口只服务演示栈内部，不发布到宿主机。
+#
+# 只读演示密钥：Vapor_VIEWER_API_KEY 与 README「演示站点」一节一致（GET/HEAD
+# 之外一律 401），管理员密钥只活在部署机 .env，绝不进版本库。
+
+name: vapor-demo
+
+services:
+  controlplane:
+    image: ghcr.io/${GHCR_OWNER:-cuihairu}/vapor-controlplane:${CONTROLPLANE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${VAPOR_CONTROLPLANE_PORT:-8085}:8080"
+    environment:
+      Vapor_ADMIN_API_KEY: "${Vapor_ADMIN_API_KEY:?set in .env}"
+      Vapor_AGENT_API_KEYS: "${Vapor_AGENT_API_KEYS:?set in .env}"
+      Vapor_VIEWER_API_KEY: "${Vapor_VIEWER_API_KEY:-}"
+      Vapor_DB_PATH: /app/data/controlplane.db
+      Vapor_AUDIT_DB_PATH: /app/data/audit.db
+      Vapor_CONFIG_DB_PATH: /app/data/config.db
+    volumes:
+      - controlplane-data:/app/data
+    healthcheck:
+      # Bash /dev/tcp works without curl/wget in the runtime image.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080; printf \"GET /healthz HTTP/1.0\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  agent:
+    image: ghcr.io/${GHCR_OWNER:-cuihairu}/vapor-agent:${AGENT_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      AGENT_ID: agent-1
+      AGENT_REGION: demo-west
+      AGENT_CONTROLPLANE_WS_URL: ws://controlplane:8080/v1/agent/ws
+      AGENT_API_KEY: "${Vapor_AGENT_API_KEYS:?set in .env}"
+      VAPOR_PLUGINS_DIR: /app/plugins
+      VAPOR_METRICS_HOST: 0.0.0.0
+      VAPOR_METRICS_PORT: "9700"
+    volumes:
+      - agent-data:/app/.vapor
+    depends_on:
+      controlplane:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/9700; printf \"GET /metrics HTTP/1.0\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  controlplane-data:
+  agent-data:

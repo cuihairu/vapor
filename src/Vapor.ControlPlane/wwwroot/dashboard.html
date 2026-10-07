@@ -1268,7 +1268,13 @@
                 }
                 source.addEventListener(eventName, (event) => {
                     try {
-                        const payload = event.data ? JSON.parse(event.data) : {};
+                        const parsed = event.data ? JSON.parse(event.data) : {};
+                        // Broker envelope {id, jobId, type, ts, payload} on the jobs
+                        // stream — unwrap so handlers see the payload fields; session
+                        // and auth streams have no payload property and pass through.
+                        const payload = parsed && typeof parsed === "object" && parsed.payload !== undefined && parsed.payload !== null
+                            ? parsed.payload
+                            : parsed;
                         handler(payload);
                     } catch (error) {
                         console.error(`stream handler failed for ${eventName}`, error);

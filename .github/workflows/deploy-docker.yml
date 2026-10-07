@@ -1,0 +1,378 @@
+# 部署到自托管 docker 主机（vapor.cuihairu.site 演示环境）
+#
+# 与 docker-image.yml 的分工：那个工作流在 GitHub 托管 runner 上构建并推
+# GHCR，这个工作流只做"拉镜像 → 起栈 → 播种 → 验活 → 失败回滚"，跑在部署机
+# 自己的 runner 上（标签 vapor-docker100，与其它仓库的 runner 隔离，互不排队）。
+#
+# 部署机不需要源码工具链：compose 文件由本工作流同步过去，镜像全部来自
+# GHCR。部署幂等（同 tag 重复 up -d 无副作用）；演示数据随每次部署重置
+# （down -v 后重新播种，面板状态可复现）。
+#
+# 门禁与保障：
+#   - 绿才部署：先等 ci.yml 与 docker-image.yml 对本次提交跑完且成功
+#     （失败/超时即中止，不碰部署机）；
+#   - 验活两层：部署机本机 127.0.0.1 端口 + 线上 https://vapor.cuihairu.site/；
+#     README「演示站点」密钥在验活里实测（无钥 401 / 只读 GET 200 / 写 401）；
+#   - 失败自动回滚：把 .env 滚回上一组镜像标签重新 up 并验活，再报失败
+#     （首次部署没有上一组标签，只报错）；
+#   - 部署记录：job summary 回传 run 链接、提交、容器状态与线上验证截图
+#     （artifact: deploy-screenshot）。
+#
+# 手动触发（tag 缺省 latest = main 最新滚动）：
+#   gh workflow run deploy-docker.yml
+#   gh workflow run deploy-docker.yml -f tag=<短SHA> -f deploy_dir=/data/deploy/vapor
+name: Deploy Docker
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "镜像标签（controlplane 与 agent 共用；缺省 latest）"
+        required: false
+        default: "latest"
+      deploy_dir:
+        description: "部署机上的部署目录（compose 文件与 .env 落在这里）"
+        required: false
+        default: "/data/deploy/vapor"
+
+permissions:
+  contents: read
+  packages: read
+  actions: read      # 门禁要读 ci / docker-image 的运行结论
+
+# 同时只允许一个部署在跑：并发 up -d 会互相 --remove-orphans。
+concurrency:
+  group: deploy-docker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, vapor-docker100]
+    # job 级超时必须大于门禁（105m）+ 部署与验活（约 20m）：
+    # 门禁没跑完整个 job 就会被强杀（atlas 同款教训）。
+    timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      # 只读演示密钥，与 README「演示站点」一节一致（GET/HEAD 之外一律 401）；
+      # 只在部署机首次生成 .env 时使用一次，已有的 .env 不覆盖。
+      DEMO_KEY: demo-899d0e86ad4d1c524da9c47a9d0f160e
+    steps:
+      - name: Checkout
+        timeout-minutes: 3
+        uses: actions/checkout@v4
+
+      # ── 门禁：主分支绿才部署 ─────────────────────────────────────
+      # 等两条 workflow 对本次提交跑完：ci（测试）与 docker-image（镜像已推）。
+      # 还在排队/进行中就轮询；失败或超时直接中止，不碰部署机。
+      # 轮询预算取 100 分钟：docker-image 出两个镜像（.NET 构建）实测十余分钟，
+      # ci 的覆盖率串行轮约 10 分钟。
+      - name: Gate — main green (ci + image)
+        timeout-minutes: 105
+        run: |
+          set -euo pipefail
+          wait_green() {
+            wf="$1"
+            for _ in $(seq 1 300); do
+              # 这个端点返回的是带缩进的 JSON（"status": "x" 带空格），
+              # 先压成单行再抠字段，否则紧凑模式的 grep 永远不匹配。
+              err=/tmp/gate-err.$$
+              resp="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/$REPO/actions/workflows/$wf/runs?head_sha=$SHA&per_page=1" 2>"$err" || true)"
+              flat="$(printf '%s' "$resp" | tr -d ' \n')"
+              status="$(printf '%s' "$flat" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+              concl="$(printf '%s' "$flat" | grep -o '"conclusion":"[^"]*"' | head -1 | cut -d'"' -f4 || true)"
+              run_url="$(printf '%s' "$flat" | grep -o '"html_url":"[^"]*actions/runs/[0-9]*"' | head -1 | cut -d'"' -f4 || true)"
+              if [ -z "$status" ]; then
+                echo "$wf: no run for $SHA yet (api: $(tr -d '\n' < "$err" | head -c 200)), retrying..."
+              elif [ "$status" = "completed" ]; then
+                if [ "$concl" = "success" ]; then
+                  echo "$wf green — $run_url"
+                  return 0
+                fi
+                echo "$wf $concl — $run_url" >&2
+                return 1
+              else
+                echo "$wf $status — $run_url"
+              fi
+              sleep 20
+            done
+            echo "$wf: still not completed after 100m" >&2
+            return 1
+          }
+          wait_green ci.yml
+          wait_green docker-image.yml
+
+      - name: Login GHCR
+        timeout-minutes: 3
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 部署目录与 .env（记录上一组标签，供失败回滚） ─────────────
+      - name: Prepare deploy directory
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          # runner 可能以 root 跑（部署机上常常没装 sudo）：按可用性取提权前缀
+          sudo_cmd=""
+          if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+            sudo_cmd="sudo"
+          fi
+          $sudo_cmd mkdir -p "$deploy_dir"
+          $sudo_cmd chown "$(id -u):$(id -g)" "$deploy_dir"
+          # compose 随部署走；版本跟着 checkout 的这次提交
+          cp deploy/compose/docker-compose.deploy.yml "$deploy_dir/docker-compose.yml"
+          # 回滚目标 = 这次部署前 .env 里的标签（首次部署为空 = 无处可回，
+          # 失败时只报错不回滚）
+          prev_cp=""
+          prev_agent=""
+          if [ -f "$deploy_dir/.env" ]; then
+            prev_cp="$(grep '^CONTROLPLANE_TAG=' "$deploy_dir/.env" | tail -1 | cut -d= -f2- || true)"
+            prev_agent="$(grep '^AGENT_TAG=' "$deploy_dir/.env" | tail -1 | cut -d= -f2- || true)"
+          fi
+          echo "PREV_CONTROLPLANE_TAG=$prev_cp" >> "$GITHUB_ENV"
+          echo "PREV_AGENT_TAG=$prev_agent" >> "$GITHUB_ENV"
+          # 只留本次部署要用的变量（口令不进版本库，从宿主机既有 .env 继承）
+          if [ ! -f "$deploy_dir/.env" ]; then
+            admin_key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+            agent_key="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+            cat > "$deploy_dir/.env" <<EOF
+          CONTROLPLANE_TAG=${{ inputs.tag }}
+          AGENT_TAG=${{ inputs.tag }}
+          GHCR_OWNER=${{ github.repository_owner }}
+          VAPOR_CONTROLPLANE_PORT=8085
+          Vapor_ADMIN_API_KEY=$admin_key
+          Vapor_AGENT_API_KEYS=$agent_key
+          Vapor_VIEWER_API_KEY=$DEMO_KEY
+          EOF
+            echo "generated admin/agent API keys (stored in .env only)"
+          else
+            # 已有 .env（密钥沿用上次）：只滚动镜像标签
+            # （GHCR_OWNER 一并先删再写，否则每次部署都追加一行）
+            sed -i '/^CONTROLPLANE_TAG=/d;/^AGENT_TAG=/d;/^GHCR_OWNER=/d' "$deploy_dir/.env"
+            printf 'CONTROLPLANE_TAG=%s\nAGENT_TAG=%s\nGHCR_OWNER=%s\n' \
+              "${{ inputs.tag }}" "${{ inputs.tag }}" "${{ github.repository_owner }}" >> "$deploy_dir/.env"
+          fi
+          echo "--- deploy_dir/$deploy_dir ---"
+          cat "$deploy_dir/.env" | sed -e 's/^Vapor_ADMIN_API_KEY=.*/Vapor_ADMIN_API_KEY=<redacted>/' -e 's/^Vapor_AGENT_API_KEYS=.*/Vapor_AGENT_API_KEYS=<redacted>/'
+
+      - name: Pull images
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" pull
+
+      # 演示数据随每次部署重置（down -v 清卷后重新播种，面板状态可复现）。
+      - name: Deploy containers
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" \
+            down --remove-orphans --volumes || true
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" \
+            up -d --remove-orphans
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps
+
+      # ── 验活第 1 层：部署机本机端口 ─────────────────────────────
+      # 端到端探测：控制面健康 → agent 经隧道注册 → README 演示密钥三态
+      # （无钥 401 / 只读 GET 200 / 写 401）→ 播种演示数据 → 任务真实跑完。
+      - name: Wait for health (local)
+        timeout-minutes: 8
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          read_port() { grep -E "^$1=" "$deploy_dir/.env" | tail -1 | cut -d= -f2; }
+          port="$(read_port VAPOR_CONTROLPLANE_PORT)"
+          port="${port:-8085}"
+          base="http://127.0.0.1:$port"
+          admin_key="$(grep '^Vapor_ADMIN_API_KEY=' "$deploy_dir/.env" | tail -1 | cut -d= -f2-)"
+          demo_key="$DEMO_KEY"
+          echo "waiting for controlplane on :$port ..."
+          for i in $(seq 1 30); do
+            if curl -fsS "$base/healthz" >/dev/null 2>&1; then
+              echo "controlplane healthy after ${i}0s"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "controlplane did not become healthy" >&2
+              docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" logs --tail 80
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "--- agent registration (tunnel) ---"
+          for i in $(seq 1 24); do
+            body="$(curl -fsS -H "Authorization: Bearer $admin_key" "$base/v1/agents" || true)"
+            if printf '%s' "$body" | grep -q '"agent-1"'; then
+              echo "demo agent online (after ${i}0s): $(printf '%s' "$body" | head -c 300)"
+              break
+            fi
+            if [ "$i" = "24" ]; then
+              echo "demo agent never registered" >&2
+              docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" logs --tail 80 agent
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "--- demo key contract (README 演示站点) ---"
+          code="$(curl -sS -o /dev/null -w '%{http_code}' "$base/v1/accounts" || true)"
+          if [ "$code" != "401" ]; then
+            echo "auth: expected 401 without key, got $code" >&2
+            exit 1
+          fi
+          echo "no-key → 401 ✓"
+          curl -fsS -H "Authorization: Bearer $demo_key" "$base/v1/accounts" > /dev/null
+          echo "demo key GET → 200 ✓"
+          code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$base/v1/jobs" \
+            -H "Authorization: Bearer $demo_key" -H 'Content-Type: application/json' \
+            -d '{"action":"ping","region":"demo-west","targets":["demo-alpha"]}' || true)"
+          if [ "$code" != "401" ]; then
+            echo "auth: demo key write expected 401, got $code" >&2
+            exit 1
+          fi
+          echo "demo key POST → 401 (read-only enforced) ✓"
+
+      - name: Seed demo data
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          read_port() { grep -E "^$1=" "$deploy_dir/.env" | tail -1 | cut -d= -f2; }
+          port="$(read_port VAPOR_CONTROLPLANE_PORT)"
+          port="${port:-8085}"
+          BASE_URL="http://127.0.0.1:$port" \
+          ADMIN_KEY="$(grep '^Vapor_ADMIN_API_KEY=' "$deploy_dir/.env" | tail -1 | cut -d= -f2-)" \
+            bash deploy/seed-demo.sh
+          # seed 脚本自身会等 ≥3 个任务到达终态（沙箱无凭据，failed 即预期），
+          # 到不了终态会非零退出 —— 派发管道断了就必须判部署失败。
+
+      # ── 验活第 2 层：线上域名（Cloudflare 隧道） ──────────────────
+      - name: Verify online (https://vapor.cuihairu.site)
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          echo "--- homepage ---"
+          curl -fsS --retry 8 --retry-delay 3 --retry-all-errors -o /dev/null \
+            -w 'HTTP %{http_code} in %{time_total}s\n' https://vapor.cuihairu.site/
+          echo "--- healthz through the tunnel ---"
+          curl -fsS --retry 8 --retry-delay 3 --retry-all-errors https://vapor.cuihairu.site/healthz
+          echo
+          echo "--- demo key through the public origin (read-only contract) ---"
+          code="$(curl -sS -o /dev/null -w '%{http_code}' https://vapor.cuihairu.site/v1/accounts || true)"
+          if [ "$code" != "401" ]; then
+            echo "public no-key expected 401, got $code" >&2
+            exit 1
+          fi
+          curl -fsS --retry 5 --retry-delay 3 --retry-all-errors \
+            -H "Authorization: Bearer $DEMO_KEY" https://vapor.cuihairu.site/v1/accounts > /dev/null
+          echo "demo key GET via tunnel → 200 ✓"
+
+      # ── 部署记录：线上验证截图 ───────────────────────────────────
+      # 部署机不一定有浏览器，用 chromium 容器截图（随后上传为 artifact）。
+      - name: Screenshot the live site
+        timeout-minutes: 5
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          mkdir -p "$deploy_dir/records"
+          # 容器内 chromium 以非 root 用户（uid 1000）跑：runner 以 root 建出的
+          # 目录默认 755，容器不可写——必须放开写权限，全新部署目录才有落盘位置
+          chmod 777 "$deploy_dir/records"
+          code="$(curl -fsS --retry 3 --retry-delay 2 -o /dev/null -w '%{http_code}' https://vapor.cuihairu.site/ || true)"
+          echo "online health code: $code"
+          for i in 1 2 3; do
+            if docker run --rm -v "$deploy_dir/records":/shots \
+              zenika/alpine-chrome \
+              --headless --no-sandbox --disable-gpu --disable-dev-shm-usage \
+              --hide-scrollbars --window-size=1440,2000 \
+              --virtual-time-budget=10000 \
+              --screenshot=/shots/deploy-online.png \
+              https://vapor.cuihairu.site/ ; then
+              ls -la "$deploy_dir/records/deploy-online.png"
+              exit 0
+            fi
+            echo "screenshot attempt $i failed; retrying in 10s"
+            sleep 10
+          done
+          echo "screenshot failed after 3 attempts" >&2
+          # 不 exit 1，让部署继续；结果可能为空或旧截图，由后续 Upload 步骤决定是否有文件
+
+      - name: Upload screenshot
+        if: always()
+        timeout-minutes: 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-screenshot
+          path: ${{ inputs.deploy_dir }}/records/deploy-online.png
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # ── 失败自动回滚：滚回上一组镜像标签重新 up 并验活 ────────────
+      - name: Rollback to previous images
+        if: failure()
+        timeout-minutes: 10
+        run: |
+          set -uo pipefail
+          deploy_dir="${{ inputs.deploy_dir }}"
+          if [ -z "${PREV_CONTROLPLANE_TAG:-}" ] && [ -z "${PREV_AGENT_TAG:-}" ]; then
+            echo "首次部署失败，没有上一组镜像可回滚——保持现状并报告失败。"
+            exit 1
+          fi
+          echo "回滚：controlplane=${PREV_CONTROLPLANE_TAG:-<none>} agent=${PREV_AGENT_TAG:-<none>}"
+          sed -i '/^CONTROLPLANE_TAG=/d;/^AGENT_TAG=/d' "$deploy_dir/.env"
+          printf 'CONTROLPLANE_TAG=%s\nAGENT_TAG=%s\n' \
+            "${PREV_CONTROLPLANE_TAG:-latest}" "${PREV_AGENT_TAG:-${PREV_CONTROLPLANE_TAG:-latest}}" >> "$deploy_dir/.env"
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" pull || true
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" up -d --remove-orphans || true
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps || true
+          read_port() { grep -E "^$1=" "$deploy_dir/.env" | tail -1 | cut -d= -f2; }
+          port="$(read_port VAPOR_CONTROLPLANE_PORT)"
+          port="${port:-8085}"
+          rolled=0
+          for i in $(seq 1 20); do
+            if curl -fsS "http://127.0.0.1:$port/healthz" >/dev/null 2>&1; then
+              echo "回滚完成，旧版本在 :$port 恢复健康（部署仍按失败报告）。"
+              rolled=1
+              break
+            fi
+            sleep 6
+          done
+          if [ "$rolled" = "1" ]; then
+            # 回滚成功：保持 job 为失败状态（部署本身已失败），但本步骤不再额外 exit 1
+            echo "Rollback verified successful — deployment remains failed, rollback step exits 0."
+            exit 0
+          fi
+          echo "回滚后仍未通过健康检查——需要人工介入。" >&2
+          docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" logs --tail 80 || true
+          exit 1
+
+      - name: Deploy summary
+        if: always()
+        timeout-minutes: 3
+        run: |
+          deploy_dir="${{ inputs.deploy_dir }}"
+          read_port() { grep -E "^$1=" "$deploy_dir/.env" | tail -1 | cut -d= -f2; }
+          port="$(read_port VAPOR_CONTROLPLANE_PORT)"
+          port="${port:-8085}"
+          {
+            echo "### Vapor 部署记录"
+            echo
+            echo "- 部署 run：<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>"
+            echo "- 提交：\`${{ github.sha }}\`"
+            echo "- 镜像标签：\`${{ inputs.tag }}\`（回滚目标：\`${PREV_CONTROLPLANE_TAG:-首次部署}\`）"
+            echo "- 部署目录：\`$deploy_dir\`"
+            echo "- 站点：<https://vapor.cuihairu.site/>（线上验证截图见 artifact \`deploy-screenshot\`）"
+            echo "- 结论：${{ job.status }}"
+            echo
+            echo '```'
+            docker compose --env-file "$deploy_dir/.env" -f "$deploy_dir/docker-compose.yml" ps --format '{{.Name}}\t{{.Image}}\t{{.Status}}' 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

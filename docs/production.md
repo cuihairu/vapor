@@ -34,6 +34,7 @@ are in [docker.md](docker.md).
 |----------|----------|---------|-------|
 | `Vapor_ADMIN_API_KEY` | yes | — | Bearer key for admin REST/SSE endpoints; optional `@<ISO-8601>` expiry suffix (see § Secrets) |
 | `Vapor_AGENT_API_KEYS` | yes | — | Comma-separated keys the agent tunnel accepts; each key may carry an `@<ISO-8601>` expiry suffix |
+| `Vapor_VIEWER_API_KEY` | no | — | Read-only console key: accepted on GET/HEAD/OPTIONS like the admin key; every write (and the agent tunnel) still returns `401`. Must differ from the admin key; no expiry suffix — rotate by redeploying |
 | `Vapor_DB_PATH` | no | `data/controlplane.db` | Main store; volume-mounted in compose |
 | `Vapor_AUDIT_DB_PATH` | no | (derived) | Audit log store |
 | `Vapor_TASK_LEASE_SECONDS` | no | `300` | Running tasks whose heartbeat stops for this long are requeued |

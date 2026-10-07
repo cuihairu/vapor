@@ -231,6 +231,23 @@ app.Use(async (ctx, next) =>
 	}
 });
 
+// Read-only viewer access (demo / shared console credential): a request
+// carrying the viewer key on a safe method is transparently upgraded to the
+// admin identity before the endpoint's own auth check runs, so every GET
+// endpoint accepts it without threading a second key through ~80 call sites.
+// Unsafe methods and the agent tunnel still see the raw viewer token and
+// reject it — the viewer key can never create, mutate, or dispatch anything.
+// With no viewer key configured the guard fails closed and this is a no-op.
+app.Use(async (ctx, next) =>
+{
+	if (Auth.TryViewer(cfg, GetAuthorization(ctx), ctx.Request.Method))
+	{
+		ctx.Request.Headers.Authorization = $"Bearer {cfg.AdminApiKey}";
+	}
+
+	await next();
+});
+
 app.MapGet("/healthz", () => Results.Json(new { ok = true }))
 	.WithTags("System")
 	.WithSummary("Liveness probe (public, unauthenticated)")

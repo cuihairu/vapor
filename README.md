@@ -50,6 +50,32 @@ For operations: OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challen
                                Steam network       Steam network
 ```
 
+## 演示站点 (Live demo)
+
+**演示站点 https://vapor.cuihairu.site/ ｜ 演示账号 `demo` / `demo-899d0e86ad4d1c524da9c47a9d0f160e`（体验用，数据定期重置）**
+
+- The demo key is a dedicated **read-only sandbox**（只读沙箱）: it authenticates
+  reads (GET/HEAD) on the REST API and both consoles, while every write — job
+  creation, account changes, agent dispatch — is rejected with `401`. The real
+  admin key lives only on the deploy machine and is never published.
+- Sign-in: open [`/admin.html`](https://vapor.cuihairu.site/admin.html)（管理台）
+  or [`/dashboard.html`](https://vapor.cuihairu.site/dashboard.html)（只读面板）
+  and paste the demo password into the API-key prompt（在 API Key 框粘贴密码即可登录）.
+- Deployed by CI straight from `main`: deploys happen only when the full test
+  gate (all-green suite + 100% line/branch coverage) and the image build are
+  green, with automatic rollback on failure. Demo data is reset on every
+  deploy — a demo agent stays connected and seeded demo accounts/jobs keep the
+  consoles populated.
+- 账号为演示专用（非真实管理员账号）；请勿在演示实例中输入任何真实 Steam 凭据。
+
+### 预览 (Preview)
+
+| Control plane console | Account fleet |
+|---|---|
+| ![Control plane console](docs/assets/screenshots/admin-overview.png) | ![Account fleet](docs/assets/screenshots/admin-accounts.png) |
+| **Job history** | **Live event stream** |
+| ![Job history](docs/assets/screenshots/admin-jobs.png) | ![Live event stream](docs/assets/screenshots/admin-events.png) |
+
 ## Quick start
 
 Docker Compose (control plane + one agent):

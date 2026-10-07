@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 
 namespace Vapor.ControlPlane;
@@ -29,6 +30,21 @@ public static class Auth
 			&& token != null
 			&& cfg.AgentApiKeys.TryGetValue(token, out DateTimeOffset? expiresAt)
 			&& (expiresAt is null || expiresAt.Value > now);
+	}
+
+	/// <summary>
+	/// The viewer key is the read-only console credential: it authenticates
+	/// only safe (read-only) HTTP methods, and only when it differs from the
+	/// admin key — a demo key misconfigured equal to the admin key must fail
+	/// closed instead of widening into full admin rights.
+	/// </summary>
+	public static bool TryViewer(Config cfg, StringValues authorizationHeader, string method)
+	{
+		return cfg.ViewerApiKey is { Length: > 0 }
+			&& !string.Equals(cfg.ViewerApiKey, cfg.AdminApiKey, StringComparison.Ordinal)
+			&& (HttpMethods.IsGet(method) || HttpMethods.IsHead(method) || HttpMethods.IsOptions(method))
+			&& TryBearerToken(authorizationHeader, out string? token)
+			&& string.Equals(cfg.ViewerApiKey, token, StringComparison.Ordinal);
 	}
 
 	private static bool TryBearerToken(StringValues header, out string? token)

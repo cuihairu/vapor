@@ -112,6 +112,54 @@ public sealed class ConfigEnvironmentTests
 		}
 	}
 
+	[Fact]
+	public void ViewerKey_SetFromEnvironment()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_VIEWER_API_KEY");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_VIEWER_API_KEY", "demo-reader");
+			Config config = Config.LoadFromEnvironment();
+			Assert.Equal("demo-reader", config.ViewerApiKey);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_VIEWER_API_KEY", original);
+		}
+	}
+
+	[Fact]
+	public void ViewerKey_WhitespaceFallsBackToNull()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_VIEWER_API_KEY");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_VIEWER_API_KEY", "   ");
+			Config config = Config.LoadFromEnvironment();
+			Assert.Null(config.ViewerApiKey);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_VIEWER_API_KEY", original);
+		}
+	}
+
+	[Fact]
+	public void ViewerKey_UnsetFallsBackToNull()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_VIEWER_API_KEY");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_VIEWER_API_KEY", null);
+			Config config = Config.LoadFromEnvironment();
+			Assert.Null(config.ViewerApiKey);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_VIEWER_API_KEY", original);
+		}
+	}
+
 	private static int IntegerProperty(Config config, string property) => property switch
 	{
 		nameof(Config.TaskLeaseSeconds) => config.TaskLeaseSeconds,

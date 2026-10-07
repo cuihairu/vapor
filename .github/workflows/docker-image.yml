@@ -1,0 +1,101 @@
+# 构建并推送 Vapor 镜像到 GHCR：
+#   - ghcr.io/cuihairu/vapor-controlplane  控制面（REST + admin 控制台 + SQLite）
+#   - ghcr.io/cuihairu/vapor-agent         常驻 agent（WebSocket 隧道接入控制面）
+# 触发：main 分支推送 + 手动执行（docs/README 改动跳过——镜像产物与之无关）。
+# 镜像标签：latest（main 每次推送）、main、<短SHA>、YYYYMMDD。
+# 仅 linux/amd64：演示部署机（x64 LXC）是唯一消费方，QEMU 交叉构建 .NET 双
+# 架构会把本工作流拖长一倍以上，暂不产出 arm64（Dockerfile 本身架构无关）。
+# 不打 v* tag（发布由 GitHub Release 承担，镜像随 main 滚动）。
+# 部署侧（拉镜像起栈）见 .github/workflows/deploy-docker.yml。
+name: Docker Image
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push-controlplane:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/cuihairu/vapor-controlplane
+          tags: |
+            type=raw,value=latest
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value={{date 'YYYYMMDD'}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/Vapor.ControlPlane/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-push-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/cuihairu/vapor-agent
+          tags: |
+            type=raw,value=latest
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value={{date 'YYYYMMDD'}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: src/Vapor.Agent/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -36,7 +36,8 @@ public sealed record Config(
 	string? PluginIndexUrl = null,
 	int ApiRateLimitPerMinute = 0,
 	DateTimeOffset? AdminApiKeyExpiresAt = null,
-	string ConfigDbPath = "data/config.db"
+	string ConfigDbPath = "data/config.db",
+	string? ViewerApiKey = null
 )
 {
 	/// <summary>Max dispatch attempts per task before it fails permanently; 0 or less means unlimited retries.</summary>
@@ -63,6 +64,11 @@ public sealed record Config(
 	{
 		(string adminApiKey, DateTimeOffset? adminApiKeyExpiresAt) = ParseApiKey(Environment.GetEnvironmentVariable("Vapor_ADMIN_API_KEY") ?? "");
 		string agentApiKeysRaw = Environment.GetEnvironmentVariable("Vapor_AGENT_API_KEYS") ?? "";
+		string? viewerApiKey = Environment.GetEnvironmentVariable("Vapor_VIEWER_API_KEY");
+		if (string.IsNullOrWhiteSpace(viewerApiKey))
+		{
+			viewerApiKey = null;
+		}
 		string dbPath = Environment.GetEnvironmentVariable("Vapor_DB_PATH") ?? "data/controlplane.db";
 		int taskLeaseSeconds = int.TryParse(Environment.GetEnvironmentVariable("Vapor_TASK_LEASE_SECONDS"), out int v) && v > 0 ? v : 300;
 		bool enableSwagger = string.Equals(Environment.GetEnvironmentVariable("Vapor_ENABLE_SWAGGER"), "true", StringComparison.OrdinalIgnoreCase);
@@ -112,7 +118,7 @@ public sealed record Config(
 		int apiRateLimitPerMinute = int.TryParse(Environment.GetEnvironmentVariable("Vapor_API_RATE_LIMIT_PER_MINUTE"), out int rateLimit) && rateLimit > 0 ? rateLimit : 0;
 		string configDbPath = Environment.GetEnvironmentVariable("Vapor_CONFIG_DB_PATH") ?? "data/config.db";
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt, configDbPath);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt, configDbPath, viewerApiKey);
 	}
 }
 
