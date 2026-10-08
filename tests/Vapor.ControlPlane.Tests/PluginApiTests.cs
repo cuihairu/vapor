@@ -30,12 +30,14 @@ public sealed class PluginApiTests
 		using HttpResponseMessage install = await client.PostAsJsonAsync("/v1/plugins/install", new { agentIds = new[] { "agent-1" } });
 		using HttpResponseMessage uninstall = await client.PostAsJsonAsync("/v1/plugins/uninstall/vapor.test-plugin", new { agentIds = new[] { "agent-1" } });
 		using HttpResponseMessage refresh = await client.PostAsJsonAsync("/v1/plugins/inventory/refresh", new { });
+		using HttpResponseMessage updateCheck = await client.PostAsJsonAsync("/v1/plugins/update-check", new { });
 
 		Assert.Equal(HttpStatusCode.Unauthorized, catalog.StatusCode);
 		Assert.Equal(HttpStatusCode.Unauthorized, installed.StatusCode);
 		Assert.Equal(HttpStatusCode.Unauthorized, install.StatusCode);
 		Assert.Equal(HttpStatusCode.Unauthorized, uninstall.StatusCode);
 		Assert.Equal(HttpStatusCode.Unauthorized, refresh.StatusCode);
+		Assert.Equal(HttpStatusCode.Unauthorized, updateCheck.StatusCode);
 	}
 
 	[Fact]
@@ -607,6 +609,120 @@ public sealed class PluginApiTests
 		Assert.Contains("standing check not scheduled", doc.RootElement.GetProperty("error").GetString(), StringComparison.Ordinal);
 	}
 
+	[Fact]
+	public async Task UpdateCheck_NotConfiguredIndex_ReturnsBadRequest()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/update-check", new { agentIds = new[] { "agent-1" } });
+
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Contains("not configured", doc.RootElement.GetProperty("error").GetString());
+	}
+
+	[Fact]
+	public async Task UpdateCheck_DispatchesIndexCandidatesToNamedAgents()
+	{
+		var index = """{"plugins":[{"id":"vapor.beta","name":"Beta","version":"2.0.0","apiVersion":"1.0","url":"https://pkg/b.zip","sha256":"AABB"},{"id":"vapor.alpha","name":"Alpha","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/a.zip","sha256":"CCDD"}]}""";
+		await using var factory = CreateFactory(services =>
+		{
+			services.RemoveAll<PluginCatalogService>();
+			services.AddSingleton(_ => new PluginCatalogService(
+				new HttpClient(new FakeIndexHandler(index)),
+				NullLogger<PluginCatalogService>.Instance,
+				() => "https://plugins.example/index.json"));
+		});
+		using var client = CreateAdminClient(factory);
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/update-check", new
+		{
+			agentIds = new[] { "agent-1", "agent-2" }
+		});
+
+		Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+		await using var scope = factory.Services.CreateAsyncScope();
+		var store = scope.ServiceProvider.GetRequiredService<IJobStore>();
+
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		JsonElement jobs = doc.RootElement.GetProperty("jobs");
+		Assert.Equal(2, jobs.GetArrayLength());
+
+		foreach (JsonElement job in jobs.EnumerateArray())
+		{
+			string jobId = job.GetProperty("jobId").GetString()!;
+			JobWithTasks created = await store.GetJob(jobId, CancellationToken.None);
+			Assert.Equal("plugin_update_check", created.Job.Action);
+			Assert.Single(created.Tasks);
+			Assert.Equal($"agent:{job.GetProperty("agentId").GetString()}", created.Tasks[0].Target);
+
+			IReadOnlyDictionary<string, object?> payload = created.Tasks[0].Payload!;
+			var candidates = (JsonElement)payload["candidates"]!;
+			Assert.Equal(2, candidates.GetArrayLength());
+			Assert.Equal("vapor.alpha", candidates[0].GetProperty("id").GetString());
+			Assert.Equal("1.0.0", candidates[0].GetProperty("version").GetString());
+			Assert.Equal("vapor.beta", candidates[1].GetProperty("id").GetString());
+			Assert.Equal("2.0.0", candidates[1].GetProperty("version").GetString());
+		}
+	}
+
+	[Fact]
+	public async Task UpdateCheck_DefaultsToConnectedAgentsAndCarriesTheirRegion()
+	{
+		var index = """{"plugins":[{"id":"vapor.alpha","name":"Alpha","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/a.zip","sha256":"CCDD"}]}""";
+		await using var factory = CreateFactory(services =>
+		{
+			services.RemoveAll<PluginCatalogService>();
+			services.AddSingleton(_ => new PluginCatalogService(
+				new HttpClient(new FakeIndexHandler(index)),
+				NullLogger<PluginCatalogService>.Instance,
+				() => "https://plugins.example/index.json"));
+		});
+		AgentRegistry registry = factory.Services.GetRequiredService<AgentRegistry>();
+		using CancellationTokenSource registrationCts = new();
+		registry.Register(
+			new AgentHello("agent-live", "us-east", new Dictionary<string, bool> { ["plugin_update_check"] = true }, null),
+			new UpdateCheckNoopWebSocket(),
+			registrationCts.Token);
+		using var client = CreateAdminClient(factory);
+
+		// No body at all: the optional request binds as null and the endpoint
+		// defaults to every connected agent, resolving the region from the hello.
+		using HttpResponseMessage response = await client.PostAsync("/v1/plugins/update-check", content: null);
+
+		Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+		await using var scope = factory.Services.CreateAsyncScope();
+		var store = scope.ServiceProvider.GetRequiredService<IJobStore>();
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		string jobId = doc.RootElement.GetProperty("jobs")[0].GetProperty("jobId").GetString()!;
+		JobWithTasks created = await store.GetJob(jobId, CancellationToken.None);
+		Assert.Equal("plugin_update_check", created.Job.Action);
+		Assert.Equal("us-east", created.Job.Region);
+		Assert.Equal("agent:agent-live", created.Tasks[0].Target);
+	}
+
+	[Fact]
+	public async Task UpdateCheck_WithoutConnectedAgents_ReturnsConflict()
+	{
+		var index = """{"plugins":[{"id":"vapor.alpha","name":"Alpha","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/a.zip","sha256":"CCDD"}]}""";
+		await using var factory = CreateFactory(services =>
+		{
+			services.RemoveAll<PluginCatalogService>();
+			services.AddSingleton(_ => new PluginCatalogService(
+				new HttpClient(new FakeIndexHandler(index)),
+				NullLogger<PluginCatalogService>.Instance,
+				() => "https://plugins.example/index.json"));
+		});
+		using var client = CreateAdminClient(factory);
+
+		// Catalog is configured, but no agentIds in the request and no connected
+		// agents to default to.
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/update-check", new { });
+
+		Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+	}
+
 	private static HttpClient CreateAdminClient(WebApplicationFactory<Program> factory)
 	{
 		var client = factory.CreateClient();
@@ -633,6 +749,28 @@ public sealed class PluginApiTests
 				customize?.Invoke(services);
 			});
 		}
+	}
+
+	private sealed class UpdateCheckNoopWebSocket : System.Net.WebSockets.WebSocket
+	{
+		public override System.Net.WebSockets.WebSocketCloseStatus? CloseStatus => null;
+		public override string? CloseStatusDescription => null;
+		public override System.Net.WebSockets.WebSocketState State => System.Net.WebSockets.WebSocketState.Open;
+		public override string SubProtocol => string.Empty;
+
+		public override void Abort()
+		{
+		}
+
+		public override Task CloseAsync(System.Net.WebSockets.WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+		public override Task CloseOutputAsync(System.Net.WebSockets.WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+		public override void Dispose()
+		{
+		}
+		public override Task<System.Net.WebSockets.WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) =>
+			Task.FromCanceled<System.Net.WebSockets.WebSocketReceiveResult>(cancellationToken);
+		public override Task SendAsync(ArraySegment<byte> buffer, System.Net.WebSockets.WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) =>
+			Task.CompletedTask;
 	}
 
 	private sealed class FakeIndexHandler(string body, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
@@ -895,6 +1033,63 @@ public sealed class PluginInventoryTests
 		inventory.Remove("agent-1");
 
 		Assert.Empty(inventory.Snapshot());
+	}
+
+	[Fact]
+	public void Update_CapturesUpdateVerdictsFromRoundTrippedOutput()
+	{
+		var inventory = new PluginInventory();
+		var output = RoundTrip(new Dictionary<string, object?>
+		{
+			["plugins"] = new List<object>(),
+			["updates"] = new List<object>
+			{
+				new Dictionary<string, object?>
+				{
+					["id"] = "vapor.b", ["catalogVersion"] = "2.0.0",
+					["installedVersion"] = "1.0.0", ["status"] = "updateAvailable"
+				},
+				"junk",
+				new Dictionary<string, object?> { ["catalogVersion"] = "3.0.0", ["status"] = "notInstalled" },
+				// No fields at all: the ?? fallbacks yield empty id/catalog/status and the entry drops out.
+				new Dictionary<string, object?>(),
+				new Dictionary<string, object?>
+				{
+					["id"] = "vapor.a", ["catalogVersion"] = "v2",
+					["installedVersion"] = null,
+					["status"] = "notComparable"
+				}
+			}
+		});
+
+		inventory.Update("agent-1", DateTimeOffset.UnixEpoch, output);
+
+		AgentPlugins agent = inventory.Snapshot()["agent-1"];
+		Assert.NotNull(agent.Updates);
+		Assert.Equal(2, agent.Updates!.Count);
+		Assert.Equal("vapor.a", agent.Updates[0].Id);
+		Assert.Equal("v2", agent.Updates[0].CatalogVersion);
+		Assert.Null(agent.Updates[0].InstalledVersion);
+		Assert.Equal("notComparable", agent.Updates[0].Status);
+		Assert.Equal("vapor.b", agent.Updates[1].Id);
+		Assert.Equal("1.0.0", agent.Updates[1].InstalledVersion);
+		Assert.Equal("updateAvailable", agent.Updates[1].Status);
+	}
+
+	[Fact]
+	public void Update_IgnoresNonArrayUpdates()
+	{
+		var inventory = new PluginInventory();
+		var output = RoundTrip(new Dictionary<string, object?>
+		{
+			["plugins"] = new List<object>(),
+			["updates"] = 42
+		});
+
+		inventory.Update("agent-1", DateTimeOffset.UnixEpoch, output);
+
+		AgentPlugins agent = inventory.Snapshot()["agent-1"];
+		Assert.Null(agent.Updates);
 	}
 
 	private static Dictionary<string, object?> PluginsOutput(params string[] ids) => new()

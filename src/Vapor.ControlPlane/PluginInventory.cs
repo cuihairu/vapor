@@ -68,7 +68,28 @@ public sealed class PluginInventory
 				actions));
 		}
 
-		_agents[agentId] = new AgentPlugins(reportedAt, entries.OrderBy(e => e.Id, StringComparer.Ordinal).ToList());
+		List<PluginUpdateStatus>? updates = null;
+		if (output.TryGetValue("updates", out var rawUpdates) && rawUpdates is JsonElement { ValueKind: JsonValueKind.Array } updatesArray)
+		{
+			updates = updatesArray.EnumerateArray()
+				.Where(item => item.ValueKind == JsonValueKind.Object)
+				.Select(item =>
+				{
+					string? GetField(string name) =>
+						item.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+					return new PluginUpdateStatus(
+						GetField("id") ?? string.Empty,
+						GetField("catalogVersion") ?? string.Empty,
+						GetField("installedVersion"),
+						GetField("status") ?? string.Empty);
+				})
+				.Where(u => u.Id.Length > 0)
+				.OrderBy(u => u.Id, StringComparer.Ordinal)
+				.ToList();
+		}
+
+		_agents[agentId] = new AgentPlugins(reportedAt, entries.OrderBy(e => e.Id, StringComparer.Ordinal).ToList(), updates);
 	}
 
 	/// <summary>Drops one agent's mirror entry (e.g. on disconnect).</summary>
@@ -79,7 +100,20 @@ public sealed class PluginInventory
 }
 
 /// <summary>One agent's last-reported plugin inventory.</summary>
-public sealed record AgentPlugins(DateTimeOffset ReportedAt, IReadOnlyList<PluginInventoryEntry> Plugins);
+public sealed record AgentPlugins(
+	DateTimeOffset ReportedAt,
+	IReadOnlyList<PluginInventoryEntry> Plugins,
+	IReadOnlyList<PluginUpdateStatus>? Updates = null);
+
+/// <summary>
+/// One plugin_update_check candidate verdict as reported by an agent:
+/// updateAvailable / upToDate / notComparable / notInstalled.
+/// </summary>
+public sealed record PluginUpdateStatus(
+	string Id,
+	string CatalogVersion,
+	string? InstalledVersion,
+	string Status);
 
 /// <summary>A plugin installed on an agent, as reported by the agent itself.</summary>
 public sealed record PluginInventoryEntry(

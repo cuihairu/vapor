@@ -960,7 +960,7 @@ app.MapGet("/v1/plugins/installed", (HttpContext ctx, Config cfg, PluginInventor
 	}
 
 	var agents = inventory.Snapshot().OrderBy(kv => kv.Key, StringComparer.Ordinal)
-		.Select(kv => new { agentId = kv.Key, reportedAt = kv.Value.ReportedAt, plugins = kv.Value.Plugins })
+		.Select(kv => new { agentId = kv.Key, reportedAt = kv.Value.ReportedAt, plugins = kv.Value.Plugins, updates = kv.Value.Updates })
 		.ToList();
 	return Results.Ok(new { agents });
 })
@@ -1175,6 +1175,73 @@ app.MapPost("/v1/plugins/inventory/refresh", async Task<IResult> (HttpContext ct
 	.WithTags("Plugins")
 	.WithSummary("Re-run plugin_list on the named (or all connected) agents to re-sync the mirror")
 	.Produces(202)
+	.Produces<ErrorResponse>(409)
+	.Produces(401);
+
+app.MapPost("/v1/plugins/update-check", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, IJobStore store, AgentRegistry agents, PluginCatalogService catalog, PluginUpdateCheckRequest? request) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	PluginCatalog snapshot = await catalog.GetCatalogAsync(ctx.RequestAborted);
+	if (!snapshot.Configured)
+	{
+		return Results.BadRequest(new ErrorResponse("plugin index is not configured (set Vapor_PLUGIN_INDEX_URL)"));
+	}
+
+	List<string> targets = request?.AgentIds is { Count: > 0 }
+		? request.AgentIds.Distinct(StringComparer.Ordinal).ToList()
+		: agents.ListConnected().Select(a => a.Hello.AgentId).ToList();
+	if (targets.Count == 0)
+	{
+		return Results.Conflict(new ErrorResponse("no connected agents to check"));
+	}
+
+	// The whole index rides along as candidates: each agent classifies every
+	// candidate against its own loaded plugins (updateAvailable / upToDate /
+	// notComparable / notInstalled) and reports back — nothing is downloaded and
+	// nothing is replaced by this action.
+	var payload = new Dictionary<string, object?>
+	{
+		["candidates"] = snapshot.Entries
+			.OrderBy(e => e.Id, StringComparer.Ordinal)
+			.Select(e => (object)new Dictionary<string, object?> { ["id"] = e.Id, ["version"] = e.Version })
+			.ToList()
+	};
+
+	var dispatched = new List<object>();
+	foreach (string agentId in targets)
+	{
+		string? region = agents.Get(agentId)?.Hello.Region;
+		var created = await store.CreateJob(new CreateJobRequest(
+			"plugin_update_check",
+			region,
+			[HostTaskTarget.For(agentId)],
+			payload,
+			new Dictionary<string, string> { ["origin"] = "plugins-api" }
+		), ctx.RequestAborted);
+		dispatched.Add(new { agentId, jobId = created.Job.Id, taskId = created.Tasks.Single().Id });
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"plugin_update_check_dispatched",
+		details: new Dictionary<string, object?>
+		{
+			["agents"] = targets,
+			["candidates"] = snapshot.Entries.Count,
+			["jobs"] = dispatched.Count
+		});
+	return Results.Accepted("/v1/plugins/installed", new { jobs = dispatched });
+})
+	.WithTags("Plugins")
+	.WithSummary("Dispatch plugin_update_check to the named (or all connected) agents (202; watch /v1/jobs/{id})")
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
 	.Produces<ErrorResponse>(409)
 	.Produces(401);
 
@@ -4342,6 +4409,10 @@ public sealed record PluginUninstallRequest(
 );
 
 public sealed record RefreshInventoryRequest(
+	List<string>? AgentIds = null
+);
+
+public sealed record PluginUpdateCheckRequest(
 	List<string>? AgentIds = null
 );
 

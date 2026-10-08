@@ -1,6 +1,6 @@
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 58 routes (68 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 59 routes (69 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
@@ -648,7 +648,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 #### `GET /v1/plugins/installed`
 - Purpose: last-reported plugin inventory per agent (mirrored from `plugin_*` task outputs).
 - Auth: admin. Body: none.
-- 200: `{ "agents": [ { "agentId", "reportedAt", "plugins": [ PluginInventoryEntry ] } ] }` (ordered by `agentId`).
+- 200: `{ "agents": [ { "agentId", "reportedAt", "plugins": [ PluginInventoryEntry ], "updates": [ PluginUpdateStatus ]? } ] }` (ordered by `agentId`; `PluginUpdateStatus = { id, catalogVersion, installedVersion?, status: "updateAvailable"|"upToDate"|"notComparable"|"notInstalled" }`, present after the agent last ran `plugin_update_check`).
 - Errors: 401.
 
 #### `POST /v1/plugins/install`
@@ -679,6 +679,13 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 - Body (`RefreshInventoryRequest`, optional — may be omitted entirely): `agentIds` — string[], optional (default: all connected agents).
 - 202: `Location: /v1/plugins/installed`, body `{ "jobs": [ { "agentId", "jobId", "taskId" } ] }`.
 - Errors: 409 `{ "error": "no connected agents to refresh" }`, 401.
+
+#### `POST /v1/plugins/update-check`
+- Purpose: dispatch `plugin_update_check` to the named (or all connected) agents — each agent compares the whole index against its own loaded plugins and reports a verdict per candidate; nothing is downloaded or replaced.
+- Auth: admin.
+- Body (`PluginUpdateCheckRequest`, optional — may be omitted entirely): `agentIds` — string[], optional (default: all connected agents).
+- Errors: 400 `{ "error": "plugin index is not configured (set Vapor_PLUGIN_INDEX_URL)" }`, 409 `{ "error": "no connected agents to check" }`, 401.
+- 202: `Location: /v1/plugins/installed`, body `{ "jobs": [ { "agentId", "jobId", "taskId" } ] }`. Audit: `plugin_update_check_dispatched`.
 
 ---
 

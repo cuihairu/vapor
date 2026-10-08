@@ -458,6 +458,7 @@ task-target prefix) cover the lifecycle:
 | `plugin_install` | `url`, `sha256`, optional `pluginId`/`version`; catalog mode adds the index declaration as `expectedTrust`/`expectedPermissions`/`expectedApiVersion` | download → checksum → staging unpack → manifest validation (incl. catalog reconciliation, above) → hot-load; reinstalling an installed id replaces it (`replaced: true`) |
 | `plugin_uninstall` | `pluginId` | unload + retire the directory (renamed aside then deleted); uninstalling an unknown id is idempotent success (`removed: false`) |
 | `plugin_list` | — | report the current inventory |
+| `plugin_update_check` | `candidates` (`{ id, version }` pairs staged from the index) | read-only verdict per candidate against the loaded plugins — `updateAvailable` / `upToDate` / `notComparable` / `notInstalled`; never downloads or replaces anything |
 
 Every action's output carries the agent's full installed list under
 `plugins`, so the ControlPlane mirror stays current even for failed installs.
@@ -497,6 +498,7 @@ jobs to the named agents:
 - `POST /v1/plugins/install` — by `pluginId` (resolved from the catalog) or direct `url`+`sha256`; one targeted job per agent
 - `POST /v1/plugins/uninstall/{pluginId}` — uninstall from the named agents
 - `POST /v1/plugins/inventory/refresh` — re-run `plugin_list` to re-sync the mirror
+- `POST /v1/plugins/update-check` — run `plugin_update_check` on the named (or all connected) agents; verdicts surface under `updates` in `/v1/plugins/installed`
 
 The admin console's `插件管理` panel (PluginStore) renders the catalog with
 per-agent targeting and one-click batch install.

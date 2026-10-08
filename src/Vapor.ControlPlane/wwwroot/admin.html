@@ -1461,6 +1461,7 @@
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-secondary btn-small" id="refreshPluginsButton">刷新</button>
                             <button class="btn btn-secondary btn-small" id="syncPluginsButton">同步已装清单</button>
+                            <button class="btn btn-secondary btn-small" id="checkUpdatesButton">检查更新</button>
                         </div>
                     </div>
                     <div class="stack">
@@ -1617,6 +1618,7 @@
             document.getElementById("refreshAgentsButton").addEventListener("click", () => refreshAgents());
             document.getElementById("refreshPluginsButton").addEventListener("click", () => refreshPlugins());
             document.getElementById("syncPluginsButton").addEventListener("click", () => syncPluginInventory());
+            document.getElementById("checkUpdatesButton").addEventListener("click", () => checkPluginUpdates());
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
             document.getElementById("qrLoginButton").addEventListener("click", () => startQrLogin());
             document.getElementById("refreshChallengesButton").addEventListener("click", () => refreshAuthChallenges());
@@ -2096,18 +2098,29 @@
 
             container.innerHTML = agents.map((agent) => {
                 const plugins = agent.plugins || [];
+                const updates = new Map((agent.updates || [])
+                    .filter((u) => u.id)
+                    .map((u) => [u.id, u]));
                 const rows = plugins.length
-                    ? plugins.map((plugin) => `
+                    ? plugins.map((plugin) => {
+                        const update = updates.get(plugin.id);
+                        const updateBadge = update && update.status === "updateAvailable"
+                            ? ` <span class="badge running" title="索引源版本 v${escapeHtml(update.catalogVersion)}">可更新 v${escapeHtml(update.catalogVersion)}</span>`
+                            : (update && update.status === "notComparable"
+                                ? ' <span class="badge pending">版本不可比</span>'
+                                : "");
+                        return `
                         <div class="row-head">
                             <div class="title-group">
-                                <div class="strong">${escapeHtml(plugin.name || plugin.id)} <span class="tiny mono">v${escapeHtml(plugin.version)}</span></div>
+                                <div class="strong">${escapeHtml(plugin.name || plugin.id)} <span class="tiny mono">v${escapeHtml(plugin.version)}</span>${updateBadge}</div>
                                 <div class="summary-row">${(plugin.actions || []).map((a) => `<span class="agent-chip">${escapeHtml(a)}</span>`).join("")}</div>
                             </div>
                             <div style="display: flex; gap: 6px; align-items: center;">
                                 <span class="badge ${trustBadgeClass(plugin.trust)}">${escapeHtml(plugin.trust || "unknown")}</span>
                                 <button class="btn btn-secondary btn-small plugin-uninstall-button" data-agent-id="${escapeHtml(agent.agentId)}" data-plugin-id="${escapeHtml(plugin.id)}">卸载</button>
                             </div>
-                        </div>`).join("<hr>")
+                        </div>`;
+                    }).join("<hr>")
                     : '<div class="helper">该 Agent 未报告任何已装插件。</div>';
                 return `
                     <article class="card-row">
@@ -2139,6 +2152,21 @@
                 await refreshPlugins();
             } catch (error) {
                 alert(`卸载派发失败: ${error.message}`);
+            }
+        }
+
+        async function checkPluginUpdates() {
+            const connected = (state.agents || []).map((agent) => agent.id);
+            const body = connected.length ? { agentIds: connected } : {};
+            try {
+                const result = await apiFetch("/v1/plugins/update-check", {
+                    method: "POST",
+                    body: JSON.stringify(body)
+                });
+                renderOperationResult(document.getElementById("pluginInstalledList"), result, "更新检查已派发,结果随任务回报刷新");
+                await refreshPlugins();
+            } catch (error) {
+                alert(`更新检查派发失败: ${error.message}`);
             }
         }
 

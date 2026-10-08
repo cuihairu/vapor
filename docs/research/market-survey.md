@@ -108,7 +108,7 @@ vapor 的定位与家底(来自本仓文档):API 控制的无头 Steam 自动化
 ## 6. 候选改进(勾选项是候选,不是承诺;立项以 `todo.md` 为准)
 
 - [x] **安装时对账索引与 manifest(工作量:低)**。`plugin_install` 已按请求的 `pluginId`/`version` 对账包内 manifest,把 `trust`/`permissions`/`apiVersion` 一并对账,防索引条目写花。依据:Grafana 把元数据与文件摘要签在同一份 `MANIFEST.txt` 里,元数据与内容同源验证是通行做法(§4.2)。(✅ 2026-10-09 轮五十八落地:目录模式把索引声明以 `expectedTrust`/`expectedPermissions`/`expectedApiVersion` 随安装指令下发,agent 对账包内 manifest,分歧聚合一条报错;详见 `docs/plugins.md` §Catalog reconciliation)
-- [ ] **插件更新检查端点(中)**。索引条目已含 `version`,加一个 `plugin_update_check`(索引版本 vs 已装版本,按 agent 汇总)即可让 CP 面板显示「可更新」。依据:VS Code、Grafana、Playnite 三家目录型都有更新通道,而 vapor 现只有装/卸/列三个动作(§4.1)。
+- [x] **插件更新检查端点(中)**。索引条目已含 `version`,加一个 `plugin_update_check`(索引版本 vs 已装版本,按 agent 汇总)即可让 CP 面板显示「可更新」。依据:VS Code、Grafana、Playnite 三家目录型都有更新通道,而 vapor 现只有装/卸/列三个动作(§4.1)。(✅ 2026-10-09 轮五十九落地:只读 host action `plugin_update_check` + `POST /v1/plugins/update-check`,整索引作 candidates 下发,agent 按 System.Version 四判定(updateAvailable/upToDate/notComparable/notInstalled),verdict 随 inventory 镜像上报,admin 面板「检查更新」+「可更新」徽标;详见 docs/plugins.md 与 docs/api.md §4.10)
 - [ ] **运行期资源声明(中)**。`permissions` 目前只决定注册面;可在 manifest 增加网络/文件用量声明,先登记进加载报告与审计,暂不硬拦截。依据:Obsidian 的 `isDesktopOnly` 是「先声明、后评审」的最小样例,VS Code 的 `restrictedConfigurations` 是声明式限制的最小样例(§4.1)。
 - [ ] **来源校验升级(中)**。给索引条目加发布者指纹或签名字段,把「钉摘要」升级为「钉来源」。依据:Grafana 自 7.0 强制签名并按级别分发,官方云上 unsigned 直接不支持(§4.2)。
 - [ ] **进程/资源边界评估(高;先评估,不先做)**。ALC 只隔离版本与卸载,插件死循环或内存失控会带走整个 agent。参照是 GOG Galaxy 独立进程、Grafana backend 独立二进制、VS Code 扩展宿主进程(§4.2)。第一步是量化而非改造:统计 6 个官方插件的常驻内存与故障域,再决定是否值得进程化,或者退一档做配额与超时熔断。

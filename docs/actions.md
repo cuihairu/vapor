@@ -1,6 +1,6 @@
 # Actions catalog
 
-Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **57 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 4 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
+Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **58 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 5 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
@@ -69,7 +69,7 @@ Most REST wrappers under `/v1/accounts/{name}/...` are thin: they build the payl
 
 - `ActionRegistry` (`src/Vapor.Steam.Core/IAction.cs`) is a single flat, case-insensitive dictionary. Core actions are registered at agent startup; plugin actions are registered into the *same* dictionary via `PluginManager.PluginLoaded` (`actionRegistry.Register(action)`) and removed on `PluginUnloading`.
 - There is no namespace prefixing. Plugin action names (`market_watch_add`, `get_metrics`, …) live alongside core names (`get_inventory`, …). Collisions are not detected: a plugin action whose `Name` equals a core action's name **silently overwrites** it (last writer wins), and when the plugin unloads, the name is unregistered entirely — the shadowed core action does not come back. Convention: plugins prefix their names (`market_watch_*`, `get_metrics`) and none of the shipped plugins collide with core names.
-- Agent host actions (`plugin_install` / `plugin_uninstall` / `plugin_list`) are *not* in the registry; they live in a separate dictionary checked before the registry in the agent's task executor, and are advertised in hello capabilities like any other action. They additionally require the task target to be exactly `agent:{thisAgentId}` (defense in depth — a misrouted delivery fails loudly instead of mutating the wrong machine's plugin directory).
+- Agent host actions (`plugin_install` / `plugin_uninstall` / `plugin_list` / `plugin_update_check`) are *not* in the registry; they live in a separate dictionary checked before the registry in the agent's task executor, and are advertised in hello capabilities like any other action. They additionally require the task target to be exactly `agent:{thisAgentId}` (defense in depth — a misrouted delivery fails loudly instead of mutating the wrong machine's plugin directory).
 
 ---
 
@@ -429,7 +429,7 @@ Output: `status`, `count` (schema items), `items[]` `{ defIndex, name }`, `appId
 
 # Agent host actions (`Vapor.Agent` assembly, `src/Vapor.Agent/HostActions/`)
 
-All four require the job target to be exactly `"agent:{agentId}"` (see `HostTaskTarget`); they run host-scoped — no bot session — and ride the regular task pipeline (retries/audit/jobs panel apply). `pluginId` spellings: both `pluginId` and `plugin_id` are accepted (alias lookup).
+All five require the job target to be exactly `"agent:{agentId}"` (see `HostTaskTarget`); they run host-scoped — no bot session — and ride the regular task pipeline (retries/audit/jobs panel apply). `pluginId` spellings: both `pluginId` and `plugin_id` are accepted (alias lookup).
 
 ### `plugin_install` (login: no, timeout: 300s, safety: Idempotent)
 Installs a plugin package (zip) by URL with a **mandatory SHA-256 checksum**, validates it against the manifest and hot-loads it.
@@ -444,6 +444,11 @@ Output: `pluginId`, `removed`, `plugins` (remaining list).
 ### `plugin_list` (login: no, timeout: 15s, safety: ReadOnly)
 Reports the currently loaded plugins and the plugins root. No payload fields.
 Output: `directory` (plugins root path), `count`, `plugins` (loaded-plugin list).
+
+### `plugin_update_check` (login: no, timeout: 15s, safety: ReadOnly)
+Compares the catalog candidates staged from the plugin index against the plugins actually loaded on this agent and reports a verdict per candidate. Read-only by design — nothing is downloaded or replaced here; the operator decides what (and where) to install with `plugin_install`.
+Payload: `candidates` array optional — `{ id, version }` objects staged from the index (non-object entries are skipped; entries without `id` are skipped); omitting it yields an empty report (the loaded-plugin mirror still rides along).
+Output: `count`, `updates` (per candidate: `id`, `catalogVersion`, `installedVersion` (null when not installed), `status` — `updateAvailable` (catalog strictly newer, both versions parse as `System.Version`) / `upToDate` (equal or installed ahead) / `notComparable` (either side unparseable — never coerced) / `notInstalled`), `plugins` (full loaded-plugin list so the control plane can mirror the agent's inventory).
 
 ### `set_proxy` (login: no, timeout: 120s, safety: GuardedWrite)
 Assigns (or clears) an account's egress proxy: validates the endpoint, persists it in **this agent's** credential store and, when a live session exists, rebuilds that session through the new exit (remove → restore → token re-login). A failed rebuild is not an error: the assignment persists and the next login picks it up (`sessionRestarted=false`).
@@ -463,5 +468,5 @@ Note: this action is host-scoped (`agent:{id}` target) but keyed by account — 
 | Market Watch plugin (`vapor.market-watch`) | 3 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |
 | Game Data plugin (`vapor.game-data`) | 4 |
-| Agent host (`Vapor.Agent/HostActions/`) | 4 |
-| **Total** | **57** |
+| Agent host (`Vapor.Agent/HostActions/`) | 5 |
+| **Total** | **58** |
