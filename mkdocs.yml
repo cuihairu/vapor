@@ -78,6 +78,8 @@ nav:
       - Valve game plugins: game-plugins.md
       - Feature matrix (vs. ASF): feature-matrix.md
       - Performance: performance.md
+  - Research:
+      - Market survey: research/market-survey.md
   - Reference:
       - REST API: api.md
       - Actions catalog: actions.md
