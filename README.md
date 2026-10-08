@@ -2,6 +2,12 @@
   <img src="docs/assets/vapor.svg" width="96" alt="Vapor" />
 </p>
 
+<div align="center">
+
+English | [简体中文](README.zh.md)
+
+</div>
+
 # Vapor — Distributed Steam Automation Control Plane
 
 [![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml)
@@ -18,7 +24,7 @@ The Steam protocol layer is built on [SteamKit2](https://github.com/SteamRE/Stea
 
 ## Highlights
 
-Each account runs as a persistent Steam bot session: credential login with token refresh, SteamGuard / 2FA challenges, TOTP and QR-code login, and `.maFile` import from SDA or steamguard-cli. On top of that sit 57 actions — card farming, playtime boosting, trade offers, market listings with fee-aware pricing, inventory and duplicate scanning, achievement management, key redemption, free-license and points-shop claims. Every action carries an execution-safety class, which is what lets the scheduler cap redispatch at 2 attempts for actions whose repetition can double an external side effect, while read-only and idempotent actions keep the configured ceiling. The [actions catalog](docs/actions.md) lists every payload field.
+Each account runs as a persistent Steam bot session: credential login with token refresh, SteamGuard / 2FA challenges, TOTP and QR-code login, and `.maFile` import from SDA or steamguard-cli. On top of that sit 58 actions — card farming, playtime boosting, trade offers, market listings with fee-aware pricing, inventory and duplicate scanning, achievement management, key redemption, free-license and points-shop claims. Every action carries an execution-safety class, which is what lets the scheduler cap redispatch at 2 attempts for actions whose repetition can double an external side effect, while read-only and idempotent actions keep the configured ceiling. The [actions catalog](docs/actions.md) lists every payload field.
 
 Declarative orchestration: you state `online` / `idle` / `farm` / `boost` per account and the reconciler converges reality to that statement, rotating farming targets as card drops run out and reassigning accounts when an agent disappears. `GET /v1/orchestration/farm` shows the live loop.
 
@@ -42,7 +48,7 @@ For operations: OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challen
                     ┌───────────────┴──────────┐  ┌──────────────┐
                     │         Agent #1         │  │   Agent #N   │   ← one per region
                     │  session engine (bots)   │  │              │
-                    │  57 actions · plugins   │  │   plugins    │
+                    │  58 actions · plugins   │  │   plugins    │
                     │  encrypted credentials   │  │              │
                     └───────────────┬──────────┘  └──────┬───────┘
                                     │                    │
