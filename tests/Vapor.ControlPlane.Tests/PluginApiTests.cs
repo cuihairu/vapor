@@ -159,7 +159,7 @@ public sealed class PluginApiTests
 	[Fact]
 	public async Task Install_CatalogMode_ResolvesUrlAndChecksumAndTargetsNamedAgents()
 	{
-		var index = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/test.zip","sha256":"AABBCCDD"}]}""";
+		var index = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/test.zip","sha256":"AABBCCDD","trust":"official","permissions":["actions","web"]}]}""";
 		await using var factory = CreateFactory(services =>
 		{
 			services.RemoveAll<PluginCatalogService>();
@@ -196,7 +196,50 @@ public sealed class PluginApiTests
 			Assert.Equal("https://pkg/test.zip", ((JsonElement)payload["url"]!).GetString());
 			Assert.Equal("aabbccdd", ((JsonElement)payload["sha256"]!).GetString());
 			Assert.Equal("vapor.test-plugin", ((JsonElement)payload["pluginId"]!).GetString());
+
+			// The index's own declaration travels with the instruction so the agent can
+			// reconcile the package manifest against what the catalog advertised.
+			Assert.Equal("official", ((JsonElement)payload["expectedTrust"]!).GetString());
+			Assert.Equal(
+				new[] { "actions", "web" },
+				((JsonElement)payload["expectedPermissions"]!).EnumerateArray().Select(e => e.GetString()).ToArray());
+			Assert.Equal("1.0", ((JsonElement)payload["expectedApiVersion"]!).GetString());
 		}
+	}
+
+	[Fact]
+	public async Task Install_CatalogMode_OmitsExpectationKeysTheIndexDoesNotDeclare()
+	{
+		// trust omitted entirely; permissions present but empty — neither may reach the
+		// instruction as an expectation, only the mandatory apiVersion does.
+		var index = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/test.zip","sha256":"AABBCCDD","permissions":[]}]}""";
+		await using var factory = CreateFactory(services =>
+		{
+			services.RemoveAll<PluginCatalogService>();
+			services.AddSingleton(_ => new PluginCatalogService(
+				new HttpClient(new FakeIndexHandler(index)),
+				NullLogger<PluginCatalogService>.Instance,
+				() => "https://plugins.example/index.json"));
+		});
+		using var client = CreateAdminClient(factory);
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", new
+		{
+			pluginId = "vapor.test-plugin",
+			agentIds = new[] { "agent-1" }
+		});
+
+		Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+		await using var scope = factory.Services.CreateAsyncScope();
+		var store = scope.ServiceProvider.GetRequiredService<IJobStore>();
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		string jobId = doc.RootElement.GetProperty("jobs")[0].GetProperty("jobId").GetString()!;
+		JobWithTasks created = await store.GetJob(jobId, CancellationToken.None);
+
+		IReadOnlyDictionary<string, object?> payload = created.Tasks[0].Payload!;
+		Assert.False(payload.ContainsKey("expectedTrust"));
+		Assert.False(payload.ContainsKey("expectedPermissions"));
+		Assert.Equal("1.0", ((JsonElement)payload["expectedApiVersion"]!).GetString());
 	}
 
 	[Fact]

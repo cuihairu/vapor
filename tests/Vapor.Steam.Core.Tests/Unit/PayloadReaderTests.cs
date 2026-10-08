@@ -150,4 +150,45 @@ public sealed class PayloadReaderTests
 	{
 		Assert.Null(PayloadReader.GetBool(new Dictionary<string, object?>(), "missing"));
 	}
+
+	// --- GetStringList shapes ---
+
+	[Fact]
+	public void GetStringList_MissingOrNull_ReturnsNull()
+	{
+		Assert.Null(PayloadReader.GetStringList(new Dictionary<string, object?>(), "missing"));
+		Assert.Null(PayloadReader.GetStringList(new Dictionary<string, object?> { ["k"] = null }, "k"));
+	}
+
+	[Fact]
+	public void GetStringList_InProcessList_PassesThrough()
+	{
+		var payload = new Dictionary<string, object?> { ["k"] = new List<string> { "a", "b" } };
+
+		IReadOnlyList<string>? list = PayloadReader.GetStringList(payload, "k");
+		Assert.Equal(new[] { "a", "b" }, list);
+	}
+
+	[Fact]
+	public void GetStringList_JsonElementArray_ReturnsStrings()
+	{
+		var payload = FromJson("""{"k":["actions","web"]}""");
+
+		Assert.Equal(new[] { "actions", "web" }, PayloadReader.GetStringList(payload, "k"));
+	}
+
+	[Fact]
+	public void GetStringList_MixedJsonElementArray_SkipsNonStringElements()
+	{
+		var payload = FromJson("""{"k":["actions",7,null,"web"]}""");
+
+		Assert.Equal(new[] { "actions", "web" }, PayloadReader.GetStringList(payload, "k"));
+	}
+
+	[Fact]
+	public void GetStringList_NonArrayValue_ReturnsNull()
+	{
+		Assert.Null(PayloadReader.GetStringList(FromJson("""{"k":"actions"}"""), "k"));
+		Assert.Null(PayloadReader.GetStringList(FromJson("""{"k":{"a":1}}"""), "k"));
+	}
 }

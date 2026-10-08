@@ -42,6 +42,9 @@ public sealed class PluginInstallAction : IHostAction
 		string? sha256 = PayloadReader.GetString(payload, "sha256") ?? PayloadReader.GetString(payload, "sha_256");
 		string? pluginId = PayloadReader.GetString(payload, "pluginId") ?? PayloadReader.GetString(payload, "plugin_id");
 		string? version = PayloadReader.GetString(payload, "version");
+		string? expectedTrust = PayloadReader.GetString(payload, "expectedTrust");
+		string? expectedApiVersion = PayloadReader.GetString(payload, "expectedApiVersion");
+		IReadOnlyList<string>? expectedPermissions = PayloadReader.GetStringList(payload, "expectedPermissions");
 
 		if (string.IsNullOrWhiteSpace(url))
 		{
@@ -58,7 +61,9 @@ public sealed class PluginInstallAction : IHostAction
 			return new ActionResult(false, "plugin host is not initialized on this agent", null);
 		}
 
-		var result = await _installer.InstallAsync(url, sha256, pluginId, version, _manager, cancellationToken).ConfigureAwait(false);
+		var result = await _installer.InstallAsync(
+			url, sha256, pluginId, version, _manager, cancellationToken,
+			expectedTrust, expectedPermissions, expectedApiVersion).ConfigureAwait(false);
 		if (!result.Success)
 		{
 			_logger.LogWarning("plugin_install failed: {Error}", result.Error);

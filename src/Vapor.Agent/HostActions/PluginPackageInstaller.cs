@@ -40,7 +40,8 @@ public sealed class PluginPackageInstaller
 	/// <summary>
 	/// Downloads and installs the package. Fails (returns an error, no state change)
 	/// on download errors, size overruns, checksum mismatches, malformed manifests,
-	/// id/version mismatches with the instruction, or load failures.
+	/// id/version mismatches with the instruction, trust/permissions/apiVersion
+	/// divergences from the catalog's declared expectations, or load failures.
 	/// </summary>
 	public async Task<PluginInstallResult> InstallAsync(
 		string url,
@@ -48,7 +49,10 @@ public sealed class PluginPackageInstaller
 		string? expectedPluginId,
 		string? expectedVersion,
 		PluginManager manager,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		string? expectedTrust = null,
+		IReadOnlyList<string>? expectedPermissions = null,
+		string? expectedApiVersion = null)
 	{
 		if (!Uri.TryCreate(url, UriKind.Absolute, out var packageUri) ||
 			(packageUri.Scheme != Uri.UriSchemeHttps && packageUri.Scheme != Uri.UriSchemeHttp && packageUri.Scheme != Uri.UriSchemeFile))
@@ -114,6 +118,37 @@ public sealed class PluginPackageInstaller
 			if (expectedVersion is { } wantedVersion && !string.Equals(wantedVersion, manifest.Version, StringComparison.Ordinal))
 			{
 				return PluginInstallResult.Fail($"package manifest version '{manifest.Version}' does not match the requested version '{wantedVersion}'");
+			}
+
+			// 2b. Catalog reconciliation: the ControlPlane never sees the package binary,
+			//    so the index's declared trust/permissions/apiVersion travel with the
+			//    install instruction and are checked here against the manifest that
+			//    actually ships. Every divergence is named in one aggregated error —
+			//    metadata and content are verified together, not on separate channels.
+			var divergences = new List<string>();
+			if (expectedTrust is { } wantedTrust &&
+				!string.Equals(wantedTrust, manifest.Trust, StringComparison.OrdinalIgnoreCase))
+			{
+				divergences.Add($"trust '{manifest.Trust ?? "<none>"}' != catalog '{wantedTrust}'");
+			}
+
+			if (expectedApiVersion is { } wantedApiVersion &&
+				!string.Equals(wantedApiVersion, manifest.ApiVersion, StringComparison.Ordinal))
+			{
+				divergences.Add($"apiVersion '{manifest.ApiVersion}' != catalog '{wantedApiVersion}'");
+			}
+
+			if (expectedPermissions is { } wantedPermissions &&
+				!PermissionSetsEqual(wantedPermissions, manifest.Permissions))
+			{
+				divergences.Add(
+					$"permissions [{string.Join(", ", manifest.Permissions ?? [])}] != catalog [{string.Join(", ", wantedPermissions)}]");
+			}
+
+			if (divergences.Count > 0)
+			{
+				return PluginInstallResult.Fail(
+					$"package manifest does not match the catalog entry: {string.Join("; ", divergences)}");
 			}
 
 			// 3. Everything checked out — swap the directory and hot-load. The unload
@@ -291,6 +326,15 @@ public sealed class PluginPackageInstaller
 		};
 #pragma warning restore CA2000
 		return new System.Net.Http.HttpClient(handler) { Timeout = TimeSpan.FromSeconds(120) };
+	}
+
+	/// <summary>Order- and case-insensitive set equality; the manifest side is already
+	/// normalized (lowercase, deduplicated) at parse time, the catalog side is not.</summary>
+	private static bool PermissionSetsEqual(IReadOnlyList<string> expected, IReadOnlyList<string>? actual)
+	{
+		IReadOnlyList<string> actualList = actual ?? [];
+		return expected.Count == actualList.Count &&
+			expected.All(p => actualList.Contains(p, StringComparer.OrdinalIgnoreCase));
 	}
 
 	private static bool IsHexString(string value)

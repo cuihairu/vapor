@@ -661,6 +661,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
   - `sha256` — string, optional; required in direct mode as a 64-char hex digest (else 400 `sha256 must be a 64-character hex digest of the package`)
   - `version` — string, optional
   - Rule: neither `url` nor `pluginId` → 400 `either url or pluginId is required`; `pluginId` not in catalog → 404 `plugin '<id>' is not in the catalog`.
+  - Catalog reconciliation: catalog mode stages the index entry's own `trust`/`permissions`/`apiVersion` declaration into the task payload as `expectedTrust`/`expectedPermissions`/`expectedApiVersion` (only fields the entry actually declares; direct mode stages none). The agent reconciles them against the package's embedded manifest before hot-load — any divergence fails the install with one aggregated error naming every divergent field (`package manifest does not match the catalog entry: …`), so the metadata the index advertised is verified together with the content.
 - 202: `Location: /v1/plugins/installed`, body `{ "jobs": [ { "agentId", "jobId", "taskId" } ] }`.
 - Errors: 400, 404, 401. Audit: `plugin_install_dispatched`.
 

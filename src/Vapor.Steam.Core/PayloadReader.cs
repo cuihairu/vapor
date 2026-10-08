@@ -77,5 +77,28 @@ public static class PayloadReader
 			_ => null
 		};
 	}
+
+	/// <summary>
+	/// Reads a string-list payload field: in-process <see cref="IReadOnlyList{String}"/>
+	/// values pass through, a JSON array keeps only its string elements (malformed
+	/// elements are skipped, not fatal), anything else is null.
+	/// </summary>
+	public static IReadOnlyList<string>? GetStringList(IReadOnlyDictionary<string, object?> payload, string key)
+	{
+		if (!TryGetValue(payload, key, out var value) || value is null)
+		{
+			return null;
+		}
+
+		return value switch
+		{
+			IReadOnlyList<string> list => list,
+			JsonElement { ValueKind: JsonValueKind.Array } je => je.EnumerateArray()
+				.Where(e => e.ValueKind == JsonValueKind.String)
+				.Select(e => e.GetString()!)
+				.ToList(),
+			_ => null
+		};
+	}
 }
 

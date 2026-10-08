@@ -455,7 +455,7 @@ task-target prefix) cover the lifecycle:
 
 | Action | Payload | Behaviour |
 |--------|---------|-----------|
-| `plugin_install` | `url`, `sha256`, optional `pluginId`/`version` | download → checksum → staging unpack → manifest validation → hot-load; reinstalling an installed id replaces it (`replaced: true`) |
+| `plugin_install` | `url`, `sha256`, optional `pluginId`/`version`; catalog mode adds the index declaration as `expectedTrust`/`expectedPermissions`/`expectedApiVersion` | download → checksum → staging unpack → manifest validation (incl. catalog reconciliation, above) → hot-load; reinstalling an installed id replaces it (`replaced: true`) |
 | `plugin_uninstall` | `pluginId` | unload + retire the directory (renamed aside then deleted); uninstalling an unknown id is idempotent success (`removed: false`) |
 | `plugin_list` | — | report the current inventory |
 
@@ -465,6 +465,19 @@ The install pipeline validates before touching the real plugins root: URL
 scheme (`http`/`https`/`file`), digest hex, zip-slip entries, manifest-at-root,
 and — when `pluginId`/`version` were requested — that the manifest matches
 them. A failed install leaves no trace in the plugin directory.
+
+### Catalog reconciliation at install time
+
+Catalog-mode installs (`POST /v1/plugins/install` with `pluginId`) carry the
+index entry's own `trust`/`permissions`/`apiVersion` declaration into the
+install instruction as `expectedTrust`/`expectedPermissions`/`expectedApiVersion`.
+The agent reconciles those expectations against the manifest that actually
+ships in the package before hot-loading: trust and permission names compare
+case-insensitively (permissions as an order-insensitive set), `apiVersion`
+compares exactly, and fields the index does not declare are not checked. Any
+divergence fails the install with a single aggregated error naming every
+divergent field — the metadata an operator browsed in the catalog is verified
+together with the package content, not on separate channels.
 
 ### ControlPlane PluginStore
 

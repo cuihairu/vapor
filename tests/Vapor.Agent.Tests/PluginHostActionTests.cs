@@ -416,6 +416,185 @@ public sealed class PluginPackageInstallerTests
 		}
 	}
 
+	/// <summary>Stages a package with a custom manifest next to the plugins root.</summary>
+	internal static (string Url, string Sha256) StagePackage(string root, string manifestJson)
+	{
+		string packagePath = Path.Combine(root, $"pkg-{Guid.NewGuid():N}.zip");
+		File.WriteAllBytes(packagePath, PluginTestPackages.Build(manifestJson));
+		return (new Uri(packagePath).AbsoluteUri, PluginTestPackages.Sha256Hex(File.ReadAllBytes(packagePath)));
+	}
+
+	internal static string ManifestJson(string? trust, string apiVersion, string[]? permissions)
+	{
+		var fields = new Dictionary<string, object?>
+		{
+			["id"] = PluginTestPackages.PluginId,
+			["name"] = "Vapor Test Plugin",
+			["version"] = PluginTestPackages.PluginVersion,
+			["apiVersion"] = apiVersion,
+			["entryAssembly"] = "Vapor.Plugins.TestPlugin.dll",
+			["entryType"] = "Vapor.Plugins.TestPlugin.TestPlugin"
+		};
+		if (trust is { } trustValue)
+		{
+			fields["trust"] = trustValue;
+		}
+
+		if (permissions is { } permissionList)
+		{
+			fields["permissions"] = permissionList;
+		}
+
+		return JsonSerializer.Serialize(fields);
+	}
+
+	[Fact]
+	public async Task InstallAsync_TrustDivergenceFromCatalogFailsAndNamesBothSides()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("trust-divergence");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+
+			// Manifest without a trust claim vs a catalog that declares one.
+			(string bareUrl, string bareSha) = StagePackage(root, ManifestJson(null, "1.0", null));
+			PluginInstallResult undeclared = await installer.InstallAsync(
+				bareUrl, bareSha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedTrust: "official");
+			Assert.False(undeclared.Success);
+			Assert.Contains("does not match the catalog entry", undeclared.Error);
+			Assert.Contains("trust '<none>' != catalog 'official'", undeclared.Error);
+
+			// Manifest declares a different trust than the catalog.
+			(string url, string sha) = StagePackage(root, ManifestJson("official", "1.0", null));
+			PluginInstallResult divergent = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedTrust: "community");
+			Assert.False(divergent.Success);
+			Assert.Contains("trust 'official' != catalog 'community'", divergent.Error);
+			Assert.Empty(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_ApiVersionDivergenceFromCatalogFails()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("apiversion-divergence");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = StagePackage(root, ManifestJson(null, "1.0", null));
+
+			PluginInstallResult result = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedApiVersion: "2.0");
+
+			Assert.False(result.Success);
+			Assert.Contains("apiVersion '1.0' != catalog '2.0'", result.Error);
+			Assert.Empty(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_PermissionSetDivergenceFromCatalogFailsAndNamesBothSides()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("permissions-divergence");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+
+			// Manifest grants a different set than the catalog declares.
+			(string url, string sha) = StagePackage(root, ManifestJson(null, "1.0", new[] { "actions", "web" }));
+			PluginInstallResult divergent = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedPermissions: new[] { "actions" });
+			Assert.False(divergent.Success);
+			Assert.Contains("permissions [actions, web] != catalog [actions]", divergent.Error);
+
+			// Manifest declares no permissions at all vs a catalog that declares some.
+			(string bareUrl, string bareSha) = StagePackage(root, ManifestJson(null, "1.0", null));
+			PluginInstallResult undeclared = await installer.InstallAsync(
+				bareUrl, bareSha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedPermissions: new[] { "actions" });
+			Assert.False(undeclared.Success);
+			Assert.Contains("permissions [] != catalog [actions]", undeclared.Error);
+			Assert.Empty(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_MatchingCatalogClaimsInstallAndHotLoad()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("catalog-match");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = StagePackage(root, ManifestJson("community", "1.0", new[] { "actions", "web" }));
+
+			// Comparison is case-insensitive on trust/permissions and order-insensitive
+			// on the permission set; apiVersion compares exactly.
+			PluginInstallResult result = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedTrust: "Community",
+				expectedPermissions: new[] { "Web", "Actions" },
+				expectedApiVersion: "1.0");
+
+			Assert.True(result.Success, result.Error);
+			Assert.Single(manager.LoadedPlugins);
+			Assert.Contains("plugin_echo", result.Actions);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_AllCatalogDivergencesAggregateIntoOneError()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("catalog-aggregate");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = StagePackage(root, ManifestJson("official", "1.0", new[] { "actions" }));
+
+			PluginInstallResult result = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedTrust: "community",
+				expectedPermissions: new[] { "web" },
+				expectedApiVersion: "2.0");
+
+			Assert.False(result.Success);
+			Assert.NotNull(result.Error);
+			Assert.Contains("does not match the catalog entry", result.Error);
+			Assert.Contains("trust 'official' != catalog 'community'", result.Error);
+			Assert.Contains("apiVersion '1.0' != catalog '2.0'", result.Error);
+			Assert.Contains("permissions [actions] != catalog [web]", result.Error);
+			Assert.Empty(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
 	[Fact]
 	public async Task InstallAsync_InstallsHotLoadsAndThenReplaces()
 	{
@@ -1022,6 +1201,56 @@ public sealed class PluginInstallActionTests
 			// inventory stays truthful.
 			Assert.NotNull(result.Output!["plugins"]);
 			Assert.Equal(url, result.Output["url"]);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+	[Fact]
+	public async Task ExecuteAsync_CarriesCatalogExpectationsIntoTheInstaller()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("install-expectations");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			var action = new PluginInstallAction(installer, manager, NullLogger.Instance);
+			(string url, string sha) = PluginPackageInstallerTests.StagePackage(
+				root, PluginPackageInstallerTests.ManifestJson("official", "1.0", new[] { "actions" }));
+
+			// JSON round-trip shape: the expectations arrive as JsonElements, exactly as
+			// they do when a task payload comes back from a SQLite task record.
+			string divergentJson = JsonSerializer.Serialize(new
+			{
+				url,
+				sha256 = sha,
+				pluginId = PluginTestPackages.PluginId,
+				expectedTrust = "community",
+				expectedPermissions = new[] { "web" },
+				expectedApiVersion = "2.0"
+			});
+			var divergent = JsonSerializer.Deserialize<Dictionary<string, object?>>(divergentJson)!;
+			ActionResult failed = await action.ExecuteAsync(divergent, CancellationToken.None);
+			Assert.False(failed.Success);
+			Assert.Contains("does not match the catalog entry", failed.Error);
+			Assert.Contains("trust 'official' != catalog 'community'", failed.Error);
+
+			(string matchUrl, string matchSha) = PluginPackageInstallerTests.StagePackage(
+				root, PluginPackageInstallerTests.ManifestJson("official", "1.0", new[] { "actions" }));
+			string matchingJson = JsonSerializer.Serialize(new
+			{
+				url = matchUrl,
+				sha256 = matchSha,
+				pluginId = PluginTestPackages.PluginId,
+				expectedTrust = "official",
+				expectedPermissions = new[] { "actions" },
+				expectedApiVersion = "1.0"
+			});
+			var matching = JsonSerializer.Deserialize<Dictionary<string, object?>>(matchingJson)!;
+			ActionResult installed = await action.ExecuteAsync(matching, CancellationToken.None);
+			Assert.True(installed.Success, installed.Error);
+			Assert.Single(manager.LoadedPlugins);
 		}
 		finally
 		{

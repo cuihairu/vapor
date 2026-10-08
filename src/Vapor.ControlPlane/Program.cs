@@ -984,6 +984,7 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 	}
 
 	string? pluginId = request.PluginId?.Trim();
+	PluginIndexEntry? catalogEntry = null;
 	if (string.IsNullOrEmpty(url))
 	{
 		// Catalog mode: resolve url/sha256 from the index by plugin id.
@@ -1002,6 +1003,7 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 		url = entry.Url;
 		sha256 = entry.Sha256;
 		pluginId = entry.Id;
+		catalogEntry = entry;
 	}
 	else if (sha256 is null)
 	{
@@ -1023,6 +1025,25 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 	if (request.Version is { } version && version.Trim().Length > 0)
 	{
 		payload["version"] = version.Trim();
+	}
+
+	// Catalog mode carries the index's own trust/permissions/apiVersion declaration
+	// into the instruction: the agent reconciles it against the package manifest, so
+	// the metadata the operator browsed is verified together with the content, not
+	// on separate channels. Fields the index does not declare are not checked.
+	if (catalogEntry is { } declared)
+	{
+		if (declared.Trust is { } declaredTrust)
+		{
+			payload["expectedTrust"] = declaredTrust;
+		}
+
+		if (declared.Permissions is { Count: > 0 } declaredPermissions)
+		{
+			payload["expectedPermissions"] = declaredPermissions;
+		}
+
+		payload["expectedApiVersion"] = declared.ApiVersion;
 	}
 
 	var dispatched = new List<object>();
