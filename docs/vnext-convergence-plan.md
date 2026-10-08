@@ -98,6 +98,8 @@ V-next 的收敛方向因此定为：
 
 **推荐默认**：`README.md:5` 改为 `# Vapor — Distributed Steam Automation Control Plane`，第二句保留 "Inspired by ArchiSteamFarm's Bot/Action model"；`feature-matrix.md` 标题维持（vs ASF 对比是功能沟通工具，不构成品牌绑定）。
 
+> **已拍板落地（2026-10-08，轮五十七）**：用户确认按推荐默认执行——README.md:5 改为 `# Vapor — Distributed Steam Automation Control Plane`，首段补 "Inspired by ArchiSteamFarm's Bot/Action model" 出处归属句；`feature-matrix.md` 标题维持。验收达成：README 首屏与 `architecture.md` 定位一致，无代码改动。
+
 **验收**：README 首屏与 `architecture.md` 定位一致；无代码改动。
 
 ### P1-C：Plugin 平台补丁包（拆三子项，仅做前二）

@@ -2,7 +2,7 @@
   <img src="docs/assets/vapor.svg" width="96" alt="Vapor" />
 </p>
 
-# Vapor (ASF-inspired)
+# Vapor — Distributed Steam Automation Control Plane
 
 [![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor)
@@ -12,7 +12,7 @@
 [![C#](https://img.shields.io/badge/C%23-12-239120)](https://learn.microsoft.com/dotnet/csharp/)
 [![status](https://img.shields.io/badge/status-alpha-orange)](#development-status)
 
-API-controlled, headless Steam automation platform designed for large-scale batch operations and multi-region deployment.
+API-controlled, headless Steam automation platform designed for large-scale batch operations and multi-region deployment. Inspired by [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm)'s Bot/Action model.
 
 The Steam protocol layer is built on [SteamKit2](https://github.com/SteamRE/SteamKit); the product shape reuses ASF's bot-session concepts in a control-plane / agent split instead of one process per machine. One control plane can steer agents in every region, close to Steam's regional endpoints. Agents reach the control plane, never the other way around.
 
