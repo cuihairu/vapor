@@ -32,7 +32,7 @@ Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit2) 构建�
 
 插件加载到隔离的 AssemblyLoadContext 中，无需重启即可卸载。清单（manifest）携带 SemVer API 契约、信任级别与权限授权；运行时 PluginStore 可从目录安装指定 Agent 的插件包。六个官方插件随仓库内建：Monitoring、MobileAuthenticator、MarketWatch、CaseOpening、GameData、GameAccess——最后一个以线上兼容的方式从宿主中抽离出游戏访问动作面。参见[插件开发](docs/plugins.md)。
 
-运维方面：OpenAPI/Swagger、SSE 事件流（任务、会话、认证挑战）、Prometheus 指标与 Grafana 面板、横跨 Agent 隧道的 OpenTelemetry 追踪、HMAC 签名的 Webhook，以及在输出时对凭据与验证码脱敏的结构化日志。安全姿态包括 AES-GCM 加密凭据存储与密钥轮换工具、按角色的 API Key、落盘即脱敏的审计日志——并恪守一条硬性规则：Steam Guard 验证码与凭据永不离开 Agent，跨网络传输的只有一个布尔值。
+运维方面：控制中心脚本仓库（存档运维脚本并定向派发到已连接 Agent）与脚本编排（顺序步骤、每步状态、失败即停/继续策略）、OpenAPI/Swagger、SSE 事件流（任务、会话、认证挑战）、Prometheus 指标与 Grafana 面板、横跨 Agent 隧道的 OpenTelemetry 追踪、HMAC 签名的 Webhook，以及在输出时对凭据与验证码脱敏的结构化日志。安全姿态包括 AES-GCM 加密凭据存储与密钥轮换工具、按角色的 API Key、落盘即脱敏的审计日志——并恪守一条硬性规则：Steam Guard 验证码与凭据永不离开 Agent，跨网络传输的只有一个布尔值。
 
 ## 架构一览
 

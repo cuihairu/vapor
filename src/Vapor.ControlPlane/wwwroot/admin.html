@@ -1521,6 +1521,43 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">脚本编排</h2>
+                            <div class="panel-subtitle">把脚本仓库里的脚本串成顺序流程:每步=脚本×目标 agent×失败策略;「运行」在控制中心逐步派发,每步状态与结果写入运行记录。</div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-small" id="refreshFlowsButton">刷新</button>
+                            <button class="btn btn-primary btn-small" id="newFlowButton">新建编排</button>
+                        </div>
+                    </div>
+                    <div class="stack" id="flowEditor" style="display: none;">
+                        <div class="field">
+                            <label for="flowNameInput">名称</label>
+                            <input id="flowNameInput" type="text" placeholder="例如:日维护流程">
+                        </div>
+                        <div class="field">
+                            <label for="flowDescInput">描述</label>
+                            <input id="flowDescInput" type="text" placeholder="用途与注意事项(可选)">
+                        </div>
+                        <div class="field">
+                            <label>步骤(按顺序执行)</label>
+                            <div class="stack" id="flowStepsContainer"></div>
+                            <div class="button-row">
+                                <button class="btn btn-secondary btn-small" id="addFlowStepButton">+ 添加步骤</button>
+                            </div>
+                        </div>
+                        <div class="button-row">
+                            <button class="btn btn-primary btn-small" id="saveFlowButton">保存</button>
+                            <button class="btn btn-secondary btn-small" id="cancelFlowButton">取消</button>
+                        </div>
+                    </div>
+                    <div class="list" id="flowList">
+                        <div class="empty-state">尚未加载脚本编排。</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">事件日志</h2>
                             <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
                         </div>
@@ -1547,6 +1584,8 @@
             accounts: [],
             scripts: [],
             editingScriptId: null,
+            flows: [],
+            editingFlowId: null,
             standing: new Map(),
             farm: new Map(),
             editingAccountName: null,
@@ -1663,6 +1702,11 @@
             document.getElementById("newScriptButton").addEventListener("click", () => openScriptEditor(null));
             document.getElementById("saveScriptButton").addEventListener("click", () => saveScript());
             document.getElementById("cancelScriptButton").addEventListener("click", () => closeScriptEditor());
+            document.getElementById("refreshFlowsButton").addEventListener("click", () => loadFlows());
+            document.getElementById("newFlowButton").addEventListener("click", () => openFlowEditor(null));
+            document.getElementById("saveFlowButton").addEventListener("click", () => saveFlow());
+            document.getElementById("cancelFlowButton").addEventListener("click", () => closeFlowEditor());
+            document.getElementById("addFlowStepButton").addEventListener("click", () => appendFlowStepRow(null));
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
             document.getElementById("qrLoginButton").addEventListener("click", () => startQrLogin());
             document.getElementById("refreshChallengesButton").addEventListener("click", () => refreshAuthChallenges());
@@ -1722,6 +1766,7 @@
                     refreshCrawlPlans(),
                     refreshPlugins(),
                     loadScripts(),
+                    loadFlows(),
                     refreshConfig()
                 ]);
                 restartStreams();
@@ -2332,6 +2377,133 @@
                 }
             } catch (error) {
                 alert(`派发失败: ${error.message}`);
+            }
+        }
+
+        async function loadFlows() {
+            try {
+                const data = await apiFetch("/v1/script-flows");
+                state.flows = data.flows || [];
+            } catch (error) {
+                state.flows = [];
+            }
+            renderFlows();
+        }
+
+        function renderFlows() {
+            const container = document.getElementById("flowList");
+            const flows = state.flows || [];
+            if (flows.length === 0) {
+                container.innerHTML = `<div class="empty-state">尚无脚本编排。点击「新建编排」把脚本串成顺序流程。</div>`;
+                return;
+            }
+            container.innerHTML = flows.map((flow) => `
+                <div class="card-row" data-flow-id="${escapeHtml(flow.id)}">
+                    <div>
+                        <div class="mono">${escapeHtml(flow.name)} <span class="tiny mono">${(flow.steps || []).length} 步</span></div>
+                        <div class="tiny">${escapeHtml(flow.description || "(无描述)")}</div>
+                        <div class="tiny mono">更新于 ${formatDate(flow.updatedAtMs)}</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary btn-small flow-run-button" data-flow-id="${escapeHtml(flow.id)}" data-flow-name="${escapeHtml(flow.name)}">运行</button>
+                        <button class="btn btn-secondary btn-small flow-edit-button" data-flow-id="${escapeHtml(flow.id)}">编辑</button>
+                        <button class="btn btn-secondary btn-small flow-delete-button" data-flow-id="${escapeHtml(flow.id)}" data-flow-name="${escapeHtml(flow.name)}">删除</button>
+                    </div>
+                </div>`).join("");
+            container.querySelectorAll(".flow-run-button").forEach((button) => {
+                button.addEventListener("click", () => runFlow(button.dataset.flowId, button.dataset.flowName));
+            });
+            container.querySelectorAll(".flow-edit-button").forEach((button) => {
+                button.addEventListener("click", () => openFlowEditor(button.dataset.flowId));
+            });
+            container.querySelectorAll(".flow-delete-button").forEach((button) => {
+                button.addEventListener("click", () => deleteFlow(button.dataset.flowId, button.dataset.flowName));
+            });
+        }
+
+        function appendFlowStepRow(step) {
+            const container = document.getElementById("flowStepsContainer");
+            const options = (state.scripts || []).map((script) =>
+                `<option value="${escapeHtml(script.id)}" ${step && step.scriptId === script.id ? "selected" : ""}>${escapeHtml(script.name)}</option>`).join("");
+            const row = document.createElement("div");
+            row.className = "card-row flow-step-row";
+            row.innerHTML = `
+                <div style="display: flex; gap: 8px; flex: 1; flex-wrap: wrap; align-items: center;">
+                    <select class="flow-step-script">${options}</select>
+                    <input class="flow-step-agent" type="text" placeholder="目标 agent id" value="${escapeHtml(step?.agentId || "")}">
+                    <select class="flow-step-on-failure">
+                        <option value="stop" ${!step || step.onFailure !== "continue" ? "selected" : ""}>失败即停</option>
+                        <option value="continue" ${step && step.onFailure === "continue" ? "selected" : ""}>失败继续</option>
+                    </select>
+                </div>
+                <button class="btn btn-secondary btn-small flow-step-remove">移除</button>`;
+            row.querySelector(".flow-step-remove").addEventListener("click", () => row.remove());
+            container.appendChild(row);
+        }
+
+        function openFlowEditor(flowId) {
+            state.editingFlowId = flowId;
+            const flow = (state.flows || []).find((item) => item.id === flowId) || null;
+            document.getElementById("flowNameInput").value = flow?.name || "";
+            document.getElementById("flowDescInput").value = flow?.description || "";
+            const container = document.getElementById("flowStepsContainer");
+            container.innerHTML = "";
+            const steps = flow?.steps?.length ? flow.steps : [null];
+            steps.forEach((step) => appendFlowStepRow(step));
+            document.getElementById("flowEditor").style.display = "";
+        }
+
+        function closeFlowEditor() {
+            state.editingFlowId = null;
+            document.getElementById("flowEditor").style.display = "none";
+        }
+
+        async function saveFlow() {
+            const name = document.getElementById("flowNameInput").value.trim();
+            const description = document.getElementById("flowDescInput").value.trim();
+            if (!name) { alert("名称不能为空"); return; }
+            const steps = Array.from(document.querySelectorAll("#flowStepsContainer .flow-step-row")).map((row) => ({
+                scriptId: row.querySelector(".flow-step-script").value,
+                agentId: row.querySelector(".flow-step-agent").value.trim(),
+                onFailure: row.querySelector(".flow-step-on-failure").value
+            }));
+            if (steps.length === 0) { alert("至少需要一个步骤"); return; }
+            if (steps.some((step) => !step.scriptId || !step.agentId)) { alert("每个步骤都需要脚本与目标 agent"); return; }
+            const body = { name, description, steps };
+            try {
+                if (state.editingFlowId) {
+                    await apiFetch(`/v1/script-flows/${state.editingFlowId}`, { method: "PUT", body: JSON.stringify(body) });
+                } else {
+                    await apiFetch("/v1/script-flows", { method: "POST", body: JSON.stringify(body) });
+                }
+                closeFlowEditor();
+                await loadFlows();
+            } catch (error) {
+                alert(`保存失败: ${error.message}`);
+            }
+        }
+
+        async function deleteFlow(flowId, flowName) {
+            if (!window.confirm(`确认删除编排「${flowName}」?运行记录会保留,该操作不可逆。`)) { return; }
+            try {
+                await apiFetch(`/v1/script-flows/${flowId}`, { method: "DELETE" });
+                if (state.editingFlowId === flowId) { closeFlowEditor(); }
+                await loadFlows();
+            } catch (error) {
+                alert(`删除失败: ${error.message}`);
+            }
+        }
+
+        async function runFlow(flowId, flowName) {
+            const runLabels = { completed: "全部成功", completed_with_failures: "完成(有失败)", failed: "已停止(步骤失败)", pending: "有步骤未结算" };
+            const stepLabels = { succeeded: "成功", failed: "失败", pending: "等待中", skipped: "已跳过" };
+            try {
+                const data = await apiFetch(`/v1/script-flows/${flowId}/run`, { method: "POST" });
+                const lines = (data.steps || []).map((step) =>
+                    `步骤${step.index + 1} ${step.scriptId}@${step.agentId}: ${stepLabels[step.status] || step.status}${step.error ? `(${step.error})` : ""}`).join("\n");
+                alert(`编排「${flowName}」运行结果:${runLabels[data.status] || data.status}\n${lines}`);
+            } catch (error) {
+                alert(`运行失败: ${error.message}`);
             }
         }
 

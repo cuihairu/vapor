@@ -14,6 +14,9 @@ using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
 
+// The execute tests tune the static AccountTaskRunner wait knobs, so they join
+// the shared collection that serializes every writer/reader of them.
+[Collection(AccountTaskWaitWindowCollection.Name)]
 public sealed class ScriptApiTests
 {
 	[Fact]

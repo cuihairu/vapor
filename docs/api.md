@@ -1,6 +1,6 @@
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 62 routes (75 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 67 routes (83 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
@@ -738,7 +738,64 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ---
 
-### 4.12 System (public)
+### 4.12 Script flows
+
+Ordered orchestration over the script repository: a flow is a list of steps, each pairing one stored script with one target agent and a failure policy. A run walks the steps in order on the control plane, dispatching each script via the `script_exec` host action and persisting per-step status.
+
+`ScriptFlowRecord = { id, name, description, steps, createdAtMs, updatedAtMs }` with `steps: [ { scriptId, agentId, onFailure } ]` (`onFailure`: `"stop"` halts the run on that step's failure, `"continue"` keeps walking; default `"stop"`). `ScriptFlowRunRecord = { id, flowId, flowName, status, steps, startedAtMs, finishedAtMs? }`; run status is `completed` (every step succeeded), `completed_with_failures` (continued past failures), `failed` (halted by a stop-policy failure) or `pending` (a step job never resolved inside the wait window — its job stays pollable via the jobs surface). Each run step is `{ index, scriptId, agentId, status, jobId?, error?, output? }` with step status `succeeded`, `failed`, `pending` or `skipped` (not attempted because the run halted before it). Runs share the script repository database; deleting a flow keeps its runs as history.
+
+#### `GET /v1/script-flows`
+- Purpose: list the script flows (ordered by name).
+- Auth: admin. Body: none.
+- 200: `{ "flows": [ ScriptFlowRecord ] }`. Errors: 401.
+
+#### `GET /v1/script-flows/{id}`
+- Purpose: fetch one flow with its ordered steps.
+- Auth: admin. Body: none.
+- 200: `ScriptFlowRecord`. Errors: 404 `{ "error": "flow '<id>' does not exist" }`, 401.
+
+#### `POST /v1/script-flows`
+- Purpose: store a new flow.
+- Auth: admin.
+- Body (`UpsertFlowRequest`):
+  - `name` — string, **required non-blank** (else 400 `name is required`)
+  - `description` — string, optional (default `""`)
+  - `steps` — array, **required with 1–50 entries** (else 400 `at least one step is required` / `a flow supports at most 50 steps`); each entry needs a non-blank `scriptId` and `agentId` (else 400 `every step needs a scriptId` / `every step needs an agentId`), optional `onFailure` trimmed and lowercased (`"stop"` default; anything else → 400 `onFailure must be 'stop' or 'continue'`)
+- Rule: shapes are validated at write time; step prerequisites (script exists, agent connected) are checked when a run starts.
+- 201: `ScriptFlowRecord`, `Location: /v1/script-flows/{id}`. Errors: 400, 401. Audit: `flow_created` (`flowId`, `name`, `steps`).
+
+#### `PUT /v1/script-flows/{id}`
+- Purpose: replace a flow (full update; the created timestamp is preserved).
+- Auth: admin.
+- Body (`UpsertFlowRequest`): same field rules as `POST /v1/script-flows`.
+- Rule: unknown id → 404 (checked before validation).
+- 200: `ScriptFlowRecord`. Errors: 400, 404, 401. Audit: `flow_updated` (`flowId`, `name`, `steps`).
+
+#### `DELETE /v1/script-flows/{id}`
+- Purpose: delete a flow definition (past runs are kept).
+- Auth: admin. Body: none.
+- 204: empty. Errors: 404 `{ "error": "flow '<id>' does not exist" }`, 401. Audit: `flow_deleted` (`flowId`).
+
+#### `POST /v1/script-flows/{id}/run`
+- Purpose: run a flow — walk the steps in order, dispatching each stored script to its target agent via `script_exec` with the same bounded wait as the single-script execute route.
+- Auth: admin. Body: none.
+- Rules: unknown flow → 404 before anything runs. Pre-flight checks every step first — a run either starts with all prerequisites satisfied or does not start at all; per step the script existence check precedes the agent connectivity check (`step <i> references script '<id>' which does not exist` / `step <i> targets agent '<id>' which is not connected; connect it and retry`, both 404, before any machine is touched and before the run record exists).
+- Semantics: each step rides the `script_exec` dispatch (host-scoped `agent:{id}` target, `NonIdempotent` cap). A failed step with policy `stop` ends the run (remaining steps `skipped`); with policy `continue` the walk goes on (`completed_with_failures` when failures occurred). A step whose job never resolves inside the wait window ends the run `pending` — later steps must not run out of order, so they are skipped; the unresolved job stays pollable via the jobs surface.
+- 200: the terminal `ScriptFlowRunRecord` (the executor lives inside the request). Errors: 404, 401. Audit: `flow_run_started` (`flowId`, `flowName`, `runId`, `steps`), `flow_step_completed` / `flow_step_failed` / `flow_step_pending` per executed step (`runId`, `index`, `scriptId`, `agentId`, job id, `error` on failures), `flow_run_finished` (`runId`, `status`, `succeeded`/`failed`/`pending`/`skipped` counts).
+
+#### `GET /v1/script-flows/{id}/runs`
+- Purpose: list the runs of one flow (most recent first).
+- Auth: admin. Body: none.
+- 200: `{ "runs": [ ScriptFlowRunRecord ] }`. Errors: 401.
+
+#### `GET /v1/script-flows/runs/{runId}`
+- Purpose: fetch one run with its per-step statuses.
+- Auth: admin. Body: none.
+- 200: `ScriptFlowRunRecord`. Errors: 404 `{ "error": "flow run '<runId>' does not exist" }`, 401.
+
+---
+
+### 4.13 System (public)
 
 #### `GET /`
 - Purpose: 302 redirect to `/admin.html` (admin UI).
@@ -774,7 +831,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ---
 
-### 4.13 Faults (fault-injection drills)
+### 4.14 Faults (fault-injection drills)
 
 Runtime fault injection for resilience drills (roadmap §8). All four endpoints are admin-only and exempt from api-request injection themselves — a drill can always be observed and stopped. Every armed fault is bounded twice over: a **budget** (injections left; the fault removes itself when exhausted) and a **TTL** (`expiresAt`, 1..3600 s, default 900) — a forgotten drill self-heals. State is in-memory: a control-plane restart disarms everything (deliberate). Audit actions: `faults.enable`, `faults.disable`, `faults.clear`. Metrics: `vapor_controlplane_fault_injections_total{kind,mode}` counter and `vapor_controlplane_faults_armed` gauge.
 

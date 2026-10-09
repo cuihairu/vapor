@@ -153,6 +153,31 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_ScriptFlowPanel_AnchorsOrchestrationContract()
+	{
+		// Script flow panel: list/new/edit/run all wired to the /v1/script-flows
+		// endpoints; the run button needs no prompt (each step carries its own
+		// target agent), destructive delete gates behind a confirm that notes
+		// runs are kept.
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		Assert.Contains("id=\"flowList\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"newFlowButton\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"addFlowStepButton\"", html, StringComparison.Ordinal);
+		Assert.Contains("loadFlows", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(\"/v1/script-flows\"", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/script-flows/${state.editingFlowId}`", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/script-flows/${flowId}/run`, { method: \"POST\" })", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/script-flows/${flowId}`, { method: \"DELETE\" })", html, StringComparison.Ordinal);
+		Assert.Contains("window.confirm(`确认删除编排「${flowName}」?运行记录会保留", html, StringComparison.Ordinal);
+		// The step editor pairs one script select with one target agent and a
+		// failure policy per row.
+		Assert.Contains("flow-step-script", html, StringComparison.Ordinal);
+		Assert.Contains("flow-step-agent", html, StringComparison.Ordinal);
+		Assert.Contains("flow-step-on-failure", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void AdminHtml_QrChallengePanel_RendersFirstPartyQrImage()
 	{
 		// Round-37 anchor: the qr_required card must render an in-page QR image

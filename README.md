@@ -32,14 +32,14 @@ Risky surfaces ship disabled. Market listing creation and cancels default to `dr
 
 Plugins load into isolated AssemblyLoadContexts and unload without a restart. Manifests carry a SemVer API contract, a trust level and permission grants; the runtime PluginStore installs packages agent-targeted from a catalog. Six official plugins ship in-tree: Monitoring, MobileAuthenticator, MarketWatch, CaseOpening, GameData, GameAccess — the last carrying the game-access action surface as a wire-compatible extraction from the host. See [plugin development](docs/plugins.md).
 
-For operations: a control-plane script repository to store and dispatch operator scripts to connected agents, OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
+For operations: a control-plane script repository to store and dispatch operator scripts to connected agents plus ordered script flows (sequential steps, per-step status, stop/continue failure policy), OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
 
 ## Architecture at a glance
 
 ```
                     ┌────────────────────────────────────────────┐
                     │               Control Plane                │
-   operators ──────▶│  REST /v1 (62 routes / 75 ops) · OpenAPI·SSE│
+   operators ──────▶│  REST /v1 (67 routes / 83 ops) · OpenAPI·SSE│
    (curl / UI)      │  SQLite: jobs · accounts · audit · crawl · scripts │
                     │  DesiredStateReconciler · schedulers       │
                     │  admin.html · dashboard.html · gamedata    │
