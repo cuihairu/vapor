@@ -80,6 +80,7 @@ nav:
       - Performance: performance.md
   - Research:
       - Market survey: research/market-survey.md
+      - Process boundary: research/process-boundary.md
   - Reference:
       - REST API: api.md
       - Actions catalog: actions.md
