@@ -1399,6 +1399,100 @@ app.MapDelete("/v1/scripts/{id}", async Task<IResult> (HttpContext ctx, Config c
 	.Produces<ErrorResponse>(404)
 	.Produces(401);
 
+// Must mirror the agent-side ScriptExecAction bounds: the metadata timeout is
+// 300s and the per-execution payload timeout can only shorten it.
+const int ScriptExecMaxTimeoutSeconds = 300;
+
+app.MapPost("/v1/scripts/{id}/execute", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, SqliteScriptStore scripts, AgentRegistry agents, IJobStore store, string id, ExecuteScriptRequest? req) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	ScriptRecord? script = await scripts.GetAsync(id.Trim(), ctx.RequestAborted);
+	if (script is null)
+	{
+		return Results.NotFound(new ErrorResponse($"script '{id}' does not exist"));
+	}
+
+	string? agentId = req?.AgentId?.Trim();
+	if (string.IsNullOrWhiteSpace(agentId))
+	{
+		return Results.BadRequest(new ErrorResponse("agentId is required (script execution is host-scoped and targets one agent)"));
+	}
+
+	// All request-shape validation precedes the runtime connectivity check:
+	// a malformed request is a client error, not a 404 for a machine that may
+	// legitimately be offline.
+	if (req?.TimeoutSeconds is < 1 or > ScriptExecMaxTimeoutSeconds)
+	{
+		return Results.BadRequest(new ErrorResponse($"timeoutSeconds must be between 1 and {ScriptExecMaxTimeoutSeconds}"));
+	}
+
+	// Host-scoped dispatch rides the agent:{id} target convention: a stored
+	// script runs on exactly the machine the operator names, never on a
+	// region-picked stand-in.
+	ConnectedAgent? agent = agents.Get(agentId);
+	if (agent is null)
+	{
+		return Results.NotFound(new ErrorResponse($"agent '{agentId}' is not connected; connect it and retry"));
+	}
+
+	var payload = new Dictionary<string, object?>
+	{
+		["scriptId"] = script.Id,
+		["name"] = script.Name,
+		["language"] = script.Language,
+		["content"] = script.Content
+	};
+	if (req?.TimeoutSeconds is not null)
+	{
+		payload["timeoutSeconds"] = req.TimeoutSeconds;
+	}
+
+	TaskRunResult run = await AccountTaskRunner.DispatchHostActionAsync(
+		store,
+		"script_exec",
+		agentId,
+		payload,
+		ctx.RequestAborted);
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"script_exec_dispatched",
+		jobId: run.JobId,
+		details: new Dictionary<string, object?>
+		{
+			["scriptId"] = script.Id,
+			["name"] = script.Name,
+			["agentId"] = agentId,
+			["bytes"] = script.Content.Length,
+			["outcome"] = run.Status.ToString()
+		});
+
+	if (run.Status == JobTaskStatus.Queued)
+	{
+		return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+	}
+
+	if (run.Status != JobTaskStatus.Finished)
+	{
+		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
+	}
+
+	return Results.Ok(new { job_id = run.JobId, script = script.Id, result = run.Output });
+})
+	.WithTags("Scripts")
+	.WithSummary("Dispatch a stored script to one connected agent via the script_exec host action; 200 with output when the task finishes inside the wait window, 202 + job id while still pending, 502 when the task fails")
+	.Produces(200)
+	.Produces(202)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces<ErrorResponse>(401);
+
 app.MapGet("/v1/accounts/{name}/trade-offers", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, bool? activeOnly) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
@@ -4582,6 +4676,8 @@ public sealed record PluginInstallRequest(
 );
 
 // Body for creating or replacing a stored script (script repository).
+public sealed record ExecuteScriptRequest(string AgentId, int? TimeoutSeconds = null);
+
 public sealed record UpsertScriptRequest(
 	string Name,
 	string? Description = null,

@@ -1,6 +1,6 @@
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 61 routes (74 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 62 routes (75 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
@@ -691,7 +691,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ### 4.11 Scripts
 
-`ScriptRecord = { id, name, description, language, content, createdAtMs, updatedAtMs }` — the control-plane script repository (SQLite at `Vapor_SCRIPT_DB_PATH`, default `data/scripts.db`). Storage only: the repository owns identity, metadata and bytes; execution is a separate dispatch surface and ships separately.
+`ScriptRecord = { id, name, description, language, content, createdAtMs, updatedAtMs }` — the control-plane script repository (SQLite at `Vapor_SCRIPT_DB_PATH`, default `data/scripts.db`). Storage only for the CRUD surface: the repository owns identity, metadata and bytes; execution rides the dedicated dispatch endpoint below.
 
 #### `GET /v1/scripts`
 - Purpose: list the script repository (ordered by name).
@@ -724,6 +724,17 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 - Purpose: delete a stored script.
 - Auth: admin. Body: none.
 - 204: empty. Errors: 404 `{ "error": "script '<id>' does not exist" }`, 401. Audit: `script_deleted` (`scriptId`).
+
+#### `POST /v1/scripts/{id}/execute`
+- Purpose: dispatch a stored script to one connected agent via the `script_exec` host action (host-scoped `agent:{id}` target; classified `NonIdempotent`, so dispatch is capped at 2 attempts).
+- Auth: admin.
+- Body (`ExecuteScriptRequest`):
+  - `agentId` — string, **required** (host-scoped dispatch targets exactly one machine; 400 when blank)
+  - `timeoutSeconds` — number, optional (1–300; 400 outside the range; the agent-side default is 120)
+- Rules: unknown script → 404 before any payload work; validation errors precede the connectivity check; unknown/unconnected agent → 404 `agent '<id>' is not connected; connect it and retry`.
+- 200: `{ "job_id", "script", "result" }` — the `script_exec` output (`exitCode`, `timedOut`, `stdout`/`stderr` with truncation flags) when the task finishes inside the wait window.
+- 202: `{ "job_id": "...", "status": "pending" }`, `Location: /v1/jobs/{job_id}` — the agent has not reported within the wait window; poll the job endpoint (§2) until terminal.
+- Errors: 502 `{ "job_id", "error" }` when the task fails, 400, 404, 401. Audit: `script_exec_dispatched` (`scriptId`, `name`, `agentId`, `bytes`, `outcome`, job id).
 
 ---
 

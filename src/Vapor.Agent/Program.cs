@@ -204,6 +204,7 @@ IReadOnlyDictionary<string, IHostAction> hostActions = new Dictionary<string, IH
 	["plugin_uninstall"] = new PluginUninstallAction(pluginsDirectory, pluginManager, hostLoggerFactory.CreateLogger<PluginUninstallAction>()),
 	["plugin_list"] = new PluginListAction(pluginsDirectory, pluginManager),
 	["plugin_update_check"] = new PluginUpdateCheckAction(pluginManager),
+	["script_exec"] = new ScriptExecAction(),
 	["set_proxy"] = new SetProxyAction(sessionManager, hostLoggerFactory.CreateLogger<SetProxyAction>())
 };
 

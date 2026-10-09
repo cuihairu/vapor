@@ -6,12 +6,12 @@ namespace Vapor.ControlPlane.Tests;
 public class ActionSemanticsTests
 {
 	[Fact]
-	public void ClassificationTable_CoversAll58InTreeActions_WithNoUnknownEntries()
+	public void ClassificationTable_CoversAll59InTreeActions_WithNoUnknownEntries()
 	{
 		var names = ActionSemantics.ActionNames;
 
-		Assert.Equal(58, names.Count);
-		Assert.Equal(58, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+		Assert.Equal(59, names.Count);
+		Assert.Equal(59, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 		foreach (string name in names)
 		{
 			Assert.NotEqual(ActionSafety.Unknown, ActionSemantics.SafetyOf(name));
@@ -31,12 +31,13 @@ public class ActionSemanticsTests
 		Assert.Equal(30, byClass[ActionSafety.ReadOnly]);
 		Assert.Equal(11, byClass[ActionSafety.Idempotent]);
 		Assert.Equal(12, byClass[ActionSafety.GuardedWrite]);
-		Assert.Equal(5, byClass[ActionSafety.NonIdempotent]);
+		Assert.Equal(6, byClass[ActionSafety.NonIdempotent]);
 	}
 
 	[Theory]
 	[InlineData("send_trade_offer")] // NonIdempotent
 	[InlineData("create_market_listing")] // NonIdempotent
+	[InlineData("script_exec")] // NonIdempotent: an arbitrary operator script can double side effects on re-run
 	[InlineData("accept_trade_offer")] // GuardedWrite
 	[InlineData("redeem_key")] // GuardedWrite
 	public void MaxDispatchAttempts_UnsafeClasses_CapAtConservativeCeiling(string action)

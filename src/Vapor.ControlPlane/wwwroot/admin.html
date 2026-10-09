@@ -1484,7 +1484,7 @@
                     <div class="panel-header">
                         <div>
                             <h2 class="panel-title">脚本仓库</h2>
-                            <div class="panel-subtitle">控制中心侧的运维脚本库:集中存档、快速取用。仅登记存储,执行派发面另行上线。</div>
+                            <div class="panel-subtitle">控制中心侧的运维脚本库:集中存档、快速取用;「执行」按目标 agent 定向派发(经任务面板查看结果)。</div>
                         </div>
                         <div style="display: flex; gap: 8px;">
                             <button class="btn btn-secondary btn-small" id="refreshScriptsButton">刷新</button>
@@ -2256,10 +2256,14 @@
                         <div class="tiny mono">更新于 ${formatDate(script.updatedAtMs)} · ${(script.content || "").length} 字节</div>
                     </div>
                     <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-primary btn-small script-execute-button" data-script-id="${escapeHtml(script.id)}" data-script-name="${escapeHtml(script.name)}">执行</button>
                         <button class="btn btn-secondary btn-small script-edit-button" data-script-id="${escapeHtml(script.id)}">编辑</button>
                         <button class="btn btn-secondary btn-small script-delete-button" data-script-id="${escapeHtml(script.id)}" data-script-name="${escapeHtml(script.name)}">删除</button>
                     </div>
                 </div>`).join("");
+            container.querySelectorAll(".script-execute-button").forEach((button) => {
+                button.addEventListener("click", () => executeScript(button.dataset.scriptId, button.dataset.scriptName));
+            });
             container.querySelectorAll(".script-edit-button").forEach((button) => {
                 button.addEventListener("click", () => openScriptEditor(button.dataset.scriptId));
             });
@@ -2312,6 +2316,22 @@
                 await loadScripts();
             } catch (error) {
                 alert(`删除失败: ${error.message}`);
+            }
+        }
+
+        async function executeScript(scriptId, scriptName) {
+            const agentId = window.prompt(`在目标 agent 上执行「${scriptName}」。请输入 agent id:`);
+            if (!agentId || !agentId.trim()) { return; }
+            try {
+                const data = await apiFetch(`/v1/scripts/${scriptId}/execute`, { method: "POST", body: JSON.stringify({ agentId: agentId.trim() }) });
+                if (data.status === "pending") {
+                    alert(`已派发到 ${agentId.trim()},任务 ${data.job_id} 排队执行中,可在任务面板查看结果。`);
+                } else {
+                    const result = data.result || {};
+                    alert(`执行完成:退出码 ${result.exitCode}${result.timedOut ? "(超时)" : ""}\nstdout:\n${result.stdout || "(空)"}\nstderr:\n${result.stderr || "(空)"}`);
+                }
+            } catch (error) {
+                alert(`派发失败: ${error.message}`);
             }
         }
 

@@ -471,8 +471,8 @@ my-plugin.zip
 
 ### Agent-side job actions
 
-Three host actions (no bot session required, targeted with the `agent:{id}`
-task-target prefix) cover the lifecycle:
+Four host actions (no bot session required, targeted with the `agent:{id}`
+task-target prefix) cover the plugin lifecycle:
 
 | Action | Payload | Behaviour |
 |--------|---------|-----------|

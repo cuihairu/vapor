@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.WebSockets;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Vapor.ControlPlane;
+using Vapor.Protocol;
 using Xunit;
 
 namespace Vapor.ControlPlane.Tests;
@@ -187,9 +190,287 @@ public sealed class ScriptApiTests
 		Assert.Equal("audited", ((JsonElement)created.Details!["name"]!).GetString());
 	}
 
+	[Fact]
+	public async Task Script_Execute_RequiresAuthorization()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/scripts/abc/execute", new { agentId = "agent-1" });
+
+		Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+	}
+
+	[Fact]
+	public async Task Script_Execute_UnknownScript_Returns404()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/scripts/missing/execute", new { agentId = "agent-1" });
+
+		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Contains("does not exist", doc.RootElement.GetProperty("error").GetString());
+	}
+
+	[Fact]
+	public async Task Script_Execute_ValidationArms()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+		string scriptId = await CreateScript(client, "s");
+
+		using HttpResponseMessage blankAgent = await client.PostAsJsonAsync($"/v1/scripts/{scriptId}/execute", new { agentId = "   " });
+		Assert.Equal(HttpStatusCode.BadRequest, blankAgent.StatusCode);
+		using var blankAgentDoc = JsonDocument.Parse(await blankAgent.Content.ReadAsStringAsync());
+		Assert.Equal("agentId is required (script execution is host-scoped and targets one agent)", blankAgentDoc.RootElement.GetProperty("error").GetString());
+
+		using HttpResponseMessage missingAgent = await client.PostAsJsonAsync($"/v1/scripts/{scriptId}/execute", new { agentId = "ghost" });
+		Assert.Equal(HttpStatusCode.NotFound, missingAgent.StatusCode);
+		using var missingAgentDoc = JsonDocument.Parse(await missingAgent.Content.ReadAsStringAsync());
+		Assert.Contains("is not connected", missingAgentDoc.RootElement.GetProperty("error").GetString());
+	}
+
+	[Theory]
+	[InlineData(0)]
+	[InlineData(301)]
+	public async Task Script_Execute_TimeoutOutsideBounds_Returns400(int timeoutSeconds)
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+		string scriptId = await CreateScript(client, "s");
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync(
+			$"/v1/scripts/{scriptId}/execute",
+			new { agentId = "agent-1", timeoutSeconds });
+
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Equal("timeoutSeconds must be between 1 and 300", doc.RootElement.GetProperty("error").GetString());
+	}
+
+	[Fact]
+	public async Task Script_Execute_DispatchesHostTaskToNamedAgent_AndAudits()
+	{
+		await using var factory = CreateFactory();
+		AgentRegistry registry = factory.Services.GetRequiredService<AgentRegistry>();
+		using CancellationTokenSource registrationCts = new();
+		registry.Register(
+			new AgentHello("agent-exec", "us-east", new Dictionary<string, bool> { ["script_exec"] = true }, null),
+			new ScriptExecNoopWebSocket(),
+			registrationCts.Token);
+		using var client = CreateAdminClient(factory);
+		using HttpResponseMessage create = await client.PostAsJsonAsync("/v1/scripts", new
+		{
+			name = "disk-check",
+			description = "df -h",
+			language = "shell",
+			content = "df -h /"
+		});
+		using var createDoc = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+		string scriptId = createDoc.RootElement.GetProperty("id").GetString()!;
+
+		TimeSpan savedWindow = AccountTaskRunner.WaitWindow;
+		TimeSpan savedInterval = AccountTaskRunner.PollInterval;
+		try
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(50);
+
+			// The noop websocket never claims the task, so the route exhausts the
+			// (shortened) wait window and answers 202 pending.
+			using HttpResponseMessage response = await client.PostAsJsonAsync(
+				$"/v1/scripts/{scriptId}/execute",
+				new { agentId = "agent-exec", timeoutSeconds = 60 });
+			Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+			using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+			Assert.Equal("pending", doc.RootElement.GetProperty("status").GetString());
+			string jobId = doc.RootElement.GetProperty("job_id").GetString()!;
+
+			await using var scope = factory.Services.CreateAsyncScope();
+			var store = scope.ServiceProvider.GetRequiredService<IJobStore>();
+			JobWithTasks job = await store.GetJob(jobId, CancellationToken.None);
+			Assert.Equal("script_exec", job.Job.Action);
+			JobTask task = Assert.Single(job.Tasks);
+			Assert.Equal("agent:agent-exec", task.Target);
+			Assert.Equal(scriptId, ((JsonElement)task.Payload!["scriptId"]!).GetString());
+			Assert.Equal("shell", ((JsonElement)task.Payload!["language"]!).GetString());
+			Assert.Equal("df -h /", ((JsonElement)task.Payload!["content"]!).GetString());
+			Assert.Equal(60, ((JsonElement)task.Payload!["timeoutSeconds"]!).GetInt32());
+
+			IAuditStore audit = scope.ServiceProvider.GetRequiredService<IAuditStore>();
+			IReadOnlyList<AuditEntry> entries = await audit.QueryAsync(new AuditQuery(Limit: 20), CancellationToken.None);
+			AuditEntry dispatched = Assert.Single(entries, e => e.Action == "script_exec_dispatched");
+			Assert.Equal(jobId, dispatched.JobId);
+			Assert.Equal("agent-exec", ((JsonElement)dispatched.Details!["agentId"]!).GetString());
+			Assert.Equal("df -h /".Length, ((JsonElement)dispatched.Details!["bytes"]!).GetInt32());
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = savedWindow;
+			AccountTaskRunner.PollInterval = savedInterval;
+		}
+	}
+
+	[Fact]
+	public async Task Script_Execute_OmitsTimeoutFromPayloadWhenUnset()
+	{
+		await using var factory = CreateFactory();
+		AgentRegistry registry = factory.Services.GetRequiredService<AgentRegistry>();
+		using CancellationTokenSource registrationCts = new();
+		registry.Register(
+			new AgentHello("agent-exec", "us-east", new Dictionary<string, bool> { ["script_exec"] = true }, null),
+			new ScriptExecNoopWebSocket(),
+			registrationCts.Token);
+		using var client = CreateAdminClient(factory);
+		string scriptId = await CreateScript(client, "s");
+
+		TimeSpan savedWindow = AccountTaskRunner.WaitWindow;
+		TimeSpan savedInterval = AccountTaskRunner.PollInterval;
+		try
+		{
+			AccountTaskRunner.WaitWindow = TimeSpan.FromMilliseconds(400);
+			AccountTaskRunner.PollInterval = TimeSpan.FromMilliseconds(50);
+
+			using HttpResponseMessage response = await client.PostAsJsonAsync(
+				$"/v1/scripts/{scriptId}/execute",
+				new { agentId = "agent-exec" });
+			Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+			using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+			string jobId = doc.RootElement.GetProperty("job_id").GetString()!;
+
+			await using var scope = factory.Services.CreateAsyncScope();
+			var store = scope.ServiceProvider.GetRequiredService<IJobStore>();
+			JobWithTasks job = await store.GetJob(jobId, CancellationToken.None);
+			Assert.False(job.Tasks.Single().Payload!.ContainsKey("timeoutSeconds"));
+		}
+		finally
+		{
+			AccountTaskRunner.WaitWindow = savedWindow;
+			AccountTaskRunner.PollInterval = savedInterval;
+		}
+	}
+
+	[Fact]
+	public async Task Script_Execute_AgentReportsFinished_ReturnsResult()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		AgentRegistry registry = factory.Services.GetRequiredService<AgentRegistry>();
+		using CancellationTokenSource registrationCts = new();
+		registry.Register(
+			new AgentHello("agent-exec", "us-east", new Dictionary<string, bool> { ["script_exec"] = true }, null),
+			new ScriptExecNoopWebSocket(),
+			registrationCts.Token);
+		using var client = CreateAdminClient(factory);
+		string scriptId = await CreateScript(client, "df-check");
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstScriptExecTaskAsync(store, success: true, new Dictionary<string, object?>
+		{
+			["exitCode"] = 0,
+			["timedOut"] = false,
+			["stdout"] = "/dev/sda1 90%",
+			["stderr"] = ""
+		}, null, cts.Token));
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync($"/v1/scripts/{scriptId}/execute", new { agentId = "agent-exec" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Equal(scriptId, doc.RootElement.GetProperty("script").GetString());
+		JsonElement result = doc.RootElement.GetProperty("result");
+		Assert.Equal(0, result.GetProperty("exitCode").GetInt32());
+		Assert.False(result.GetProperty("timedOut").GetBoolean());
+		Assert.Equal("/dev/sda1 90%", result.GetProperty("stdout").GetString());
+	}
+
+	[Fact]
+	public async Task Script_Execute_AgentReportsFailure_Returns502()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		AgentRegistry registry = factory.Services.GetRequiredService<AgentRegistry>();
+		using CancellationTokenSource registrationCts = new();
+		registry.Register(
+			new AgentHello("agent-exec", "us-east", new Dictionary<string, bool> { ["script_exec"] = true }, null),
+			new ScriptExecNoopWebSocket(),
+			registrationCts.Token);
+		using var client = CreateAdminClient(factory);
+		string scriptId = await CreateScript(client, "boom");
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		Task responder = Task.Run(() => RespondToFirstScriptExecTaskAsync(store, success: false, null, "script exited with code 3", cts.Token));
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync($"/v1/scripts/{scriptId}/execute", new { agentId = "agent-exec" });
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+		string body = await response.Content.ReadAsStringAsync();
+		Assert.Contains("script exited with code 3", body);
+	}
+
+	/// <summary>Plays the agent side: claims the queued script_exec task and reports a result.</summary>
+	private static async Task<Dictionary<string, object?>?> RespondToFirstScriptExecTaskAsync(
+		IJobStore store,
+		bool success,
+		Dictionary<string, object?>? output,
+		string? error,
+		CancellationToken ct)
+	{
+		while (!ct.IsCancellationRequested)
+		{
+			JobTask? claimed = await store.ClaimNextQueuedTask("us-east", ct);
+			if (claimed is not null && claimed.Action == "script_exec")
+			{
+				await store.SetTaskResult(
+					new TaskResult(claimed.Id, success, success ? null : error, success ? output : null, DateTimeOffset.UtcNow),
+					ct);
+				return claimed.Payload is null ? null : new Dictionary<string, object?>(claimed.Payload);
+			}
+
+			await Task.Delay(25, ct);
+		}
+
+		return null;
+	}
+
+	private static TestFactory CreateFactory(bool removeHosted = false) => new(removeHosted);
+
+	private static async Task<string> CreateScript(HttpClient client, string name)
+	{
+		using HttpResponseMessage create = await client.PostAsJsonAsync("/v1/scripts", new { name, content = "echo" });
+		using var createDoc = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+		return createDoc.RootElement.GetProperty("id").GetString()!;
+	}
+
 	private static TestFactory CreateFactory() => new();
 
-	private sealed class TestFactory : WebApplicationFactory<Program>
+	private sealed class ScriptExecNoopWebSocket : WebSocket
+	{
+		public override WebSocketCloseStatus? CloseStatus => null;
+		public override string? CloseStatusDescription => null;
+		public override WebSocketState State => WebSocketState.Open;
+		public override string SubProtocol => string.Empty;
+
+		public override void Abort()
+		{
+		}
+
+		public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+		public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+		public override void Dispose()
+		{
+		}
+		public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) =>
+			Task.FromCanceled<WebSocketReceiveResult>(cancellationToken);
+		public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) =>
+			Task.CompletedTask;
+	}
+
+	private sealed class TestFactory(bool removeHosted = false) : WebApplicationFactory<Program>
 	{
 		protected override void ConfigureWebHost(IWebHostBuilder builder)
 		{
@@ -203,6 +484,13 @@ public sealed class ScriptApiTests
 				services.AddSingleton<IJobStore>(sp => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();
+				if (removeHosted)
+				{
+					// The execute endpoint races its own fake agent responder;
+					// background dispatchers would claim/fail the task first.
+					services.RemoveAll<IHostedService>();
+					services.RemoveAll<IHostedLifecycleService>();
+				}
 			});
 		}
 	}

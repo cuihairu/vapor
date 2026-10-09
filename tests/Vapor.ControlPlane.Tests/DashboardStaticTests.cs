@@ -144,6 +144,12 @@ public sealed class DashboardStaticTests
 		Assert.Contains("apiFetch(`/v1/scripts/${state.editingScriptId}`", html, StringComparison.Ordinal);
 		Assert.Contains("apiFetch(`/v1/scripts/${scriptId}`, { method: \"DELETE\" })", html, StringComparison.Ordinal);
 		Assert.Contains("window.confirm(`确认从仓库删除脚本", html, StringComparison.Ordinal);
+		// Execute dispatch (40.12-2): per-agent host-scoped dispatch via prompt,
+		// 202 pending surfaces as a queued job pointer, finished surfaces stdout/stderr.
+		Assert.Contains("script-execute-button", html, StringComparison.Ordinal);
+		Assert.Contains("executeScript(button.dataset.scriptId, button.dataset.scriptName)", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/scripts/${scriptId}/execute`", html, StringComparison.Ordinal);
+		Assert.Contains("window.prompt(`在目标 agent 上执行", html, StringComparison.Ordinal);
 	}
 
 	[Fact]

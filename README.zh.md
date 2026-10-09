@@ -24,7 +24,7 @@ Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit2) 构建�
 
 ## 亮点
 
-每个账号作为一个持久的 Steam bot 会话运行：凭据登录与令牌刷新、SteamGuard / 2FA 挑战、TOTP 与二维码登录，以及从 SDA 或 steamguard-cli 导入 `.maFile`。在此之上提供 58 个动作——卡牌挂机、游戏时长提升、交易报价、带手续费感知定价的市场挂单、库存与重复物品扫描、成就管理、CDK 兑换、免费入库与积分商城兑换。每个动作都带有执行安全等级，调度器正是据此将可能重复触发外部副作用的动作重派上限设为 2 次，而只读与幂等动作仍使用配置的常规上限。[动作目录](docs/actions.md)列出了每个动作的全部载荷字段。
+每个账号作为一个持久的 Steam bot 会话运行：凭据登录与令牌刷新、SteamGuard / 2FA 挑战、TOTP 与二维码登录，以及从 SDA 或 steamguard-cli 导入 `.maFile`。在此之上提供 59 个动作——卡牌挂机、游戏时长提升、交易报价、带手续费感知定价的市场挂单、库存与重复物品扫描、成就管理、CDK 兑换、免费入库与积分商城兑换。每个动作都带有执行安全等级，调度器正是据此将可能重复触发外部副作用的动作重派上限设为 2 次，而只读与幂等动作仍使用配置的常规上限。[动作目录](docs/actions.md)列出了每个动作的全部载荷字段。
 
 声明式编排：你只需为每个账号声明 `online` / `idle` / `farm` / `boost`，调和器（reconciler）会将实际状态收敛到该声明——卡牌掉落耗尽时轮换挂机目标，Agent 掉线时重新分配账号。`GET /v1/orchestration/farm` 可查看实时循环。
 
@@ -48,7 +48,7 @@ Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit2) 构建�
                     ┌───────────────┴──────────┐  ┌──────────────┐
                     │         Agent #1         │  │   Agent #N   │   ← one per region
                     │  session engine (bots)   │  │              │
-                    │  58 actions · plugins   │  │   plugins    │
+                    │  59 actions · plugins   │  │   plugins    │
                     │  encrypted credentials   │  │              │
                     └───────────────┬──────────┘  └──────┬───────┘
                                     │                    │

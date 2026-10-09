@@ -1,6 +1,6 @@
 # Actions catalog
 
-Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **58 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 5 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
+Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **59 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 6 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
@@ -69,7 +69,7 @@ Most REST wrappers under `/v1/accounts/{name}/...` are thin: they build the payl
 
 - `ActionRegistry` (`src/Vapor.Steam.Core/IAction.cs`) is a single flat, case-insensitive dictionary. Core actions are registered at agent startup; plugin actions are registered into the *same* dictionary via `PluginManager.PluginLoaded` (`actionRegistry.Register(action)`) and removed on `PluginUnloading`.
 - There is no namespace prefixing. Plugin action names (`market_watch_add`, `get_metrics`, …) live alongside core names (`get_inventory`, …). Collisions are not detected: a plugin action whose `Name` equals a core action's name **silently overwrites** it (last writer wins), and when the plugin unloads, the name is unregistered entirely — the shadowed core action does not come back. Convention: plugins prefix their names (`market_watch_*`, `get_metrics`) and none of the shipped plugins collide with core names.
-- Agent host actions (`plugin_install` / `plugin_uninstall` / `plugin_list` / `plugin_update_check`) are *not* in the registry; they live in a separate dictionary checked before the registry in the agent's task executor, and are advertised in hello capabilities like any other action. They additionally require the task target to be exactly `agent:{thisAgentId}` (defense in depth — a misrouted delivery fails loudly instead of mutating the wrong machine's plugin directory).
+- Agent host actions (`plugin_install` / `plugin_uninstall` / `plugin_list` / `plugin_update_check` / `script_exec`) are *not* in the registry; they live in a separate dictionary checked before the registry in the agent's task executor, and are advertised in hello capabilities like any other action. They additionally require the task target to be exactly `agent:{thisAgentId}` (defense in depth — a misrouted delivery fails loudly instead of mutating the wrong machine's plugin directory).
 
 ---
 
@@ -429,7 +429,7 @@ Output: `status`, `count` (schema items), `items[]` `{ defIndex, name }`, `appId
 
 # Agent host actions (`Vapor.Agent` assembly, `src/Vapor.Agent/HostActions/`)
 
-All five require the job target to be exactly `"agent:{agentId}"` (see `HostTaskTarget`); they run host-scoped — no bot session — and ride the regular task pipeline (retries/audit/jobs panel apply). `pluginId` spellings: both `pluginId` and `plugin_id` are accepted (alias lookup).
+All six require the job target to be exactly `"agent:{agentId}"` (see `HostTaskTarget`); they run host-scoped — no bot session — and ride the regular task pipeline (retries/audit/jobs panel apply). `pluginId` spellings: both `pluginId` and `plugin_id` are accepted (alias lookup).
 
 ### `plugin_install` (login: no, timeout: 300s, safety: Idempotent)
 Installs a plugin package (zip) by URL with a **mandatory SHA-256 checksum**, validates it against the manifest and hot-loads it.
@@ -456,6 +456,11 @@ Payload: `account` string **required**; `proxy` string optional — the endpoint
 Output: `account`, `proxy` (**masked form only** — `socks5://user:<redacted>@host:port`; credentials never leave the agent), `cleared` (bool), `sessionRestarted` (bool).
 Note: this action is host-scoped (`agent:{id}` target) but keyed by account — the ControlPlane refuses assignment for accounts without a pinned agent, because the endpoint would otherwise persist into whichever agent claims the task. Pair with `check_proxy` to verify the live exit. Rationale: Steam correlates logins by IP; an account's exit is pinned once and changed rarely (see `todo.md` §39).
 
+### `script_exec` (login: no, timeout: 300s, safety: NonIdempotent)
+Runs an operator script from the control-plane script repository on this agent machine. The repository lives control-plane side, so the payload carries the full script body; the agent resolves the interpreter from `language`, captures stdout/stderr plus the exit code, and reports all three back on the task result. The only surface is this host action — `POST /v1/scripts/{id}/execute` is the operator-facing entry that stages the payload.
+Payload: `content` string **required** (the full script body); `language` string optional — `shell` (default, `/bin/sh -c`) / `python` (`python3 -c`) / `powershell` (`pwsh -NoProfile -NonInteractive -Command`; a missing interpreter fails the execution with the start error); `timeoutSeconds` number optional (1–300, default 120 — can only shorten the 300s metadata bound); `scriptId` / `name` optional provenance echoed by the control plane for job identification.
+Output: `exitCode` (null when killed), `timedOut` (bool), `stdout` / `stderr` (each capped at 65536 chars with `stdoutTruncated` / `stderrTruncated` flags — truncation is reported, not hidden), plus nothing else — the action deliberately does not echo the script body back. A non-zero exit is a failed result carrying `script exited with code N`; a timeout is a failed result carrying `script timed out after Ns` with the process tree killed. Classified `NonIdempotent`: re-running an arbitrary script can double its external side effects, so dispatch is capped at 2 attempts.
+
 ---
 
 ## Action count summary
@@ -468,5 +473,5 @@ Note: this action is host-scoped (`agent:{id}` target) but keyed by account — 
 | Market Watch plugin (`vapor.market-watch`) | 3 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |
 | Game Data plugin (`vapor.game-data`) | 4 |
-| Agent host (`Vapor.Agent/HostActions/`) | 5 |
-| **Total** | **58** |
+| Agent host (`Vapor.Agent/HostActions/`) | 6 |
+| **Total** | **59** |

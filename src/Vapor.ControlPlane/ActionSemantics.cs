@@ -91,6 +91,7 @@ public static class ActionSemantics
 			["plugin_uninstall"] = ActionSafety.Idempotent,
 			["plugin_list"] = ActionSafety.ReadOnly,
 			["plugin_update_check"] = ActionSafety.ReadOnly,
+			["script_exec"] = ActionSafety.NonIdempotent,
 			["set_proxy"] = ActionSafety.GuardedWrite,
 		};
 

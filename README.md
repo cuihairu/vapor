@@ -24,7 +24,7 @@ The Steam protocol layer is built on [SteamKit2](https://github.com/SteamRE/Stea
 
 ## Highlights
 
-Each account runs as a persistent Steam bot session: credential login with token refresh, SteamGuard / 2FA challenges, TOTP and QR-code login, and `.maFile` import from SDA or steamguard-cli. On top of that sit 58 actions — card farming, playtime boosting, trade offers, market listings with fee-aware pricing, inventory and duplicate scanning, achievement management, key redemption, free-license and points-shop claims. Every action carries an execution-safety class, which is what lets the scheduler cap redispatch at 2 attempts for actions whose repetition can double an external side effect, while read-only and idempotent actions keep the configured ceiling. The [actions catalog](docs/actions.md) lists every payload field.
+Each account runs as a persistent Steam bot session: credential login with token refresh, SteamGuard / 2FA challenges, TOTP and QR-code login, and `.maFile` import from SDA or steamguard-cli. On top of that sit 59 actions — card farming, playtime boosting, trade offers, market listings with fee-aware pricing, inventory and duplicate scanning, achievement management, key redemption, free-license and points-shop claims. Every action carries an execution-safety class, which is what lets the scheduler cap redispatch at 2 attempts for actions whose repetition can double an external side effect, while read-only and idempotent actions keep the configured ceiling. The [actions catalog](docs/actions.md) lists every payload field.
 
 Declarative orchestration: you state `online` / `idle` / `farm` / `boost` per account and the reconciler converges reality to that statement, rotating farming targets as card drops run out and reassigning accounts when an agent disappears. `GET /v1/orchestration/farm` shows the live loop.
 
@@ -32,14 +32,14 @@ Risky surfaces ship disabled. Market listing creation and cancels default to `dr
 
 Plugins load into isolated AssemblyLoadContexts and unload without a restart. Manifests carry a SemVer API contract, a trust level and permission grants; the runtime PluginStore installs packages agent-targeted from a catalog. Six official plugins ship in-tree: Monitoring, MobileAuthenticator, MarketWatch, CaseOpening, GameData, GameAccess — the last carrying the game-access action surface as a wire-compatible extraction from the host. See [plugin development](docs/plugins.md).
 
-For operations: a control-plane script repository to store and browse operator scripts, OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
+For operations: a control-plane script repository to store and dispatch operator scripts to connected agents, OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
 
 ## Architecture at a glance
 
 ```
                     ┌────────────────────────────────────────────┐
                     │               Control Plane                │
-   operators ──────▶│  REST /v1 (61 routes / 74 ops) · OpenAPI·SSE│
+   operators ──────▶│  REST /v1 (62 routes / 75 ops) · OpenAPI·SSE│
    (curl / UI)      │  SQLite: jobs · accounts · audit · crawl · scripts │
                     │  DesiredStateReconciler · schedulers       │
                     │  admin.html · dashboard.html · gamedata    │
@@ -48,7 +48,7 @@ For operations: a control-plane script repository to store and browse operator s
                     ┌───────────────┴──────────┐  ┌──────────────┐
                     │         Agent #1         │  │   Agent #N   │   ← one per region
                     │  session engine (bots)   │  │              │
-                    │  58 actions · plugins   │  │   plugins    │
+                    │  59 actions · plugins   │  │   plugins    │
                     │  encrypted credentials   │  │              │
                     └───────────────┬──────────┘  └──────┬───────┘
                                     │                    │
