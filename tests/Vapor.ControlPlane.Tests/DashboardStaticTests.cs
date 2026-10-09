@@ -129,6 +129,24 @@ public sealed class DashboardStaticTests
 	}
 
 	[Fact]
+	public void AdminHtml_ScriptRepositoryPanel_AnchorsStorageOnlyContract()
+	{
+		// Script repository panel: list/new/edit/delete all wired to the
+		// /v1/scripts endpoints, destructive delete gated behind a confirm
+		// dialog, and the panel copy states storage-only (execution dispatch
+		// is a separate surface, not this panel).
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
+
+		Assert.Contains("id=\"scriptList\"", html, StringComparison.Ordinal);
+		Assert.Contains("id=\"newScriptButton\"", html, StringComparison.Ordinal);
+		Assert.Contains("loadScripts", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(\"/v1/scripts\"", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/scripts/${state.editingScriptId}`", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/scripts/${scriptId}`, { method: \"DELETE\" })", html, StringComparison.Ordinal);
+		Assert.Contains("window.confirm(`确认从仓库删除脚本", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
 	public void AdminHtml_QrChallengePanel_RendersFirstPartyQrImage()
 	{
 		// Round-37 anchor: the qr_required card must render an in-page QR image

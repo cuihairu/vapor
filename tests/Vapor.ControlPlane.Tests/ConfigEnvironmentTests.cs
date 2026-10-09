@@ -160,6 +160,38 @@ public sealed class ConfigEnvironmentTests
 		}
 	}
 
+	[Fact]
+	public void ScriptDbPath_SetFromEnvironment()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_SCRIPT_DB_PATH");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_SCRIPT_DB_PATH", "data/ops-scripts.db");
+			Config config = Config.LoadFromEnvironment();
+			Assert.Equal("data/ops-scripts.db", config.ScriptDbPath);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_SCRIPT_DB_PATH", original);
+		}
+	}
+
+	[Fact]
+	public void ScriptDbPath_UnsetFallsBackToDefault()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_SCRIPT_DB_PATH");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_SCRIPT_DB_PATH", null);
+			Config config = Config.LoadFromEnvironment();
+			Assert.Equal("data/scripts.db", config.ScriptDbPath);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_SCRIPT_DB_PATH", original);
+		}
+	}
+
 	private static int IntegerProperty(Config config, string property) => property switch
 	{
 		nameof(Config.TaskLeaseSeconds) => config.TaskLeaseSeconds,

@@ -51,6 +51,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateReconc
 builder.Services.AddSingleton<RecurringJobScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RecurringJobScheduler>());
 builder.Services.AddSingleton<SqliteCrawlStore>(sp => new SqliteCrawlStore(sp.GetRequiredService<Config>().CrawlDbPath));
+builder.Services.AddSingleton<SqliteScriptStore>(sp => new SqliteScriptStore(sp.GetRequiredService<Config>().ScriptDbPath));
 builder.Services.AddSingleton<CrawlRunWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CrawlRunWorker>());
 
@@ -1243,6 +1244,159 @@ app.MapPost("/v1/plugins/update-check", async Task<IResult> (HttpContext ctx, Co
 	.Produces(202)
 	.Produces<ErrorResponse>(400)
 	.Produces<ErrorResponse>(409)
+	.Produces(401);
+
+// ── Script repository: operator scripts stored control-plane side. Content is
+// opaque text; execution is a separate dispatch surface, the repository only
+// owns identity, metadata and bytes.
+
+app.MapGet("/v1/scripts", async Task<IResult> (HttpContext ctx, Config cfg, SqliteScriptStore scripts) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	List<ScriptRecord> all = await scripts.ListAsync(ctx.RequestAborted);
+	return Results.Ok(new { scripts = all });
+})
+	.WithTags("Scripts")
+	.WithSummary("List the script repository (ordered by name)")
+	.Produces(200)
+	.Produces(401);
+
+app.MapGet("/v1/scripts/{id}", async Task<IResult> (HttpContext ctx, Config cfg, SqliteScriptStore scripts, string id) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	ScriptRecord? script = await scripts.GetAsync(id, ctx.RequestAborted);
+	return script is null ? Results.NotFound(new ErrorResponse($"script '{id}' does not exist")) : Results.Ok(script);
+})
+	.WithTags("Scripts")
+	.WithSummary("Fetch one script with its content")
+	.Produces(200)
+	.Produces<ErrorResponse>(404)
+	.Produces(401);
+
+app.MapPost("/v1/scripts", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, SqliteScriptStore scripts, UpsertScriptRequest request) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	string? error = ValidateScriptRequest(request);
+	if (error is not null)
+	{
+		return Results.BadRequest(new ErrorResponse(error));
+	}
+
+	DateTimeOffset now = DateTimeOffset.UtcNow;
+	ScriptRecord script = new(
+		Id: Id.New(),
+		Name: request.Name.Trim(),
+		Description: request.Description?.Trim() ?? "",
+		Language: NormalizeScriptLanguage(request.Language),
+		Content: request.Content,
+		CreatedAtMs: now.ToUnixTimeMilliseconds(),
+		UpdatedAtMs: now.ToUnixTimeMilliseconds());
+	await scripts.UpsertAsync(script, ctx.RequestAborted);
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"script_created",
+		details: new Dictionary<string, object?>
+		{
+			["scriptId"] = script.Id,
+			["name"] = script.Name,
+			["language"] = script.Language,
+			["bytes"] = script.Content.Length
+		});
+	return Results.Created($"/v1/scripts/{script.Id}", script);
+})
+	.WithTags("Scripts")
+	.WithSummary("Store a new script (name and content required; language defaults to shell)")
+	.Produces(201)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
+
+app.MapPut("/v1/scripts/{id}", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, SqliteScriptStore scripts, string id, UpsertScriptRequest request) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	ScriptRecord? existing = await scripts.GetAsync(id, ctx.RequestAborted);
+	if (existing is null)
+	{
+		return Results.NotFound(new ErrorResponse($"script '{id}' does not exist"));
+	}
+
+	string? error = ValidateScriptRequest(request);
+	if (error is not null)
+	{
+		return Results.BadRequest(new ErrorResponse(error));
+	}
+
+	ScriptRecord updated = existing with
+	{
+		Name = request.Name.Trim(),
+		Description = request.Description?.Trim() ?? "",
+		Language = NormalizeScriptLanguage(request.Language),
+		Content = request.Content,
+		UpdatedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+	};
+	await scripts.UpsertAsync(updated, ctx.RequestAborted);
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"script_updated",
+		details: new Dictionary<string, object?>
+		{
+			["scriptId"] = updated.Id,
+			["name"] = updated.Name,
+			["language"] = updated.Language,
+			["bytes"] = updated.Content.Length
+		});
+	return Results.Ok(updated);
+})
+	.WithTags("Scripts")
+	.WithSummary("Replace a stored script (name and content required; created timestamp is preserved)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(404)
+	.Produces(401);
+
+app.MapDelete("/v1/scripts/{id}", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, SqliteScriptStore scripts, string id) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	if (!await scripts.DeleteAsync(id, ctx.RequestAborted))
+	{
+		return Results.NotFound(new ErrorResponse($"script '{id}' does not exist"));
+	}
+
+	await WriteAuditLog(
+		auditLogger,
+		audit,
+		ctx,
+		"script_deleted",
+		details: new Dictionary<string, object?> { ["scriptId"] = id });
+	return Results.NoContent();
+})
+	.WithTags("Scripts")
+	.WithSummary("Delete a stored script")
+	.Produces(204)
+	.Produces<ErrorResponse>(404)
 	.Produces(401);
 
 app.MapGet("/v1/accounts/{name}/trade-offers", async (HttpContext ctx, Config cfg, IAuditStore audit, AccountStore accounts, IJobStore store, string name, bool? activeOnly) =>
@@ -3749,6 +3903,29 @@ static bool IsAuthChallengeRequired(string normalizedEventType, string state)
 		   string.Equals(state, "ConnectingWaitQr", StringComparison.Ordinal);
 }
 
+// Validates a script create/replace request; returns an error message, null when valid.
+static string? ValidateScriptRequest(UpsertScriptRequest request)
+{
+	if (string.IsNullOrWhiteSpace(request.Name))
+	{
+		return "name is required";
+	}
+
+	if (string.IsNullOrWhiteSpace(request.Content))
+	{
+		return "content is required";
+	}
+
+	return null;
+}
+
+// Script language is a free-form lowercase tag; omitted or blank means "shell".
+static string NormalizeScriptLanguage(string? language)
+{
+	string normalized = language?.Trim().ToLowerInvariant() ?? "";
+	return normalized.Length == 0 ? "shell" : normalized;
+}
+
 // Validates a crawl plan request (create, or a merged update); returns an error message, null when valid.
 static string? ValidateCrawlPlanRequest(CreateCrawlPlanRequest req, Config cfg, AccountStore accounts)
 {
@@ -4402,6 +4579,14 @@ public sealed record PluginInstallRequest(
 	string? Sha256 = null,
 	string? Version = null,
 	List<string>? AgentIds = null
+);
+
+// Body for creating or replacing a stored script (script repository).
+public sealed record UpsertScriptRequest(
+	string Name,
+	string? Description = null,
+	string? Language = null,
+	string Content = ""
 );
 
 public sealed record PluginUninstallRequest(

@@ -1483,6 +1483,44 @@
                 <section class="panel fade-in">
                     <div class="panel-header">
                         <div>
+                            <h2 class="panel-title">脚本仓库</h2>
+                            <div class="panel-subtitle">控制中心侧的运维脚本库:集中存档、快速取用。仅登记存储,执行派发面另行上线。</div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-small" id="refreshScriptsButton">刷新</button>
+                            <button class="btn btn-primary btn-small" id="newScriptButton">新建脚本</button>
+                        </div>
+                    </div>
+                    <div class="stack" id="scriptEditor" style="display: none;">
+                        <div class="field">
+                            <label for="scriptNameInput">名称</label>
+                            <input id="scriptNameInput" type="text" placeholder="例如:清理临时下载">
+                        </div>
+                        <div class="field">
+                            <label for="scriptDescInput">描述</label>
+                            <input id="scriptDescInput" type="text" placeholder="用途与注意事项(可选)">
+                        </div>
+                        <div class="field">
+                            <label for="scriptLangInput">语言</label>
+                            <input id="scriptLangInput" type="text" placeholder="shell(默认)/python/...">
+                        </div>
+                        <div class="field">
+                            <label for="scriptContentInput">内容</label>
+                            <textarea id="scriptContentInput" rows="10" spellcheck="false"></textarea>
+                        </div>
+                        <div class="button-row">
+                            <button class="btn btn-primary btn-small" id="saveScriptButton">保存</button>
+                            <button class="btn btn-secondary btn-small" id="cancelScriptButton">取消</button>
+                        </div>
+                    </div>
+                    <div class="list" id="scriptList">
+                        <div class="empty-state">尚未加载脚本仓库。</div>
+                    </div>
+                </section>
+
+                <section class="panel fade-in">
+                    <div class="panel-header">
+                        <div>
                             <h2 class="panel-title">事件日志</h2>
                             <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
                         </div>
@@ -1507,6 +1545,8 @@
             challenges: new Map(),
             selectedJobId: null,
             accounts: [],
+            scripts: [],
+            editingScriptId: null,
             standing: new Map(),
             farm: new Map(),
             editingAccountName: null,
@@ -1619,6 +1659,10 @@
             document.getElementById("refreshPluginsButton").addEventListener("click", () => refreshPlugins());
             document.getElementById("syncPluginsButton").addEventListener("click", () => syncPluginInventory());
             document.getElementById("checkUpdatesButton").addEventListener("click", () => checkPluginUpdates());
+            document.getElementById("refreshScriptsButton").addEventListener("click", () => loadScripts());
+            document.getElementById("newScriptButton").addEventListener("click", () => openScriptEditor(null));
+            document.getElementById("saveScriptButton").addEventListener("click", () => saveScript());
+            document.getElementById("cancelScriptButton").addEventListener("click", () => closeScriptEditor());
             document.getElementById("refreshSessionsButton").addEventListener("click", () => refreshSessions());
             document.getElementById("qrLoginButton").addEventListener("click", () => startQrLogin());
             document.getElementById("refreshChallengesButton").addEventListener("click", () => refreshAuthChallenges());
@@ -1677,6 +1721,7 @@
                     refreshAccounts(),
                     refreshCrawlPlans(),
                     refreshPlugins(),
+                    loadScripts(),
                     refreshConfig()
                 ]);
                 restartStreams();
@@ -2181,6 +2226,92 @@
                 await refreshPlugins();
             } catch (error) {
                 alert(`同步派发失败: ${error.message}`);
+            }
+        }
+
+        // ── Script repository (storage only; execution dispatch ships later) ──
+
+        async function loadScripts() {
+            try {
+                const data = await apiFetch("/v1/scripts");
+                state.scripts = data.scripts || [];
+            } catch (error) {
+                state.scripts = [];
+            }
+            renderScripts();
+        }
+
+        function renderScripts() {
+            const container = document.getElementById("scriptList");
+            const scripts = state.scripts || [];
+            if (scripts.length === 0) {
+                container.innerHTML = `<div class="empty-state">脚本仓库为空。点击「新建脚本」存档第一条运维脚本。</div>`;
+                return;
+            }
+            container.innerHTML = scripts.map((script) => `
+                <div class="card-row" data-script-id="${escapeHtml(script.id)}">
+                    <div>
+                        <div class="mono">${escapeHtml(script.name)} <span class="tiny mono">${escapeHtml(script.language)}</span></div>
+                        <div class="tiny">${escapeHtml(script.description || "(无描述)")}</div>
+                        <div class="tiny mono">更新于 ${formatDate(script.updatedAtMs)} · ${(script.content || "").length} 字节</div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-secondary btn-small script-edit-button" data-script-id="${escapeHtml(script.id)}">编辑</button>
+                        <button class="btn btn-secondary btn-small script-delete-button" data-script-id="${escapeHtml(script.id)}" data-script-name="${escapeHtml(script.name)}">删除</button>
+                    </div>
+                </div>`).join("");
+            container.querySelectorAll(".script-edit-button").forEach((button) => {
+                button.addEventListener("click", () => openScriptEditor(button.dataset.scriptId));
+            });
+            container.querySelectorAll(".script-delete-button").forEach((button) => {
+                button.addEventListener("click", () => deleteScript(button.dataset.scriptId, button.dataset.scriptName));
+            });
+        }
+
+        function openScriptEditor(scriptId) {
+            state.editingScriptId = scriptId;
+            const script = (state.scripts || []).find((item) => item.id === scriptId) || null;
+            document.getElementById("scriptNameInput").value = script?.name || "";
+            document.getElementById("scriptDescInput").value = script?.description || "";
+            document.getElementById("scriptLangInput").value = script?.language || "";
+            document.getElementById("scriptContentInput").value = script?.content || "";
+            document.getElementById("scriptEditor").style.display = "";
+        }
+
+        function closeScriptEditor() {
+            state.editingScriptId = null;
+            document.getElementById("scriptEditor").style.display = "none";
+        }
+
+        async function saveScript() {
+            const name = document.getElementById("scriptNameInput").value.trim();
+            const description = document.getElementById("scriptDescInput").value.trim();
+            const language = document.getElementById("scriptLangInput").value.trim();
+            const content = document.getElementById("scriptContentInput").value;
+            if (!name) { alert("名称不能为空"); return; }
+            if (!content.trim()) { alert("内容不能为空"); return; }
+            const body = { name, description, language, content };
+            try {
+                if (state.editingScriptId) {
+                    await apiFetch(`/v1/scripts/${state.editingScriptId}`, { method: "PUT", body: JSON.stringify(body) });
+                } else {
+                    await apiFetch("/v1/scripts", { method: "POST", body: JSON.stringify(body) });
+                }
+                closeScriptEditor();
+                await loadScripts();
+            } catch (error) {
+                alert(`保存失败: ${error.message}`);
+            }
+        }
+
+        async function deleteScript(scriptId, scriptName) {
+            if (!window.confirm(`确认从仓库删除脚本「${scriptName}」?该操作不可逆。`)) { return; }
+            try {
+                await apiFetch(`/v1/scripts/${scriptId}`, { method: "DELETE" });
+                if (state.editingScriptId === scriptId) { closeScriptEditor(); }
+                await loadScripts();
+            } catch (error) {
+                alert(`删除失败: ${error.message}`);
             }
         }
 

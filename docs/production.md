@@ -480,7 +480,7 @@ and the fault-injection families `vapor_controlplane_fault_injections_total{kind
 
 ## Fault-injection drills
 
-The admin-only `/v1/faults` API (see `api.md` §4.12) arms runtime error/delay
+The admin-only `/v1/faults` API (see `api.md` §4.13) arms runtime error/delay
 drills against the real machinery — task dispatch (requeue/retry path) or
 `/v1` API requests (edge middleware). Operational rules of thumb:
 

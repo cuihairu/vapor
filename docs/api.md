@@ -1,6 +1,6 @@
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 59 routes (69 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 61 routes (74 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
@@ -689,7 +689,45 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ---
 
-### 4.11 System (public)
+### 4.11 Scripts
+
+`ScriptRecord = { id, name, description, language, content, createdAtMs, updatedAtMs }` — the control-plane script repository (SQLite at `Vapor_SCRIPT_DB_PATH`, default `data/scripts.db`). Storage only: the repository owns identity, metadata and bytes; execution is a separate dispatch surface and ships separately.
+
+#### `GET /v1/scripts`
+- Purpose: list the script repository (ordered by name).
+- Auth: admin. Body: none.
+- 200: `{ "scripts": [ ScriptRecord ] }`. Errors: 401.
+
+#### `GET /v1/scripts/{id}`
+- Purpose: fetch one script with its content.
+- Auth: admin. Body: none.
+- 200: `ScriptRecord`. Errors: 404 `{ "error": "script '<id>' does not exist" }`, 401.
+
+#### `POST /v1/scripts`
+- Purpose: store a new script.
+- Auth: admin.
+- Body (`UpsertScriptRequest`):
+  - `name` — string, **required non-blank** (else 400 `name is required`)
+  - `description` — string, optional (default `""`)
+  - `language` — string, optional; trimmed and lowercased (default `"shell"`)
+  - `content` — string, **required non-blank** (else 400 `content is required`)
+- 201: `ScriptRecord`, `Location: /v1/scripts/{id}`. Errors: 400, 401. Audit: `script_created` (`scriptId`, `name`, `language`, `bytes`).
+
+#### `PUT /v1/scripts/{id}`
+- Purpose: replace a stored script (full update; the created timestamp is preserved).
+- Auth: admin.
+- Body (`UpsertScriptRequest`): same field rules as `POST /v1/scripts`.
+- Rule: unknown id → 404 (checked before validation).
+- 200: `ScriptRecord`. Errors: 400, 404, 401. Audit: `script_updated` (`scriptId`, `name`, `language`, `bytes`).
+
+#### `DELETE /v1/scripts/{id}`
+- Purpose: delete a stored script.
+- Auth: admin. Body: none.
+- 204: empty. Errors: 404 `{ "error": "script '<id>' does not exist" }`, 401. Audit: `script_deleted` (`scriptId`).
+
+---
+
+### 4.12 System (public)
 
 #### `GET /`
 - Purpose: 302 redirect to `/admin.html` (admin UI).
@@ -725,7 +763,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ---
 
-### 4.12 Faults (fault-injection drills)
+### 4.13 Faults (fault-injection drills)
 
 Runtime fault injection for resilience drills (roadmap §8). All four endpoints are admin-only and exempt from api-request injection themselves — a drill can always be observed and stopped. Every armed fault is bounded twice over: a **budget** (injections left; the fault removes itself when exhausted) and a **TTL** (`expiresAt`, 1..3600 s, default 900) — a forgotten drill self-heals. State is in-memory: a control-plane restart disarms everything (deliberate). Audit actions: `faults.enable`, `faults.disable`, `faults.clear`. Metrics: `vapor_controlplane_fault_injections_total{kind,mode}` counter and `vapor_controlplane_faults_armed` gauge.
 
