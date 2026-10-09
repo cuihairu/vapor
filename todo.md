@@ -1080,7 +1080,7 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 40.10-1 安装时对账索引与 manifest（调研 §6 候选 1,§7 判定可参考）:目录模式把索引声明的 trust/permissions/apiVersion 以 expected* 字段随安装指令下发,agent 对账包内 manifest,分歧聚合一条报错拒绝(轮五十八:expectedTrust/expectedPermissions/expectedApiVersion 三字段+PluginPackageInstaller 聚合对账+PayloadReader.GetStringList;测试 +12)
 - [x] 40.10-2 plugin_update_check 更新检查（调研 §6 候选 2,§7 判定可参考）:索引版本 vs 已装版本按 agent 汇报,inventory 记最近一次检查,admin 面板显示可更新(轮五十九:只读 action+update-check 端点+updates 镜像与徽标;测试 +20,合计 3648)
 - [x] 40.10-3 运行期资源声明（调研 §6 候选 3,§7 判定可参考;轮六十一:manifest resources 数组 network/filesystem/process 归一化(trim/小写/去重保序/未知值拒收/缺省 null),仅登记不拦截——ListLoaded 输出 resources 键→PluginInventoryEntry.resources→GET /v1/plugins/installed→admin res: 徽标;5 官方插件声明 network;测试 +4,合计 3652）
-- [ ] 40.10-4 来源校验升级（调研 §6 候选 4,§7 判定可借鉴,按需评估）
+- [ ] 40.10-4 来源校验升级（调研 §6 候选 4,§7 判定可借鉴,按需评估——2026-10-09 评估结论:维持挂起不启动。理由:把「钉摘要」升级为「钉来源」需自建发布者指纹/签名信任体系(密钥分发、吊销、分级信任),超出当前自托管单机定位成本;现口径「摘要只保证与钉住值一致、不保证来源」已在 docs/plugins.md §Trust boundary 诚实写明,无安全误述。若将来引入公共插件市场再评估）
 - [x] 40.10-5 进程边界量化（调研 §6 候选 5「先量化后决定」前半,轮六十:6 官方插件常驻 ≈2.3MB RSS/托管堆 ≈45KB/private 0,内存不构成进程化动机;故障域真缺口=插件不观察取消 token 时 session 僵尸化——per-action timeout 与 900s watchdog 均协作式取消不可中止;进程化按计划书非目标否决,中毒 session 回收/配额待拍板;docs/research/process-boundary.md 入文档站）
 - [x] 40.9-4 §32 评分观察项——不适用整改
 - [x] 40.9-5 §19/§21/§22/§23/§24/§25 部分已落地项——按残余归入 40.8 对应行
