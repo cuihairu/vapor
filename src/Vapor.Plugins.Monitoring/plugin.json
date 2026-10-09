@@ -9,6 +9,7 @@
     "actions",
     "web"
   ],
+  "resources": ["network"],
   "entryAssembly": "Vapor.Plugins.Monitoring.dll",
   "entryType": "Vapor.Plugins.Monitoring.MonitoringPlugin",
   "configuration": {

@@ -881,21 +881,22 @@ public sealed class PluginInventoryTests
 	{
 		var entry = new PluginInventoryEntry(
 			"vapor.echo", "Echo", "1.0.0", "1.0", "official",
-			new[] { "network" }, new[] { "plugin_echo" });
+			new[] { "actions" }, new[] { "plugin_echo" }, new[] { "network" });
 
 		PluginInventoryEntry copy = entry with { };
 		Assert.True(entry.Equals(copy));
 		Assert.Equal(entry.GetHashCode(), copy.GetHashCode());
 		Assert.NotEqual(entry, entry with { Version = "2.0.0" });
 
-		(string id, string name, string version, string apiVersion, string? trust, IReadOnlyList<string> permissions, IReadOnlyList<string> actions) = entry;
+		(string id, string name, string version, string apiVersion, string? trust, IReadOnlyList<string> permissions, IReadOnlyList<string> actions, IReadOnlyList<string> resources) = entry;
 		Assert.Equal("vapor.echo", id);
 		Assert.Equal("Echo", name);
 		Assert.Equal("1.0.0", version);
 		Assert.Equal("1.0", apiVersion);
 		Assert.Equal("official", trust);
-		Assert.Equal(new[] { "network" }, permissions);
+		Assert.Equal(new[] { "actions" }, permissions);
 		Assert.Equal(new[] { "plugin_echo" }, actions);
+		Assert.Equal(new[] { "network" }, resources);
 
 		Assert.Contains("vapor.echo", entry.ToString(), StringComparison.Ordinal);
 	}
@@ -937,6 +938,7 @@ public sealed class PluginInventoryTests
 					["apiVersion"] = "1.0",
 					["trust"] = "official",
 					["permissions"] = new List<string> { "actions" },
+					["resources"] = new List<object?> { "network", 42, "fileSystem" },
 					["actions"] = new List<string> { "b_one" }
 				},
 				new Dictionary<string, object?>
@@ -962,6 +964,34 @@ public sealed class PluginInventoryTests
 		Assert.Equal("vapor.b", agent.Plugins[1].Id);
 		Assert.Equal("official", agent.Plugins[1].Trust);
 		Assert.Equal(new[] { "b_one" }, agent.Plugins[1].Actions);
+		Assert.Equal(new[] { "network", "fileSystem" }, agent.Plugins[1].Resources);
+		// vapor.a declares no resources: the mirror records an empty list, and a
+		// non-array value is tolerated the same way (third-party output).
+		Assert.Empty(agent.Plugins[0].Resources);
+	}
+
+	[Fact]
+	public void Update_ToleratesNonArrayResourcesValue()
+	{
+		var inventory = new PluginInventory();
+		var output = RoundTrip(new Dictionary<string, object?>
+		{
+			["plugins"] = new List<object>
+			{
+				new Dictionary<string, object?>
+				{
+					["id"] = "vapor.r",
+					["name"] = "R",
+					["version"] = "1.0.0",
+					["apiVersion"] = "1.0",
+					["resources"] = "bogus"
+				}
+			}
+		});
+
+		inventory.Update("agent-1", DateTimeOffset.UnixEpoch, output);
+
+		Assert.Empty(inventory.Snapshot()["agent-1"].Plugins.Single().Resources);
 	}
 
 	[Fact]

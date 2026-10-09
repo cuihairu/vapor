@@ -44,6 +44,14 @@ public sealed record PluginManifest
 	/// </summary>
 	public IReadOnlyList<string>? Permissions { get; init; }
 
+	/// <summary>
+	/// Declared runtime resource usage (<see cref="PluginResources"/>). Advisory registration
+	/// only — nothing is enforced at runtime; the declaration rides the load report and the
+	/// per-agent inventory so operators can review what a plugin says it touches. Normalized
+	/// to lowercase, deduplicated, order-preserving; null when the manifest omits the field.
+	/// </summary>
+	public IReadOnlyList<string>? Resources { get; init; }
+
 	/// <summary>Free-form configuration values handed to the plugin at initialization.</summary>
 	public IReadOnlyDictionary<string, string>? Configuration { get; init; } =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -117,6 +125,7 @@ public sealed record PluginManifest
 		{
 			Trust = NormalizeTrust(manifest.Trust, source),
 			Permissions = NormalizePermissions(manifest.Permissions, source),
+			Resources = NormalizeResources(manifest.Resources, source),
 			ConfigurationSchema = NormalizeConfigurationSchema(manifest.ConfigurationSchema, source),
 			Dependencies = NormalizeDependencies(manifest.Dependencies, manifest.Id, source)
 		};
@@ -286,6 +295,34 @@ public sealed record PluginManifest
 			{
 				throw new PluginException(
 					$"Invalid plugin manifest '{source}': permission '{raw}' is not one of: {string.Join(", ", PluginPermissions.All)}");
+			}
+
+			normalized.Add(value);
+		}
+
+		return normalized;
+	}
+
+	private static IReadOnlyList<string>? NormalizeResources(IReadOnlyList<string>? resources, string source)
+	{
+		if (resources is null)
+		{
+			return null;
+		}
+
+		var normalized = new List<string>();
+		foreach (var raw in resources)
+		{
+			var value = raw.Trim().ToLowerInvariant();
+			if (normalized.Contains(value))
+			{
+				continue;
+			}
+
+			if (!PluginResources.All.Contains(value))
+			{
+				throw new PluginException(
+					$"Invalid plugin manifest '{source}': resource '{raw}' is not one of: {string.Join(", ", PluginResources.All)}");
 			}
 
 			normalized.Add(value);

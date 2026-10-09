@@ -8,6 +8,7 @@
   "permissions": [
     "actions"
   ],
+  "resources": ["network"],
   "entryAssembly": "Vapor.Plugins.GameData.dll",
   "entryType": "Vapor.Plugins.GameData.GameDataPlugin",
   "configuration": {

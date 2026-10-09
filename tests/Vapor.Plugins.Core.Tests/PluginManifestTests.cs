@@ -148,7 +148,46 @@ public class PluginManifestTests
 
 		Assert.Null(manifest.Description);
 		Assert.Null(manifest.EntryType);
+		Assert.Null(manifest.Resources);
 		Assert.Empty(manifest.Configuration!);
+	}
+
+	[Fact]
+	public void Parse_Resources_NormalizesLowercaseAndDeduplicates()
+	{
+		var json = """
+			{ "id": "x", "name": "x", "version": "1.0.0", "apiVersion": "1.0", "entryAssembly": "x.dll",
+			  "resources": ["Network", " network ", "FileSystem", "Process"] }
+			""";
+
+		var manifest = PluginManifest.Parse(json);
+
+		Assert.Equal(new[] { "network", "filesystem", "process" }, manifest.Resources);
+	}
+
+	[Fact]
+	public void Parse_EmptyResourcesArray_NormalizesToEmptyList()
+	{
+		var json = """
+			{ "id": "x", "name": "x", "version": "1.0.0", "apiVersion": "1.0", "entryAssembly": "x.dll", "resources": [] }
+			""";
+
+		var manifest = PluginManifest.Parse(json);
+
+		Assert.NotNull(manifest.Resources);
+		Assert.Empty(manifest.Resources);
+	}
+
+	[Fact]
+	public void Parse_UnknownResource_Throws()
+	{
+		var json = """
+			{ "id": "x", "name": "x", "version": "1.0.0", "apiVersion": "1.0", "entryAssembly": "x.dll",
+			  "resources": ["network", "teleport"] }
+			""";
+
+		var ex = Assert.Throws<PluginException>(() => PluginManifest.Parse(json));
+		Assert.Contains("resource 'teleport' is not one of", ex.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]

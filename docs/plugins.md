@@ -42,6 +42,7 @@ plugins/
   "description": "Does something useful.",
   "trust": "community",
   "permissions": ["actions"],
+  "resources": ["network"],
   "entryAssembly": "MyPlugin.dll"
 }
 ```
@@ -96,6 +97,7 @@ plugin loads at startup.
 | `entryType` | no | Full type name of the `IPlugin` implementation; omit when the assembly has exactly one public implementation |
 | `trust` | no | `unknown` (default), `community` or `official` — see [Trust and permissions](#trust-and-permissions) |
 | `permissions` | no | Array of `actions` / `commands` / `web` / `events` — see below |
+| `resources` | no | Array of `network` / `filesystem` / `process` — advisory runtime-resource declaration; see [Runtime resource declarations](#runtime-resource-declarations) |
 | `configuration` | no | Free-form string key/values handed to the plugin at initialization |
 | `configurationSchema` | no | Per-key validation rules for `configuration` — checked before `InitializeAsync`; see [Configuration](#configuration) |
 | `dependencies` | no | Other plugins this one needs, with an optional `apiVersion` constraint — resolved at enablement; see [Dependencies](#dependencies) |
@@ -139,6 +141,25 @@ Plugins declare *what they are* and *what they need*; the host decides what they
 - `unknown` — no declaration (default)
 - `community` — reviewed third-party plugin
 - `official` — shipped and maintained with the host itself
+
+### Runtime resource declarations
+
+The manifest may also declare `resources` — what the plugin *says it touches*
+at runtime beyond the host-provided surfaces. The known names are `network`
+(connections beyond the host HTTP clients), `filesystem` (files outside the
+host-managed plugin directories) and `process` (child processes).
+
+Unlike `permissions`, resources are **advisory registration only**: nothing is
+enforced at runtime (the quantified fault domain and the process-sandbox
+non-goal are recorded in [the process boundary notes](research/process-boundary.md)).
+The declaration is normalized (lowercase, deduplicated), validated against the
+known names at load, and then rides every reporting surface so operators can
+review it: `plugin_list` / every `plugin_*` output mirror carries a
+`resources` array per plugin (empty when undeclared), the ControlPlane
+per-agent inventory mirrors it, `GET /v1/plugins/installed` exposes it, and the
+admin panel shows a `res:…` chip on each installed plugin row. Obsidian's
+`isDesktopOnly` is the reference shape for this "declare first, review later"
+minimum (see the market survey, §7).
 
 **Permissions** (manifest `permissions` array):
 

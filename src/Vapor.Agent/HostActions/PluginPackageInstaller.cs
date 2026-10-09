@@ -372,7 +372,7 @@ public sealed record PluginInstallResult(
 /// <summary>Shared JSON helpers for the plugin host actions' output payloads.</summary>
 public static class PluginOutput
 {
-	/// <summary>Serializes the currently-loaded plugins (id/version/trust/permissions/actions).</summary>
+	/// <summary>Serializes the currently-loaded plugins (id/version/trust/permissions/resources/actions).</summary>
 	public static IReadOnlyList<object> ListLoaded(PluginManager? manager)
 	{
 		if (manager is null)
@@ -390,6 +390,7 @@ public static class PluginOutput
 				["apiVersion"] = p.Descriptor.Manifest.ApiVersion,
 				["trust"] = p.Descriptor.Trust.ToString().ToLowerInvariant(),
 				["permissions"] = p.GrantedPermissions,
+				["resources"] = p.Descriptor.Manifest.Resources ?? [],
 				["actions"] = p.Actions.Select(a => a.Name).Order(StringComparer.Ordinal).ToList()
 			})
 			.ToList();

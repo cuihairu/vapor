@@ -443,7 +443,7 @@ Output: `pluginId`, `removed`, `plugins` (remaining list).
 
 ### `plugin_list` (login: no, timeout: 15s, safety: ReadOnly)
 Reports the currently loaded plugins and the plugins root. No payload fields.
-Output: `directory` (plugins root path), `count`, `plugins` (loaded-plugin list).
+Output: `directory` (plugins root path), `count`, `plugins` (loaded-plugin list; each entry carries `id`, `name`, `version`, `apiVersion`, `trust`, `permissions`, `resources` (manifest's advisory runtime-resource declaration, empty when undeclared), `actions`).
 
 ### `plugin_update_check` (login: no, timeout: 15s, safety: ReadOnly)
 Compares the catalog candidates staged from the plugin index against the plugins actually loaded on this agent and reports a verdict per candidate. Read-only by design — nothing is downloaded or replaced here; the operator decides what (and where) to install with `plugin_install`.

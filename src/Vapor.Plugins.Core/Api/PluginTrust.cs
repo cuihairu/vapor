@@ -38,3 +38,24 @@ public static class PluginPermissions
 	/// <summary>All known permission names.</summary>
 	public static IReadOnlyList<string> All { get; } = [Actions, Commands, Web, Events];
 }
+
+/// <summary>
+/// Well-known resource names for the manifest "resources" field. Unlike permissions
+/// these are advisory only — the declaration is registered, surfaced in the load
+/// report and inventory, and never enforced; see docs/plugins.md §Runtime resource
+/// declarations.
+/// </summary>
+public static class PluginResources
+{
+	/// <summary>Opens network connections beyond the host-provided HTTP clients.</summary>
+	public const string Network = "network";
+
+	/// <summary>Reads or writes files outside the host-managed plugin directories.</summary>
+	public const string FileSystem = "filesystem";
+
+	/// <summary>Spawns child processes.</summary>
+	public const string Process = "process";
+
+	/// <summary>All known resource names.</summary>
+	public static IReadOnlyList<string> All { get; } = [Network, FileSystem, Process];
+}

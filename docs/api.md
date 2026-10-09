@@ -636,7 +636,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 ### 4.10 Plugins
 
 `PluginIndexEntry = { id, name, version, apiVersion, url, sha256, description?, trust?, permissions: string[] }`;
-`PluginInventoryEntry = { id, name, version, apiVersion, trust?, permissions: string[], actions: string[] }`.
+`PluginInventoryEntry = { id, name, version, apiVersion, trust?, permissions: string[], actions: string[], resources: string[] }` (`resources` mirrors the manifest's advisory runtime-resource declaration, empty when undeclared).
 
 #### `GET /v1/plugins/catalog`
 - Purpose: browse the plugin index source (cached 60 s).

@@ -2113,7 +2113,7 @@
                         <div class="row-head">
                             <div class="title-group">
                                 <div class="strong">${escapeHtml(plugin.name || plugin.id)} <span class="tiny mono">v${escapeHtml(plugin.version)}</span>${updateBadge}</div>
-                                <div class="summary-row">${(plugin.actions || []).map((a) => `<span class="agent-chip">${escapeHtml(a)}</span>`).join("")}</div>
+                                <div class="summary-row">${(plugin.resources || []).length ? `<span class="agent-chip" title="运行期资源声明(仅登记,不拦截)">res:${(plugin.resources || []).map((r) => escapeHtml(r)).join(",")}</span>` : ""}${(plugin.actions || []).map((a) => `<span class="agent-chip">${escapeHtml(a)}</span>`).join("")}</div>
                             </div>
                             <div style="display: flex; gap: 6px; align-items: center;">
                                 <span class="badge ${trustBadgeClass(plugin.trust)}">${escapeHtml(plugin.trust || "unknown")}</span>

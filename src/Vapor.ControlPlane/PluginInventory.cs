@@ -58,6 +58,12 @@ public sealed class PluginInventory
 				actions.AddRange(acts.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString()!));
 			}
 
+			var resources = new List<string>();
+			if (item.TryGetProperty("resources", out var res) && res.ValueKind == JsonValueKind.Array)
+			{
+				resources.AddRange(res.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString()!));
+			}
+
 			entries.Add(new PluginInventoryEntry(
 				GetString("id") ?? string.Empty,
 				GetString("name") ?? string.Empty,
@@ -65,7 +71,8 @@ public sealed class PluginInventory
 				GetString("apiVersion") ?? string.Empty,
 				GetString("trust"),
 				permissions,
-				actions));
+				actions,
+				resources));
 		}
 
 		List<PluginUpdateStatus>? updates = null;
@@ -123,4 +130,5 @@ public sealed record PluginInventoryEntry(
 	string ApiVersion,
 	string? Trust,
 	IReadOnlyList<string> Permissions,
-	IReadOnlyList<string> Actions);
+	IReadOnlyList<string> Actions,
+	IReadOnlyList<string> Resources);

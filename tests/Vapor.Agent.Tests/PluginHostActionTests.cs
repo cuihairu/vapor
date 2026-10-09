@@ -50,10 +50,10 @@ internal static class PluginTestPackages
 	}
 
 	/// <summary>Writes the package next to the plugins root and returns its file:// url + sha256 hex.</summary>
-	public static (string Url, string Sha256) StageAsFile(string directory)
+	public static (string Url, string Sha256) StageAsFile(string directory, string? manifestJson = null)
 	{
 		string packagePath = Path.Combine(directory, $"pkg-{Guid.NewGuid():N}.zip");
-		File.WriteAllBytes(packagePath, Build());
+		File.WriteAllBytes(packagePath, Build(manifestJson));
 		return (new Uri(packagePath).AbsoluteUri, Sha256Hex(File.ReadAllBytes(packagePath)));
 	}
 
@@ -1171,6 +1171,8 @@ public sealed class PluginInstallActionTests
 			Assert.NotNull(result.Output["actions"]);
 			var plugins = Assert.IsType<List<object>>(result.Output["plugins"]);
 			Assert.Single(plugins);
+			var mirror = Assert.IsType<Dictionary<string, object?>>(plugins.Single());
+			Assert.Empty((System.Collections.IEnumerable)mirror["resources"]!);
 		}
 		finally
 		{
@@ -1485,7 +1487,18 @@ public sealed class PluginListActionTests
 		{
 			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
 			await using var manager = PluginTestPackages.CreateManager();
-			(string url, string sha) = PluginTestPackages.StageAsFile(root);
+			string manifestWithResources = JsonSerializer.Serialize(new Dictionary<string, object?>
+			{
+				["id"] = PluginTestPackages.PluginId,
+				["name"] = "Vapor Test Plugin",
+				["version"] = PluginTestPackages.PluginVersion,
+				["apiVersion"] = "1.0",
+				["entryAssembly"] = "Vapor.Plugins.TestPlugin.dll",
+				["entryType"] = "Vapor.Plugins.TestPlugin.TestPlugin",
+				["permissions"] = PluginPermissions.All,
+				["resources"] = new[] { "Network", "network", "FileSystem" }
+			});
+			(string url, string sha) = PluginTestPackages.StageAsFile(root, manifestWithResources);
 			PluginInstallResult installed = await installer.InstallAsync(url, sha, null, null, manager, CancellationToken.None);
 			Assert.True(installed.Success, installed.Error);
 
@@ -1499,6 +1512,7 @@ public sealed class PluginListActionTests
 			Assert.Equal(PluginTestPackages.PluginId, entry["id"]);
 			Assert.Equal(PluginTestPackages.PluginVersion, entry["version"]);
 			Assert.Equal("unknown", entry["trust"]);
+			Assert.Equal(new[] { "network", "filesystem" }, entry["resources"]);
 			Assert.NotNull(entry["actions"]);
 		}
 		finally

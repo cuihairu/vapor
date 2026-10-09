@@ -8,6 +8,7 @@
   "permissions": [
     "actions"
   ],
+  "resources": ["network"],
   "entryAssembly": "Vapor.Plugins.GameAccess.dll",
   "entryType": "Vapor.Plugins.GameAccess.GameAccessPlugin"
 }
