@@ -660,6 +660,11 @@
             sessions: [],
             jobs: [],
             mismatchReasons: new Map(),
+            // Failure reasons for the jobs list, fetched lazily from the
+            // existing per-job detail endpoint (GET /v1/jobs/{id}) and cached
+            // per job id so polling never refetches.
+            failureReasons: new Map(),
+            failureFetches: new Set(),
             selectedJobId: null,
             streams: [],
             pollTimer: null
@@ -972,10 +977,33 @@
             state.jobs = data.jobs || [];
             renderJobs();
             updateStats();
+            loadFailureReasons();
 
             if (state.selectedJobId) {
                 await loadJobDetail(state.selectedJobId);
             }
+        }
+
+        // The list endpoint carries no error field — reasons live on tasks, so
+        // pull them from the existing detail endpoint for the most recent
+        // failed jobs and cache per job id. Bounded: at most five fetches per
+        // refresh, and only for jobs without a cached reason.
+        function loadFailureReasons() {
+            const pending = state.jobs
+                .filter((job) => String(job.status).toLowerCase() === "failed")
+                .filter((job) => !state.failureReasons.has(job.id) && !state.failureFetches.has(job.id))
+                .slice(0, 5);
+            pending.forEach((job) => {
+                state.failureFetches.add(job.id);
+                apiFetch(`/v1/jobs/${encodeURIComponent(job.id)}`)
+                    .then((detail) => {
+                        const failed = (detail.tasks || []).find((task) => String(task.status).toLowerCase() === "failed");
+                        state.failureReasons.set(job.id, failed?.error || "任务失败但未上报错误信息");
+                        renderJobs();
+                    })
+                    .catch(() => state.failureReasons.set(job.id, "失败原因加载失败"))
+                    .finally(() => state.failureFetches.delete(job.id));
+            });
         }
 
         async function refreshAudit() {
@@ -1072,7 +1100,7 @@
                             </div>
                             <span class="badge ok">在线</span>
                         </div>
-                        <div class="tiny">连接时间: ${formatDate(agent.connectedAt)}</div>
+                        <div class="tiny">连接时间: ${formatDate(agent.connectedAt)} · 已连接 ${formatDuration(agent.connectedAt)}</div>
                         <div class="summary-row">${capabilities || '<span class="chip">capabilities: all</span>'}</div>
                     </article>
                 `;
@@ -1089,7 +1117,18 @@
                 return;
             }
 
-            container.innerHTML = items.map((session) => `
+            // Health summary: state distribution across the fleet, computed
+            // client-side from the same GET payload.
+            const byState = new Map();
+            items.forEach((session) => {
+                const key = String(session.state || "-");
+                byState.set(key, (byState.get(key) || 0) + 1);
+            });
+            const summary = [...byState.entries()]
+                .map(([state, count]) => `<span class="badge ${sessionBadgeClass(state)}">${escapeHtml(state)} ${count}</span>`)
+                .join("");
+
+            const rows = items.map((session) => `
                 <article class="card-row">
                     <div class="row-head">
                         <div class="title-group">
@@ -1102,6 +1141,11 @@
                     <div class="tiny">更新时间: ${formatDate(session.updatedAt)}</div>
                 </article>
             `).join("");
+
+            container.innerHTML = `
+                <div class="summary-row" style="margin-bottom: 10px;">${summary}</div>
+                ${rows}
+            `;
         }
 
         function renderJobs() {
@@ -1111,7 +1155,10 @@
                 return;
             }
 
-            container.innerHTML = state.jobs.map((job) => `
+            container.innerHTML = state.jobs.map((job) => {
+                const isFailed = String(job.status).toLowerCase() === "failed";
+                const reason = state.failureReasons.get(job.id);
+                return `
                 <article class="card-row clickable${job.id === state.selectedJobId ? " selected-row" : ""}" data-job-id="${escapeHtml(job.id)}">
                     <div class="row-head">
                         <div class="title-group">
@@ -1120,13 +1167,15 @@
                         </div>
                         <span class="badge ${statusClass[String(job.status).toLowerCase()] || "mute"}">${escapeHtml(statusLabel[String(job.status).toLowerCase()] || job.status)}</span>
                     </div>
+                    ${isFailed && reason ? `<div class="helper">失败原因: ${escapeHtml(truncate(reason, 120))}</div>` : ""}
                     <div class="summary-row">
                         <span class="chip">targets: ${job.targets?.length || 0}</span>
                         <span class="chip">${escapeHtml(job.region || "自动调度")}</span>
                         <span class="chip">${formatDate(job.createdAt)}</span>
                     </div>
                 </article>
-            `).join("");
+            `;
+            }).join("");
 
             container.querySelectorAll("[data-job-id]").forEach((element) => {
                 element.addEventListener("click", () => loadJobDetail(element.dataset.jobId));
@@ -1185,7 +1234,18 @@
                 return;
             }
 
-            container.innerHTML = logs.map((entry) => `
+            container.innerHTML = logs.map((entry) => {
+                // Execution-ID fields (task/attempt/agent/session/trace) are
+                // surfaced when present — they are the cross-link anchors for
+                // tracing one audit row back to its job, task and agent.
+                const ids = [
+                    entry.agentId ? `agent ${escapeHtml(entry.agentId)}` : "",
+                    entry.taskId ? `task ${escapeHtml(shortId(entry.taskId))}` : "",
+                    entry.attempt != null ? `attempt ${entry.attempt}` : "",
+                    entry.sessionId ? `session ${escapeHtml(shortId(entry.sessionId))}` : "",
+                    entry.traceId ? `trace ${escapeHtml(shortId(entry.traceId))}` : ""
+                ].filter(Boolean).map((chip) => `<span class="chip">${chip}</span>`).join("");
+                return `
                 <article class="card-row">
                     <div class="row-head">
                         <div class="title-group">
@@ -1195,8 +1255,10 @@
                         <span class="badge mute">${escapeHtml(entry.actor || "unknown")}</span>
                     </div>
                     <div class="tiny">${formatDate(entry.timestamp)}${entry.jobId ? ` · job ${escapeHtml(shortId(entry.jobId))}` : ""}</div>
+                    ${ids ? `<div class="summary-row">${ids}</div>` : ""}
                 </article>
-            `).join("");
+            `;
+            }).join("");
         }
 
         function restartStreams() {
@@ -1368,6 +1430,35 @@
                 return "-";
             }
             return new Date(value).toLocaleString("zh-CN", { hour12: false });
+        }
+
+        // Human-readable connection age for the agent health cards.
+        function formatDuration(value) {
+            if (!value) {
+                return "-";
+            }
+            const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+            if (seconds < 60) {
+                return `${seconds} 秒`;
+            }
+
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) {
+                return `${minutes} 分钟`;
+            }
+
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) {
+                return `${hours} 小时 ${minutes % 60} 分`;
+            }
+
+            return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`;
+        }
+
+        // Single-line failure reasons: cap the chip length, keep the head.
+        function truncate(value, max) {
+            const text = String(value ?? "");
+            return text.length > max ? `${text.slice(0, max)}...` : text;
         }
 
         function escapeHtml(value) {

@@ -388,6 +388,60 @@ public sealed class DashboardStaticTests
 		Assert.Contains("轮询超时", html, StringComparison.Ordinal);
 	}
 
+	[Fact]
+	public void DashboardHtml_FailedJobs_SurfaceReasonsFromDetailEndpoint()
+	{
+		// §19 failure-reason surface: the list endpoint carries no error field,
+		// so failed jobs pull their reason from the existing per-job detail
+		// endpoint, lazily, cached per job id and bounded per refresh — no new
+		// backend surface.
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));
+
+		Assert.Contains("loadFailureReasons", html, StringComparison.Ordinal);
+		Assert.Contains("failureReasons", html, StringComparison.Ordinal);
+		Assert.Contains("failureFetches", html, StringComparison.Ordinal);
+		Assert.Contains("apiFetch(`/v1/jobs/${encodeURIComponent(job.id)}`)", html, StringComparison.Ordinal);
+		Assert.Contains("失败原因:", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void DashboardHtml_AgentCards_ShowConnectionHealth()
+	{
+		// §19 agent health card: the card renders the connection age next to
+		// the connected-at timestamp (formatDuration over /v1/agents/status's
+		// connectedAt), so a stale-or-fresh fleet is visible at a glance.
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));
+
+		Assert.Contains("formatDuration(agent.connectedAt)", html, StringComparison.Ordinal);
+		Assert.Contains("已连接", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void DashboardHtml_SessionCards_SummarizeStateDistribution()
+	{
+		// §19 session health card: a client-side state distribution summary
+		// (per-state counts as colored badges) precedes the session rows.
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));
+
+		Assert.Contains("byState", html, StringComparison.Ordinal);
+		Assert.Contains("class=\"badge ${sessionBadgeClass(state)}\"", html, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void DashboardHtml_AuditRows_SurfaceExecutionIds()
+	{
+		// §19 audit view: the round-65 execution-ID fields (agent/task/attempt/
+		// session/trace) render as chips on each audit row when present — the
+		// cross-link anchors for tracing one row back to job, task and agent.
+		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));
+
+		Assert.Contains("entry.agentId", html, StringComparison.Ordinal);
+		Assert.Contains("entry.taskId", html, StringComparison.Ordinal);
+		Assert.Contains("entry.attempt", html, StringComparison.Ordinal);
+		Assert.Contains("entry.sessionId", html, StringComparison.Ordinal);
+		Assert.Contains("entry.traceId", html, StringComparison.Ordinal);
+	}
+
 	/// <summary>Walks up from the test run directory until the repo root is found.</summary>
 	private static string FindRepoFile(string relativePath)
 	{

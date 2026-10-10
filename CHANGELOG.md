@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Operations Console card upgrades (round 69): the read-only dashboard now
+  surfaces failure reasons, agent/session health and execution IDs without
+  any new backend surface — failed jobs pull their reason lazily from the
+  existing per-job detail endpoint (cached per job, bounded per refresh),
+  agent cards show connection age, the session panel leads with a state
+  distribution summary, and audit rows render the execution-ID fields
+  (agent/task/attempt/session/trace) as chips when present.
 - Backup CLI (round 68): `tools/Vapor.Backup` wraps SQLite's online backup
   API for the control-plane databases — `backup <db> <output> [--force]`
   takes a consistent snapshot while the control plane keeps running,
