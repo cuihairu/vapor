@@ -264,6 +264,9 @@ public sealed class SqliteAuditStoreTests : IDisposable
 		}
 		finally
 		{
+			// Windows: ADO.NET keeps a pooled file handle even after Dispose();
+			// clearing the pool is what actually releases the file for deletion.
+			SqliteConnection.ClearAllPools();
 			File.Delete(dbPath);
 		}
 	}

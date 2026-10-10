@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Vapor.ControlPlane;
 using Xunit;
 
@@ -42,6 +43,9 @@ public sealed class SqliteScriptStoreTests : IDisposable
 		}
 		finally
 		{
+			// Windows: ADO.NET keeps a pooled file handle even after Dispose();
+			// clearing the pool is what actually releases the file for deletion.
+			SqliteConnection.ClearAllPools();
 			if (Directory.Exists(tempDir))
 			{
 				Directory.Delete(tempDir, recursive: true);

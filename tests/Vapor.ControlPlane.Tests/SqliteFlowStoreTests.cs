@@ -57,6 +57,9 @@ public sealed class SqliteFlowStoreTests : IDisposable
 		}
 		finally
 		{
+			// Windows: ADO.NET keeps a pooled file handle even after Dispose();
+			// clearing the pool is what actually releases the file for deletion.
+			SqliteConnection.ClearAllPools();
 			if (Directory.Exists(tempDir))
 			{
 				Directory.Delete(tempDir, recursive: true);
@@ -202,6 +205,7 @@ public sealed class SqliteFlowStoreTests : IDisposable
 		}
 		finally
 		{
+			SqliteConnection.ClearAllPools();
 			if (File.Exists(dbPath))
 			{
 				File.Delete(dbPath);
@@ -238,6 +242,7 @@ public sealed class SqliteFlowStoreTests : IDisposable
 		}
 		finally
 		{
+			SqliteConnection.ClearAllPools();
 			if (File.Exists(dbPath))
 			{
 				File.Delete(dbPath);
