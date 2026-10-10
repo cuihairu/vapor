@@ -39,7 +39,7 @@ For operations: a control-plane script repository to store and dispatch operator
 ```
                     ┌────────────────────────────────────────────┐
                     │               Control Plane                │
-   operators ──────▶│  REST /v1 (67 routes / 83 ops) · OpenAPI·SSE│
+   operators ──────▶│  REST /v1 (68 routes / 84 ops) · OpenAPI·SSE│
    (curl / UI)      │  SQLite: jobs · accounts · audit · crawl · scripts │
                     │  DesiredStateReconciler · schedulers       │
                     │  admin.html · dashboard.html · gamedata    │

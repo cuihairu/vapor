@@ -1,6 +1,6 @@
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 67 routes (83 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 68 routes (84 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
@@ -890,6 +890,19 @@ Plane-mismatched selectors are rejected (400): `route`/`method` with `task-dispa
 - Purpose: disarm every fault injection — the panic button.
 - Auth: admin. Body: none.
 - 200: `{ "removed": <int> }` (how many were armed). Errors: 401.
+
+---
+
+### 4.15 Notifications (webhook delivery log)
+
+The webhook sink records every delivery attempt to an append-only SQLite log (`Vapor_WEBHOOK_DB_PATH`, default `data/webhook.db`). Recording is best-effort: a broken or full log never blocks delivery — the write failure is swallowed and logged. The log is an audit trail of what happened, not a replay queue: undelivered notifications are lost on restart.
+
+#### `GET /v1/notifications/deliveries`
+- Purpose: query the webhook delivery log — one row per attempt, so a notification delivered after retries shows its failed attempts followed by the delivered one.
+- Auth: admin.
+- Query: `notificationId` (string, optional), `outcome` (string, optional; `delivered` or `failed`), `limit` (int, default 100, clamped 1–500), `offset` (int, default 0, clamped ≥ 0).
+- 200: `{ "deliveries": [ WebhookDeliveryRecord ], "total": int, "limit": int, "offset": int }` — `WebhookDeliveryRecord = { notificationId, category, type, jobId?, accountName?, attempt, outcome, statusCode?, error?, attemptedAtMs }` (null fields omitted; rows are newest-first by `attemptedAtMs`; `attempt` is the 1-based attempt number, `statusCode` is the HTTP status for HTTP-level failures and null for transport errors).
+- Errors: 401.
 
 ---
 

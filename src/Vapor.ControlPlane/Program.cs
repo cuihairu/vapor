@@ -55,6 +55,9 @@ builder.Services.AddSingleton<SqliteScriptStore>(sp => new SqliteScriptStore(sp.
 // Flows share the script repository database: both aggregates are the same
 // operator-tooling feature and are always used together.
 builder.Services.AddSingleton<SqliteFlowStore>(sp => new SqliteFlowStore(sp.GetRequiredService<Config>().ScriptDbPath));
+// Webhook delivery log: always registered so the deliveries endpoint exists
+// even without a configured webhook (it just reads an empty log).
+builder.Services.AddSingleton<IWebhookDeliveryStore>(sp => new SqliteWebhookDeliveryStore(sp.GetRequiredService<Config>().WebhookNotificationsDbPath));
 builder.Services.AddSingleton<CrawlRunWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<CrawlRunWorker>());
 
@@ -82,7 +85,8 @@ if (!string.IsNullOrWhiteSpace(startupConfig.WebhookNotificationsUrl))
 		startupConfig.WebhookNotificationsSecret,
 		startupConfig.WebhookNotificationsMaxRetries,
 		TimeSpan.FromMilliseconds(startupConfig.WebhookNotificationsRetryBaseDelayMs),
-		sp.GetRequiredService<ILogger<WebhookNotificationSink>>())
+		sp.GetRequiredService<ILogger<WebhookNotificationSink>>(),
+		deliveryLog: sp.GetRequiredService<IWebhookDeliveryStore>())
 	{
 		Rule = BuildNotificationRule(startupConfig.WebhookNotificationsEvents),
 	});
@@ -3763,6 +3767,37 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 	.WithSummary("Query persisted audit logs (filter by action, account, jobId, agentId, taskId, time range; limit 1-500)")
 	.Produces(200)
 	.Produces<ErrorResponse>(400)
+	.Produces<ErrorResponse>(401);
+
+app.MapGet("/v1/notifications/deliveries", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	IWebhookDeliveryStore deliveries,
+	string? notificationId,
+	string? outcome,
+	int? limit,
+	int? offset) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	var query = (
+		NotificationId: notificationId,
+		Outcome: outcome,
+		Limit: Math.Clamp(limit ?? 100, 1, 500),
+		Offset: Math.Max(offset ?? 0, 0));
+
+	IReadOnlyList<WebhookDeliveryRecord> rows = await deliveries.QueryAsync(
+		query.NotificationId, query.Outcome, query.Limit, query.Offset, ctx.RequestAborted);
+	int total = await deliveries.CountAsync(query.NotificationId, query.Outcome, ctx.RequestAborted);
+
+	return Results.Ok(new { deliveries = rows, total = total, limit = query.Limit, offset = query.Offset });
+})
+	.WithTags("Notifications")
+	.WithSummary("Query the webhook delivery log (per-attempt rows; filter by notificationId and outcome; limit 1-500)")
+	.Produces(200)
 	.Produces<ErrorResponse>(401);
 
 // ── Crawl (game-data harvesting: shard app lists over account pools, persist per-app outcomes) ──

@@ -148,6 +148,88 @@ public sealed class NotificationTests
 	}
 
 	[Fact]
+	public async Task Webhook_Delivered_RecordsRowWithStatusCode()
+	{
+		var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.OK));
+		var log = new RecordingDeliveryLog();
+		using var sink = new WebhookNotificationSink(
+			new Uri("http://localhost/hook"), secret: null, maxRetries: 0,
+			TimeSpan.Zero, NullLogger<WebhookNotificationSink>.Instance,
+			new HttpClient(handler), log);
+
+		await sink.HandleAsync(NewEvent("job", "job.created", jobId: "job-7"), CancellationToken.None);
+
+		WebhookDeliveryRecord row = Assert.Single(log.Rows);
+		Assert.Equal("delivered", row.Outcome);
+		Assert.Equal(1, row.Attempt);
+		Assert.Equal(200, row.StatusCode);
+		Assert.Null(row.Error);
+		Assert.Equal("job-7", row.JobId);
+		Assert.True(row.AttemptedAtMs > 0);
+	}
+
+	[Fact]
+	public async Task Webhook_TransportFailure_RecordsFailedRowPerAttempt()
+	{
+		var handler = new ThrowingWebHandler();
+		var log = new RecordingDeliveryLog();
+		using var sink = new WebhookNotificationSink(
+			new Uri("http://localhost/hook"), secret: null, maxRetries: 2,
+			TimeSpan.Zero, NullLogger<WebhookNotificationSink>.Instance,
+			new HttpClient(handler), log);
+
+		await Assert.ThrowsAsync<HttpRequestException>(
+			() => sink.HandleAsync(NewEvent("session", "state_changed"), CancellationToken.None));
+
+		Assert.Equal(3, log.Rows.Count);
+		Assert.Equal(new[] { 1, 2, 3 }, log.Rows.Select(row => row.Attempt).ToArray());
+		Assert.All(log.Rows, row => Assert.Equal("failed", row.Outcome));
+		Assert.All(log.Rows, row => Assert.Null(row.StatusCode));
+		Assert.All(log.Rows, row => Assert.Equal("network down", row.Error));
+	}
+
+	[Fact]
+	public async Task Webhook_TransientFailure_RecordsFailedRowsThenDelivered()
+	{
+		var handler = new StubHandler(
+			new HttpResponseMessage(HttpStatusCode.InternalServerError),
+			new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+			new HttpResponseMessage(HttpStatusCode.OK));
+		var log = new RecordingDeliveryLog();
+		using var sink = new WebhookNotificationSink(
+			new Uri("http://localhost/hook"), secret: null, maxRetries: 3,
+			TimeSpan.Zero, NullLogger<WebhookNotificationSink>.Instance,
+			new HttpClient(handler), log);
+
+		await sink.HandleAsync(NewEvent("job", "job.created"), CancellationToken.None);
+
+		Assert.Equal(3, log.Rows.Count);
+		Assert.Equal(new[] { 1, 2, 3 }, log.Rows.Select(row => row.Attempt).ToArray());
+		Assert.Equal("failed", log.Rows[0].Outcome);
+		Assert.Equal(500, log.Rows[0].StatusCode);
+		Assert.Equal("failed", log.Rows[1].Outcome);
+		Assert.Equal(503, log.Rows[1].StatusCode);
+		Assert.Equal("delivered", log.Rows[2].Outcome);
+		Assert.Equal(200, log.Rows[2].StatusCode);
+		Assert.Null(log.Rows[2].Error);
+	}
+
+	[Fact]
+	public async Task Webhook_RecordingFailure_IsSwallowedAndDeliverySucceeds()
+	{
+		var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.OK));
+		var log = new ThrowingDeliveryLog();
+		using var sink = new WebhookNotificationSink(
+			new Uri("http://localhost/hook"), secret: null, maxRetries: 0,
+			TimeSpan.Zero, NullLogger<WebhookNotificationSink>.Instance,
+			new HttpClient(handler), log);
+
+		await sink.HandleAsync(NewEvent("job", "job.created"), CancellationToken.None);
+
+		Assert.Equal(1, sink.Sent);
+	}
+
+	[Fact]
 	public async Task Webhook_RetriesExhausted_FailsAndThrows()
 	{
 		var handler = new StubHandler(
@@ -676,5 +758,43 @@ public sealed class NotificationTests
 		/// <summary>Waits for the next delivered event (consumes it, so successive calls sequence through events).</summary>
 		public Task<NotificationEvent> WaitForEventAsync() =>
 			_events.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+	}
+
+	/// <summary>Collects delivery-log rows in memory; query arms throw (never exercised).</summary>
+	private sealed class RecordingDeliveryLog : IWebhookDeliveryStore
+	{
+		private readonly List<WebhookDeliveryRecord> _rows = [];
+
+		public IReadOnlyList<WebhookDeliveryRecord> Rows => _rows;
+
+		public Task RecordAsync(WebhookDeliveryRecord record, CancellationToken cancellationToken)
+		{
+			ArgumentNullException.ThrowIfNull(record);
+			_rows.Add(record);
+			return Task.CompletedTask;
+		}
+
+		public Task<IReadOnlyList<WebhookDeliveryRecord>> QueryAsync(
+			string? notificationId = null, string? outcome = null, int limit = 100, int offset = 0, CancellationToken cancellationToken = default)
+			=> throw new NotSupportedException();
+
+		public Task<int> CountAsync(
+			string? notificationId = null, string? outcome = null, CancellationToken cancellationToken = default)
+			=> throw new NotSupportedException();
+	}
+
+	/// <summary>Always fails to record; proves the sink swallows log-write errors.</summary>
+	private sealed class ThrowingDeliveryLog : IWebhookDeliveryStore
+	{
+		public Task RecordAsync(WebhookDeliveryRecord record, CancellationToken cancellationToken)
+			=> throw new InvalidOperationException("delivery log is down");
+
+		public Task<IReadOnlyList<WebhookDeliveryRecord>> QueryAsync(
+			string? notificationId = null, string? outcome = null, int limit = 100, int offset = 0, CancellationToken cancellationToken = default)
+			=> throw new NotSupportedException();
+
+		public Task<int> CountAsync(
+			string? notificationId = null, string? outcome = null, CancellationToken cancellationToken = default)
+			=> throw new NotSupportedException();
 	}
 }

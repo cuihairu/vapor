@@ -310,6 +310,9 @@ public sealed class ControlPlaneApiTests
 		/// <summary>Optional store override; a stub is used when unset.</summary>
 		public IJobStore? JobStore { get; set; }
 
+		/// <summary>Optional webhook delivery-log override; an in-memory store is used when unset.</summary>
+		public IWebhookDeliveryStore? WebhookDeliveryStore { get; set; }
+
 		protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
 		{
 			builder.UseEnvironment("Development");
@@ -319,11 +322,13 @@ public sealed class ControlPlaneApiTests
 				services.RemoveAll<IEventBroker>();
 				services.RemoveAll<SessionTracker>();
 				services.RemoveAll<AuthChallengeTracker>();
+				services.RemoveAll<IWebhookDeliveryStore>();
 				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, "Data Source=:memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:"));
 				services.AddSingleton<IJobStore>(JobStore ?? new FakeJobStore());
 				services.AddSingleton<IEventBroker>(Events);
 				services.AddSingleton<SessionTracker>();
 				services.AddSingleton<AuthChallengeTracker>();
+				services.AddSingleton<IWebhookDeliveryStore>(WebhookDeliveryStore ?? new SqliteWebhookDeliveryStore(":memory:"));
 			});
 		}
 	}

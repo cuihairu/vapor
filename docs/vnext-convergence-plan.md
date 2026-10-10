@@ -124,7 +124,7 @@ V-next 的收敛方向因此定为：
 
 | # | 项 | 来源 | 启动信号 | 边界与验收要点 |
 |---|---|---|---|---|
-| 1 | Webhook 投递记录（持久化 + consumers event 去重约定） | §25 残余 | 出现真实 webhook 丢事件投诉/接入方 >3 | 不做 WebhookSubscription 多订阅模型；验收：投递记录表 + at-least-once 语义文档化 |
+| 1 | Webhook 投递记录（持久化 + consumers event 去重约定） | §25 残余 | 出现真实 webhook 丢事件投诉/接入方 >3 | 不做 WebhookSubscription 多订阅模型；验收：投递记录表 + at-least-once 语义文档化。**已落地（2026-10-10，拉起令批次）**：每尝试一行 append-only 记录（`WebhookDeliveryRecord`：notificationId/category/type/jobId/accountName/attempt/outcome/statusCode/error/attemptedAtMs），`SqliteWebhookDeliveryStore`（`Vapor_WEBHOOK_DB_PATH`，默认 `data/webhook.db`）；webhook sink 每尝试记录 delivered/failed（含 HTTP 状态码与错误），记录故障吞咽不阻断投递（审计 trail 非重放队列，重启丢失未投递事件）；`GET /v1/notifications/deliveries` 按 notificationId/outcome 过滤 + limit/offset 分页，倒序返回 |
 | 2 | AuthChallenge domain object 代码化（字段/状态机） | §23 | P0-B 文档约定稳定后 | 保持 transient 语义不变（不落库）；验收：字段对齐 domain-model.md。**已落地（2026-10-10，拉起令批次）**：记录收敛单源 `Vapor.Protocol/Events.cs`（删除 ControlPlane 侧镜像 record），`Attempt` 代数字段（tracker 权威：首抬 1、重抬 +1，SSE 事件同值）；`status`/`source` 有意不设字段（`challengeType` 已编码——`*_required`=pending/agent、`code_provided_*`=answered/operator，设字段即重复状态），`expiresAt` 有意不设（无跨边界 TTL 信号）；语义仍 transient 不落库 |
 | 3 | Event 三层分桶（Domain/Operational/Audit）文档化 + SSE 事件名规范化 | §24 | 事件名出现命名混乱时 | SSE 保持 best-effort；验收：约定入文档，SSE 事件名与文档一致 |
 | 4 | secret version / rotation 语义成文 | §22 | KeyRotation 增加账号级轮换需求 | 现状 AES-GCM v2 + 轮换工具已覆盖大部分；验收：文档定义版本语义 |

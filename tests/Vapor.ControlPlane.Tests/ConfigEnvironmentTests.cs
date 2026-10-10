@@ -192,6 +192,38 @@ public sealed class ConfigEnvironmentTests
 		}
 	}
 
+	[Fact]
+	public void WebhookDbPath_SetFromEnvironment()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_DB_PATH");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_WEBHOOK_DB_PATH", "data/ops-webhook.db");
+			Config config = Config.LoadFromEnvironment();
+			Assert.Equal("data/ops-webhook.db", config.WebhookNotificationsDbPath);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_WEBHOOK_DB_PATH", original);
+		}
+	}
+
+	[Fact]
+	public void WebhookDbPath_UnsetFallsBackToDefault()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_DB_PATH");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_WEBHOOK_DB_PATH", null);
+			Config config = Config.LoadFromEnvironment();
+			Assert.Equal("data/webhook.db", config.WebhookNotificationsDbPath);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_WEBHOOK_DB_PATH", original);
+		}
+	}
+
 	private static int IntegerProperty(Config config, string property) => property switch
 	{
 		nameof(Config.TaskLeaseSeconds) => config.TaskLeaseSeconds,

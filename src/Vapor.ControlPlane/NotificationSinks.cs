@@ -82,6 +82,8 @@ public interface INotificationSink
 /// Delivers notifications as signed HTTP POSTs (JSON) to a webhook endpoint. Transient
 /// failures (non-2xx, network errors) retry with exponential backoff; when the retry
 /// budget is exhausted the delivery fails (counted, logged upstream) and the sink moves on.
+/// When a delivery log is supplied, every attempt (failed and delivered) is recorded
+/// durably; recording failures are swallowed and logged — the log must never break delivery.
 /// </summary>
 public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 {
@@ -97,6 +99,7 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 	private readonly HttpClient _http;
 	private readonly bool _ownsHttp;
 	private readonly ILogger _logger;
+	private readonly IWebhookDeliveryStore? _deliveryLog;
 	private long _sent;
 	private long _failed;
 	private long _retried;
@@ -107,7 +110,8 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 		int maxRetries,
 		TimeSpan baseDelay,
 		ILogger<WebhookNotificationSink> logger,
-		HttpClient? httpClient = null)
+		HttpClient? httpClient = null,
+		IWebhookDeliveryStore? deliveryLog = null)
 	{
 		_url = url;
 		_secret = string.IsNullOrWhiteSpace(secret) ? null : secret;
@@ -116,6 +120,7 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 		_logger = logger;
 		_ownsHttp = httpClient is null;
 		_http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+		_deliveryLog = deliveryLog;
 	}
 
 	public void Dispose()
@@ -156,6 +161,7 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 				if (response.IsSuccessStatusCode)
 				{
 					Interlocked.Increment(ref _sent);
+					await RecordAsync(notification, attempt + 1, "delivered", (int?)response.StatusCode, null, cancellationToken).ConfigureAwait(false);
 					if (attempt > 0)
 					{
 						_logger.LogInformation(
@@ -167,6 +173,7 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 				}
 
 				lastError = new HttpRequestException($"webhook returned {(int)response.StatusCode}");
+				await RecordAsync(notification, attempt + 1, "failed", (int?)response.StatusCode, lastError.Message, cancellationToken).ConfigureAwait(false);
 			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 			{
@@ -175,6 +182,7 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 			catch (Exception ex)
 			{
 				lastError = ex;
+				await RecordAsync(notification, attempt + 1, "failed", null, ex.Message, cancellationToken).ConfigureAwait(false);
 			}
 
 			if (attempt >= _maxRetries)
@@ -189,6 +197,39 @@ public sealed class WebhookNotificationSink : INotificationSink, IDisposable
 
 		Interlocked.Increment(ref _failed);
 		throw lastError!; // non-null by loop invariant: success returns inside the loop, every failure path assigns lastError, and the OCE rethrow never reaches here
+	}
+
+	/// <summary>
+	/// Best-effort delivery-log write: a broken store is logged and swallowed so
+	/// the audit trail can never break delivery itself.
+	/// </summary>
+	private async Task RecordAsync(NotificationEvent notification, int attempt, string outcome, int? statusCode, string? error, CancellationToken cancellationToken)
+	{
+		if (_deliveryLog is null)
+		{
+			return;
+		}
+
+		try
+		{
+			await _deliveryLog.RecordAsync(new WebhookDeliveryRecord(
+				NotificationId: notification.Id,
+				Category: notification.Category,
+				Type: notification.Type,
+				JobId: notification.JobId,
+				AccountName: notification.AccountName,
+				Attempt: attempt,
+				Outcome: outcome,
+				StatusCode: statusCode,
+				Error: error,
+				AttemptedAtMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()), cancellationToken).ConfigureAwait(false);
+		}
+		catch (Exception ex)
+		{
+			// Cancellation included: during shutdown a broken recording attempt is
+			// just a missed log row; the next await re-raises the OCE upstream.
+			_logger.LogWarning(ex, "Failed to record webhook delivery attempt for {NotificationId}", notification.Id);
+		}
 	}
 
 	private static Dictionary<string, object?> BuildEnvelope(NotificationEvent n) => new()
