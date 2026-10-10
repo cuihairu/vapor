@@ -386,6 +386,22 @@ docker run --rm -v vapor_agent-data:/data:ro -v "$PWD:/out" alpine \
 Alternatively, stop the control plane first and copy the volume contents —
 file-level copies of a stopped SQLite database are always consistent.
 
+The repo also ships the same flow as a CLI, `tools/Vapor.Backup` — a
+self-contained console app, useful from a host that mounts the data volume
+without pulling the `alpine`+`sqlite` image:
+
+```bash
+dotnet run --project tools/Vapor.Backup -- backup  /data/controlplane.db /backups/controlplane-$(date +%F).db
+dotnet run --project tools/Vapor.Backup -- verify  /backups/controlplane-$(date +%F).db
+dotnet run --project tools/Vapor.Backup -- restore /backups/controlplane-$(date +%F).db /data/controlplane.db --force
+```
+
+`backup` uses SQLite's online backup API (consistent while the control plane
+keeps running); `restore` runs `PRAGMA integrity_check` on the backup first
+and refuses to restore a damaged one, and never overwrites an existing file
+without `--force`; `verify` just runs the check. Exit codes: 0 success, 1
+operation failure, 2 usage error.
+
 ### Restoring
 
 1. `docker compose stop controlplane` — never restore over a running one.

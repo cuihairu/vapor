@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Backup CLI (round 68): `tools/Vapor.Backup` wraps SQLite's online backup
+  API for the control-plane databases — `backup <db> <output> [--force]`
+  takes a consistent snapshot while the control plane keeps running,
+  `restore <backup> <db> [--force]` runs `PRAGMA integrity_check` on the
+  backup first and refuses to restore a damaged one (and never overwrites an
+  existing target without `--force`), and `verify <db>` reports every
+  integrity problem. Exit codes: 0 success, 1 operation failure, 2 usage
+  error. Documented alongside the container-native path in
+  production.md §"Data, backup and upgrades".
+- Webhook delivery log (round 67): every webhook notification attempt is
+  recorded to `data/webhook.db` (override with `Vapor_WEBHOOK_DB_PATH`) —
+  delivered rows carry the HTTP status code, failed rows carry the status or
+  transport error for that attempt. The log is an audit trail, not a replay
+  queue: recording failures are logged and swallowed so the sink never blocks
+  delivery. New admin endpoint `GET /v1/notifications/deliveries` with
+  `notificationId`/`outcome` filters and `limit`/`offset` paging, newest
+  first.
 - Read-only viewer key for the demo site (round 55): `Vapor_VIEWER_API_KEY`
   is a dedicated read-only console credential. Safe-method requests
   (GET/HEAD/OPTIONS) carrying it are upgraded to the admin identity at the

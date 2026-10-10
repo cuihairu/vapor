@@ -462,6 +462,13 @@ Agent enables it via `AddRedactingConsole()`.
 - Key rotation: `tools/Vapor.KeyRotation` CLI re-encrypts the credential store
   from an old to a new key (supports `base64:`/`file:`/`env:` key specs, `--dry-run`,
   aborts without modification when any account fails to decrypt).
+- Backups: `tools/Vapor.Backup` CLI drives SQLite's online backup API over the
+  control-plane databases — `backup` takes a consistent snapshot while the
+  control plane runs, `restore` integrity-checks the backup before touching
+  the target and never overwrites an existing file without `--force`, and
+  `verify` runs `PRAGMA integrity_check`. The container-native path (no
+  `sqlite3` in the runtime image) is in production.md §"Data, backup and
+  upgrades".
 
 ### Secret version semantics
 
@@ -491,7 +498,7 @@ Rules:
 
 ## Testing
 
-The repository runs 3,517 tests across 13 test projects (2026-10-04
+The repository runs 3,802 tests across 14 test projects (2026-10-10
 measured), covering unit, integration, contract and performance layers, and
 the coverage gate requires 100% line and branch coverage on every CI run —
 `scripts/coverage-summary.py --min 100 --min-branch 100` is the referee.
