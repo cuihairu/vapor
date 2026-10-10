@@ -237,6 +237,8 @@ public sealed class TracingTests
 
 		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => Task.CompletedTask;
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => Task.FromResult(0);
+		public Task MarkTaskClaimedBy(string taskId, int attempt, string agentId, CancellationToken cancellationToken) => Task.CompletedTask;
+		public Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken) => Task.FromResult(new Dictionary<string, int>());
 
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken)
 		{

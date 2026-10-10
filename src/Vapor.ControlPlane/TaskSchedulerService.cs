@@ -76,6 +76,12 @@ public sealed class TaskSchedulerService : BackgroundService
 			_lastRequeueAt = DateTimeOffset.UtcNow;
 		}
 
+		// One load snapshot per tick, bumped locally as dispatches succeed so the
+		// up-to-25 same-tick dispatches per region spread instead of piling onto
+		// one agent. The store's attribution (MarkTaskClaimedBy) is the durable
+		// source of truth; this is just its in-tick shadow.
+		Dictionary<string, int> load = await _store.CountRunningTasksByAgent(cancellationToken).ConfigureAwait(false);
+
 		foreach (string region in _agents.Regions())
 		{
 			const int maxPerTick = 25;
@@ -120,7 +126,7 @@ public sealed class TaskSchedulerService : BackgroundService
 				}
 				else
 				{
-					agent = _agents.Pick(region, task.Action);
+					agent = _agents.Pick(region, task.Action, load);
 				}
 
 				if (agent == null)
@@ -138,6 +144,11 @@ public sealed class TaskSchedulerService : BackgroundService
 				}
 
 				_events.Publish(task.JobId, "task.dispatched", new Dictionary<string, object?> { ["taskId"] = task.Id, ["agentId"] = agent.Hello.AgentId });
+
+				// Persist the placement so the load signal self-heals (lease requeue
+				// clears it) and survives restarts; fenced by attempt like the result write.
+				await _store.MarkTaskClaimedBy(task.Id, task.Attempt, agent.Hello.AgentId, cancellationToken).ConfigureAwait(false);
+				load[agent.Hello.AgentId] = load.GetValueOrDefault(agent.Hello.AgentId) + 1;
 			}
 		}
 	}

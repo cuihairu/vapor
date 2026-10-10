@@ -18,31 +18,37 @@ public sealed class AgentRegistry
 	/// <summary>Looks a connected agent up by id (host-targeted dispatch).</summary>
 	public ConnectedAgent? Get(string agentId) => _agents.TryGetValue(agentId, out var agent) ? agent : null;
 
-	public ConnectedAgent? Pick(string region)
+	public ConnectedAgent? Pick(string region) => Pick(region, action: null, load: null);
+
+	public ConnectedAgent? Pick(string region, string action) => Pick(region, action, null);
+
+	/// <summary>
+	/// Placement matcher (roadmap §40.8-⑥): region match, capability filter, then
+	/// least-loaded with the agent id as the deterministic tie-break — the same
+	/// ordering the account reconciler applies. Load is the running-task count per
+	/// agent attributed in the task store (see <c>CountRunningTasksByAgent</c>); a
+	/// null load keeps the pure agent-id order. Health is implicit: only connected
+	/// agents are in the registry at all.
+	/// </summary>
+	public ConnectedAgent? Pick(string region, string? action, IReadOnlyDictionary<string, int>? load)
 	{
-		var candidates = _agents.Values.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal)).OrderBy(a => a.Hello.AgentId, StringComparer.Ordinal).ToList();
-		if (candidates.Count == 0)
+		IEnumerable<ConnectedAgent> candidates = _agents.Values
+			.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal));
+		if (action != null)
 		{
-			return null;
+			candidates = candidates.Where(a => a.SupportsAction(action));
 		}
 
-		// Simple deterministic pick; later replace with RR + health/capacity.
-		return candidates[0];
-	}
-
-	public ConnectedAgent? Pick(string region, string action)
-	{
-		var candidates = _agents.Values
-			.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal) && a.SupportsAction(action))
-			.OrderBy(a => a.Hello.AgentId, StringComparer.Ordinal)
+		var ordered = candidates
+			.OrderBy(a => load is not null && load.TryGetValue(a.Hello.AgentId, out int n) ? n : 0)
+			.ThenBy(a => a.Hello.AgentId, StringComparer.Ordinal)
 			.ToList();
-		if (candidates.Count == 0)
+		if (ordered.Count == 0)
 		{
 			return null;
 		}
 
-		// Simple deterministic pick; later replace with RR + health/capacity.
-		return candidates[0];
+		return ordered[0];
 	}
 
 	public ConnectedAgent Register(AgentHello hello, WebSocket socket, CancellationToken cancellationToken)

@@ -395,6 +395,8 @@ public sealed class RecurringJobSchedulerRetireTests
 		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task MarkTaskClaimedBy(string taskId, int attempt, string agentId, CancellationToken cancellationToken) => Task.CompletedTask;
+		public Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken) => Task.FromResult(new Dictionary<string, int>());
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();

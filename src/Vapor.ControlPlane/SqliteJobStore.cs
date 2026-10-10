@@ -735,7 +735,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
 				UPDATE tasks
-				SET status = $queued, updated_at_ms = $updated
+				SET status = $queued, updated_at_ms = $updated, claimed_by_agent_id = NULL
 				WHERE status = $running AND updated_at_ms < $cutoff;
 				""";
 			cmd.Parameters.AddWithValue("$queued", JobTaskStatus.Queued.ToString());
@@ -780,6 +780,72 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 
 			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 			return updated > 0;
+		}
+		finally
+		{
+			_mutex.Release();
+		}
+	}
+
+	/// <summary>
+	/// Attributes a claimed (running) task to the agent it was dispatched to.
+	/// Fenced by attempt like every other result write: a stale dispatch of a
+	/// superseded attempt must not overwrite the newer attempt's attribution.
+	/// A no-op when the task moved on (requeued, canceled or finished) — the
+	/// dispatch itself has already happened, so there is nothing to surface.
+	/// </summary>
+	public async Task MarkTaskClaimedBy(string taskId, int attempt, string agentId, CancellationToken cancellationToken)
+	{
+		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				UPDATE tasks
+				SET claimed_by_agent_id = $agent
+				WHERE id = $id AND status = $running AND attempt = $attempt;
+				""";
+			cmd.Parameters.AddWithValue("$agent", agentId);
+			cmd.Parameters.AddWithValue("$id", taskId);
+			cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+			cmd.Parameters.AddWithValue("$attempt", attempt);
+
+			await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+		}
+		finally
+		{
+			_mutex.Release();
+		}
+	}
+
+	/// <summary>
+	/// Running tasks per agent (dispatch placement load signal). Only attributed
+	/// rows count: unattributed running rows (claimed by an older build or a
+	/// caller that did not attribute) read as zero load instead of blocking a
+	/// candidate forever.
+	/// </summary>
+	public async Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken)
+	{
+		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			Dictionary<string, int> load = new(StringComparer.Ordinal);
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				SELECT claimed_by_agent_id, COUNT(*)
+				FROM tasks
+				WHERE status = $running AND claimed_by_agent_id IS NOT NULL
+				GROUP BY claimed_by_agent_id;
+				""";
+			cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+
+			using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
+				load[reader.GetString(0)] = reader.GetInt32(1);
+			}
+
+			return load;
 		}
 		finally
 		{
@@ -1002,6 +1068,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		EnsureColumn("tasks", "error", "TEXT");
 		EnsureColumn("tasks", "next_attempt_at_ms", "INTEGER NOT NULL DEFAULT 0");
 		EnsureColumn("tasks", "output_json", "TEXT");
+		EnsureColumn("tasks", "claimed_by_agent_id", "TEXT");
 		EnsureColumn("jobs", "payload_json", "TEXT NOT NULL DEFAULT '{}'");
 		EnsureColumn("jobs", "schedule_json", "TEXT");
 		EnsureColumn("jobs", "schedule_next_run_ms", "INTEGER");

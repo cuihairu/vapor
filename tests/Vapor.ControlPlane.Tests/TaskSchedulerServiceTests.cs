@@ -36,6 +36,74 @@ public sealed class TaskSchedulerServiceTests
 	}
 
 	[Fact]
+	public async Task DispatchOnce_AttributesTheTaskToThePickedAgent()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["login"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", attempt: 3));
+		var scheduler = new TaskSchedulerService(registry, store, new RecordingEventBroker(), CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		// Attributed with the task's attempt — the same fence the result write uses.
+		Assert.Collection(
+			store.Attributed,
+			attribution => Assert.Equal(("task-1", 3, "agent-1"), attribution));
+	}
+
+	[Fact]
+	public async Task DispatchOnce_DispatchesToTheLeastLoadedAgent()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-heavy", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+		registry.Register(
+			new AgentHello("agent-light", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore { LoadByAgent = { ["agent-heavy"] = 2 } };
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "ping"));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Single(store.Attributed);
+		Assert.Equal("agent-light", store.Attributed[0].AgentId);
+		Assert.Equal("agent-light", events.Events[0].Payload!["agentId"]?.ToString());
+	}
+
+	[Fact]
+	public async Task DispatchOnce_SpreadsSameTickTasksAcrossAgents()
+	{
+		// The load snapshot is taken once per tick, so a local bump after each
+		// successful dispatch keeps same-tick tasks from piling onto one agent.
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), cts.Token);
+		registry.Register(new AgentHello("agent-b", "local", null, null), new NoopWebSocket(), cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "ping"));
+		store.QueuedTasks.Enqueue(CreateTask("task-2", "job-2", "local", "ping"));
+		var scheduler = new TaskSchedulerService(registry, store, new RecordingEventBroker(), CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "agent-a", "agent-b" }, store.Attributed.Select(a => a.AgentId).ToArray());
+	}
+
+	[Fact]
 	public async Task DispatchOnce_RequeuesTaskAndPublishesDispatchFailureWhenNoCapableAgentExists()
 	{
 		var registry = new AgentRegistry();
@@ -577,6 +645,19 @@ public sealed class TaskSchedulerServiceTests
 			StaleRequeueLeases.Add(taskLease);
 			return Task.FromResult(0);
 		}
+
+		/// <summary>Seedable per-agent running-task load (the placement signal).</summary>
+		public Dictionary<string, int> LoadByAgent { get; } = new(StringComparer.Ordinal);
+		public List<(string TaskId, int Attempt, string AgentId)> Attributed { get; } = [];
+
+		public Task MarkTaskClaimedBy(string taskId, int attempt, string agentId, CancellationToken cancellationToken)
+		{
+			Attributed.Add((taskId, attempt, agentId));
+			return Task.CompletedTask;
+		}
+
+		public Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken)
+			=> Task.FromResult(new Dictionary<string, int>(LoadByAgent, StringComparer.Ordinal));
 	}
 
 	private sealed class RecordingEventBroker : IEventBroker

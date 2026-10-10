@@ -521,6 +521,121 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task MarkTaskClaimedByAttributesRunningTasksAndCountsThemByAgent()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1", "acct-2"], null, null),
+			cts.Token);
+
+		JobTask? first = await store.ClaimNextQueuedTask("local", cts.Token);
+		JobTask? second = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(first);
+		Assert.NotNull(second);
+
+		// Running tasks carry no placement signal until dispatch attributes them.
+		Assert.Empty(await store.CountRunningTasksByAgent(cts.Token));
+
+		await store.MarkTaskClaimedBy(first!.Id, first.Attempt, "agent-a", cts.Token);
+		await store.MarkTaskClaimedBy(second!.Id, second.Attempt, "agent-b", cts.Token);
+
+		Dictionary<string, int> load = await store.CountRunningTasksByAgent(cts.Token);
+		Assert.Equal(new Dictionary<string, int> { ["agent-a"] = 1, ["agent-b"] = 1 }, load);
+	}
+
+	[Fact]
+	public async Task MarkTaskClaimedBy_FencesByAttemptAndStatus()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+
+		JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(claimed);
+
+		// A stale attempt number must not attribute a superseded dispatch.
+		await store.MarkTaskClaimedBy(claimed!.Id, claimed.Attempt + 1, "agent-a", cts.Token);
+		Assert.Empty(await store.CountRunningTasksByAgent(cts.Token));
+
+		await store.MarkTaskClaimedBy(claimed.Id, claimed.Attempt, "agent-a", cts.Token);
+		Assert.Equal(new Dictionary<string, int> { ["agent-a"] = 1 }, await store.CountRunningTasksByAgent(cts.Token));
+
+		// A finished task is no longer load.
+		await store.SetTaskResult(
+			new TaskResult(claimed.Id, true, null, null, DateTimeOffset.UtcNow, claimed.Attempt),
+			cts.Token);
+		Assert.Empty(await store.CountRunningTasksByAgent(cts.Token));
+	}
+
+	[Fact]
+	public async Task RequeueStaleRunningTasks_ClearsTheClaimAttribution()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+
+		JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(claimed);
+		await store.MarkTaskClaimedBy(claimed!.Id, claimed.Attempt, "agent-a", cts.Token);
+		Assert.Equal(new Dictionary<string, int> { ["agent-a"] = 1 }, await store.CountRunningTasksByAgent(cts.Token));
+
+		MarkTaskStale(store, claimed.Id, DateTimeOffset.UtcNow.AddMinutes(-10));
+		int requeued = await store.RequeueStaleRunningTasks(TimeSpan.Zero, cts.Token);
+
+		Assert.Equal(1, requeued);
+		// The requeue must not leave the lost agent looking busy for the next placement.
+		Assert.Empty(await store.CountRunningTasksByAgent(cts.Token));
+	}
+
+	[Fact]
+	public async Task ClaimAttribution_SurvivesStoreReopen()
+	{
+		// Placement load is the dispatch signal, so it has to survive a control-plane
+		// restart: an orphaned running task still holds the worker's attention.
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		try
+		{
+			using (var store = new SqliteJobStore(dbPath))
+			{
+				await store.CreateJob(
+					new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+					cts.Token);
+
+				JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+				Assert.NotNull(claimed);
+				await store.MarkTaskClaimedBy(claimed!.Id, claimed.Attempt, "agent-a", cts.Token);
+			}
+
+			using (var reopened = new SqliteJobStore(dbPath))
+			{
+				Dictionary<string, int> load = await reopened.CountRunningTasksByAgent(cts.Token);
+				Assert.Equal(new Dictionary<string, int> { ["agent-a"] = 1 }, load);
+			}
+		}
+		finally
+		{
+			Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+			try
+			{
+				File.Delete(dbPath);
+			}
+			catch (IOException)
+			{
+				// Microsoft.Data.Sqlite pooling may still hold the file on Windows; best-effort cleanup.
+			}
+		}
+	}
+
+	[Fact]
 	public async Task RequeueTaskWithDelay_PostponesNextClaimUntilDelayElapses()
 	{
 		using var store = new SqliteJobStore(":memory:");

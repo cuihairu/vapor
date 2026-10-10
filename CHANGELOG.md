@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Least-loaded agent placement (round 71): task dispatch now shares the
+  placement order the account reconciler already used — region match,
+  capability filter, then the agent with the fewest running tasks, with the
+  agent id as the deterministic tie-break. Running tasks are attributed to
+  their dispatch target in the task store (`claimed_by_agent_id`, fenced by
+  attempt and written only after the enqueue succeeds so fault-injection
+  semantics are unchanged); a lease requeue clears the attribution so the
+  load signal self-heals, and it persists across restarts. Health stays
+  implicit (only connected agents are in the registry) and labels are
+  deliberately absent (no tenant/environment signal exists yet).
 - Fault scenario coverage (round 70): three store-level failure scenarios in
   `FaultScenarioTests` — a corrupted database file fails construction with a
   typed exception while keeping the damaged bytes on disk (and releasing the

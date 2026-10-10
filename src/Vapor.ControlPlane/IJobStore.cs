@@ -29,6 +29,10 @@ public interface IJobStore
 	/// <summary>Returns a claimed (running) task to the queue; the task becomes claimable again after <paramref name="retryDelay"/>.</summary>
 	Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken);
 	Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken);
+	/// <summary>Attributes a running task to the agent it was dispatched to (fenced by attempt; no-op if the task moved on).</summary>
+	Task MarkTaskClaimedBy(string taskId, int attempt, string agentId, CancellationToken cancellationToken);
+	/// <summary>Running tasks per agent — the dispatch placement load signal (least-loaded pick).</summary>
+	Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken);
 	Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken);
 	Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken);
 	/// <summary>Marks a claimed (running) task as failed with a terminal error, e.g. after exhausting dispatch retries.</summary>

@@ -1489,6 +1489,8 @@ public sealed class ProgramBranchCoverageTests
 		public Task<JobTask?> ClaimNextQueuedTask(string region, CancellationToken cancellationToken) => Task.FromResult<JobTask?>(null);
 		public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => Task.CompletedTask;
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => Task.FromResult(0);
+		public Task MarkTaskClaimedBy(string taskId, int attempt, string agentId, CancellationToken cancellationToken) => Task.CompletedTask;
+		public Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken) => Task.FromResult(new Dictionary<string, int>());
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => Task.FromResult(false);
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
@@ -1704,6 +1706,8 @@ internal sealed class SlowHeartbeatStore : IJobStore
 	public Task<bool> AdvanceSchedule(string templateJobId, DateTimeOffset nextRunAt, CancellationToken cancellationToken) => _inner.AdvanceSchedule(templateJobId, nextRunAt, cancellationToken);
 	public Task RequeueTask(string taskId, TimeSpan? retryDelay, CancellationToken cancellationToken) => _inner.RequeueTask(taskId, retryDelay, cancellationToken);
 	public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken) => _inner.RequeueStaleRunningTasks(taskLease, cancellationToken);
+	public Task MarkTaskClaimedBy(string taskId, int attempt, string agentId, CancellationToken cancellationToken) => _inner.MarkTaskClaimedBy(taskId, attempt, agentId, cancellationToken);
+	public Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken) => _inner.CountRunningTasksByAgent(cancellationToken);
 	public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => _inner.SetTaskResult(result, cancellationToken);
 	public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => _inner.FailRunningTask(taskId, error, cancellationToken);
 	public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) => _inner.CancelJob(jobId, cancellationToken);

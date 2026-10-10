@@ -103,6 +103,67 @@ public sealed class AgentRegistryTests
 	}
 
 	[Fact]
+	public void Pick_WithLoad_OrdersByLeastLoadedThenAgentId()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+
+		registry.Register(new AgentHello("agent-c", "local", null, null), new NoopWebSocket(), cts.Token);
+		registry.Register(new AgentHello("agent-b", "local", null, null), new NoopWebSocket(), cts.Token);
+		registry.Register(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), cts.Token);
+
+		var load = new Dictionary<string, int> { ["agent-a"] = 2, ["agent-b"] = 2, ["agent-c"] = 1 };
+
+		// The least-loaded candidate wins over the lowest id.
+		ConnectedAgent? picked = registry.Pick("local", action: null, load: load);
+
+		Assert.NotNull(picked);
+		Assert.Equal("agent-c", picked!.Hello.AgentId);
+
+		load["agent-c"] = 2; // All tied — the id tie-break decides.
+		Assert.Equal("agent-a", registry.Pick("local", action: null, load: load)!.Hello.AgentId);
+	}
+
+	[Fact]
+	public void Pick_WithLoad_TreatsAgentsMissingFromTheSnapshotAsUnloaded()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+
+		// agent-a is absent from the load snapshot (never attributed anything).
+		registry.Register(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), cts.Token);
+		registry.Register(new AgentHello("agent-b", "local", null, null), new NoopWebSocket(), cts.Token);
+
+		var load = new Dictionary<string, int> { ["agent-b"] = 3 };
+
+		ConnectedAgent? picked = registry.Pick("local", action: null, load: load);
+
+		Assert.NotNull(picked);
+		Assert.Equal("agent-a", picked!.Hello.AgentId);
+	}
+
+	[Fact]
+	public void PickWithAction_LeastLoadedWinsOverTheLowerIdAmongCapableAgents()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+
+		// agent-a supports everything (no capability map) but is already busy.
+		registry.Register(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), cts.Token);
+		registry.Register(
+			new AgentHello("agent-b", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var load = new Dictionary<string, int> { ["agent-a"] = 5, ["agent-b"] = 0 };
+
+		ConnectedAgent? picked = registry.Pick("local", "ping", load);
+
+		Assert.NotNull(picked);
+		Assert.Equal("agent-b", picked!.Hello.AgentId);
+	}
+
+	[Fact]
 	public void PickWithAction_OrdersMultipleCapableCandidatesByAgentId()
 	{
 		var registry = new AgentRegistry();

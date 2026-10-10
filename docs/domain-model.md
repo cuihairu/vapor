@@ -152,7 +152,18 @@ An agent's advertisement of which actions it can run: a flat `action → bool` d
 | Identity | Keyed by action name (`OrdinalIgnoreCase`); an absent or empty dictionary means "supports everything" (lenient default for minimal agents). |
 | Consistency | Best-effort routing hint, not a guarantee: dispatch double-checks capability, and a mismatch fails the dispatch loudly rather than misrouting silently. |
 
-Code index: `AgentHello.Capabilities` — `src/Vapor.Protocol/Models.cs:124`; `ConnectedAgent.SupportsAction` — `src/Vapor.ControlPlane/AgentRegistry.cs:84`; consumers: `AgentRegistry.Pick(region, action)` for task dispatch, `DesiredStateReconciler.PickAgent` for account placement (least-loaded, agent-id tie-break).
+### Placement order (capability as one input)
+
+Both placement surfaces share one ordering contract — region match, then capability, then load, then agent id as the total-order tie-break:
+
+1. **Region** — only agents whose hello region matches the task/account region (or a host-pinned `agent:{id}` target, which bypasses the matcher entirely).
+2. **Capability** — `SupportsAction` filters to agents advertising the action; a pinned agent without it fails the dispatch loudly instead of falling back.
+3. **Load** — least-loaded first. Account placement counts assigned accounts per agent (`DesiredStateReconciler`); task dispatch counts running tasks per agent, read from the task store's `claimed_by_agent_id` attribution (written fenced by attempt when a dispatch succeeds, cleared on lease requeue — so the count self-heals and survives restarts).
+4. **Agent id** — `Ordinal` ascending tie-break, which keeps placement deterministic when load is equal.
+
+Labels are deliberately absent: the hello carries `agentId`/`region`/`capabilities`/`meta` only, and no cross-region or label-based placement requirement has been observed. If one appears, structured labels slot in at this step without touching the tunnel protocol.
+
+Code index: `AgentHello.Capabilities` — `src/Vapor.Protocol/Models.cs:124`; `ConnectedAgent.SupportsAction` — `src/Vapor.ControlPlane/AgentRegistry.cs:84`; consumers: `AgentRegistry.Pick(region, action, load)` for task dispatch, `DesiredStateReconciler.PickAgent` for account placement; `SqliteJobStore.MarkTaskClaimedBy` / `CountRunningTasksByAgent` — `src/Vapor.ControlPlane/SqliteJobStore.cs` for the dispatch load signal.
 
 ## 9. Event
 
