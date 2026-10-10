@@ -62,8 +62,8 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 		{
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
-				INSERT INTO audit_logs (id, ts_ms, action, actor, remote_ip, account_name, job_id, details_json)
-				VALUES ($id, $ts, $action, $actor, $remoteIp, $account, $jobId, $details);
+				INSERT INTO audit_logs (id, ts_ms, action, actor, remote_ip, account_name, job_id, task_id, attempt, agent_id, session_id, trace_id, details_json)
+				VALUES ($id, $ts, $action, $actor, $remoteIp, $account, $jobId, $taskId, $attempt, $agentId, $sessionId, $traceId, $details);
 				""";
 			cmd.Parameters.AddWithValue("$id", entry.Id);
 			cmd.Parameters.AddWithValue("$ts", entry.Timestamp.ToUnixTimeMilliseconds());
@@ -72,6 +72,14 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 			cmd.Parameters.AddWithValue("$remoteIp", (object?)entry.RemoteIp ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$account", (object?)entry.AccountName ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$jobId", (object?)entry.JobId ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$taskId", (object?)entry.TaskId ?? DBNull.Value);
+			// The `is long` pattern (not `??`) avoids CA1508's known false positive
+			// on boxing a Nullable<long>: an absent attempt really does box to null.
+			object attempt = entry.Attempt is long attemptNumber ? attemptNumber : DBNull.Value;
+			cmd.Parameters.AddWithValue("$attempt", attempt);
+			cmd.Parameters.AddWithValue("$agentId", (object?)entry.AgentId ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$sessionId", (object?)entry.SessionId ?? DBNull.Value);
+			cmd.Parameters.AddWithValue("$traceId", (object?)entry.TraceId ?? DBNull.Value);
 			cmd.Parameters.AddWithValue("$details", redactedDetails);
 			await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 		}
@@ -156,6 +164,18 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 			cmd.Parameters.AddWithValue("$jobId", query.JobId.Trim());
 		}
 
+		if (!string.IsNullOrWhiteSpace(query.AgentId))
+		{
+			where.Add("agent_id = $agentId");
+			cmd.Parameters.AddWithValue("$agentId", query.AgentId.Trim());
+		}
+
+		if (!string.IsNullOrWhiteSpace(query.TaskId))
+		{
+			where.Add("task_id = $taskId");
+			cmd.Parameters.AddWithValue("$taskId", query.TaskId.Trim());
+		}
+
 		if (query.From is { } from)
 		{
 			where.Add("ts_ms >= $fromMs");
@@ -176,7 +196,7 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 			// compile-time constant built above; all user input rides as $parameters.
 #pragma warning disable CA2100
 			cmd.CommandText = $"""
-				SELECT id, ts_ms, action, actor, remote_ip, account_name, job_id, details_json
+				SELECT id, ts_ms, action, actor, remote_ip, account_name, job_id, task_id, attempt, agent_id, session_id, trace_id, details_json
 				FROM audit_logs
 				{whereClause}
 				{order}
@@ -209,7 +229,12 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 		string? remoteIp = reader.IsDBNull(4) ? null : reader.GetString(4);
 		string? accountName = reader.IsDBNull(5) ? null : reader.GetString(5);
 		string? jobId = reader.IsDBNull(6) ? null : reader.GetString(6);
-		string detailsJson = reader.GetString(7);
+		string? taskId = reader.IsDBNull(7) ? null : reader.GetString(7);
+		long? attempt = reader.IsDBNull(8) ? null : reader.GetInt64(8);
+		string? agentId = reader.IsDBNull(9) ? null : reader.GetString(9);
+		string? sessionId = reader.IsDBNull(10) ? null : reader.GetString(10);
+		string? traceId = reader.IsDBNull(11) ? null : reader.GetString(11);
+		string detailsJson = reader.GetString(12);
 
 		Dictionary<string, object?>? details = JsonSerializer.Deserialize<Dictionary<string, object?>>(detailsJson, JsonDefaults.Options);
 
@@ -221,6 +246,11 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 			RemoteIp: remoteIp,
 			AccountName: accountName,
 			JobId: jobId,
+			TaskId: taskId,
+			Attempt: attempt,
+			AgentId: agentId,
+			SessionId: sessionId,
+			TraceId: traceId,
 			Details: details
 		);
 	}
@@ -244,5 +274,38 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 			CREATE INDEX IF NOT EXISTS idx_audit_logs_account ON audit_logs (account_name);
 			""";
 		cmd.ExecuteNonQuery();
+
+		// Execution-id columns (40.8-7): added idempotently so stores created by
+		// older builds keep their rows and gain the nullable columns in place.
+		EnsureColumn("task_id", "TEXT");
+		EnsureColumn("attempt", "INTEGER");
+		EnsureColumn("agent_id", "TEXT");
+		EnsureColumn("session_id", "TEXT");
+		EnsureColumn("trace_id", "TEXT");
+	}
+
+	private void EnsureColumn(string column, string definition)
+	{
+		// CA2100 suppressed: column/definition come only from Migrate()'s
+		// compile-time literals; no external input reaches the schema.
+#pragma warning disable CA2100
+		HashSet<string> existing = new(StringComparer.Ordinal);
+		using (var cmd = _connection.CreateCommand())
+		{
+			cmd.CommandText = "PRAGMA table_info(audit_logs);";
+			using var reader = cmd.ExecuteReader();
+			while (reader.Read())
+			{
+				existing.Add(reader.GetString(1));
+			}
+		}
+
+		if (!existing.Contains(column))
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = $"ALTER TABLE audit_logs ADD COLUMN {column} {definition};";
+			cmd.ExecuteNonQuery();
+		}
+#pragma warning restore CA2100
 	}
 }

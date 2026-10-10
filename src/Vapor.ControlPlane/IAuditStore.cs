@@ -11,6 +11,11 @@ public sealed record AuditEntry(
 	string? RemoteIp = null,
 	string? AccountName = null,
 	string? JobId = null,
+	string? TaskId = null,
+	long? Attempt = null,
+	string? AgentId = null,
+	string? SessionId = null,
+	string? TraceId = null,
 	IReadOnlyDictionary<string, object?>? Details = null
 );
 
@@ -21,6 +26,8 @@ public sealed record AuditQuery(
 	string? Action = null,
 	string? AccountName = null,
 	string? JobId = null,
+	string? AgentId = null,
+	string? TaskId = null,
 	DateTimeOffset? From = null,
 	DateTimeOffset? To = null,
 	int Limit = 100,
@@ -48,6 +55,11 @@ public static class AuditStoreExtensions
 		string? remoteIp = null,
 		string? accountName = null,
 		string? jobId = null,
+		string? taskId = null,
+		long? attempt = null,
+		string? agentId = null,
+		string? sessionId = null,
+		string? traceId = null,
 		IReadOnlyDictionary<string, object?>? details = null)
 	{
 		return new AuditEntry(
@@ -58,6 +70,11 @@ public static class AuditStoreExtensions
 			RemoteIp: remoteIp,
 			AccountName: accountName,
 			JobId: jobId,
+			TaskId: taskId,
+			Attempt: attempt,
+			AgentId: agentId,
+			SessionId: sessionId,
+			TraceId: traceId,
 			Details: details
 		);
 	}

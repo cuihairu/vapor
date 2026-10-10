@@ -634,9 +634,13 @@ Rules:
 - `trace_id` is the only id that crosses the CP↔Agent boundary (in the tunnel
   envelope); all others are CP-internal. A task with no trace yet (pre-dispatch)
   simply omits `trace_id`.
-- The audit sink records `action`, `account_name`, `job_id` today; `task_id`,
-  `attempt`, `agent_id` and `trace_id` are aligned to this convention (see
-  `src/Vapor.ControlPlane/SqliteAuditStore.cs`).
+- The audit sink (`src/Vapor.ControlPlane/SqliteAuditStore.cs`) persists the
+  full canonical set — `task_id`, `attempt`, `agent_id`, `session_id` and
+  `trace_id` columns alongside the original `action`/`account_name`/`job_id`
+  (idempotent `ALTER TABLE` migration, older rows read back with nulls). The
+  HTTP audit path fills `trace_id` from the inbound W3C `traceparent` request
+  header; sinks that cannot populate a field leave it null. `/v1/audit/logs`
+  filters by `agentId`/`taskId` in addition to the original filters.
 - Span tags use `snake_case` of the same names (`vapor.task_id`, `vapor.job_id`,
   `vapor.attempt`, …) — the OTel sink and the audit/log sinks must agree on the
   underlying field, differing only in separator.

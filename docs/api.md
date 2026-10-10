@@ -527,8 +527,8 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 #### `GET /v1/audit/logs`
 - Purpose: query persisted audit logs.
 - Auth: admin.
-- Query: `limit` (int, default 100, clamped 1–500), `offset` (int, default 0, clamped ≥ 0), `action` (string, optional), `account` (string, optional), `jobId` (string, optional), `fromMs` (long, unix-ms, optional), `toMs` (long, unix-ms, optional); `fromMs > toMs` → 400 `fromMs must not be greater than toMs`.
-- 200: `{ "logs": [ AuditEntry ], "total": int, "limit": int, "offset": int }` — `AuditEntry = { id, timestamp, action, actor, remoteIp?, accountName?, jobId?, details? }`.
+- Query: `limit` (int, default 100, clamped 1–500), `offset` (int, default 0, clamped ≥ 0), `action` (string, optional), `account` (string, optional), `jobId` (string, optional), `agentId` (string, optional), `taskId` (string, optional), `fromMs` (long, unix-ms, optional), `toMs` (long, unix-ms, optional); `fromMs > toMs` → 400 `fromMs must not be greater than toMs`.
+- 200: `{ "logs": [ AuditEntry ], "total": int, "limit": int, "offset": int }` — `AuditEntry = { id, timestamp, action, actor, remoteIp?, accountName?, jobId?, taskId?, attempt?, agentId?, sessionId?, traceId?, details? }` (execution-id fields per the convention in `docs/architecture.md` §"Execution ID convention"; `traceId` is parsed from the inbound W3C `traceparent` request header, all null fields omitted from the response).
 - Errors: 400, 401.
 
 ---

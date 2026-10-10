@@ -2172,6 +2172,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 				"orchestrator",
 				accountName: spec.AccountName,
 				jobId: jobId,
+				agentId: agentId,
 				details: details), cancellationToken).ConfigureAwait(false);
 		}
 		catch (OperationCanceledException)

@@ -3726,6 +3726,8 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 	string? action,
 	string? account,
 	string? jobId,
+	string? agentId,
+	string? taskId,
 	long? fromMs,
 	long? toMs
 ) =>
@@ -3744,6 +3746,8 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 		Action: action,
 		AccountName: account,
 		JobId: jobId,
+		AgentId: agentId,
+		TaskId: taskId,
 		From: fromMs.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(fromMs.Value) : null,
 		To: toMs.HasValue ? DateTimeOffset.FromUnixTimeMilliseconds(toMs.Value) : null,
 		Limit: Math.Clamp(limit ?? 100, 1, 500),
@@ -3756,7 +3760,7 @@ app.MapGet("/v1/audit/logs", async Task<IResult> (
 	return Results.Ok(new { logs, total, limit = query.Limit, offset = query.Offset });
 })
 	.WithTags("Audit")
-	.WithSummary("Query persisted audit logs (filter by action, account, jobId, time range; limit 1-500)")
+	.WithSummary("Query persisted audit logs (filter by action, account, jobId, agentId, taskId, time range; limit 1-500)")
 	.Produces(200)
 	.Produces<ErrorResponse>(400)
 	.Produces<ErrorResponse>(401);
@@ -4609,6 +4613,24 @@ static FaultView ToFaultView(FaultSpec spec) => new(
 	spec.ExpiresAt);
 
 
+/// <summary>
+/// Extracts the W3C trace id from the inbound `traceparent` header. The audit
+/// sink records `trace_id` as the only cross-boundary id (see the Execution
+/// ID convention in docs/architecture.md); a missing or malformed header simply
+/// leaves the field null.
+/// </summary>
+static string? TraceIdFromTraceparent(HttpContext ctx)
+{
+	if (!ctx.Request.Headers.TryGetValue("traceparent", out StringValues traceparent))
+	{
+		return null;
+	}
+
+	return ActivityContext.TryParse(traceparent, null, out ActivityContext traceContext)
+		? traceContext.TraceId.ToString()
+		: null;
+}
+
 static async Task WriteAuditLog(
 	ILogger logger,
 	IAuditStore auditStore,
@@ -4618,14 +4640,16 @@ static async Task WriteAuditLog(
 	string? jobId = null,
 	IReadOnlyDictionary<string, object?>? details = null)
 {
+	string? traceId = TraceIdFromTraceparent(ctx);
 	var payload = JsonSerializer.Serialize(details ?? new Dictionary<string, object?>(), Vapor.Protocol.JsonDefaults.Options);
 	logger.LogInformation(
-		"AUDIT action={Action} actor={Actor} ip={RemoteIp} account={AccountName} jobId={JobId} details={Details}",
+		"AUDIT action={Action} actor={Actor} ip={RemoteIp} account={AccountName} jobId={JobId} traceId={TraceId} details={Details}",
 		action,
 		GetAuditActor(ctx),
 		ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
 		SensitiveDataRedactor.SanitizeLogValue(accountName),
 		SensitiveDataRedactor.SanitizeLogValue(jobId),
+		SensitiveDataRedactor.SanitizeLogValue(traceId),
 		SensitiveDataRedactor.Redact(payload));
 
 	// Persist with the same redaction guarantees as the structured log.
@@ -4635,6 +4659,7 @@ static async Task WriteAuditLog(
 		remoteIp: ctx.Connection.RemoteIpAddress?.ToString(),
 		accountName: accountName,
 		jobId: jobId,
+		traceId: traceId,
 		details: details);
 
 	try

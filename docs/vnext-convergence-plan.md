@@ -130,7 +130,7 @@ V-next 的收敛方向因此定为：
 | 4 | secret version / rotation 语义成文 | §22 | KeyRotation 增加账号级轮换需求 | 现状 AES-GCM v2 + 轮换工具已覆盖大部分；验收：文档定义版本语义 |
 | 5 | `vapor backup/restore/verify` CLI 三件套 | §21 | 备份事故/多机部署需求出现 | 现状 `production.md:348-366` 指引+sqlite `.backup` 可用；验收：CLI 包装现有语义 |
 | 6 | Placement / Capability matcher（region+labels+load/health 排序） | §16+§17 | 出现跨区域争抢/负载不均观测 | 不改隧道协议；capability 结构化在 domain-model.md 先行定义 |
-| 7 | 统一 Execution ID 字段约定（job/task/attempt/agent/account/session/action/trace_id） | §18 残余 | 排查跨链路问题时 | 现状已有 traceparent 贯通（`TaskSchedulerService.cs:134,147`）；验收：约定成文 + 关键 sink 字段对齐 |
+| 7 | 统一 Execution ID 字段约定（job/task/attempt/agent/account/session/action/trace_id） | §18 残余 | 排查跨链路问题时 | 现状已有 traceparent 贯通（`TaskSchedulerService.cs:134,147`）；验收：约定成文 + 关键 sink 字段对齐。**已落地（2026-10-10，拉起令批次）**：约定成文（`architecture.md` §Execution ID convention）；审计 sink 对齐——`AuditEntry`/`AuditQuery`/`CreateEntry` 增 `task_id`/`attempt`/`agent_id`/`session_id`/`trace_id`，`SqliteAuditStore` 幂等 `ALTER TABLE` 迁移（旧行回读 null），`/v1/audit/logs` 增 `agentId`/`taskId` 过滤，HTTP 审计路径从 W3C `traceparent` 头解析 `trace_id`，`account.reconciled` 审计带 `agent_id` |
 | 8 | Operations Console 增强（Agent/Session 健康卡片、失败原因、audit 视图） | §19 残余 | P0-C 上线后用户反馈 | 验收：dashboard 增卡片视图，无新增后端面 |
 | 9 | 容量画像性能场景（100/1k/10k） | §28 残余 | 出现规模化部署前 | 现状系统级基线已可用；验收：performance.md 增场景表 |
 | 10 | 残余故障注入场景（SQLite 损坏模拟、CP 全链路重启、跨 attempt 分区） | §26 残余 | 出现相关事故引导 | 验收：新增场景测试 |

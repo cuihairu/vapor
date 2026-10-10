@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Vapor.ControlPlane;
 using Xunit;
 
@@ -20,7 +21,12 @@ public sealed class SqliteAuditStoreTests : IDisposable
 		string? account = null,
 		string? jobId = null,
 		Dictionary<string, object?>? details = null,
-		DateTimeOffset? timestamp = null)
+		DateTimeOffset? timestamp = null,
+		string? taskId = null,
+		long? attempt = null,
+		string? agentId = null,
+		string? sessionId = null,
+		string? traceId = null)
 	{
 		return new AuditEntry(
 			Id: Id.New(),
@@ -30,6 +36,11 @@ public sealed class SqliteAuditStoreTests : IDisposable
 			RemoteIp: "127.0.0.1",
 			AccountName: account,
 			JobId: jobId,
+			TaskId: taskId,
+			Attempt: attempt,
+			AgentId: agentId,
+			SessionId: sessionId,
+			TraceId: traceId,
 			Details: details
 		);
 	}
@@ -163,5 +174,97 @@ public sealed class SqliteAuditStoreTests : IDisposable
 
 		Assert.Empty(entries);
 		Assert.Equal(0, count);
+	}
+
+	[Fact]
+	public async Task RecordAndQuery_RoundTripsExecutionIdFields()
+	{
+		await _store.RecordAsync(NewEntry(
+			"account.reconciled",
+			account: "alice",
+			jobId: "job-1",
+			taskId: "task-1",
+			attempt: 2,
+			agentId: "agent-a",
+			sessionId: "sess-7",
+			traceId: "0af7651916cd43dd8448eb211c80319c"), _cts.Token);
+
+		var entry = Assert.Single(await _store.QueryAsync(new AuditQuery(), _cts.Token));
+
+		Assert.Equal("task-1", entry.TaskId);
+		Assert.Equal(2, entry.Attempt);
+		Assert.Equal("agent-a", entry.AgentId);
+		Assert.Equal("sess-7", entry.SessionId);
+		Assert.Equal("0af7651916cd43dd8448eb211c80319c", entry.TraceId);
+	}
+
+	[Fact]
+	public async Task Query_FiltersByAgentAndTask()
+	{
+		await _store.RecordAsync(NewEntry("task.dispatched", agentId: "agent-a", taskId: "task-1"), _cts.Token);
+		await _store.RecordAsync(NewEntry("task.dispatched", agentId: "agent-b", taskId: "task-2"), _cts.Token);
+		await _store.RecordAsync(NewEntry("task.result", agentId: "agent-a", taskId: "task-2"), _cts.Token);
+
+		IReadOnlyList<AuditEntry> byAgent = await _store.QueryAsync(new AuditQuery(AgentId: "agent-a"), _cts.Token);
+		IReadOnlyList<AuditEntry> byTask = await _store.QueryAsync(new AuditQuery(TaskId: "task-2"), _cts.Token);
+		IReadOnlyList<AuditEntry> byBoth = await _store.QueryAsync(new AuditQuery(AgentId: "agent-a", TaskId: "task-1"), _cts.Token);
+
+		Assert.Equal(2, byAgent.Count);
+		Assert.All(byAgent, entry => Assert.Equal("agent-a", entry.AgentId));
+		Assert.Equal(2, byTask.Count);
+		Assert.All(byTask, entry => Assert.Equal("task-2", entry.TaskId));
+		Assert.Equal("task.dispatched", Assert.Single(byBoth).Action);
+	}
+
+	[Fact]
+	public async Task Constructor_LegacySchema_AddsExecutionIdColumnsAndKeepsRows()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"audit-legacy-{Guid.NewGuid():N}.db");
+		try
+		{
+			// A store written by a pre-execution-id build: the original eight columns only.
+			string connectionString = $"Data Source={dbPath}";
+			using (SqliteConnection connection = new(connectionString))
+			{
+				connection.Open();
+				using var create = connection.CreateCommand();
+				create.CommandText = """
+					CREATE TABLE audit_logs (
+						id TEXT PRIMARY KEY,
+						ts_ms INTEGER NOT NULL,
+						action TEXT NOT NULL,
+						actor TEXT NOT NULL,
+						remote_ip TEXT,
+						account_name TEXT,
+						job_id TEXT,
+						details_json TEXT NOT NULL
+					);
+					INSERT INTO audit_logs (id, ts_ms, action, actor, remote_ip, account_name, job_id, details_json)
+					VALUES ('legacy-1', 1700000000000, 'job.created', 'admin', NULL, 'alice', 'job-old', '{}');
+					""";
+				create.ExecuteNonQuery();
+			}
+
+			using (var store = new SqliteAuditStore(dbPath))
+			{
+				// The pre-existing row reads back with null execution ids...
+				AuditEntry legacy = Assert.Single(await store.QueryAsync(new AuditQuery(AccountName: "alice"), _cts.Token));
+				Assert.Equal("job-old", legacy.JobId);
+				Assert.Null(legacy.TaskId);
+				Assert.Null(legacy.Attempt);
+				Assert.Null(legacy.AgentId);
+				Assert.Null(legacy.SessionId);
+				Assert.Null(legacy.TraceId);
+
+				// ...and new entries persist the full execution-id set alongside it.
+				await store.RecordAsync(NewEntry("account.reconciled", account: "bob", taskId: "task-new", attempt: 1, agentId: "agent-x"), _cts.Token);
+				IReadOnlyList<AuditEntry> migrated = await store.QueryAsync(new AuditQuery(AgentId: "agent-x"), _cts.Token);
+				Assert.Equal("task-new", Assert.Single(migrated).TaskId);
+			}
+		}
+		finally
+		{
+			File.Delete(dbPath);
+		}
 	}
 }

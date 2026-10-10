@@ -145,6 +145,87 @@ public sealed class AuditApiTests
 		Assert.Equal(10, doc.RootElement.GetProperty("offset").GetInt32());
 	}
 
+	[Fact]
+	public async Task AuditLogs_FiltersByAgentIdAndTaskId()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		IAuditStore store = factory.Services.GetRequiredService<IAuditStore>();
+		await store.RecordAsync(AuditStoreExtensions.CreateEntry(
+			"task.dispatched", "scheduler", jobId: "job-1", taskId: "task-1", agentId: "agent-a"), CancellationToken.None);
+		await store.RecordAsync(AuditStoreExtensions.CreateEntry(
+			"task.dispatched", "scheduler", jobId: "job-1", taskId: "task-2", agentId: "agent-b"), CancellationToken.None);
+		await store.RecordAsync(AuditStoreExtensions.CreateEntry(
+			"task.result", "scheduler", jobId: "job-1", taskId: "task-2", agentId: "agent-a"), CancellationToken.None);
+
+		using HttpResponseMessage byAgent = await client.GetAsync("/v1/audit/logs?agentId=agent-a");
+		using HttpResponseMessage byTask = await client.GetAsync("/v1/audit/logs?taskId=task-2");
+		using HttpResponseMessage byBoth = await client.GetAsync("/v1/audit/logs?agentId=agent-b&taskId=task-2");
+
+		Assert.Equal(HttpStatusCode.OK, byAgent.StatusCode);
+		string agentBody = await byAgent.Content.ReadAsStringAsync();
+		using var agentDoc = JsonDocument.Parse(agentBody);
+		Assert.Equal(2, agentDoc.RootElement.GetProperty("total").GetInt32());
+
+		string taskBody = await byTask.Content.ReadAsStringAsync();
+		using var taskDoc = JsonDocument.Parse(taskBody);
+		Assert.Equal(2, taskDoc.RootElement.GetProperty("total").GetInt32());
+
+		string bothBody = await byBoth.Content.ReadAsStringAsync();
+		using var bothDoc = JsonDocument.Parse(bothBody);
+		Assert.Equal(1, bothDoc.RootElement.GetProperty("total").GetInt32());
+		Assert.Equal("task.dispatched", bothDoc.RootElement.GetProperty("logs")[0].GetProperty("action").GetString());
+	}
+
+	[Fact]
+	public async Task AuditLogs_RecordsTraceIdFromTraceparentHeader()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		client.DefaultRequestHeaders.Add("traceparent", "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01");
+
+		using HttpResponseMessage created = await client.PostAsJsonAsync("/v1/jobs", new
+		{
+			action = "ping",
+			targets = new[] { "acct-1" }
+		});
+		Assert.Equal(HttpStatusCode.Accepted, created.StatusCode);
+
+		using HttpResponseMessage auditResponse = await client.GetAsync("/v1/audit/logs?action=job.created");
+		string body = await auditResponse.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+
+		JsonElement log = doc.RootElement.GetProperty("logs")[0];
+		Assert.Equal("0af7651916cd43dd8448eb211c80319c", log.GetProperty("traceId").GetString());
+	}
+
+	[Fact]
+	public async Task AuditLogs_MalformedTraceparent_OmitsTraceId()
+	{
+		await using var factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		client.DefaultRequestHeaders.Add("traceparent", "not-a-traceparent");
+
+		using HttpResponseMessage created = await client.PostAsJsonAsync("/v1/jobs", new
+		{
+			action = "ping",
+			targets = new[] { "acct-1" }
+		});
+		Assert.Equal(HttpStatusCode.Accepted, created.StatusCode);
+
+		using HttpResponseMessage auditResponse = await client.GetAsync("/v1/audit/logs?action=job.created");
+		string body = await auditResponse.Content.ReadAsStringAsync();
+		using var doc = JsonDocument.Parse(body);
+
+		// Null fields are omitted by the protocol serializer (WhenWritingNull).
+		JsonElement log = doc.RootElement.GetProperty("logs")[0];
+		Assert.False(log.TryGetProperty("traceId", out _));
+	}
+
 	private static TestFactory CreateFactory()
 	{
 		return new TestFactory();
