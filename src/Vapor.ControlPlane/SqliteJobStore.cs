@@ -36,8 +36,11 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		{
 			// A failed migration (e.g. a corrupt file) must not leak the open handle:
 			// on Windows the lingering lock would block the operator from repairing
-			// or replacing the database before the next start.
+			// or replacing the database before the next start. Dispose alone returns
+			// the connection to the ADO.NET pool, which keeps the file handle open —
+			// evict the pool so the file is usable again immediately.
 			_connection.Dispose();
+			SqliteConnection.ClearAllPools();
 			throw;
 		}
 	}
