@@ -12,7 +12,9 @@ namespace Vapor.Agent.Tests;
 /// timeout bounds), output capture (stdout/stderr/exit code), the timeout kill
 /// path, and the capture truncation. Shell is the only interpreter CI can rely
 /// on, so execution tests run through it; the other languages are covered at
-/// the mapping level.
+/// the mapping level. The shell runner is POSIX /bin/sh by design (agents are
+/// Linux containers), so the process-spawning tests early-return on Windows
+/// runners, which ship no /bin/sh.
 /// </summary>
 public sealed class ScriptExecActionTests
 {
@@ -51,6 +53,11 @@ public sealed class ScriptExecActionTests
 	[Fact]
 	public async Task ExecuteAsync_NormalizesLanguageTagBeforeResolving()
 	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The shell runner is /bin/sh; Windows runners ship none.
+		}
+
 		var action = new ScriptExecAction();
 
 		ActionResult result = await action.ExecuteAsync(
@@ -63,6 +70,11 @@ public sealed class ScriptExecActionTests
 	[Fact]
 	public async Task ExecuteAsync_RunsShellScriptAndCapturesStreams()
 	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The shell runner is /bin/sh; Windows runners ship none.
+		}
+
 		var action = new ScriptExecAction();
 
 		ActionResult result = await action.ExecuteAsync(
@@ -82,6 +94,11 @@ public sealed class ScriptExecActionTests
 	[Fact]
 	public async Task ExecuteAsync_NonZeroExit_FailsWithExitCode()
 	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The shell runner is /bin/sh; Windows runners ship none.
+		}
+
 		var action = new ScriptExecAction();
 
 		ActionResult result = await action.ExecuteAsync(
@@ -141,6 +158,11 @@ public sealed class ScriptExecActionTests
 	[Fact]
 	public async Task ExecuteAsync_TimeoutKillsProcessAndReportsStructuredResult()
 	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The shell runner is /bin/sh; Windows runners ship none.
+		}
+
 		var action = new ScriptExecAction();
 
 		ActionResult result = await action.ExecuteAsync(
@@ -156,6 +178,11 @@ public sealed class ScriptExecActionTests
 	[Fact]
 	public async Task ExecuteAsync_CallerCancel_KillsChildAndPropagates()
 	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The shell runner is /bin/sh; Windows runners ship none.
+		}
+
 		var action = new ScriptExecAction();
 		using CancellationTokenSource cts = new();
 		cts.Cancel();
@@ -169,6 +196,11 @@ public sealed class ScriptExecActionTests
 	[Fact]
 	public async Task ExecuteAsync_JsonElementPayloadChannels_ParseLikeInProcessValues()
 	{
+		if (OperatingSystem.IsWindows())
+		{
+			return; // The shell runner is /bin/sh; Windows runners ship none.
+		}
+
 		// The dispatch path delivers payload values as JsonElement; the action
 		// must read them exactly like the in-process string/int shapes.
 		JsonElement json = JsonSerializer.SerializeToElement(new
