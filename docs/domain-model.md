@@ -168,6 +168,35 @@ Fire-and-forget notifications on the SSE streams: job/task lifecycle, session st
 
 Code index: `Event`, `SessionEvent`, `AuthChallengeEvent`, `PluginEvent` — `src/Vapor.Protocol/Events.cs`, `src/Vapor.ControlPlane/IEventBroker.cs`; `EventBroker` (3 bounded channels) — `src/Vapor.ControlPlane/EventBroker.cs`. Mechanics in [`api.md`](api.md) §2.
 
+### Event layering (Domain / Operational / Audit)
+
+Events fall into three layers with different durability and consumer contracts.
+The layer determines **where** the event lives and **what** a consumer may
+assume — never mix them.
+
+| Layer | Lives in | Durability | Consumer contract |
+|-------|----------|------------|-------------------|
+| **Domain** | `EventBroker` SSE | none (best-effort, `DropOldest`) | at-most-once; tolerate gaps; no replay |
+| **Operational** | `EventBroker` SSE + structured logs | none (logs: operator retention) | health/troubleshooting signals; may be lost under load |
+| **Audit** | `SqliteAuditStore` (SQLite) | durable, append-only | exactly the recorded facts; survives restart; drives compliance |
+
+- **Domain** — lifecycle of core objects: `job.*`, `task.*`, `session.*`,
+  `auth.*`. Consumers are live UIs and agents acting on the present state.
+- **Operational** — system health and process signals: agent connectivity,
+  crawl run progress, reconciliation decisions, plugin install/unload,
+  webhook delivery attempts. Consumers are dashboards and operators.
+- **Audit** — who changed what, when: `script_*`, `flow_*`, `job_*`,
+  `account_*`, config and policy mutations. Written independently of the
+  broker (an audit-worthy outcome is persisted to `SqliteAuditStore` at the
+  moment it happens, never routed through SSE). Consumers are the audit API
+  and `audit.db` itself.
+
+SSE event names follow the `<layer-prefix>.<verb>` convention already
+enumerated in [`api.md`](api.md) §2 (`job.created`, `task.dispatched`,
+`session.<eventType>`, `auth.<challengeType>`, `crawl.run_triggered`,
+`plugin.installed`, …); the audit sink action names are the third column and
+are mirrored in [`api.md`](api.md) §5. SSE stays best-effort in all layers.
+
 ## 10. Plugin
 
 A versioned extension package: a `plugin.json` manifest plus an assembly, loaded into its own `AssemblyLoadContext` on an agent.

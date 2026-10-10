@@ -463,6 +463,32 @@ Agent enables it via `AddRedactingConsole()`.
   from an old to a new key (supports `base64:`/`file:`/`env:` key specs, `--dry-run`,
   aborts without modification when any account fails to decrypt).
 
+### Secret version semantics
+
+"Version" is overloaded across three independent axes; each is versioned
+separately and they must not be conflated:
+
+| Axis | Meaning | Current value | Version carrier |
+|------|---------|---------------|-----------------|
+| Format version | On-disk JSON envelope shape (`version` field + `accounts` object) | `2` (`FileCredentialStore.CurrentFormatVersion`) | `version` field in `credentials.json` |
+| Encoding version | How a single token value is encrypted | AES-GCM | `gcm:` prefix on the value (`VaporCryptoHelper.AesGcmPrefix`) |
+| Key generation | Which master key material encrypts the values | unversioned | not stored (no key-id/fingerprint) |
+
+Rules:
+
+- **Format**: v1 files (plain account map, no `version` field) are migrated to v2
+  transparently on first load and persisted immediately. A `version` greater than
+  `CurrentFormatVersion` is rejected with `InvalidOperationException` — the
+  store never guesses a newer format.
+- **Encoding**: `DecryptAes` tries the `gcm:` prefix first and falls back to
+  bare-base64 AES-CBC, so both encryptions remain readable. New writes always
+  emit `gcm:`.
+- **Key generation**: rotation re-encrypts every value under the new key but
+  records no key-id, so a rotated store cannot later prove which key material a
+  given value used. Account-level rotation therefore means "re-encrypt all
+  accounts", not "re-encrypt one account under a fresh key"; per-account key
+  pinning would require storing a key fingerprint per account (not implemented).
+
 ## Testing
 
 The repository runs 3,517 tests across 13 test projects (2026-10-04
@@ -583,7 +609,39 @@ surfaces where they meet: each request-counter sample carries the ambient
 W3C trace id as a Prometheus exemplar, so a metric anomaly links straight to
 a concrete trace without either surface depending on the other. Tracing
 crosses the tunnel as W3C `traceparent` in the envelope (no SDK coupling on
-the wire). Rate limiting
+the wire).
+
+### Execution ID convention
+
+Every object that participates in a unit of work carries a stable id. The
+names below are the **canonical field names** across all sinks — audit columns,
+structured-log properties, SSE `details`, span tags, and metric exemplars.
+A sink that cannot populate a field omits it (null); it never renames it.
+
+| Object | Canonical field | Source | Notes |
+|--------|-----------------|--------|-------|
+| Job | `job_id` | `Job.Id` | one-shot or scheduled request |
+| Task | `task_id` | `JobTask.Id` | one dispatched attempt carrier |
+| Attempt | `attempt` | `JobTask.Attempt` | monotonic per task; fencing key |
+| Agent | `agent_id` | agent id string | the executing host |
+| Account | `account_name` | account name | not a numeric id |
+| Session | `session_id` | session tracker id | BotSession-scoped |
+| Action | `action` | action name (string) | e.g. `idle`, `loot`, `script_exec` |
+| Trace | `trace_id` | W3C `traceparent` | crosses the tunnel; may be absent |
+
+Rules:
+
+- `trace_id` is the only id that crosses the CP↔Agent boundary (in the tunnel
+  envelope); all others are CP-internal. A task with no trace yet (pre-dispatch)
+  simply omits `trace_id`.
+- The audit sink records `action`, `account_name`, `job_id` today; `task_id`,
+  `attempt`, `agent_id` and `trace_id` are aligned to this convention (see
+  `src/Vapor.ControlPlane/SqliteAuditStore.cs`).
+- Span tags use `snake_case` of the same names (`vapor.task_id`, `vapor.job_id`,
+  `vapor.attempt`, …) — the OTel sink and the audit/log sinks must agree on the
+  underlying field, differing only in separator.
+
+Rate limiting
 sits at the CP edge per credential (sliding window, off by default) because
 that is the only ingress — protecting it is protecting the system.
 
