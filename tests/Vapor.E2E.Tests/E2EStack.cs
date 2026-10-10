@@ -29,44 +29,9 @@ public sealed class E2EStack : IAsyncLifetime
 		_workDir = TestInfrastructure.CreateTempWorkDir();
 		BaseUrl = $"http://127.0.0.1:{port}";
 
-		string controlPlaneDll = TestInfrastructure.FindAppDll("Vapor.ControlPlane", "Vapor.ControlPlane.dll");
-
-		_controlPlane = VaporProcess.Start(
-			controlPlaneDll,
-			new Dictionary<string, string>
-			{
-				["ASPNETCORE_URLS"] = BaseUrl,
-				["Vapor_ADMIN_API_KEY"] = AdminApiKey,
-				["Vapor_AGENT_API_KEYS"] = AgentApiKey,
-				["Vapor_DB_PATH"] = Path.Combine(_workDir, "controlplane.db"),
-				["Vapor_AUDIT_DB_PATH"] = Path.Combine(_workDir, "audit.db"),
-				// Every env-driven database path must be pinned into the throwaway work
-				// dir: an unpinned path falls back to the process CWD default (data/
-				// under the test bin), where state from a previous run survives and the
-				// next boot rehydrates it (declared accounts reappearing unprompted).
-				["Vapor_CRAWL_DB_PATH"] = Path.Combine(_workDir, "crawl.db"),
-				["Vapor_CONFIG_DB_PATH"] = Path.Combine(_workDir, "config.db"),
-				// Fail undispatchable tasks quickly so the negative-path test observes the
-				// terminal state within seconds instead of the production default (10 × 2s).
-				["Vapor_TASK_MAX_DISPATCH_ATTEMPTS"] = "3",
-				["Vapor_TASK_DISPATCH_RETRY_DELAY_MS"] = "200",
-				// Recover orphaned tasks quickly so an agent disconnect mid-task (WS drop
-				// under CI load) requeues and retries within the test deadline instead of
-				// the production default (300s lease > 90s deadline = unrecoverable).
-				["Vapor_TASK_LEASE_SECONDS"] = "15",
-				// Account orchestration: aggressive timing so orchestration tests observe
-				// reconciliation within seconds instead of the production default (15s interval).
-				["Vapor_RECONCILE_INTERVAL_SECONDS"] = "2",
-				["Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS"] = "3",
-				["Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS"] = "50",
-			},
-			Path.Combine(_workDir, "controlplane.log"));
-
 		try
 		{
-			Http = new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(10) };
-			await WaitForControlPlaneAsync();
-			_agent = await StartAgentAsync(AgentId, AgentRegion);
+			await StartStackAsync();
 		}
 		catch
 		{
@@ -74,6 +39,68 @@ public sealed class E2EStack : IAsyncLifetime
 			throw;
 		}
 	}
+
+	/// <summary>
+	/// Kills the control plane and its agent mid-flight, then boots both again against
+	/// the same throwaway databases and port. Restart-resilience scenario: the restarted
+	/// control plane must rehydrate from disk (crash-journal recovery included) and recover
+	/// in-flight work via the lease fence. Leaves the stack in the same shape as after
+	/// InitializeAsync, so later tests in the collection are unaffected.
+	/// </summary>
+	public async Task RestartControlPlaneAsync()
+	{
+		// Close the client connections before the kill: a client-side close keeps the
+		// TIME_WAIT off the control-plane port, so the restarted process can rebind
+		// the same address immediately.
+		Http?.Dispose();
+
+		_controlPlane?.Dispose();
+		_agent?.Dispose();
+
+		await StartStackAsync();
+	}
+
+	private async Task StartStackAsync()
+	{
+		string controlPlaneDll = TestInfrastructure.FindAppDll("Vapor.ControlPlane", "Vapor.ControlPlane.dll");
+
+		_controlPlane = VaporProcess.Start(
+			controlPlaneDll,
+			BuildControlPlaneEnvironment(),
+			Path.Combine(_workDir, "controlplane.log"));
+
+		Http = new HttpClient { BaseAddress = new Uri(BaseUrl), Timeout = TimeSpan.FromSeconds(10) };
+		await WaitForControlPlaneAsync();
+		_agent = await StartAgentAsync(AgentId, AgentRegion);
+	}
+
+	private Dictionary<string, string> BuildControlPlaneEnvironment() => new()
+	{
+		["ASPNETCORE_URLS"] = BaseUrl,
+		["Vapor_ADMIN_API_KEY"] = AdminApiKey,
+		["Vapor_AGENT_API_KEYS"] = AgentApiKey,
+		["Vapor_DB_PATH"] = Path.Combine(_workDir, "controlplane.db"),
+		["Vapor_AUDIT_DB_PATH"] = Path.Combine(_workDir, "audit.db"),
+		// Every env-driven database path must be pinned into the throwaway work
+		// dir: an unpinned path falls back to the process CWD default (data/
+		// under the test bin), where state from a previous run survives and the
+		// next boot rehydrates it (declared accounts reappearing unprompted).
+		["Vapor_CRAWL_DB_PATH"] = Path.Combine(_workDir, "crawl.db"),
+		["Vapor_CONFIG_DB_PATH"] = Path.Combine(_workDir, "config.db"),
+		// Fail undispatchable tasks quickly so the negative-path test observes the
+		// terminal state within seconds instead of the production default (10 × 2s).
+		["Vapor_TASK_MAX_DISPATCH_ATTEMPTS"] = "3",
+		["Vapor_TASK_DISPATCH_RETRY_DELAY_MS"] = "200",
+		// Recover orphaned tasks quickly so an agent disconnect mid-task (WS drop
+		// under CI load) requeues and retries within the test deadline instead of
+		// the production default (300s lease > 90s deadline = unrecoverable).
+		["Vapor_TASK_LEASE_SECONDS"] = "15",
+		// Account orchestration: aggressive timing so orchestration tests observe
+		// reconciliation within seconds instead of the production default (15s interval).
+		["Vapor_RECONCILE_INTERVAL_SECONDS"] = "2",
+		["Vapor_RECONCILE_LOGIN_COOLDOWN_SECONDS"] = "3",
+		["Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS"] = "50",
+	};
 
 	private async Task WaitForControlPlaneAsync()
 	{

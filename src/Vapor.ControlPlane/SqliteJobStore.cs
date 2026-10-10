@@ -28,7 +28,18 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		_connection = new SqliteConnection($"Data Source={dbPath}");
 		_connection.Open();
 
-		Migrate();
+		try
+		{
+			Migrate();
+		}
+		catch
+		{
+			// A failed migration (e.g. a corrupt file) must not leak the open handle:
+			// on Windows the lingering lock would block the operator from repairing
+			// or replacing the database before the next start.
+			_connection.Dispose();
+			throw;
+		}
 	}
 
 	public void Dispose()

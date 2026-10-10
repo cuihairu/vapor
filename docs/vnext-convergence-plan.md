@@ -133,7 +133,7 @@ V-next 的收敛方向因此定为：
 | 7 | 统一 Execution ID 字段约定（job/task/attempt/agent/account/session/action/trace_id） | §18 残余 | 排查跨链路问题时 | 现状已有 traceparent 贯通（`TaskSchedulerService.cs:134,147`）；验收：约定成文 + 关键 sink 字段对齐。**已落地（2026-10-10，拉起令批次）**：约定成文（`architecture.md` §Execution ID convention）；审计 sink 对齐——`AuditEntry`/`AuditQuery`/`CreateEntry` 增 `task_id`/`attempt`/`agent_id`/`session_id`/`trace_id`，`SqliteAuditStore` 幂等 `ALTER TABLE` 迁移（旧行回读 null），`/v1/audit/logs` 增 `agentId`/`taskId` 过滤，HTTP 审计路径从 W3C `traceparent` 头解析 `trace_id`，`account.reconciled` 审计带 `agent_id` |
 | 8 | Operations Console 增强（Agent/Session 健康卡片、失败原因、audit 视图） | §19 残余 | P0-C 上线后用户反馈 | 验收：dashboard 增卡片视图，无新增后端面。**已落地（2026-10-10，拉起令批次）**：零新增后端面，全部现查 GET——作业列表对失败作业经既有 `GET /v1/jobs/{id}` 懒取失败原因（按 job id 缓存、每次刷新至多 5 取、渲染 `失败原因:` 行）；Agent 卡片加连接时长（`connectedAt` 相对时间）；会话面板顶部加状态分布徽章汇总（客户端聚合）；审计行渲染轮六十五执行 ID 字段（agent/task/attempt/session/trace chip，缺省省略）；写动词契约不变（PUT/DELETE 永禁、`method:"POST"` 恰一处），四条面板锚测试入 DashboardStaticTests |
 | 9 | 容量画像性能场景（100/1k/10k） | §28 残余 | 出现规模化部署前 | 现状系统级基线已可用；验收：performance.md 增场景表 |
-| 10 | 残余故障注入场景（SQLite 损坏模拟、CP 全链路重启、跨 attempt 分区） | §26 残余 | 出现相关事故引导 | 验收：新增场景测试 |
+| 10 | 残余故障注入场景（SQLite 损坏模拟、CP 全链路重启、跨 attempt 分区） | §26 残余 | 出现相关事故引导 | 验收：新增场景测试。**已落地（2026-10-10，拉起令批次）**：`FaultScenarioTests` 三测——损坏库文件构造即类型化失败（字节原样保留不重建 schema、失败构造释放句柄可立即修复替换）、租约分区后陈旧 attempt 信号无法腐化新 attempt（零租约重队→新 attempt 领队→陈旧心跳拒绝+陈旧结算抛 `NotFoundException`）、八 worker 并发领队每任务恰领一次；`RestartResilienceE2ETests` 全链重启——task-dispatch 延迟故障制造确定性在途窗→杀 CP+Agent 进程重启（同库同端口）→重启后 `/v1/faults` 空证内存故障不存活→任务重派 attempt≥2 echo 输出到达、审计历史存活 |
 
 ## 5. 明确不做（与仓库既有非目标一致，审核亦持同见）
 

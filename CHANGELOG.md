@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Fault scenario coverage (round 70): three store-level failure scenarios in
+  `FaultScenarioTests` — a corrupted database file fails construction with a
+  typed exception while keeping the damaged bytes on disk (and releasing the
+  pooled handle so operators can repair the file), a lease-partitioned stale
+  attempt cannot corrupt the newer attempt's state (stale heartbeats rejected,
+  stale results throw instead of overwriting), and concurrent claim workers
+  hand out every queued task exactly once. A full-chain E2E restart test kills
+  the control plane and its agent mid-flight (a dispatch delay fault creates a
+  deterministic in-flight window) and proves the restarted process rehydrates
+  from disk, comes up with an empty fault list, re-dispatches the task
+  (attempt >= 2), delivers the echo output and keeps audit history readable.
 - Operations Console card upgrades (round 69): the read-only dashboard now
   surfaces failure reasons, agent/session health and execution IDs without
   any new backend surface — failed jobs pull their reason lazily from the
