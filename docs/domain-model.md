@@ -211,9 +211,9 @@ A versioned extension package: a `plugin.json` manifest plus an assembly, loaded
 
 Code index: `PluginManifest` — `src/Vapor.Plugins.Core/PluginManifest.cs`; `PluginInfo`, `IPlugin` — `src/Vapor.Plugins.Core/Api/IPlugin.cs`; `PluginManager` — `src/Vapor.Plugins.Core/PluginManager.cs`; `PluginInventory` — `src/Vapor.ControlPlane/PluginInventory.cs`; `PluginCatalogService` (catalog source, HTTP JSON index, 60 s cache). Development guide in [`plugins.md`](plugins.md).
 
-## AuthChallenge (document-level definition)
+## AuthChallenge
 
-Auth challenges (Steam Guard code / 2FA / QR) are deliberately **not** a persisted domain object in code: `AuthChallengeTracker` is an in-memory pending-challenges map on the CP, and the wire form is the `AuthChallengeEvent` record. This section pins the document-level definition so later codification (convergence plan §23) has a contract to meet — the code stays transient until that item lands.
+Auth challenges (Steam Guard code / 2FA / QR) are deliberately **not** a persisted domain object: `AuthChallengeTracker` is an in-memory pending-challenges map on the CP, and the wire form is the single `AuthChallengeEvent` record in `src/Vapor.Protocol/Events.cs` (the former ControlPlane-side mirror record was removed — one type, shared by CP/Agent/plugins).
 
 | Facet | Definition |
 |-------|-----------|
@@ -222,8 +222,9 @@ Auth challenges (Steam Guard code / 2FA / QR) are deliberately **not** a persist
 | Persistence | None (in-memory `ConcurrentDictionary<string, AuthChallengeEvent>`, keyed by account). Transient by design. |
 | Identity | `AccountName` (one pending challenge per account; older ones are replaced). Event records carry a `Guid "N"` id. |
 | Consistency | Best-effort mirror of agent login state; the agent's session state machine is the truth. Six `challengeType` values as listed above; `JobId` links the challenge to the dispatching job when one exists. |
+| Attempt | `Attempt` (int, default 1) — the tracker materializes the re-raise generation per account (first raise = 1, every re-raise = previous+1); the tracker is the authority, an inbound value never leaks into the stored generation. The SSE event carries the same number. Deliberately **absent**: `status` and `source` fields (both are already encoded by `challengeType` — `*_required` = pending and agent-raised, `code_provided_*` = answered and operator-raised; a separate field would duplicate state), and `expiresAt` (no TTL signal crosses the CP↔Agent boundary; expiry remains a session-state concern until a real signal exists). |
 
-Code index: `AuthChallengeEvent` (`Id`, `AccountName`, `ChallengeType`, `Message?`, `Code?`, `Timestamp`, `JobId?`) — `src/Vapor.Protocol/Events.cs:29` and mirrored in `src/Vapor.ControlPlane/IEventBroker.cs:24`; `AuthChallengeTracker` — `src/Vapor.ControlPlane/AuthChallengeTracker.cs`. Redaction rules in [`api.md`](api.md) §2 and [`architecture.md`](architecture.md) § Security.
+Code index: `AuthChallengeEvent` (`Id`, `AccountName`, `ChallengeType`, `Message?`, `Code?`, `Timestamp`, `JobId?`, `Attempt`) — `src/Vapor.Protocol/Events.cs`; `AuthChallengeTracker` (`Upsert` returns the stored record with `Attempt` materialized) — `src/Vapor.ControlPlane/AuthChallengeTracker.cs`. Redaction rules in [`api.md`](api.md) §2 and [`architecture.md`](architecture.md) § Security.
 
 ---
 

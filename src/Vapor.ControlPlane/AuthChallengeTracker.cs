@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Vapor.Protocol;
 
 namespace Vapor.ControlPlane;
 
@@ -6,9 +7,18 @@ public sealed class AuthChallengeTracker
 {
 	private readonly ConcurrentDictionary<string, AuthChallengeEvent> _pending = new(StringComparer.OrdinalIgnoreCase);
 
-	public void Upsert(AuthChallengeEvent e)
+	/// <summary>
+	/// Raises (or replaces) the pending challenge for an account and returns the
+	/// stored record with <see cref="AuthChallengeEvent.Attempt"/> materialized:
+	/// 1 on the first raise, previous+1 on every re-raise, so operators can see
+	/// how many times an account has been stuck on a prompt.
+	/// </summary>
+	public AuthChallengeEvent Upsert(AuthChallengeEvent e)
 	{
-		_pending.AddOrUpdate(e.AccountName, e, (_, __) => e);
+		return _pending.AddOrUpdate(
+			e.AccountName,
+			e with { Attempt = 1 },
+			(_, old) => e with { Attempt = old.Attempt + 1 });
 	}
 
 	public void Clear(string accountName)

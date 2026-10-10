@@ -589,7 +589,7 @@ public sealed class TaskSchedulerServiceTests
 		}
 
 		public void PublishSession(string accountName, string eventType, string state, string? message = null) => throw new NotSupportedException();
-		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null) => throw new NotSupportedException();
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null, int attempt = 1) => throw new NotSupportedException();
 		public IAsyncEnumerable<Event> Subscribe(CancellationToken cancellationToken, string jobId) => throw new NotSupportedException();
 		public IAsyncEnumerable<SessionEvent> SubscribeSessions(CancellationToken cancellationToken, string? accountName = null) => throw new NotSupportedException();
 		public IAsyncEnumerable<AuthChallengeEvent> SubscribeAuthChallenges(CancellationToken cancellationToken, string? accountName = null) => throw new NotSupportedException();

@@ -1,3 +1,4 @@
+using Vapor.Protocol;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
@@ -496,7 +497,7 @@ public sealed class NotificationTests
 		{
 		}
 
-		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null, int attempt = 1)
 		{
 		}
 

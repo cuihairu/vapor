@@ -3991,7 +3991,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		{
 		}
 
-		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null, int attempt = 1)
 		{
 		}
 

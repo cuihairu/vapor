@@ -3671,7 +3671,7 @@ app.MapPost("/v1/sessions/events", async (
 				  string.Equals(state, "ConnectingWait2FA", StringComparison.Ordinal)
 					? "2fa_required"
 					: "auth_code_required";
-		var evt = new Vapor.ControlPlane.AuthChallengeEvent(
+		var evt = new AuthChallengeEvent(
 			Id: Guid.NewGuid().ToString("N"),
 			AccountName: req.AccountName,
 			ChallengeType: challengeType,
@@ -3680,8 +3680,8 @@ app.MapPost("/v1/sessions/events", async (
 			Timestamp: DateTimeOffset.UtcNow,
 			JobId: null
 		);
-		challenges.Upsert(evt);
-		events.PublishAuthChallenge(req.AccountName, challengeType, req.Message);
+		evt = challenges.Upsert(evt);
+		events.PublishAuthChallenge(req.AccountName, challengeType, req.Message, attempt: evt.Attempt);
 	}
 	else
 	{

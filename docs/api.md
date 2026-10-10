@@ -85,7 +85,7 @@ Event payload shapes:
   - `agent.connected` / `agent.disconnected` (`agentId`, `region`; `jobId` null)
   - `crawl.run_triggered`, `crawl.run_completed`, `crawl.run_skipped` (crawl worker; payload `plan_id`, `run_id`, `status` (`completed`|`failed`|`timeout`|`skipped`), `total`, `ok`, `failed` — snake_case keys). Note: `crawl.run_failed` (dispatch exception) is written to the audit log only, never to the SSE broker.
 - Session events (`SessionEvent` record): frame `event: session.<eventType>`; payload `{ id, accountName, eventType, state, message?, timestamp }`.
-- Auth challenge events (`AuthChallengeEvent` record): frame `event: auth.<challengeType>`; payload `{ id, accountName, challengeType, message?, code?, timestamp, jobId? }`. Access rules:
+- Auth challenge events (`AuthChallengeEvent` record): frame `event: auth.<challengeType>`; payload `{ id, accountName, challengeType, message?, code?, timestamp, jobId?, attempt }` (`attempt` = the tracker's re-raise generation for the account, 1 on the first raise). Access rules:
   - Admin: sees all challenges, but `code_provided_*` events have `code` stripped (`null`) before sending.
   - Agent: sees only `code_provided_*` events, with the `code` intact (that is the delivery channel to the agent).
   - `challengeType` values: `auth_code_required`, `2fa_required`, `qr_required`, `code_provided_email`, `code_provided_totp`, `code_provided_2fa`.
@@ -121,7 +121,7 @@ Legend for the account-task pattern: many `/v1/accounts/{name}/...` endpoints di
 - Purpose: list pending login challenges (2FA / auth-code prompts) currently held in the in-memory tracker.
 - Auth: admin.
 - Body: none. Query: none.
-- 200: `{ "challenges": [ AuthChallengeEvent ] }` — `AuthChallengeEvent = { id, accountName, challengeType, message?, code?, timestamp, jobId? }`, newest first.
+- 200: `{ "challenges": [ AuthChallengeEvent ] }` — `AuthChallengeEvent = { id, accountName, challengeType, message?, code?, timestamp, jobId?, attempt }`, newest first; `attempt` counts the re-raise generation per account (1 = first raise).
 - Errors: 401.
 
 #### `POST /v1/auth/challenges/{accountName}/code`

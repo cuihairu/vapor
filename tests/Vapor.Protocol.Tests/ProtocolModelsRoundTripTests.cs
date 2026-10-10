@@ -293,7 +293,7 @@ public sealed class ProtocolModelsRoundTripTests
 	{
 		// Challenge frames published to non-agent subscribers carry no code;
 		// omission on the wire is the redaction contract.
-		var evt = new AuthChallengeEvent("e-2", "alice", "auth_code_required", "enter code", null, DateTimeOffset.Parse("2026-09-12T06:00:00.250Z"), "job-1");
+		var evt = new AuthChallengeEvent("e-2", "alice", "auth_code_required", "enter code", null, DateTimeOffset.Parse("2026-09-12T06:00:00.250Z"), "job-1", Attempt: 3);
 
 		string json = JsonSerializer.Serialize(evt, JsonDefaults.Options);
 		AuthChallengeEvent parsed = JsonSerializer.Deserialize<AuthChallengeEvent>(json, JsonDefaults.Options)!;
@@ -301,6 +301,16 @@ public sealed class ProtocolModelsRoundTripTests
 		Assert.DoesNotContain("\"code\"", json);
 		Assert.Equal("auth_code_required", parsed.ChallengeType);
 		Assert.Equal("job-1", parsed.JobId);
+		Assert.Equal(3, parsed.Attempt);
+		Assert.Contains("\"attempt\":3", json, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void AuthChallengeEvent_DefaultsToFirstAttempt()
+	{
+		var evt = new AuthChallengeEvent("e-3", "bob", "2fa_required", null, null, DateTimeOffset.Parse("2026-09-12T06:00:00.250Z"), null);
+
+		Assert.Equal(1, evt.Attempt);
 	}
 
 	[Fact]

@@ -120,8 +120,22 @@ public sealed class ControlPlaneApiTests
 
 		Assert.Equal(HttpStatusCode.OK, post.StatusCode);
 
+		// Re-raise: the tracker's attempt generation must move to 2 and ride the
+		// published SSE event.
+		using HttpResponseMessage reRaise = await client.PostAsJsonAsync("/v1/sessions/events", new
+		{
+			accountName = "alice",
+			eventType = "AuthCodeNeeded",
+			state = "ConnectingWaitAuthCode",
+			message = "enter code again"
+		});
+		Assert.Equal(HttpStatusCode.OK, reRaise.StatusCode);
+
 		using HttpResponseMessage challenges = await client.GetAsync("/v1/auth/challenges");
 		Assert.Equal(HttpStatusCode.OK, challenges.StatusCode);
+		string challengeBody = await challenges.Content.ReadAsStringAsync();
+		using var challengeDoc = JsonDocument.Parse(challengeBody);
+		Assert.Equal(2, challengeDoc.RootElement.GetProperty("challenges")[0].GetProperty("attempt").GetInt32());
 
 		using HttpResponseMessage submit = await client.PostAsJsonAsync("/v1/auth/challenges/alice/code", new
 		{
@@ -130,10 +144,14 @@ public sealed class ControlPlaneApiTests
 		});
 
 		Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
-		Assert.Equal(2, factory.Events.AuthChallengeEvents.Count);
+		Assert.Equal(3, factory.Events.AuthChallengeEvents.Count);
 		Assert.Equal("auth_code_required", factory.Events.AuthChallengeEvents[0].ChallengeType);
-		Assert.Equal("code_provided_2fa", factory.Events.AuthChallengeEvents[1].ChallengeType);
-		Assert.Equal("123456", factory.Events.AuthChallengeEvents[1].Code);
+		Assert.Equal(1, factory.Events.AuthChallengeEvents[0].Attempt);
+		Assert.Equal("auth_code_required", factory.Events.AuthChallengeEvents[1].ChallengeType);
+		Assert.Equal(2, factory.Events.AuthChallengeEvents[1].Attempt);
+		Assert.Equal("code_provided_2fa", factory.Events.AuthChallengeEvents[2].ChallengeType);
+		Assert.Equal("123456", factory.Events.AuthChallengeEvents[2].Code);
+		Assert.Equal(1, factory.Events.AuthChallengeEvents[2].Attempt);
 	}
 
 	[Fact]
@@ -382,9 +400,9 @@ public sealed class ControlPlaneApiTests
 			}));
 		}
 
-		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+		public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null, int attempt = 1)
 		{
-			var evt = new AuthChallengeEvent(Guid.NewGuid().ToString("N"), accountName, challengeType, message, code, DateTimeOffset.UtcNow, null);
+			var evt = new AuthChallengeEvent(Guid.NewGuid().ToString("N"), accountName, challengeType, message, code, DateTimeOffset.UtcNow, null, attempt);
 			AuthChallengeEvents.Add(evt);
 
 			List<ChannelWriter<AuthChallengeEvent>> writers;

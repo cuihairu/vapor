@@ -33,7 +33,8 @@ public sealed record AuthChallengeEvent(
 	string? Message,
 	string? Code,
 	DateTimeOffset Timestamp,
-	string? JobId
+	string? JobId,
+	int Attempt = 1
 );
 
 public sealed record PluginEvent(

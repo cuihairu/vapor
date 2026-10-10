@@ -93,7 +93,7 @@ public sealed class EventBroker : IEventBroker
 		}
 	}
 
-	public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null)
+	public void PublishAuthChallenge(string accountName, string challengeType, string? message = null, string? code = null, int attempt = 1)
 	{
 		var authEvent = new AuthChallengeEvent(
 			Id: Guid.NewGuid().ToString("N"),
@@ -102,7 +102,8 @@ public sealed class EventBroker : IEventBroker
 			Message: message,
 			Code: code,
 			Timestamp: DateTimeOffset.UtcNow,
-			JobId: null
+			JobId: null,
+			Attempt: attempt
 		);
 
 		// Publish to global channel
