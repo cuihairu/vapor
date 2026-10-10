@@ -233,6 +233,11 @@ public sealed class BackupToolTests : IDisposable
 			await command.ExecuteNonQueryAsync(_cts.Token);
 		}
 
+		// Windows: the write connection is back in the ADO.NET pool with its
+		// file handle still open; clear the pool before truncating the file
+		// from outside, or the open fails with a sharing violation.
+		SqliteConnection.ClearAllPools();
+
 		await using (var stream = new FileStream(db, FileMode.Open, FileAccess.ReadWrite))
 		{
 			stream.SetLength(stream.Length - 100);
