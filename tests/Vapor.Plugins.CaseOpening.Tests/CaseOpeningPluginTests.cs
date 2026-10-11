@@ -57,8 +57,10 @@ public sealed class CaseOpeningPluginTests : IDisposable
 		Assert.Equal(PluginTrust.Official, plugin.Descriptor.Trust);
 		Assert.Equal([PluginPermissions.Actions, PluginPermissions.Web], plugin.GrantedPermissions.Order().ToArray());
 
-		Assert.Equal(["case_open"], plugin.Actions.Select(static action => action.Name).Order().ToArray());
-		Assert.Equal(4, plugin.Routes.Count);
+		Assert.Equal(
+			["case_consume", "case_inventory", "case_open"],
+			plugin.Actions.Select(static action => action.Name).Order().ToArray());
+		Assert.Equal(6, plugin.Routes.Count);
 
 		await plugin.Instance.ShutdownAsync(CancellationToken.None);
 	}

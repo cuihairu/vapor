@@ -13,6 +13,16 @@
   "entryType": "Vapor.Plugins.CaseOpening.CaseOpeningPlugin",
   "configuration": {
     "backend": "simulation",
-    "results.path": ""
+    "results.path": "",
+    "cases.path": "",
+    "consume.enabled": "false",
+    "ledger.path": ""
+  },
+  "configurationSchema": {
+    "backend": { "type": "string" },
+    "results.path": { "type": "string" },
+    "cases.path": { "type": "string" },
+    "consume.enabled": { "type": "bool" },
+    "ledger.path": { "type": "string" }
   }
 }

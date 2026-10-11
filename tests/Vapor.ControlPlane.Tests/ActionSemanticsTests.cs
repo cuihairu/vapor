@@ -6,12 +6,12 @@ namespace Vapor.ControlPlane.Tests;
 public class ActionSemanticsTests
 {
 	[Fact]
-	public void ClassificationTable_CoversAll59InTreeActions_WithNoUnknownEntries()
+	public void ClassificationTable_CoversAll61InTreeActions_WithNoUnknownEntries()
 	{
 		var names = ActionSemantics.ActionNames;
 
-		Assert.Equal(59, names.Count);
-		Assert.Equal(59, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+		Assert.Equal(61, names.Count);
+		Assert.Equal(61, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 		foreach (string name in names)
 		{
 			Assert.NotEqual(ActionSafety.Unknown, ActionSemantics.SafetyOf(name));
@@ -28,10 +28,10 @@ public class ActionSemanticsTests
 			.GroupBy(s => s)
 			.ToDictionary(g => g.Key, g => g.Count());
 
-		Assert.Equal(30, byClass[ActionSafety.ReadOnly]);
+		Assert.Equal(31, byClass[ActionSafety.ReadOnly]);
 		Assert.Equal(11, byClass[ActionSafety.Idempotent]);
 		Assert.Equal(12, byClass[ActionSafety.GuardedWrite]);
-		Assert.Equal(6, byClass[ActionSafety.NonIdempotent]);
+		Assert.Equal(7, byClass[ActionSafety.NonIdempotent]);
 	}
 
 	[Theory]

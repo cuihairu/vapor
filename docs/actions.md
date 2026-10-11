@@ -1,6 +1,6 @@
 # Actions catalog
 
-Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **59 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data and 6 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
+Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **61 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data, 2 from the Case Opening plugin and 6 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
@@ -403,6 +403,21 @@ Output: `watches[]` `{ app_id, kind, threshold_percent, cc, currency, baseline, 
 Returns the current metrics snapshot so the control plane can pull monitoring data through normal task execution (the plugin also serves it on its own HTTP endpoint). No payload fields.
 Output: `format` (`"prometheus"`), `metrics` (Prometheus exposition text), `summary` (JSON summary string).
 
+
+## Case Opening plugin (`vapor.caseopening`, `src/Vapor.Plugins.CaseOpening/CaseOpeningPlugin.cs`)
+
+The dry-run simulator (`case_open`, classified in the plugin docs rather than in the mirror table — it appends simulation results and is deliberately left unclassified for dispatch purposes) plus the local bookkeeping half: a live CS2 backpack read that classifies the bag into cases/keys/other, and a gated consumption ledger the operator records into after physically opening. The gate (`consume.enabled`, default **off**) only unlocks ledger bookkeeping — nothing in this plugin can open a case; the physical opening is a CS2 client transaction Vapor cannot see. Every output carries a `mode` field (`"simulation"`, `"readonly"`, `"ledger"`). Per-plugin boundary: [plugins.md](plugins.md).
+
+### `case_inventory` — `src/Vapor.Plugins.CaseOpening/CaseActions.cs` (`CaseInventoryAction`) (login: yes, timeout: 60s, safety: ReadOnly)
+Pages the CS2 backpack through the shared inventory paginator (app `730`, context `2`) and classifies it: a market hash name ending in `"Case"` is a case container (carrying the catalog case id when the container name matches a known case), one ending in `"Key"` is a key (a "Case Key" is a key), everything else is other. Stackable amounts are summed; groups are ordered by name.
+Payload: `steam_id` string optional — defaults to the session's own (from its web cookies; fails with explicit guidance when no web session exists or the cookies carry no SteamID).
+Output: `mode` (`"readonly"`), `steam_id`, `app_id`, `context_id`, `total_count`, `cases[]` `{ name, case_id (null when unmatched), count }`, `key_count`, `other_count`, `ledger` `{ entries, cases, keys }` — the ledger totals are what turn the read into a reconciliation (bag minus recorded consumptions is what should still be there).
+
+### `case_consume` — `src/Vapor.Plugins.CaseOpening/CaseActions.cs` (`CaseConsumeAction`) (login: no, timeout: 30s, safety: NonIdempotent)
+Records one consumption entry (cases + keys + awards) into the plugin's ledger. **Refuses to run while `consume.enabled` is off** (the default) with guidance on the config key and its environment override; enabling the gate does not grant any Steam capability — the operator performs the opening in CS2 and records it here. Requires login `no`: no session is read or touched.
+Payload: `caseId` string **required** (must exist in the plugin's catalog); `count` integer optional default `1` (clamped to 1..100); `keys` integer optional (defaults to `count` — one key per case — clamped to 1..100); `awards` string array optional (the awards the operator reports receiving, echoed into the entry).
+Output: `mode` (`"ledger"`), `caseId`, `cases`, `keys`, `awards`, `ledger` `{ entries, cases, keys }` (totals after the record). Classified `NonIdempotent`: each call appends one ledger line. The ledger keeps the most recent 1000 entries in memory and appends every entry as one JSON line to `ledger.path` when configured (archive I/O errors are swallowed by design).
+
 ## Game Data plugin (`vapor.game-data`, `src/Vapor.Plugins.GameData/GameDataPlugin.cs`)
 
 Four read-only actions over the official Steam Web API (`api.steampowered.com`, key-authed GETs). The API key lives **agent-side** in the plugin configuration (`webapi.key`) or the `VAPOR_GAME_DATA_WEBAPI_KEY` environment variable — the control plane never sees it — and a missing key fails every action with explicit guidance instead of faking data. Every action catches transport (`HttpRequestException`) and parse (`JsonException`) failures into failed results with the operation name. Projections are compact digests, not raw payloads. Per-title plugin boundaries: [game-plugins.md](game-plugins.md).
@@ -471,7 +486,10 @@ Output: `exitCode` (null when killed), `timedOut` (bool), `stdout` / `stderr` (e
 | Game Access plugin (`vapor.game-access`) | 16 |
 | Mobile Authenticator plugin (`vapor.mobile-authenticator`) | 9 |
 | Market Watch plugin (`vapor.market-watch`) | 3 |
+| Case Opening plugin (`vapor.caseopening`) | 2 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |
 | Game Data plugin (`vapor.game-data`) | 4 |
 | Agent host (`Vapor.Agent/HostActions/`) | 6 |
-| **Total** | **59** |
+| **Total** | **61** |
+
+The counts are the classified (mirrored) actions. The Case Opening plugin ships three actions but only two classified ones — `case_open` is deliberately left unclassified so the dry-run simulator is not bound by the dispatch retry caps reserved for write-classified actions (it is documented in plugins.md).

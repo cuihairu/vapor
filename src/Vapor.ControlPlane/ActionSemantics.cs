@@ -77,6 +77,12 @@ public static class ActionSemantics
 			["market_watch_remove"] = ActionSafety.Idempotent,
 			["market_watch_list"] = ActionSafety.ReadOnly,
 
+			// CaseOpening plugin (2). case_open stays unclassified on purpose: the
+			// dry-run simulator appends results, and its safety is documented in
+			// actions.md rather than bound into dispatch retry caps.
+			["case_inventory"] = ActionSafety.ReadOnly,
+			["case_consume"] = ActionSafety.NonIdempotent,
+
 			// Monitoring plugin (1).
 			["get_metrics"] = ActionSafety.ReadOnly,
 

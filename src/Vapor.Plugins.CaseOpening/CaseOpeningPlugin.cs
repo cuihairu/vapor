@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
+using Vapor.Steam.Core.Web;
 
 namespace Vapor.Plugins.CaseOpening;
 
@@ -9,9 +11,12 @@ namespace Vapor.Plugins.CaseOpening;
 /// Dry-run case-opening simulator (the second official plugin). Rolls Valve's
 /// published CS:GO/CS2 case odds, records every result to a JSONL archive plus
 /// an in-memory window, and exposes catalog/open/results/stats through the
-/// <c>case_open</c> action and four host-agnostic web routes. Only the
-/// simulation backend exists — see <see cref="ICaseOpeningBackend"/> and
-/// docs/plugins.md ("ToS boundary").
+/// <c>case_open</c> action and four host-agnostic web routes. Beyond the dry
+/// run it carries the local bookkeeping half: <c>case_inventory</c> classifies
+/// a live CS2 backpack into cases/keys/other, and <c>case_consume</c> (gated,
+/// default off) records what the operator physically consumed into a ledger.
+/// Only the simulation backend exists — see <see cref="ICaseOpeningBackend"/>
+/// and docs/plugins.md ("ToS boundary").
 /// </summary>
 public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 {
@@ -27,6 +32,19 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 	/// <summary>Configuration key for the optional results archive path.</summary>
 	public const string ResultsPathConfigKey = "results.path";
 
+	/// <summary>
+	/// Configuration key for the consumption-ledger gate. <c>false</c> by
+	/// default and hard-required to stay that way: enabling it only allows
+	/// recording ledger entries — it never grants any ability to open cases.
+	/// </summary>
+	public const string ConsumeEnabledConfigKey = "consume.enabled";
+
+	/// <summary>Environment override for <see cref="ConsumeEnabledConfigKey"/>.</summary>
+	public const string ConsumeEnabledEnvironmentVariable = "VAPOR_CASEOPENING_CONSUME_ENABLED";
+
+	/// <summary>Configuration key for the optional consumption-ledger file path.</summary>
+	public const string LedgerPathConfigKey = "ledger.path";
+
 	/// <summary>Upper bound on opens per request (action or route).</summary>
 	public const int MaxOpensPerRequest = 100;
 
@@ -36,21 +54,27 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 	};
 
 	private readonly ICaseOpeningBackend? _backendOverride;
+	private readonly Func<SteamWebHandler, ISteamTradeClient>? _tradeClientFactory;
 
 	private ILogger<CaseOpeningPlugin>? _logger;
 	private CaseCatalog _catalog = CaseCatalog.Default;
 	private ICaseOpeningBackend _backend = new SimulationBackend();
 	private CaseOpeningStore _store = new();
+	private bool _consumeEnabled;
+	private CaseLedger _ledger = new();
 
 	/// <summary>Creates the plugin with default wiring.</summary>
 	public CaseOpeningPlugin()
 	{
 	}
 
-	/// <summary>Test hook: injects a backend instead of building the default simulator.</summary>
-	internal CaseOpeningPlugin(ICaseOpeningBackend backendOverride)
+	/// <summary>Test hook: injects a backend and/or a trade client factory instead of the default wiring.</summary>
+	internal CaseOpeningPlugin(
+		ICaseOpeningBackend? backendOverride = null,
+		Func<SteamWebHandler, ISteamTradeClient>? tradeClientFactory = null)
 	{
 		_backendOverride = backendOverride;
+		_tradeClientFactory = tradeClientFactory;
 	}
 
 	public PluginInfo Info { get; } = new(
@@ -89,11 +113,21 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		string resultsPath = context.Configuration.GetString(ResultsPathConfigKey, string.Empty, "VAPOR_CASEOPENING_RESULTS_PATH").Trim();
 		_store = resultsPath.Length > 0 ? new CaseOpeningStore(resultsPath) : new CaseOpeningStore();
 
+		// The consume gate defaults to off and reads like every other knob —
+		// but it is the only one whose "on" state must never imply a Steam side
+		// effect: it merely unlocks ledger bookkeeping (see docs/plugins.md).
+		_consumeEnabled = context.Configuration.GetBool(
+			ConsumeEnabledConfigKey, fallback: false, ConsumeEnabledEnvironmentVariable);
+
+		string ledgerPath = context.Configuration.GetString(LedgerPathConfigKey, string.Empty, "VAPOR_CASEOPENING_LEDGER_PATH").Trim();
+		_ledger = ledgerPath.Length > 0 ? new CaseLedger(ledgerPath) : new CaseLedger();
+
 		_backend = _backendOverride ?? new SimulationBackend();
 
 		_logger.LogInformation(
-			"Case opening started: backend {Backend}, {CaseCount} case(s), results archive {Results}",
-			_backend.ModeName, _catalog.Cases.Count, resultsPath.Length > 0 ? resultsPath : "disabled");
+			"Case opening started: backend {Backend}, {CaseCount} case(s), results archive {Results}, consume {Consume}, ledger {Ledger}",
+			_backend.ModeName, _catalog.Cases.Count, resultsPath.Length > 0 ? resultsPath : "disabled",
+			_consumeEnabled ? "enabled" : "disabled", ledgerPath.Length > 0 ? ledgerPath : "disabled");
 
 		return Task.CompletedTask;
 	}
@@ -108,6 +142,8 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 	public IEnumerable<IAction> GetActions()
 	{
 		yield return new CaseOpenAction(this);
+		yield return new CaseInventoryAction(this);
+		yield return new CaseConsumeAction(this);
 	}
 
 	public IEnumerable<PluginWebRoute> GetRoutes()
@@ -116,6 +152,8 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		yield return new PluginWebRoute("POST", "/open", HandleOpenAsync);
 		yield return new PluginWebRoute("GET", "/results", HandleResultsAsync);
 		yield return new PluginWebRoute("GET", "/stats", HandleStatsAsync);
+		yield return new PluginWebRoute("GET", "/inventory", HandleInventoryAsync);
+		yield return new PluginWebRoute("POST", "/consume", HandleConsumeAsync);
 	}
 
 	internal CaseCatalog Catalog => _catalog;
@@ -123,6 +161,16 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 	internal CaseOpeningStore Store => _store;
 
 	internal ICaseOpeningBackend Backend => _backend;
+
+	/// <summary>The consumption ledger (totals feed case_inventory reconciliation).</summary>
+	internal CaseLedger Ledger => _ledger;
+
+	/// <summary>Whether consumption bookkeeping is unlocked (never a Steam capability).</summary>
+	internal bool ConsumeEnabled => _consumeEnabled;
+
+	/// <summary>Builds a trade client for a web session (injectable for tests).</summary>
+	internal Func<SteamWebHandler, ISteamTradeClient> TradeClientFactory =>
+		_tradeClientFactory ?? (webHandler => new SteamTradeClient(webHandler, NullLogger<SteamTradeClient>.Instance));
 
 	/// <summary>
 	/// Opens a case, records the results and returns a batch summary; null when
@@ -146,6 +194,30 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		}
 
 		return new CaseOpenBatch(_backend.ModeName, definition.Id, results);
+	}
+
+	/// <summary>
+	/// Records one consumption into the ledger and returns it; null when the
+	/// case id is unknown. Counts clamp to 1..MaxOpensPerRequest like
+	/// OpenAsync, and keys default to the case count (one key per case).
+	/// Callers must check <see cref="ConsumeEnabled"/> first — this method is
+	/// pure bookkeeping and does not re-check the gate.
+	/// </summary>
+	internal ConsumeEntry? Consume(string caseId, int count, int? keys, IReadOnlyList<string>? awards)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(caseId);
+
+		CaseDefinition? definition = _catalog.Find(caseId);
+		if (definition is null)
+		{
+			return null;
+		}
+
+		int clamped = Math.Clamp(count, 1, MaxOpensPerRequest);
+		int keyCount = Math.Clamp(keys ?? clamped, 1, MaxOpensPerRequest);
+		ConsumeEntry entry = new(definition.Id, clamped, keyCount, awards);
+		_ledger.Record(entry);
+		return entry;
 	}
 
 	private Task<PluginWebResponse> HandleListCasesAsync(PluginWebRequest request, CancellationToken cancellationToken)
@@ -228,6 +300,122 @@ public sealed class CaseOpeningPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 
 		CaseOpeningStats stats = Store.ComputeStats();
 		return Task.FromResult(PluginWebResponse.Json(JsonSerializer.Serialize(ToStatsPayload(stats), JsonOptions)));
+	}
+
+	/// <summary>
+	/// Ledger read surface (the web layer has no bot session, so the live
+	/// inventory half of reconciliation lives in the case_inventory action).
+	/// </summary>
+	private Task<PluginWebResponse> HandleInventoryAsync(PluginWebRequest request, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+
+		int limit = 50;
+		if (request.Query.TryGetValue("limit", out string? limitText)
+			&& int.TryParse(limitText, out int parsedLimit))
+		{
+			limit = Math.Clamp(parsedLimit, 1, CaseLedger.DefaultCapacity);
+		}
+
+		CaseLedgerSummary summary = _ledger.Summarize();
+		IReadOnlyList<ConsumeEntryDto> recent = _ledger.RecentEntries()
+			.TakeLast(limit)
+			.Select(CaseLedger.ToDto)
+			.ToArray();
+
+		return Task.FromResult(PluginWebResponse.Json(JsonSerializer.Serialize(new
+		{
+			mode = "readonly",
+			entries = summary.TotalEntries,
+			cases = summary.TotalCases,
+			keys = summary.TotalKeys,
+			perCase = summary.Cases.Select(total => new { total.CaseId, total.Cases, total.Keys }),
+			recent
+		}, JsonOptions)));
+	}
+
+	private Task<PluginWebResponse> HandleConsumeAsync(PluginWebRequest request, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+
+		JsonDocument? parsed = ParseBodyOrNull(request.Body, out string? parseError);
+		if (parsed is null)
+		{
+			// ParseBodyOrNull contract: a null result always carries the error text.
+			return Task.FromResult(PluginWebResponse.Error(400, parseError!));
+		}
+
+		using JsonDocument document = parsed;
+
+		if (!_consumeEnabled)
+		{
+			return Task.FromResult(PluginWebResponse.Error(403,
+				"case consume is disabled: set configuration 'consume.enabled' (or environment " +
+				ConsumeEnabledEnvironmentVariable + ") to true; the route only records ledger entries — it never opens anything itself"));
+		}
+
+		if (!document.RootElement.TryGetProperty("caseId", out JsonElement caseIdElement) || caseIdElement.ValueKind != JsonValueKind.String)
+		{
+			return Task.FromResult(PluginWebResponse.Error(400, "body needs a string 'caseId'"));
+		}
+
+		string caseId = caseIdElement.GetString()!; // String kind never yields null.
+		int count = 1;
+		if (document.RootElement.TryGetProperty("count", out JsonElement countElement)
+			&& (countElement.ValueKind != JsonValueKind.Number || !countElement.TryGetInt32(out count)))
+		{
+			return Task.FromResult(PluginWebResponse.Error(400, "'count' must be an integer"));
+		}
+
+		int? keys = null;
+		if (document.RootElement.TryGetProperty("keys", out JsonElement keysElement))
+		{
+			if (keysElement.ValueKind == JsonValueKind.Null)
+			{
+				keys = null;
+			}
+			else if (keysElement.ValueKind == JsonValueKind.Number && keysElement.TryGetInt32(out int parsedKeys))
+			{
+				keys = parsedKeys;
+			}
+			else
+			{
+				return Task.FromResult(PluginWebResponse.Error(400, "'keys' must be an integer"));
+			}
+		}
+
+		var awards = new List<string>();
+		if (document.RootElement.TryGetProperty("awards", out JsonElement awardsElement))
+		{
+			if (awardsElement.ValueKind == JsonValueKind.Array)
+			{
+				foreach (JsonElement award in awardsElement.EnumerateArray())
+				{
+					if (award.ValueKind == JsonValueKind.String)
+					{
+						awards.Add(award.GetString()!); // String kind never yields null.
+					}
+				}
+			}
+			else if (awardsElement.ValueKind != JsonValueKind.Null)
+			{
+				return Task.FromResult(PluginWebResponse.Error(400, "'awards' must be an array of strings"));
+			}
+		}
+
+		ConsumeEntry? entry = Consume(caseId, count, keys, awards);
+		if (entry is null)
+		{
+			return Task.FromResult(PluginWebResponse.Error(404, $"unknown case '{caseId}'"));
+		}
+
+		CaseLedgerSummary totals = _ledger.Summarize();
+		return Task.FromResult(PluginWebResponse.Json(JsonSerializer.Serialize(new
+		{
+			mode = "ledger",
+			entry = CaseLedger.ToDto(entry),
+			totals = new { entries = totals.TotalEntries, cases = totals.TotalCases, keys = totals.TotalKeys }
+		}, JsonOptions)));
 	}
 
 	private static JsonDocument? ParseBodyOrNull(string? body, out string? error)
