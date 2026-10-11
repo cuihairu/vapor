@@ -101,8 +101,8 @@ denominator that quietly changes shape. The canonical example is in
 | `Microsoft.Data.Sqlite` | 10.0.12 | any | Storage layer. Its `SqliteJobStore.Dispose` teardown is a known CI flake site — see §4. |
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | Native SQLite bundle; version line is independent of the .NET one. |
 | `Cronos` | 0.13.0 | any | Cron parsing for scheduled jobs. |
-| `Swashbuckle.AspNetCore` | 10.2.3 | any | OpenAPI/Swagger, opt-in via `Vapor_ENABLE_SWAGGER`. |
-| `StackExchange.Redis` | 3.3.1 | any | Optional cache backend. |
+| `Swashbuckle.AspNetCore` | 10.3.0 | any | OpenAPI/Swagger, opt-in via `Vapor_ENABLE_SWAGGER`. |
+| `StackExchange.Redis` | 3.4.0 | any | Optional cache backend. |
 | `SteamKit2` | 3.4.0 | any | The Steam protocol client. Upgrades here are Steam-behaviour changes, not library hygiene — see §4. |
 | `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.19.1 | any | OTLP exporter. |
 | `OpenTelemetry.Extensions.Hosting` | 1.19.1 | any | OTel host integration. |
