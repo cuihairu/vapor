@@ -112,7 +112,7 @@ public sealed class GetItemDetailsAction : IAction
 		try
 		{
 			var tradeClient = _tradeClientFactory(webHandler);
-			(List<InventoryItem> items, string? error) = await InventoryPaginator.FetchAsync(
+			(List<InventoryItem> items, string? error) = await SteamInventoryPaginator.FetchAsync(
 				tradeClient, steamId, appId, contextId, _logger, cancellationToken).ConfigureAwait(false);
 
 			if (error != null)

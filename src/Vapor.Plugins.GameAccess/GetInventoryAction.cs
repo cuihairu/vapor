@@ -224,7 +224,7 @@ public sealed class GetInventoryAction : IAction
 		CancellationToken cancellationToken)
 	{
 		var tradeClient = _tradeClientFactory(webHandler);
-		return await InventoryPaginator.FetchAsync(
+		return await SteamInventoryPaginator.FetchAsync(
 			tradeClient, steamId, appId, contextId, _logger, cancellationToken).ConfigureAwait(false);
 	}
 
