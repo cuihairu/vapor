@@ -84,8 +84,15 @@ public class Cs2GcWaitRegistryTests
 	}
 
 	[Fact]
-	public async Task Complete_MultipleWaitsOnSameType_FeedsThemInRegistrationOrder()
+	public async Task Complete_MultipleWaitsOnSameType_FeedsExactlyOneOfThem()
 	{
+		// ConcurrentDictionary enumeration order is unspecified, so with two
+		// unconstrained waits on the same message type the reply goes to an
+		// arbitrary one of them — the registry's contract is "exactly one
+		// accepted wait consumes the reply", not registration order. (This
+		// test originally awaited one specific wait; on ~half of all runs the
+		// other wait consumed the body instead and the un-timed await hung
+		// the whole testhost — locally and on three CI legs.)
 		var registry = new Cs2GcWaitRegistry();
 		(Task<object?> first, IDisposable firstRegistration) = registry.Register(1090);
 		(Task<object?> second, IDisposable secondRegistration) = registry.Register(1090);
@@ -94,8 +101,15 @@ public class Cs2GcWaitRegistryTests
 		{
 			var body = new ProbeBody(1007);
 			Assert.True(registry.Complete(1090, body));
-			Assert.Same(body, await first);
-			Assert.False(second.IsCompleted);
+
+			// Complete settles the accepted wait synchronously, so exactly one
+			// of the two is done here; the await below therefore returns
+			// immediately and can never block.
+			Assert.NotEqual(first.IsCompleted, second.IsCompleted);
+			Task<object?> fed = first.IsCompleted ? first : second;
+			Task<object?> pending = first.IsCompleted ? second : first;
+			Assert.Same(body, await fed);
+			Assert.False(pending.IsCompleted);
 		}
 	}
 

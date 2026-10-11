@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
 
@@ -11,6 +12,7 @@ namespace Vapor.Plugins.TestPlugin;
 public sealed class TestPlugin : IActionPlugin, ICommandPlugin, IWebApiPlugin
 {
 	private string? _markerDir;
+	private ILogger? _logger;
 
 	public PluginInfo Info { get; } = new(
 		Id: "vapor.test-plugin",
@@ -22,6 +24,11 @@ public sealed class TestPlugin : IActionPlugin, ICommandPlugin, IWebApiPlugin
 	public Task InitializeAsync(IPluginContext context, CancellationToken cancellationToken)
 	{
 		_markerDir = context.Configuration.TryGetValue("markerDir", out var dir) ? dir : null;
+		// Touch the host-services logging surface on purpose: this call is exactly what a
+		// plugin directory carrying its own logging-abstractions copy used to break at JIT
+		// time (two type identities for ILoggerFactory across the load-context boundary).
+		_logger = context.Host.LoggerFactory.CreateLogger<TestPlugin>();
+		_logger.LogInformation("Test plugin {PluginId} initialized", Info.Id);
 		WriteMarker("initialized");
 		return Task.CompletedTask;
 	}

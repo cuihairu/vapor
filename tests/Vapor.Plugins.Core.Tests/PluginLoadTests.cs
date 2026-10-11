@@ -1,3 +1,4 @@
+using System.Reflection;
 using Xunit;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
@@ -318,6 +319,73 @@ public class PluginLoadTests : IDisposable
 		Assert.Empty(report.Failures);
 		var plugin = Assert.Single(report.Loaded);
 		Assert.Single(manager.LoadedPlugins);
+		Assert.Equal("vapor.test-plugin", plugin.Info.Id);
+	}
+
+	[Fact]
+	public void LoadContext_SharesContractAssemblies_WithTheHost()
+	{
+		// The Vapor contract assemblies and the logging abstractions (they carry the
+		// ILoggerFactory that IPluginHostServices exposes) must resolve to the host's
+		// already-loaded copies — otherwise plugins get a second type identity and
+		// cross-context calls fail at JIT time.
+		// Deliberately not unloaded: unloading a context that pulled in fresh copies of
+		// assemblies with live statics can crash the test host at teardown, and this test
+		// only asserts binding identity.
+		var context = new PluginLoadContext(
+			"probe",
+			Path.Combine(AppContext.BaseDirectory, "Vapor.Plugins.Core.Tests.dll"));
+
+		Assert.Same(
+			typeof(IPluginHostServices).Assembly,
+			context.LoadFromAssemblyName(new AssemblyName("Vapor.Plugins.Core")));
+		Assert.Same(
+			typeof(Microsoft.Extensions.Logging.ILoggerFactory).Assembly,
+			context.LoadFromAssemblyName(new AssemblyName("Microsoft.Extensions.Logging.Abstractions")));
+	}
+
+	[Fact]
+	public void LoadContext_ResolvesNonSharedAssemblies_FromThePluginDepsGraph()
+	{
+		// Anything outside the shared set follows the plugin's own deps.json — the entry
+		// here is the test host itself, whose graph resolves xunit.assert from the test
+		// directory into this context (a fresh copy, not the host's).
+		var context = new PluginLoadContext(
+			"probe",
+			Path.Combine(AppContext.BaseDirectory, "Vapor.Plugins.Core.Tests.dll"));
+
+		var resolved = context.LoadFromAssemblyName(new AssemblyName("xunit.assert"));
+
+		Assert.NotNull(resolved);
+		Assert.NotSame(typeof(Xunit.FactAttribute).Assembly, resolved);
+	}
+
+	[Fact]
+	public async Task LoadAllAsync_PluginDirectoryWithPrivateLoggingCopy_StillInitializes()
+	{
+		// Simulates a dotnet publish output: the plugin directory carries its own
+		// Microsoft.Extensions.Logging.Abstractions.dll plus a deps.json that resolves it
+		// there. The load context must still bind the logging contract to the host's copy,
+		// or InitializeAsync (which logs through context.Host.LoggerFactory) dies with a
+		// MissingMethodException on get_LoggerFactory.
+		var pluginDir = PluginStaging.StageTestPlugin(_root);
+		File.Copy(
+			Path.Combine(AppContext.BaseDirectory, "Microsoft.Extensions.Logging.Abstractions.dll"),
+			Path.Combine(pluginDir, "Microsoft.Extensions.Logging.Abstractions.dll"),
+			overwrite: true);
+		// A hand-rolled minimal deps.json is rejected by the native resolver (it aborts the
+		// process), so stage the test host's real one — it carries the same logging
+		// abstractions entry a dotnet publish output would, with the dll copied next to it.
+		File.Copy(
+			Path.Combine(AppContext.BaseDirectory, "Vapor.Plugins.Core.Tests.deps.json"),
+			Path.Combine(pluginDir, "Vapor.Plugins.TestPlugin.deps.json"),
+			overwrite: true);
+
+		await using var manager = PluginStaging.CreateManager();
+		var report = await manager.LoadAllAsync(_root);
+
+		Assert.Empty(report.Failures);
+		var plugin = Assert.Single(report.Loaded);
 		Assert.Equal("vapor.test-plugin", plugin.Info.Id);
 	}
 

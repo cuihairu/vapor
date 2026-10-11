@@ -45,6 +45,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the shared Steam transport (`ISteamTransport.EnsureCs2SessionAsync` /
   `OpenCrateAsync`, implemented by the client manager and the test doubles).
 
+- Plugin load-context contract fix (round 74 follow-up, found during real
+  environment verification): a plugin directory produced by `dotnet publish`
+  carries its own `Microsoft.Extensions.Logging.Abstractions.dll`, but the
+  load context only shared the three Vapor contract assemblies — the plugin's
+  view of `IPluginHostServices` then has a second `ILoggerFactory` type
+  identity and the JIT rejects the cross-context call with a
+  `MissingMethodException` on `get_LoggerFactory` even though reflection
+  finds the member. Logging abstractions now join the shared set; three
+  regression tests pin the contract-assembly identity, the non-shared
+  deps-graph resolution, and a publish-form plugin directory with a private
+  logging copy (staged with the test host's real deps.json — the native
+  resolver aborts the process on hand-written minimal ones); TestPlugin logs
+  through `context.Host.LoggerFactory` during initialize. Plugins.Core tests
+  218 → 221, repo total 3,922 → 3,925.
+
+- Flaky test-host hang fixed (round 74 follow-up): the round-74 push hung the
+  CI `build-test` jobs on 3 of 5 matrix legs, and roughly half of local
+  Steam.Core runs stalled the same way — blame-hang always named
+  `Cs2GcWaitRegistryTests.Complete_MultipleWaitsOnSameType_FeedsThemInRegistrationOrder`
+  as the test in flight. The test awaited one specific wait after `Complete`,
+  but the registry enumerates a `ConcurrentDictionary`, whose order is
+  unspecified: on about half of runs the other wait consumed the reply, the
+  awaited task never completed, and since xUnit has no per-test timeout one
+  hung test stalled the whole testhost with every worker idle (two framework
+  theories — parallel-collection dispatch races, then sync-context dispatch —
+  were tried and disproved inside the coverage gate before the blame
+  artifacts pointed at the test itself). The test now pins the actual
+  contract — exactly one accepted wait consumes the reply, which one is
+  arbitrary — and asserts through already-completed tasks, so it can no
+  longer block; the `Cs2GcWaitRegistry` product surface is unchanged.
+
 - Capacity profile benchmarks (round 72): `CapacityProfileBenchmarks` runs the
   same workload against 100 / 1,000 / 10,000 stored rows and bursts, closing
   the last §28 residual. The baselines, now recorded in `docs/performance.md`,

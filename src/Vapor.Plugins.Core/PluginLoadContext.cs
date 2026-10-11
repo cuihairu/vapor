@@ -14,11 +14,20 @@ public sealed class PluginLoadContext : AssemblyLoadContext
 	/// <summary>
 	/// Assemblies that must be shared between host and plugins (type-identity boundary).
 	/// </summary>
+	/// <remarks>
+	/// <see cref="Api.IPluginHostServices"/> exposes <c>ILoggerFactory</c>, so
+	/// Microsoft.Extensions.Logging.Abstractions is part of the contract surface too: when a
+	/// published plugin directory carries its own copy, the plugin's view of that interface
+	/// gets a second type identity and the JIT rejects the cross-context call with a
+	/// MissingMethodException (<c>get_LoggerFactory</c>) even though reflection finds the
+	/// member. It must bind to the host's copy like the Vapor contract assemblies do.
+	/// </remarks>
 	private static readonly HashSet<string> SharedAssemblyNames = new(StringComparer.OrdinalIgnoreCase)
 	{
 		"Vapor.Plugins.Core",
 		"Vapor.Steam.Core",
-		"Vapor.Protocol"
+		"Vapor.Protocol",
+		"Microsoft.Extensions.Logging.Abstractions"
 	};
 
 	private readonly AssemblyDependencyResolver _resolver;
