@@ -192,6 +192,12 @@ jobs:
     - name: Verify dependency version consistency
       run: python3 scripts/verify-dependency-versions.py
 
+    # SSE event names: domain-model.md 规范表 ⇄ ControlPlane 全部发布点 ⇄ api.md §2
+    # 枚举。新增 Publish 忘写规范表——或表里留了代码早已不再发出的名字——都不会
+    # 让任何 .NET 测试红,所以单独设门(与端点清单/鉴权声明同型)。40.8-③(见 todo.md)。
+    - name: Verify SSE event-name consistency
+      run: python3 scripts/verify-sse-event-names.py
+
     - name: Setup .NET
       uses: actions/setup-dotnet@baa11fbfe1d6520db94683bd5c7a3818018e4309 # v5.1.0
       with:

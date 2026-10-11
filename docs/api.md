@@ -84,6 +84,9 @@ Event payload shapes:
   - `trade.auto_accepted`, `account.farm_progress`, `account.standing_alert`, `account.standing_released`, `account.reconciled` (orchestrator; some with `jobId`, some global)
   - `agent.connected` / `agent.disconnected` (`agentId`, `region`; `jobId` null)
   - `crawl.run_triggered`, `crawl.run_completed`, `crawl.run_skipped` (crawl worker; payload `plan_id`, `run_id`, `status` (`completed`|`failed`|`timeout`|`skipped`), `total`, `ok`, `failed` — snake_case keys). Note: `crawl.run_failed` (dispatch exception) is written to the audit log only, never to the SSE broker.
+- The canonical name table — every name, its Domain/Operational layer and its
+  publisher — lives in [`domain-model.md`](domain-model.md) §"SSE event names";
+  `scripts/verify-sse-event-names.py` keeps the three surfaces in agreement.
 - Session events (`SessionEvent` record): frame `event: session.<eventType>`; payload `{ id, accountName, eventType, state, message?, timestamp }`.
 - Auth challenge events (`AuthChallengeEvent` record): frame `event: auth.<challengeType>`; payload `{ id, accountName, challengeType, message?, code?, timestamp, jobId?, attempt }` (`attempt` = the tracker's re-raise generation for the account, 1 on the first raise). Access rules:
   - Admin: sees all challenges, but `code_provided_*` events have `code` stripped (`null`) before sending.

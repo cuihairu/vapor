@@ -202,11 +202,47 @@ assume — never mix them.
   moment it happens, never routed through SSE). Consumers are the audit API
   and `audit.db` itself.
 
-SSE event names follow the `<layer-prefix>.<verb>` convention already
-enumerated in [`api.md`](api.md) §2 (`job.created`, `task.dispatched`,
-`session.<eventType>`, `auth.<challengeType>`, `crawl.run_triggered`,
-`plugin.installed`, …); the audit sink action names are the third column and
-are mirrored in [`api.md`](api.md) §5. SSE stays best-effort in all layers.
+### SSE event names
+
+The convention is `<scope>.<snake_case_verb>`: the prefix is the **subject**
+the event is about (not a layer name — the layer follows from the subject),
+and the suffix is the observed fact in lower-case snake case. The canonical
+table below is the single source of truth; `scripts/verify-sse-event-names.py`
+keeps it in lockstep with the publish sites in the code and with the
+enumeration in [`api.md`](api.md) §2, so a new publish call without a table
+row — or a table row the code no longer emits — fails the build.
+
+| SSE event name | Layer | Published by |
+|---|---|---|
+| `job.created` | Domain | job creation endpoint |
+| `job.canceled` | Domain | job cancellation endpoint |
+| `task.dispatched` | Domain | task scheduler |
+| `task.finished` | Domain | agent tunnel task-result path |
+| `task.failed` | Domain | task scheduler |
+| `task.dispatch_failed` | Domain | task scheduler (undispatchable) |
+| `task.enqueue_failed` | Domain | task scheduler (undispatchable) |
+| `job.scheduled_triggered` | Domain | recurring job scheduler |
+| `job.scheduled_skipped` | Domain | recurring job scheduler |
+| `job.scheduled_completed` | Domain | recurring job scheduler |
+| `session.<eventType>` | Domain | session event report path (open family) |
+| `auth.<challengeType>` | Domain | auth challenge raise/answer path (open family) |
+| `agent.connected` | Operational | agent tunnel hello |
+| `agent.disconnected` | Operational | agent tunnel drop |
+| `crawl.run_triggered` | Operational | crawl run worker |
+| `crawl.run_completed` | Operational | crawl run worker |
+| `crawl.run_skipped` | Operational | crawl run worker |
+| `account.farm_progress` | Operational | desired-state reconciler |
+| `account.standing_alert` | Operational | desired-state reconciler |
+| `account.standing_released` | Operational | desired-state reconciler |
+| `account.reconciled` | Operational | desired-state reconciler |
+| `trade.auto_accepted` | Operational | desired-state reconciler |
+
+Notes: `crawl.run_failed` (crawl dispatch exception) is written to the audit
+log only and deliberately never reaches the broker; `session.*` and
+`auth.*` are open families whose members are the reported session event
+types and the six documented challenge types, so they cannot be closed-listed.
+The audit sink action names are the third column of the table above and are
+mirrored in [`api.md`](api.md) §5. SSE stays best-effort in all layers.
 
 ## 10. Plugin
 

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- SSE event-name convention (round 72): a canonical table of every broker
+  event name in `domain-model.md` §"SSE event names" — name, Domain or
+  Operational layer, and publisher — alongside `scripts/verify-sse-event-names.py`,
+  mounted in the CI format job, which keeps that table, the ControlPlane
+  publish sites and the `api.md` enumeration in lockstep: a publish call
+  without a table row, or a table row the code no longer emits, fails the
+  build. Two dynamic publish sites (a re-raise reason parameter and a
+  run-status ternary) are registered explicitly so their values are covered
+  too, and the registration line numbers act as guards — drift fails the
+  check. The earlier wording is also corrected: the doc used to give
+  `plugin.installed` as an example of an SSE name the broker never emits
+  (plugin install/uninstall are audit records only), and the convention is
+  now stated as `<scope>.<snake_case_verb>` — the prefix is the subject the
+  event is about, not a layer name.
 - Least-loaded agent placement (round 71): task dispatch now shares the
   placement order the account reconciler already used — region match,
   capability filter, then the agent with the fewest running tasks, with the
