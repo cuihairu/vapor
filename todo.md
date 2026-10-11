@@ -1114,3 +1114,9 @@ Core 27 个 action 实测（`src/Vapor.Steam.Core/Actions/`）+ MobileAuthentica
 - [x] 40.12-2 脚本执行:`script_exec` agent host action(Unsafe 类,超时上限,输出捕获)+POST /v1/scripts/{id}/execute 定向派发+执行结果随任务回报镜像（轮六十三:NonIdempotent cap 2,语言→解释器 shell/python/powershell,输出截断显式报告;测试 +30 合计 3700）
 - [x] 40.12-3 编排系统:flows(顺序步骤,每步=脚本×目标 agent×失败策略),CP 顺序执行器,每步状态与审计,GET /v1/script-flows 面（轮六十四:八端点(含 run 与运行清单/详情),顺序执行器四态(completed/completed_with_failures/failed/pending),逐步审计 flow_step_*;测试 +29 合计 3729）
 - [ ] 40.12-4 调度接入:flows 复用 recurring 机制按计划触发(按信号启动,不主动排期)
+### 41. 需求单:CSGO 开箱 + CS2 背包接入（2026-10-11 用户令 verbatim:至少 vapor 官方插件要支持 csgo 开箱子 访问 csgo 背包数据;现状已核:CaseOpening 纯模拟(SimulationBackend dry-run 无 live backend),背包能力在 GameAccess get_inventory(InventoryPaginator→ISteamTradeClient.GetInventoryAsync 分页,app 730,ReadOnly)+CP REST /v1/accounts/{name}/inventory）
+- [ ] 41-1 CaseOpening 接入真实背包:列出账号 CS2(app_id=730)背包里的箱子与钥匙(数量、可开项),复用既有 get_inventory 通道(InventoryPaginator 共用化,不重造第二套 Steam 读面)
+- [ ] 41-2 开箱与背包关联:开箱消耗/登记用掉的箱子与钥匙、产出饰品写回「我的奖品」并可回查;剩多少钥匙、开过哪些箱子要能查(消耗=本地台账记账——真开箱是 CS2 游戏客户端事务无公开 API,物理消耗由操作者在客户端完成,case_inventory 复读对账)
+- [ ] 41-3 ToS 口径:真开箱无公开 API、自动化违反 Steam 订阅协议 → 保持 dry-run 模拟;action/route 输出必须带 mode 字段;「消耗真实箱子钥匙」做成显式开关且默认关,关闭时绝不碰库存(默认不开是硬要求);docs/plugins.md ToS boundary 同步——只读背包读取走公开库存端点与 get_inventory 同通道不算自动化开箱
+- [ ] 41-4 验收=真实环境实测,不是测试绿:起 agent 连真实账号 get_inventory 拉到 730 背包并断言拿到箱子/钥匙;CaseOpening 新增 action 全流程 curl 跑通;再补测试(**2026-10-11 注:执行环境无真实 Steam 凭据,真实账号实测须操作者提供账号——代码/测试/端点就绪后此项挂起待操作者执行,不伪造实测数字**)
+- [ ] 41-5 测试绿才 push,commit 英文简短;报:接了哪些 action、真实背包实测结果(几个箱子几把钥匙)、剩余项
