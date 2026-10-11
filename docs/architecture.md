@@ -496,6 +496,27 @@ Rules:
   accounts", not "re-encrypt one account under a fresh key"; per-account key
   pinning would require storing a key fingerprint per account (not implemented).
 
+Every rule above is pinned by a test, so the code cannot drift from this
+section without a red build: the v1→v2 migration (and its immediate persist,
+with plaintext tokens gone from the rewritten file) by
+`Load_MigratesLegacyV1FileToEncryptedV2`, the newer-version rejection by
+`Load_FileWithNewerFormatVersion_FailsFast` (in
+`tests/Vapor.Steam.Core.Tests/Unit/FileCredentialStoreTests.cs`), the `gcm:`
+preferred-over-legacy-CBC read path by `DecryptAES_WithLegacyCbcCiphertext_RemainsCompatible`
+and the "new writes always emit `gcm:`" rule by the two encryption round-trip
+tests (in `.../VaporCryptoHelperEncryptionTests.cs`), and the rotation
+re-encrypt plus abort-without-modification behaviour by
+`Rotate_ReEncryptsTokensWithNewKey` / `Rotate_WithWrongOldKey_AbortsAndLeavesFileUnchanged`
+(in `.../CredentialStoreRotatorTests.cs`). The key-generation axis stays a
+negative claim: no key-id or per-account fingerprint is stored anywhere, so there is
+nothing to test — adding one is a format change, not a bug fix.
+
+Maintenance note: `CurrentFormatVersion` is declared separately in
+`FileCredentialStore` and `CredentialStoreRotator` (both private const 2). A
+future format bump must change both declarations in the same commit — the
+rotator writes the version the store validates on read, so a mismatched bump
+would make the store refuse its own output.
+
 ## Testing
 
 The repository runs 3,820 tests across 14 test projects (2026-10-11
