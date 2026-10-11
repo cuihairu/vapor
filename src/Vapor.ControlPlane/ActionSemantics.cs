@@ -77,10 +77,12 @@ public static class ActionSemantics
 			["market_watch_remove"] = ActionSafety.Idempotent,
 			["market_watch_list"] = ActionSafety.ReadOnly,
 
-			// CaseOpening plugin (2). case_open stays unclassified on purpose: the
-			// dry-run simulator appends results, and its safety is documented in
-			// actions.md rather than bound into dispatch retry caps.
+			// CS2/CSGO plugin (3). case_open is NonIdempotent because its gated
+			// real mode burns a crate + key on the CS2 game coordinator; with the
+			// 'open.enabled' gate off (default) it stays a local dry-run, but the
+			// classification must match the worst case the action can take.
 			["case_inventory"] = ActionSafety.ReadOnly,
+			["case_open"] = ActionSafety.NonIdempotent,
 			["case_consume"] = ActionSafety.NonIdempotent,
 
 			// Monitoring plugin (1).

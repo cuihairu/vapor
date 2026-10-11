@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 /// <summary>
 /// Engine roll semantics: the exact published rarity windows, tier-uniform item

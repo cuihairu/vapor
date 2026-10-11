@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-using Vapor.Plugins.CaseOpening;
+using Vapor.Plugins.Csgo;
 using Vapor.Protocol;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
@@ -10,7 +10,7 @@ using Vapor.Steam.Core.Web;
 
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 public class CaseInventoryActionTests : IDisposable
 {
@@ -54,7 +54,7 @@ public class CaseInventoryActionTests : IDisposable
 
 	private static (CaseInventoryAction Action, FakeTradeClient Client) CreateAction(FakeTradeClient client)
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		var action = new CaseInventoryAction(plugin, NullLogger<CaseInventoryAction>.Instance, _ => client);
 		return (action, client);
 	}
@@ -65,7 +65,7 @@ public class CaseInventoryActionTests : IDisposable
 	[Fact]
 	public void Metadata_DeclaresReadOnlyLoginRequired()
 	{
-		CaseInventoryAction action = new(new CaseOpeningPlugin());
+		CaseInventoryAction action = new(new CsgoPlugin());
 
 		Assert.Equal("case_inventory", action.Name);
 		Assert.Equal("case_inventory", action.Metadata.Name);
@@ -77,11 +77,11 @@ public class CaseInventoryActionTests : IDisposable
 	[Fact]
 	public void TradeClientFactory_FallsBackToTheRealClient_AndHonorsInjection()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		Assert.IsType<SteamTradeClient>(plugin.TradeClientFactory(CreateWebHandler()));
 
 		var fake = new FakeTradeClient();
-		var injected = new CaseOpeningPlugin(tradeClientFactory: _ => fake);
+		var injected = new CsgoPlugin(tradeClientFactory: _ => fake);
 		Assert.Same(fake, injected.TradeClientFactory(CreateWebHandler()));
 	}
 
@@ -95,7 +95,7 @@ public class CaseInventoryActionTests : IDisposable
 	[Fact]
 	public async Task ExecuteAsync_RejectsNullPayload()
 	{
-		CaseInventoryAction action = new(new CaseOpeningPlugin());
+		CaseInventoryAction action = new(new CsgoPlugin());
 
 		await Assert.ThrowsAsync<ArgumentNullException>(() =>
 			action.ExecuteAsync(CreateSession(null), null!, CancellationToken.None));
@@ -171,7 +171,7 @@ public class CaseInventoryActionTests : IDisposable
 	public async Task ExecuteAsync_ClassifiesInventory_AndCarriesLedgerTotals()
 	{
 		string catalogPath = WriteCatalog("vapor.test.custom", "Custom Case");
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		await plugin.InitializeAsync(TestContext(("cases.path", catalogPath)), CancellationToken.None);
 		plugin.Ledger.Record(new ConsumeEntry("vapor.cases.starter", cases: 2, keys: 2));
 
@@ -297,7 +297,7 @@ public class CaseInventoryActionTests : IDisposable
 	private sealed class TestPluginContext(IReadOnlyDictionary<string, string> configuration) : IPluginContext
 	{
 		public PluginInfo Info { get; } = new(
-			"vapor.caseopening", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
+			"vapor.csgo", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
 
 		public IReadOnlyDictionary<string, string> Configuration { get; } = configuration;
 
@@ -311,7 +311,8 @@ public class CaseInventoryActionTests : IDisposable
 	}
 
 	/// <summary>Canned responses for the shared paginator (no Moq in this project).</summary>
-	private sealed class FakeTradeClient : ISteamTradeClient
+	// Shared with CsgoOpenRealTests via a using alias.
+	internal sealed class FakeTradeClient : ISteamTradeClient
 	{
 		private readonly Queue<InventoryResponse> _pages;
 

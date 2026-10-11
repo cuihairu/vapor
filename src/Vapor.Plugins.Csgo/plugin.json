@@ -1,0 +1,30 @@
+{
+  "id": "vapor.csgo",
+  "name": "Vapor CS2/CSGO",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "description": "CS2/CSGO inventory and case plugin: backpack classification and read-only bookkeeping, a dry-run case-opening simulator over Valve's published odds, and a real game-coordinator open behind the explicit 'open.enabled' gate (default off).",
+  "trust": "official",
+  "permissions": [
+    "actions",
+    "web"
+  ],
+  "entryAssembly": "Vapor.Plugins.Csgo.dll",
+  "entryType": "Vapor.Plugins.Csgo.CsgoPlugin",
+  "configuration": {
+    "backend": "simulation",
+    "results.path": "",
+    "cases.path": "",
+    "consume.enabled": "false",
+    "ledger.path": "",
+    "open.enabled": "false"
+  },
+  "configurationSchema": {
+    "backend": { "type": "string" },
+    "results.path": { "type": "string" },
+    "cases.path": { "type": "string" },
+    "consume.enabled": { "type": "bool" },
+    "ledger.path": { "type": "string" },
+    "open.enabled": { "type": "bool" }
+  }
+}

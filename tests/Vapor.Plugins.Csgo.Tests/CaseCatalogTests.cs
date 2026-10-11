@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 /// <summary>
 /// Catalog behavior: the default catalog's shape, strict JSON parsing and every

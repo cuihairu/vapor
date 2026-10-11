@@ -3,14 +3,14 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-using Vapor.Plugins.CaseOpening;
+using Vapor.Plugins.Csgo;
 using Vapor.Protocol;
 using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
 
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 public class CaseConsumeActionTests
 {
@@ -19,7 +19,7 @@ public class CaseConsumeActionTests
 	[Fact]
 	public void Metadata_DeclaresNonIdempotent_NoLogin()
 	{
-		CaseConsumeAction action = new(new CaseOpeningPlugin());
+		CaseConsumeAction action = new(new CsgoPlugin());
 
 		Assert.Equal("case_consume", action.Name);
 		Assert.Equal("case_consume", action.Metadata.Name);
@@ -57,7 +57,7 @@ public class CaseConsumeActionTests
 	[Fact]
 	public async Task ExecuteAsync_RefusesToRun_WhileGateIsOff()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		await plugin.InitializeAsync(TestContext(), CancellationToken.None);
 		CaseConsumeAction action = new(plugin);
 
@@ -68,13 +68,13 @@ public class CaseConsumeActionTests
 
 		Assert.False(result.Success);
 		Assert.Contains("consume.enabled", result.Error);
-		Assert.Contains("VAPOR_CASEOPENING_CONSUME_ENABLED", result.Error);
+		Assert.Contains("VAPOR_CSGO_CONSUME_ENABLED", result.Error);
 	}
 
 	[Fact]
 	public async Task ExecuteAsync_RecordsDefaultEntry_AndReportsLedgerTotals()
 	{
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 		CaseConsumeAction action = new(plugin);
 
 		ActionResult result = await action.ExecuteAsync(
@@ -99,7 +99,7 @@ public class CaseConsumeActionTests
 	[Fact]
 	public async Task ExecuteAsync_CoercesCountAndKeysShapes_AndClamps()
 	{
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 		CaseConsumeAction action = new(plugin);
 		using JsonDocument countElement = JsonDocument.Parse("2");
 		using JsonDocument fractionElement = JsonDocument.Parse("2.5");
@@ -131,7 +131,7 @@ public class CaseConsumeActionTests
 	[Fact]
 	public async Task ExecuteAsync_ReadsAwards_InEveryPayloadShape()
 	{
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 		CaseConsumeAction action = new(plugin);
 		using JsonDocument mixed = JsonDocument.Parse("""["From Json", 7, "Second"]""");
 
@@ -162,7 +162,7 @@ public class CaseConsumeActionTests
 	[Fact]
 	public async Task ExecuteAsync_RejectsMissingOrWrongCaseIds()
 	{
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 		CaseConsumeAction action = new(plugin);
 		using JsonDocument boxed = JsonDocument.Parse(JsonSerializer.Serialize(StarterCase));
 
@@ -194,7 +194,7 @@ public class CaseConsumeActionTests
 	{
 		// The action and the plugin share one ledger instance — totals stay
 		// consistent no matter which surface recorded.
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 		plugin.Consume(StarterCase, 2, 2, null);
 		CaseConsumeAction action = new(plugin);
 
@@ -209,9 +209,9 @@ public class CaseConsumeActionTests
 		Assert.Equal(5, summary.TotalKeys);
 	}
 
-	private static CaseOpeningPlugin EnabledPlugin()
+	private static CsgoPlugin EnabledPlugin()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		plugin.InitializeAsync(TestContext(("consume.enabled", "true")), CancellationToken.None)
 			.GetAwaiter().GetResult();
 		return plugin;
@@ -223,7 +223,7 @@ public class CaseConsumeActionTests
 	private sealed class TestPluginContext(IReadOnlyDictionary<string, string> configuration) : IPluginContext
 	{
 		public PluginInfo Info { get; } = new(
-			"vapor.caseopening", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
+			"vapor.csgo", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
 
 		public IReadOnlyDictionary<string, string> Configuration { get; } = configuration;
 

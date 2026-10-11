@@ -7,7 +7,7 @@ using Vapor.Steam.Core;
 using Vapor.Steam.Core.Models;
 using Vapor.Steam.Core.Web;
 
-namespace Vapor.Plugins.CaseOpening;
+namespace Vapor.Plugins.Csgo;
 
 /// <summary>
 /// "case_inventory": reads the CS2 backpack (app 730 / context 2) through the
@@ -20,18 +20,18 @@ namespace Vapor.Plugins.CaseOpening;
 /// </summary>
 public sealed class CaseInventoryAction : IAction
 {
-	private readonly CaseOpeningPlugin _plugin;
+	private readonly CsgoPlugin _plugin;
 	private readonly ILogger<CaseInventoryAction> _logger;
 	private readonly Func<SteamWebHandler, ISteamTradeClient> _tradeClientFactory;
 
-	public CaseInventoryAction(CaseOpeningPlugin plugin)
+	public CaseInventoryAction(CsgoPlugin plugin)
 		: this(plugin, NullLogger<CaseInventoryAction>.Instance)
 	{
 	}
 
 	// Constructor for testing with a custom trade client factory.
 	internal CaseInventoryAction(
-		CaseOpeningPlugin plugin,
+		CsgoPlugin plugin,
 		ILogger<CaseInventoryAction> logger,
 		Func<SteamWebHandler, ISteamTradeClient>? tradeClientFactory = null)
 	{
@@ -150,9 +150,9 @@ public sealed class CaseInventoryAction : IAction
 /// </summary>
 public sealed class CaseConsumeAction : IAction
 {
-	private readonly CaseOpeningPlugin _plugin;
+	private readonly CsgoPlugin _plugin;
 
-	public CaseConsumeAction(CaseOpeningPlugin plugin)
+	public CaseConsumeAction(CsgoPlugin plugin)
 	{
 		_plugin = plugin ?? throw new ArgumentNullException(nameof(plugin));
 	}
@@ -179,7 +179,7 @@ public sealed class CaseConsumeAction : IAction
 		{
 			return Task.FromResult(new ActionResult(false,
 				"case consume is disabled: set configuration 'consume.enabled' (or environment " +
-				CaseOpeningPlugin.ConsumeEnabledEnvironmentVariable + ") to true; the ledger only records what the operator consumed — it never opens anything itself",
+				CsgoPlugin.ConsumeEnabledEnvironmentVariable + ") to true; the ledger only records what the operator consumed — it never opens anything itself",
 				null));
 		}
 

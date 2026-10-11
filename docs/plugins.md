@@ -428,7 +428,7 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Mobile Authenticator | `vapor.mobile-authenticator` | Actions only; TOTP/confirmation logic kept out of the host |
 | Monitoring | `vapor.monitoring` | Actions + web routes; self-hosted Prometheus endpoint, background metrics pump |
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
-| Case Opening | `vapor.caseopening` | Actions + web routes + configuration + result recording/archive + consumption ledger; the dry-run CS:GO case simulator plus read-only inventory bookkeeping (see its section above) |
+| CS2/CSGO | `vapor.csgo` | Actions + web routes + configuration + result recording/archive + consumption ledger; the dry-run CS:GO case simulator, read-only backpack bookkeeping, and a gated real game-coordinator case open (see its section above) |
 | Game Data | `vapor.game-data` | Actions only; read-only Steam Web API digests (Dota 2 matches/heroes/items, TF2/CS2 schema) with agent-side key handling (see its section below) |
 | Game Access | `vapor.game-access` | Actions only; sixteen game-access actions — the fourteen split out of the host with unchanged names/payloads (farming, licenses & keys, achievements, inventory, loot, points shop) plus the game-economy pair `get_game_inventory`/`get_item_details` — the wire-compatible extraction precedent (see its section below) |
 
@@ -619,11 +619,11 @@ The migrated action suites live in `Vapor.Plugins.GameAccess.Tests`, with
 asserting the sixteen names — the MarketWatch host-load precedent
 applied to an extraction.
 
-## Case opening plugin (`vapor.caseopening`)
+## CS2/CSGO plugin (`vapor.csgo`)
 
 The second official plugin doubles as the reference example for the full
 capability surface: actions + web routes + configuration + result recording,
-with zero Steam-side side effects.
+plus (behind an explicit gate) a real game-coordinator case open.
 
 ### What it is
 
@@ -631,16 +631,17 @@ A **dry-run case-opening simulator**. It rolls Valve's published CS:GO/CS2
 case-opening odds against a local case catalog, records every result, and
 exposes catalog/open/results/stats through an action (`case_open`, callable
 through the job pipeline) and plugin web routes (`GET cases`, `POST open`,
-`GET results`, `GET stats`). Opening is never automated — see
-[ToS boundary](#tos-boundary).
+`GET results`, `GET stats`). Unless the operator enables the `open.enabled`
+gate (default **off**), nothing in the plugin can open a case — see
+[ToS boundary](#tos-boundary) and [the gated real path](#modes-and-the-backend-seam).
 
 Since the backlog round the plugin also carries the **local bookkeeping
-half** that pairs with the simulator: `case_inventory` classifies a live CS2
-backpack (app 730 / context 2, the same read channel as `get_inventory`)
-into case containers, keys and other items, and `case_consume` records what
-the operator physically consumed into a ledger — so "how many keys are left"
-and "which cases were opened" is answerable from the data instead of from
-memory. See [inventory and consumption bookkeeping](#inventory-and-consumption-bookkeeping).
+half**: `case_inventory` classifies a live CS2 backpack (app 730 / context
+2, the same read channel as `get_inventory`) into case containers, keys and
+other items, and `case_consume` records what was physically consumed into a
+ledger — so "how many keys are left" and "which cases were opened" is
+answerable from the data instead of from memory. See [inventory and
+consumption bookkeeping](#inventory-and-consumption-bookkeeping).
 
 ### Algorithm and sources
 
@@ -692,13 +693,48 @@ odds table with a cumulative roll — unlicensed, reference for approach),
 
 - `SimulationBackend` (the default, and the only `backend` configuration
   value accepted today): pure local RNG. No network, no Steam calls, no
-  account required. `case_open` actions report `mode: "dry-run"` in their
+  account required. `case_open` actions report `mode: "simulation"` in their
   output.
 
-A real backend is deliberately not implemented: opening a case consumes a
-key inside the CS2 game client (game coordinator traffic), which the public
-Steam Web API cannot do. Requesting any other `backend` value fails plugin
-initialization with an explicit error rather than silently simulating.
+Requesting any other `backend` value fails plugin initialization with an
+explicit error rather than silently simulating.
+
+#### The gated real path (`open.enabled`)
+
+The simulator is not the only way `case_open` can answer. With the gate on
+(`open.enabled: true`, or `VAPOR_CSGO_OPEN_ENABLED=true`) and numeric
+`crateAssetId`/`keyAssetId` in the payload, the action takes a **real
+game-coordinator open** — the same transaction the CS2 client performs, on
+the operator's own account, one crate at a time:
+
+1. **Backpack read** — the shared inventory paginator (app 730 / context 2)
+   finds the crate and key. Explicit asset ids skip this scan; auto-pick
+   (both ids absent) matches the first container whose market name equals the
+   catalog case name plus any key.
+2. **GC handshake** — `ISteamTransport.EnsureCs2SessionAsync` plays app 730,
+   sends `ClientHello` (version 2000568) and waits for `ClientWelcome`
+   (SteamKit2's generated CS2 GC bindings — the same protocol surface the
+   operator's private uudog-worker Steam-bot fork uses for its open-crate
+   queue, which this path follows).
+3. **Open** — `OpenCrate` (2534) with `tool_item_id` = key,
+   `subject_item_id` = crate; the plugin waits up to 120s for the
+   `ItemCustomizationNotification` (1090) with request `1007`
+   (`UnlockCrate`), which carries the prize asset ids.
+4. **Prize mapping** — the backpack is re-read (up to 3 attempts, since the
+   inventory endpoint can lag the GC answer) to map prize asset ids to
+   market names; prizes that never surface are reported with
+   `matched: false` rather than dropped.
+5. **Ledger** — the consumption (1 case + 1 key + awards) is recorded into
+   the same ledger `case_consume` writes to.
+
+The gate is **off by default** and the action refuses to run the real path
+while it is off, with guidance on the config key and its environment
+override. A gated open burns exactly one crate + one key per request
+(`count != 1` is rejected — repeat the call to open more), which is why
+`case_open` is classified `NonIdempotent` in the control plane. The real
+path needs a logged-in Steam client session (`ISteamClientManager` on the
+bot session); without it the action fails with explicit guidance instead of
+falling back to simulation.
 
 ### Result recording
 
@@ -711,8 +747,7 @@ persisted.
 
 ### Inventory and consumption bookkeeping
 
-The simulator cannot see a real open (it happens inside the CS2 client), so
-reconciliation is split into two halves the operator pairs:
+Reconciliation is split into two halves the operator pairs:
 
 - **`case_inventory`** (read-only) pages the CS2 backpack through the shared
   inventory paginator and classifies it with fixed ordinal rules: a market
@@ -723,10 +758,15 @@ reconciliation is split into two halves the operator pairs:
   recorded consumptions is what should still be there.
 - **`case_consume`** records one entry (cases + keys + awards) into the
   ledger. It is **gated**: `consume.enabled` defaults to **false** (and the
-  `VAPOR_CASEOPENING_CONSUME_ENABLED` environment override), and turning it
+  `VAPOR_CSGO_CONSUME_ENABLED` environment override), and turning it
   on unlocks nothing but local bookkeeping — no Steam write path exists in
   this plugin. The entry records what the operator declares; the physical
-  open was performed by the operator in the CS2 client, by hand.
+  open was performed by the operator in the CS2 client (or by the gated
+  real path below), by hand.
+- The gated real open also records into the ledger automatically — one
+  entry per real `case_open` (1 case + 1 key + the mapped awards) — so the
+  ledger stays the single source of truth whether openings came from the
+  operator's client or from the plugin.
 - The ledger appends every entry as one JSON line to `ledger.path` (same
   archive discipline as `results.path`: malformed lines skipped, I/O errors
   swallowed, last 1000 retained in memory). Web routes mirror both halves:
@@ -738,23 +778,26 @@ reconciliation is split into two halves the operator pairs:
 Stated plainly, so nobody has to guess:
 
 - Case opening in CS2 is a **game-client transaction**; there is no public API
-  for it. Automating it (web session scripting, trade-bot unboxing fleets) is
-  exactly the "Automation" the
+  for it. Automating it at scale (web session scripting, unboxing fleets,
+  trade-bot services) is exactly the "Automation" the
   [Steam Subscriber Agreement §4.C](https://store.steampowered.com/subscriber_agreement/)
   prohibits, and is the pattern Valve targeted in its July 2016 actions against
   unboxing/gambling sites.
-- This plugin therefore **never opens**: the only unboxing surface is local
-  RNG over published odds. The `ICaseOpeningBackend` seam exists so a future
-  legitimate integration has one honest place to live — not as a stub for
-  automation.
+- Therefore: by default the plugin **never opens** — the only unboxing
+  surface is local RNG over published odds. The real game-coordinator path
+  exists **only behind an explicit operator gate** (`open.enabled`, default
+  off) that the operator must deliberately enable for their own account and
+  session. It performs the same single-account, one-crate-at-a-time
+  transaction the operator's own client performs; it is not a fleet, not a
+  service, and not the gambling-site automation §4.C describes.
 - The bookkeeping half reads Steam **read-only** (`case_inventory` uses the
   same ordinary Web read as `get_inventory` — reading your own inventory is
-  not client automation) and writes **nothing back to Steam**. There is no
-  trade offer, no market call, no web session action, and no write path at
-  all; `case_consume` only appends to a local file, and only after the
-  explicit `consume.enabled` gate. Every action and route output carries a
-  `mode` field (`"dry-run"` / `"readonly"` / `"ledger"`) so an operator can
-  always tell which surface answered.
+  not client automation) and writes **nothing back to Steam** beyond the
+  single gated crate open. There is no trade offer, no market call, and no
+  web session action; `case_consume` only appends to a local file, and only
+  after the explicit `consume.enabled` gate. Every action and route output
+  carries a `mode` field (`"simulation"` / `"gc"` / `"readonly"` /
+  `"ledger"`) so an operator can always tell which surface answered.
 - Steam Web API terms
   ([apiterms](https://steamcommunity.com/dev/apiterms)) additionally restrict
   Steam data to personal, non-commercial use; the simulator's output involves

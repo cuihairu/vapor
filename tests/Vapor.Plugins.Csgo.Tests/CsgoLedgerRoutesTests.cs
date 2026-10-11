@@ -1,14 +1,14 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-using Vapor.Plugins.CaseOpening;
+using Vapor.Plugins.Csgo;
 using Vapor.Plugins.Core;
 
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
-public class CaseOpeningLedgerRoutesTests
+public class CsgoLedgerRoutesTests
 {
 	private const string StarterCase = "vapor.cases.starter";
 
@@ -16,11 +16,11 @@ public class CaseOpeningLedgerRoutesTests
 	public async Task InventoryRoute_LedgerFile_SurvivesRestart()
 	{
 		string ledgerPath = Path.Combine(Path.GetTempPath(), $"vapor-case-ledger-init-{Guid.NewGuid():N}.jsonl");
-		var first = new CaseOpeningPlugin();
+		var first = new CsgoPlugin();
 		await first.InitializeAsync(TestContext(("ledger.path", ledgerPath)), CancellationToken.None);
 		first.Ledger.Record(new ConsumeEntry("c1", cases: 1, keys: 1));
 
-		var second = new CaseOpeningPlugin();
+		var second = new CsgoPlugin();
 		await second.InitializeAsync(TestContext(("ledger.path", ledgerPath)), CancellationToken.None);
 
 		Assert.Equal(1, second.Ledger.Summarize().TotalEntries);
@@ -40,7 +40,7 @@ public class CaseOpeningLedgerRoutesTests
 	[Fact]
 	public void Plugin_ExposesTheBookkeepingSurface()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 
 		Assert.Equal(
 			["case_open", "case_inventory", "case_consume"],
@@ -54,7 +54,7 @@ public class CaseOpeningLedgerRoutesTests
 	[Fact]
 	public async Task InventoryRoute_ServesLedgerSummary_WithLimitClamping()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		plugin.Ledger.Record(new ConsumeEntry("c1", cases: 1, keys: 1));
 		plugin.Ledger.Record(new ConsumeEntry("c2", cases: 2, keys: 2));
 		plugin.Ledger.Record(new ConsumeEntry("c3", cases: 3, keys: 3));
@@ -91,7 +91,7 @@ public class CaseOpeningLedgerRoutesTests
 	[Fact]
 	public async Task InventoryRoute_EmptyLedger_ServesZeroes()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 
 		PluginWebRoute route = plugin.GetRoutes().Single(candidate => candidate.Path == "/inventory");
 		PluginWebResponse response = await route.Handler(Req("/inventory"), CancellationToken.None);
@@ -104,7 +104,7 @@ public class CaseOpeningLedgerRoutesTests
 	[Fact]
 	public async Task ConsumeRoute_Returns403_WhileGateIsOff()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 
 		PluginWebRoute route = plugin.GetRoutes().Single(candidate => candidate.Path == "/consume");
 		PluginWebResponse response = await route.Handler(
@@ -113,7 +113,7 @@ public class CaseOpeningLedgerRoutesTests
 
 		Assert.Equal(403, response.StatusCode);
 		Assert.Contains("consume.enabled", response.Body);
-		Assert.Contains("VAPOR_CASEOPENING_CONSUME_ENABLED", response.Body);
+		Assert.Contains("VAPOR_CSGO_CONSUME_ENABLED", response.Body);
 	}
 
 	[Theory]
@@ -128,7 +128,7 @@ public class CaseOpeningLedgerRoutesTests
 	[InlineData("""{"caseId":"vapor.cases.starter","awards":["AK", 7, "M4"]}""", 200)]
 	public async Task ConsumeRoute_ValidatesBody_AndRecordsWhenEnabled(string? body, int expectedStatus)
 	{
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 
 		PluginWebRoute route = plugin.GetRoutes().Single(candidate => candidate.Path == "/consume");
 		PluginWebResponse response = await route.Handler(Req("/consume", body: body), CancellationToken.None);
@@ -144,7 +144,7 @@ public class CaseOpeningLedgerRoutesTests
 	[Fact]
 	public async Task ConsumeRoute_ReportsLedgerTotals_AfterRecord()
 	{
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 		plugin.Ledger.Record(new ConsumeEntry("c0", cases: 1, keys: 1));
 
 		PluginWebRoute route = plugin.GetRoutes().Single(candidate => candidate.Path == "/consume");
@@ -163,7 +163,7 @@ public class CaseOpeningLedgerRoutesTests
 	[Fact]
 	public async Task ConsumeRoute_RejectsUnknownCase_EvenWhenEnabled()
 	{
-		CaseOpeningPlugin plugin = EnabledPlugin();
+		CsgoPlugin plugin = EnabledPlugin();
 
 		PluginWebRoute route = plugin.GetRoutes().Single(candidate => candidate.Path == "/consume");
 		PluginWebResponse response = await route.Handler(
@@ -183,16 +183,16 @@ public class CaseOpeningLedgerRoutesTests
 			Headers: new Dictionary<string, string>(),
 			Body: body);
 
-	private static CaseOpeningPlugin InitializedPlugin()
+	private static CsgoPlugin InitializedPlugin()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		plugin.InitializeAsync(TestContext(), CancellationToken.None).GetAwaiter().GetResult();
 		return plugin;
 	}
 
-	private static CaseOpeningPlugin EnabledPlugin()
+	private static CsgoPlugin EnabledPlugin()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		plugin.InitializeAsync(TestContext(("consume.enabled", "true")), CancellationToken.None).GetAwaiter().GetResult();
 		return plugin;
 	}
@@ -203,7 +203,7 @@ public class CaseOpeningLedgerRoutesTests
 	private sealed class TestPluginContext(IReadOnlyDictionary<string, string> configuration) : IPluginContext
 	{
 		public PluginInfo Info { get; } = new(
-			"vapor.caseopening", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
+			"vapor.csgo", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
 
 		public IReadOnlyDictionary<string, string> Configuration { get; } = configuration;
 

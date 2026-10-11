@@ -394,6 +394,16 @@ public sealed class FakeSteamClientManager : ISteamClientManager
 		return Task.FromResult<RedeemKeyResult?>(null);
 	}
 
+	public Task<Cs2GcSessionResult> EnsureCs2SessionAsync(CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult(new Cs2GcSessionResult(true, "fake cs2 gc session established"));
+	}
+
+	public Task<Cs2OpenCrateResult?> OpenCrateAsync(ulong crateAssetId, ulong keyAssetId, CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult<Cs2OpenCrateResult?>(new Cs2OpenCrateResult([]));
+	}
+
 	public Task<FreeLicenseResult?> RequestFreeLicenseAsync(IReadOnlyCollection<uint> appIds, CancellationToken cancellationToken = default)
 	{
 		return Task.FromResult<FreeLicenseResult?>(new FreeLicenseResult(SteamResult.OK, appIds.ToList(), []));

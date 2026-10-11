@@ -165,6 +165,35 @@ public sealed class MockSteamClientManager : ISteamClientManager
 		return Task.FromResult(false);
 	}
 
+	private Cs2GcSessionResult _cs2SessionResult = new(true, "mock cs2 gc session");
+	private Cs2OpenCrateResult? _openCrateResult = new([]);
+
+	/// <summary>Calls recorded by OpenCrateAsync.</summary>
+	internal List<(ulong CrateAssetId, ulong KeyAssetId)> OpenCrateCalls { get; } = [];
+
+	/// <summary>Sets the result to return from EnsureCs2SessionAsync.</summary>
+	public void SetCs2SessionResult(Cs2GcSessionResult result)
+	{
+		_cs2SessionResult = result;
+	}
+
+	/// <summary>Sets the result to return from OpenCrateAsync (null simulates a timeout).</summary>
+	public void SetOpenCrateResult(Cs2OpenCrateResult? result)
+	{
+		_openCrateResult = result;
+	}
+
+	public Task<Cs2GcSessionResult> EnsureCs2SessionAsync(CancellationToken cancellationToken = default)
+	{
+		return Task.FromResult(_cs2SessionResult);
+	}
+
+	public Task<Cs2OpenCrateResult?> OpenCrateAsync(ulong crateAssetId, ulong keyAssetId, CancellationToken cancellationToken = default)
+	{
+		OpenCrateCalls.Add((crateAssetId, keyAssetId));
+		return Task.FromResult(_openCrateResult);
+	}
+
 	/// <summary>
 	/// Sets the result to return from RedeemKeyAsync.
 	/// </summary>

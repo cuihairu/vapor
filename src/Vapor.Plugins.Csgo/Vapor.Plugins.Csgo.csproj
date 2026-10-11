@@ -17,7 +17,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<InternalsVisibleTo Include="Vapor.Plugins.CaseOpening.Tests" />
+		<InternalsVisibleTo Include="Vapor.Plugins.Csgo.Tests" />
 	</ItemGroup>
 
 	<ItemGroup>

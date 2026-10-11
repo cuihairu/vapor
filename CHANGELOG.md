@@ -9,24 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Case inventory and consumption ledger (§41): the CaseOpening plugin now
+- Case inventory and consumption ledger (§41): the CS2/CSGO plugin now
   reads the real CS2 backpack — `case_inventory` walks the same paginated
   `ISteamTradeClient.GetInventoryAsync` channel as `get_inventory` on app 730 /
   context 2 (the paginator itself moved to `Vapor.Steam.Core` so both plugins
   share one Steam read surface), classifies items into case groups, keys and
   other goods, and returns a `mode: "readonly"` payload with the ledger
-  totals for reconciliation. Physical opening stays a CS2 client transaction
-  with no public API, so consumption is bookkeeping: `case_consume` appends to
-  a local JSONL ledger (capacity-bounded, ring + durable archive, restart
-  re-read, malformed lines skipped, write failures swallowed by design) behind
-  an explicit gate (`consume.enabled`, env `VAPOR_CASEOPENING_CONSUME_ENABLED`,
-  default off — the hard requirement); two web routes (`GET /inventory`,
-  `POST /consume`) serve the ledger surface, and every action and route output
-  carries a `mode` field (`dry-run` / `readonly` / `ledger`). Plugin actions
-  are classified in the safety table (`case_inventory` ReadOnly, `case_consume`
-  NonIdempotent; `case_open` stays unclassified on purpose — it never opens
-  anything). 64 new tests; CaseOpening suite 107 → 171, repo total
-  3,823 → 3,887.
+  totals for reconciliation. `case_consume` appends to a local JSONL ledger
+  (capacity-bounded, ring + durable archive, restart re-read, malformed lines
+  skipped, write failures swallowed by design) behind an explicit gate
+  (`consume.enabled`, env `VAPOR_CSGO_CONSUME_ENABLED`, default off — the hard
+  requirement); two web routes (`GET /inventory`, `POST /consume`) serve the
+  ledger surface, and every action and route output carries a `mode` field
+  (`dry-run` / `readonly` / `ledger`). 64 new tests; Csgo suite 107 → 171,
+  repo total 3,823 → 3,887.
+
+- Gated real case open + plugin rename (round 74): `Vapor.Plugins.CaseOpening`
+  is now `Vapor.Plugins.Csgo` (id `vapor.csgo`, display "Vapor CS2/CSGO") — the
+  name describes the title, not the one feature it shipped first — and
+  `case_open` gains a real game-coordinator path alongside the local dry-run
+  simulator, following the open-crate protocol of the operator's own
+  Steam-bot deployment. The gate `open.enabled` (env
+  `VAPOR_CSGO_OPEN_ENABLED`) is **off by default**; while off, asset-id opens
+  refuse with guidance instead of silently simulating. Behind the gate the
+  action performs the CS2 GC handshake (PlayGames 730 → `ClientHello`
+  2000568 → `ClientWelcome`, via a new `Cs2GcWaitRegistry` over SteamKit2's
+  generated CS2 protos), sends `OpenCrate` (2534, tool = key, subject =
+  crate), waits up to 120 s for the `ItemCustomizationNotification` (1090)
+  with request `1007` (`UnlockCrate`), re-reads the backpack up to 3 times to
+  map prize asset ids to market names (prizes that lag are reported
+  `matched: false`, never dropped), and records the consumption into the
+  same ledger as `case_consume` — one crate + one key per request, so
+  `case_open` is now classified `NonIdempotent` (worst case: a gated call
+  spends a crate and a key) and its dispatch timeout is 180 s. New surface on
+  the shared Steam transport (`ISteamTransport.EnsureCs2SessionAsync` /
+  `OpenCrateAsync`, implemented by the client manager and the test doubles).
 
 - Capacity profile benchmarks (round 72): `CapacityProfileBenchmarks` runs the
   same workload against 100 / 1,000 / 10,000 stored rows and bursts, closing

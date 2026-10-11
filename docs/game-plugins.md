@@ -7,8 +7,9 @@ exist, which do not, and why**. The short version:
   loading, hot install) is complete and ASF-aligned — see
   [Plugin development](plugins.md). Nothing in this page blocks on it.
 - The official plugin **catalog** is deliberately small. Only one plugin is
-  tied to a specific Valve title today: `vapor.caseopening` (CS:GO/CS2, dry-run
-  only). There is **no** dedicated CS2 or Dota 2 plugin beyond that, and some
+  tied to a specific Valve title today: `vapor.csgo` (CS:GO/CS2, dry-run
+  simulator + read-only backpack bookkeeping + a gated real game-coordinator
+  case open). There is **no** dedicated Dota 2 plugin beyond that, and some
   of that gap is structural, not backlog.
 
 ## The game-agnostic base already covers most of it
@@ -52,27 +53,33 @@ sources deserve the same precision as everything on this page:
   -safety exposure described in [production.md](production.md) (Account
   safety posture): the actions stay behind the web handler's rate limiter and
   the price cache tier, and they never write — no trade, no market listing,
-  no case opening. Real (non-simulated) case opening remains a **non-goal**
-  per the section above.
+  no case opening.
 
 ## Why some gaps cannot be closed by a plugin
 
-Valve exposes **no public API for game-coordinator transactions** — opening a
-case, crafting, battle-pass/candy-works interactions, matchmaking. Those are
-game-client traffic. Automating them via scripted web sessions or bot fleets
-is exactly the "Automation" the
+Valve exposes **no public API for game-coordinator transactions** — crafting,
+battle-pass/candy-works interactions, matchmaking. Those are game-client
+traffic. Automating them via scripted web sessions or bot fleets is exactly
+the "Automation" the
 [Steam Subscriber Agreement §4.C](https://store.steampowered.com/subscriber_agreement/)
-prohibits (the same analysis the case-opening plugin documents in its
+prohibits (the same analysis the `vapor.csgo` plugin documents in its
 [ToS boundary](plugins.md#tos-boundary)). These are **non-goals**, not pending
 work:
 
-- real (non-simulated) case opening for CS:GO/CS2
 - match making / in-match farming automation for any title
 - battle pass, event or crafting automation for Dota 2 / TF2
 
+Case opening is the one deliberate exception to this non-goal list, and it is
+a narrow one: `vapor.csgo` ships a **gated** real game-coordinator open —
+off by default (`open.enabled`), one crate + one key per request on the
+operator's own logged-in session, mirroring the transaction the operator's
+own CS2 client performs. It follows the open-crate protocol of the operator's
+own Steam-bot deployment, not a fleet pattern; the boundary reasoning lives
+in [the plugin's ToS boundary](plugins.md#tos-boundary).
+
 The honest per-game plugin surface is therefore three shapes:
 
-1. **Dry-run simulators** over Valve's published data (the `vapor.caseopening`
+1. **Dry-run simulators** over Valve's published data (the `vapor.csgo`
    pattern: local RNG over published odds, recorded results, zero Steam calls).
 2. **Read-only analytics** over Valve's actual public Steam Web API surfaces
    (long-standing key-gated interfaces such as `IEconItems_*` item schemas and
@@ -85,7 +92,7 @@ The honest per-game plugin surface is therefore three shapes:
 
 | Valve title | Dedicated official plugin | Status | Notes |
 |-------------|---------------------------|--------|-------|
-| CS:GO / CS2 | `vapor.caseopening` | ✅ shipped (dry-run) | Valve's published odds, simulation only; real backend is a stated non-goal |
+| CS:GO / CS2 | `vapor.csgo` | ✅ shipped | Valve's published odds simulation, backpack/ledger bookkeeping, plus a gated real GC open (`open.enabled`, one crate + key per call) |
 | CS:GO / CS2 | drop/playtime farming | ✅ via generic catalog | `play_games`/`idle`/`boost`; no plugin needed |
 | CS:GO / CS2 | inventory/trade/market tooling | ✅ via generic catalog | inventory, duplicates, trade offers, §39 storage collect, market actions |
 | CS:GO / CS2 | item schema digest (read-only, `IEconItems_730`) | ✅ shipped via `vapor.game-data` | `econ_item_schema` appid 730 — compact digest only; full schema stays at the Web API |
@@ -102,12 +109,12 @@ candidates (if any ever appear) would follow the same shape.
 ## What a future per-game plugin looks like
 
 The mechanism side is ready — nothing needs to change to add one, and
-`vapor.game-data` is now the second worked example beside `vapor.caseopening`:
+`vapor.game-data` is now the second worked example beside `vapor.csgo`:
 
 - Package as a normal plugin ([Quick start](plugins.md#quick-start)); declare
   `trust: official` and honest `permissions`; official-trust plugins must pin
   the host's plugin API version exactly (ASF `HasSameVersion` alignment).
-- Follow the `vapor.caseopening` reference shape: actions through
+- Follow the `vapor.csgo` reference shape: actions through
   `IActionPlugin` (callable from jobs and orchestration), read-only dashboards
   through `IWebApiPlugin`, configuration through the manifest `configuration`
   map with env overrides, and — where a real integration might one day exist —

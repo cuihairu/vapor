@@ -1,4 +1,4 @@
-namespace Vapor.Plugins.CaseOpening;
+namespace Vapor.Plugins.Csgo;
 
 /// <summary>
 /// The five rarity tiers of a key-opened weapon case, in ascending order of

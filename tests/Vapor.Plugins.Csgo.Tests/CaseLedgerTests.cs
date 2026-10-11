@@ -1,10 +1,10 @@
 using System.Text.Json;
 
-using Vapor.Plugins.CaseOpening;
+using Vapor.Plugins.Csgo;
 
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 public class CaseLedgerTests : IDisposable
 {

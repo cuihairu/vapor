@@ -6,12 +6,12 @@ namespace Vapor.ControlPlane.Tests;
 public class ActionSemanticsTests
 {
 	[Fact]
-	public void ClassificationTable_CoversAll61InTreeActions_WithNoUnknownEntries()
+	public void ClassificationTable_CoversAll62InTreeActions_WithNoUnknownEntries()
 	{
 		var names = ActionSemantics.ActionNames;
 
-		Assert.Equal(61, names.Count);
-		Assert.Equal(61, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+		Assert.Equal(62, names.Count);
+		Assert.Equal(62, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 		foreach (string name in names)
 		{
 			Assert.NotEqual(ActionSafety.Unknown, ActionSemantics.SafetyOf(name));
@@ -31,13 +31,14 @@ public class ActionSemanticsTests
 		Assert.Equal(31, byClass[ActionSafety.ReadOnly]);
 		Assert.Equal(11, byClass[ActionSafety.Idempotent]);
 		Assert.Equal(12, byClass[ActionSafety.GuardedWrite]);
-		Assert.Equal(7, byClass[ActionSafety.NonIdempotent]);
+		Assert.Equal(8, byClass[ActionSafety.NonIdempotent]);
 	}
 
 	[Theory]
 	[InlineData("send_trade_offer")] // NonIdempotent
 	[InlineData("create_market_listing")] // NonIdempotent
 	[InlineData("script_exec")] // NonIdempotent: an arbitrary operator script can double side effects on re-run
+	[InlineData("case_open")] // NonIdempotent: the gated real mode burns a crate + key
 	[InlineData("accept_trade_offer")] // GuardedWrite
 	[InlineData("redeem_key")] // GuardedWrite
 	public void MaxDispatchAttempts_UnsafeClasses_CapAtConservativeCeiling(string action)

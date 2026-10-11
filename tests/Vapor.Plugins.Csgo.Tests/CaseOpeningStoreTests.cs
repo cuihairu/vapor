@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 /// <summary>
 /// Result recorder behavior: retention window, durable JSONL archive with

@@ -53,9 +53,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Plugins.TestFixtures"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.KeyRotation.Tests", "tests\Vapor.KeyRotation.Tests\Vapor.KeyRotation.Tests.csproj", "{40EF56C1-FC9F-4194-A643-CFBCA8E2B4E3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Plugins.CaseOpening", "src\Vapor.Plugins.CaseOpening\Vapor.Plugins.CaseOpening.csproj", "{F3ED88C1-88E4-41D5-9DD5-B4805FA7884F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Plugins.Csgo", "src\Vapor.Plugins.Csgo\Vapor.Plugins.Csgo.csproj", "{F3ED88C1-88E4-41D5-9DD5-B4805FA7884F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Plugins.CaseOpening.Tests", "tests\Vapor.Plugins.CaseOpening.Tests\Vapor.Plugins.CaseOpening.Tests.csproj", "{F4638037-5514-47C7-B684-FC69E0E9D65D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Plugins.Csgo.Tests", "tests\Vapor.Plugins.Csgo.Tests\Vapor.Plugins.Csgo.Tests.csproj", "{F4638037-5514-47C7-B684-FC69E0E9D65D}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Vapor.Plugins.GameData", "src\Vapor.Plugins.GameData\Vapor.Plugins.GameData.csproj", "{1918A1F4-7995-41DF-A1D6-B3C9D7F5153F}"
 EndProject

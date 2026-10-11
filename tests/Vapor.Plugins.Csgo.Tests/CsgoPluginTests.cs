@@ -4,26 +4,26 @@ using Vapor.Plugins.Core;
 using Vapor.Steam.Core;
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 /// <summary>
 /// Plugin surface: real host load through PluginManager (discovery, trust,
 /// permission grants, contributions), configuration handling, the case_open
 /// action, the four web routes and the backend seam.
 /// </summary>
-public sealed class CaseOpeningPluginTests : IDisposable
+public sealed class CsgoPluginTests : IDisposable
 {
 	private readonly string _root;
 
-	public CaseOpeningPluginTests()
+	public CsgoPluginTests()
 	{
 		_root = Path.Combine(Path.GetTempPath(), "vapor-caseopening-host-" + Guid.NewGuid().ToString("N"));
 		Directory.CreateDirectory(Path.Combine(_root, "case-opening"));
 
 		string binDirectory = AppContext.BaseDirectory;
 		File.Copy(
-			Path.Combine(binDirectory, "Vapor.Plugins.CaseOpening.dll"),
-			Path.Combine(_root, "case-opening", "Vapor.Plugins.CaseOpening.dll"));
+			Path.Combine(binDirectory, "Vapor.Plugins.Csgo.dll"),
+			Path.Combine(_root, "case-opening", "Vapor.Plugins.Csgo.dll"));
 		File.Copy(
 			Path.Combine(binDirectory, "plugin.json"),
 			Path.Combine(_root, "case-opening", "plugin.json"));
@@ -53,7 +53,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 		Assert.Empty(report.Failures);
 		LoadedPlugin plugin = Assert.Single(report.Loaded);
 
-		Assert.Equal("vapor.caseopening", plugin.Descriptor.Manifest.Id);
+		Assert.Equal("vapor.csgo", plugin.Descriptor.Manifest.Id);
 		Assert.Equal(PluginTrust.Official, plugin.Descriptor.Trust);
 		Assert.Equal([PluginPermissions.Actions, PluginPermissions.Web], plugin.GrantedPermissions.Order().ToArray());
 
@@ -68,12 +68,13 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task InitializeAsync_RejectsUnknownBackends_Loudly()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 
 		var error = await Assert.ThrowsAsync<PluginException>(() =>
 			plugin.InitializeAsync(TestContext(("backend", "steam-web")), CancellationToken.None));
 
-		Assert.Contains("only 'simulation' (dry-run) exists", error.Message);
+		Assert.Contains("only 'simulation' exists", error.Message);
+		Assert.Contains("open.enabled", error.Message);
 		Assert.Contains("docs/plugins.md", error.Message);
 	}
 
@@ -84,7 +85,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 		string archivePath = Path.Combine(_root, "archive", "results.jsonl");
 		await File.WriteAllTextAsync(catalogPath, MinimalCatalog("custom.case"));
 
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		await plugin.InitializeAsync(
 			TestContext(
 				("cases.path", catalogPath),
@@ -95,7 +96,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 		Assert.Null(plugin.Catalog.Find("vapor.cases.starter")); // replaces the default
 		Assert.Equal("dry-run", plugin.Backend.ModeName);
 
-		CaseOpeningPlugin.CaseOpenBatch? batch = await plugin.OpenAsync("custom.case", 3, CancellationToken.None);
+		CsgoPlugin.CaseOpenBatch? batch = await plugin.OpenAsync("custom.case", 3, CancellationToken.None);
 		Assert.NotNull(batch);
 		Assert.Equal(3, plugin.Store.Count);
 		Assert.True(File.Exists(archivePath));
@@ -104,7 +105,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task InitializeAsync_FailsOnUnreadableCatalogPath()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 
 		var error = await Assert.ThrowsAsync<PluginException>(() =>
 			plugin.InitializeAsync(TestContext(("cases.path", Path.Combine(_root, "missing.json"))), CancellationToken.None));
@@ -116,7 +117,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	public async Task InitializeAsync_UsesInjectedBackend_WhenOverridden()
 	{
 		var backend = new RecordingBackend();
-		var plugin = new CaseOpeningPlugin(backend);
+		var plugin = new CsgoPlugin(backend);
 
 		await plugin.InitializeAsync(TestContext(), CancellationToken.None);
 
@@ -135,18 +136,18 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task OpenAsync_ReturnsNull_ForUnknownCases_AndClampsCount()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 
 		Assert.Null(await plugin.OpenAsync("nope.case", 1, CancellationToken.None));
 
-		CaseOpeningPlugin.CaseOpenBatch batch = (await plugin.OpenAsync("vapor.cases.starter", 100_000, CancellationToken.None))!;
-		Assert.Equal(CaseOpeningPlugin.MaxOpensPerRequest, batch.Results.Count);
+		CsgoPlugin.CaseOpenBatch batch = (await plugin.OpenAsync("vapor.cases.starter", 100_000, CancellationToken.None))!;
+		Assert.Equal(CsgoPlugin.MaxOpensPerRequest, batch.Results.Count);
 	}
 
 	[Fact]
 	public async Task CaseOpenAction_HappyPath_ReportsModeCountsAndRecords()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		var action = new CaseOpenAction(plugin);
 
 		ActionResult result = await action.ExecuteAsync(
@@ -189,7 +190,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task CaseOpenAction_CoercesCountPayloadShapes()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		var action = new CaseOpenAction(plugin);
 		using JsonDocument number = JsonDocument.Parse("2");
 
@@ -217,7 +218,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task GetCasesRoute_ListsCatalogWithTiers()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		PluginWebRoute route = plugin.GetRoutes().Single(candidate => candidate.Path == "/cases");
 
 		PluginWebResponse response = await route.Handler(Req("/cases"), CancellationToken.None);
@@ -238,7 +239,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[InlineData("", 400)]
 	public async Task OpenRoute_ValidatesBody_AndOpensInDryRun(string? body, int expectedStatus)
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		PluginWebRoute route = plugin.GetRoutes().Single(candidate => candidate.Path == "/open");
 
 		PluginWebResponse response = await route.Handler(
@@ -256,7 +257,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task ResultsRoute_ServesRecentWindow_WithLimitClamping()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		foreach (int seed in Enumerable.Range(1, 4))
 		{
 			plugin.Store.Record(new OpenResult(
@@ -287,7 +288,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task StatsRoute_ServesAggregates()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		plugin.Store.Record(new OpenResult(
 			"c", "i", "N", CaseRarity.RareSpecial, true, 0.5, WearTier.BattleScarred, 1));
 
@@ -303,7 +304,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public async Task Routes_HonorCancellation()
 	{
-		CaseOpeningPlugin plugin = InitializedPlugin();
+		CsgoPlugin plugin = InitializedPlugin();
 		using CancellationTokenSource cancelled = new();
 		await cancelled.CancelAsync();
 
@@ -320,8 +321,8 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	[Fact]
 	public void PayloadRenderers_RejectNullInput()
 	{
-		Assert.Throws<ArgumentNullException>(() => CaseOpeningPlugin.ToBatchPayload(null!));
-		Assert.Throws<ArgumentNullException>(() => CaseOpeningPlugin.ToStatsPayload(null!));
+		Assert.Throws<ArgumentNullException>(() => CsgoPlugin.ToBatchPayload(null!));
+		Assert.Throws<ArgumentNullException>(() => CsgoPlugin.ToStatsPayload(null!));
 	}
 
 	[Fact]
@@ -375,9 +376,9 @@ public sealed class CaseOpeningPluginTests : IDisposable
 		  { "id": "x5", "name": "Knife | X", "rarity": "rare_special" } ] } ] }
 		""";
 
-	private CaseOpeningPlugin InitializedPlugin()
+	private CsgoPlugin InitializedPlugin()
 	{
-		var plugin = new CaseOpeningPlugin();
+		var plugin = new CsgoPlugin();
 		plugin.InitializeAsync(TestContext(), CancellationToken.None).GetAwaiter().GetResult();
 		return plugin;
 	}
@@ -388,7 +389,7 @@ public sealed class CaseOpeningPluginTests : IDisposable
 	private sealed class TestPluginContext(IReadOnlyDictionary<string, string> configuration) : IPluginContext
 	{
 		public PluginInfo Info { get; } = new(
-			"vapor.caseopening", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
+			"vapor.csgo", "Vapor Case Opening (test)", new Version(1, 0, 0), PluginApi.Current);
 
 		public IReadOnlyDictionary<string, string> Configuration { get; } = configuration;
 

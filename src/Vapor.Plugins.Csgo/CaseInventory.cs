@@ -1,6 +1,6 @@
 using Vapor.Steam.Core.Models;
 
-namespace Vapor.Plugins.CaseOpening;
+namespace Vapor.Plugins.Csgo;
 
 /// <summary>One classified line of the backpack: how many of one market-hash name.</summary>
 public sealed record CaseInventoryGroup(string Name, string? CaseId, int Count);
@@ -63,7 +63,7 @@ public static class CaseInventoryClassifier
 	}
 
 	/// <summary>The name used for classification: market hash name, falling back to the display name.</summary>
-	private static string? MarketName(InventoryItem item) =>
+	internal static string? MarketName(InventoryItem item) =>
 		!string.IsNullOrWhiteSpace(item.MarketHashName) ? item.MarketHashName : item.Name;
 
 	/// <summary>Stack size (an item with amount 0 still counts once).</summary>

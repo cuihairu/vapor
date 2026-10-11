@@ -1,4 +1,4 @@
-namespace Vapor.Plugins.CaseOpening;
+namespace Vapor.Plugins.Csgo;
 
 /// <summary>
 /// The seam between "decide what was unboxed" and "how it came to be". The

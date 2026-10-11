@@ -3,7 +3,12 @@ using System.Diagnostics;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 using SteamKit2;
+using SteamKit2.GC;
 using SteamKit2.Authentication;
+using CMsgClientHello = SteamKit2.GC.CSGO.Internal.CMsgClientHello;
+using CMsgClientWelcome = SteamKit2.GC.CSGO.Internal.CMsgClientWelcome;
+using CMsgGCItemCustomizationNotification = SteamKit2.GC.CSGO.Internal.CMsgGCItemCustomizationNotification;
+using CMsgOpenCrate = SteamKit2.GC.CSGO.Internal.CMsgOpenCrate;
 using SteamKit2.Internal;
 using SteamKit2.WebUI.Internal;
 using Vapor.Steam.Core.Security;
@@ -130,6 +135,10 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private readonly ICredentialStore? _credentialStore;
 	private readonly ISteamAuthTokenProvider _steamAuthTokenProvider;
 	private readonly SteamUserStatsProtocolHandler _userStatsProtocol = new();
+	private readonly Cs2GcWaitRegistry _gcWaits = new();
+
+	/// <summary>Tracks whether the CS2 game coordinator has welcomed this connection.</summary>
+	private volatile bool _cs2GcSessionLive;
 	private readonly ConcurrentDictionary<string, LoginState> _loginStates = new(StringComparer.OrdinalIgnoreCase);
 	private readonly object _connectLock = new();
 	private TaskCompletionSource<bool> _connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -148,6 +157,10 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		_steamClient = CreateSteamClient();
 		_callbackManager = new CallbackManager(_steamClient);
 		_steamAuthTokenProvider = new SteamAuthTokenProvider(_steamClient);
+		// SteamKit2 auto-registers its own SteamGameCoordinator handler on
+		// construction (re-adding one throws); the CS2 GC path below resolves it
+		// via GetHandler<SteamGameCoordinator>() and only subscribes to its
+		// MessageCallback. The user-stats protocol handler is Vapor's own.
 		_steamClient.AddHandler(_userStatsProtocol);
 
 		SubscribeCallbacks();
@@ -163,6 +176,10 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		_steamClient = CreateSteamClient();
 		_callbackManager = new CallbackManager(_steamClient);
 		_steamAuthTokenProvider = steamAuthTokenProvider;
+		// SteamKit2 auto-registers its own SteamGameCoordinator handler on
+		// construction (re-adding one throws); the CS2 GC path below resolves it
+		// via GetHandler<SteamGameCoordinator>() and only subscribes to its
+		// MessageCallback. The user-stats protocol handler is Vapor's own.
 		_steamClient.AddHandler(_userStatsProtocol);
 
 		SubscribeCallbacks();
@@ -1311,6 +1328,101 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 	}
 
+	/// <inheritdoc/>
+	public async Task<Cs2GcSessionResult> EnsureCs2SessionAsync(CancellationToken cancellationToken = default)
+	{
+		if (!await IsConnectedAsync().ConfigureAwait(false))
+		{
+			return new Cs2GcSessionResult(false, "steam client is not connected");
+		}
+
+		if (_cs2GcSessionLive)
+		{
+			return new Cs2GcSessionResult(true, "cs2 game coordinator session already live");
+		}
+
+		var gameCoordinator = _steamClient.GetHandler<SteamGameCoordinator>();
+		if (gameCoordinator == null)
+		{
+			return new Cs2GcSessionResult(false, "game coordinator handler not available");
+		}
+
+		PlayGames([Cs2GcProtocol.AppId]);
+
+		// Steam needs a beat to spin the GC route up after the play state
+		// changes; hello resends cover the rest (the GC drops first hellos).
+		await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+
+		(Task<object?> welcome, IDisposable registration) = _gcWaits.Register(Cs2GcProtocol.ClientWelcomeMsg);
+		using (registration)
+		{
+			var hello = new ClientGCMsgProtobuf<CMsgClientHello>(Cs2GcProtocol.ClientHelloMsg)
+			{
+				Body = { version = Cs2GcProtocol.ClientHelloVersion }
+			};
+
+			for (int attempt = 0; attempt < 5 && !welcome.IsCompleted; attempt++)
+			{
+				gameCoordinator.Send(hello, Cs2GcProtocol.AppId);
+				try
+				{
+					_ = await welcome.WaitAsync(TimeSpan.FromSeconds(6), cancellationToken).ConfigureAwait(false);
+				}
+				catch (TimeoutException)
+				{
+					// Resend below unless this was the last attempt.
+				}
+			}
+
+			if (!welcome.IsCompleted)
+			{
+				return new Cs2GcSessionResult(false, "game coordinator did not welcome the client hello");
+			}
+
+			_cs2GcSessionLive = true;
+			return new Cs2GcSessionResult(true, "cs2 game coordinator session established");
+		}
+	}
+
+	/// <inheritdoc/>
+	public async Task<Cs2OpenCrateResult?> OpenCrateAsync(ulong crateAssetId, ulong keyAssetId, CancellationToken cancellationToken = default)
+	{
+		if (!_cs2GcSessionLive)
+		{
+			return null;
+		}
+
+		var gameCoordinator = _steamClient.GetHandler<SteamGameCoordinator>();
+		if (gameCoordinator == null)
+		{
+			return null;
+		}
+
+		(Task<object?> reply, IDisposable registration) = _gcWaits.Register(
+			Cs2GcProtocol.ItemCustomizationNotificationMsg,
+			body => body is CMsgGCItemCustomizationNotification notification && notification.request == Cs2GcProtocol.UnlockCrateRequest);
+		using (registration)
+		{
+			var openCrate = new ClientGCMsgProtobuf<CMsgOpenCrate>(Cs2GcProtocol.OpenCrateMsg)
+			{
+				Body = { tool_item_id = keyAssetId, subject_item_id = crateAssetId }
+			};
+
+			gameCoordinator.Send(openCrate, Cs2GcProtocol.AppId);
+
+			try
+			{
+				object? body = await reply.WaitAsync(TimeSpan.FromSeconds(120), cancellationToken).ConfigureAwait(false);
+				var notification = (CMsgGCItemCustomizationNotification)body!;
+				return new Cs2OpenCrateResult(notification.item_id);
+			}
+			catch (TimeoutException)
+			{
+				return null;
+			}
+		}
+	}
+
 	internal static RedeemReceiptParseResult? ParseRedeemReceipt(CStore_RegisterCDKey_Response? responseBody)
 	{
 		var receipt = responseBody?.purchase_receipt_info;
@@ -1401,6 +1513,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		_callbackManager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
 		_callbackManager.Subscribe<SteamUser.LoggedOnCallback>(OnLoggedOn);
 		_callbackManager.Subscribe<SteamUser.LoggedOffCallback>(OnLoggedOff);
+		_callbackManager.Subscribe<SteamGameCoordinator.MessageCallback>(OnGcMessage);
 	}
 
 	private void OnConnected(SteamClient.ConnectedCallback callback)
@@ -1412,7 +1525,38 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private void OnDisconnected(SteamClient.DisconnectedCallback callback)
 	{
 		_logger.LogInformation("Steam client disconnected: {UserInitiated}", callback.UserInitiated);
+		_cs2GcSessionLive = false;
 		_connectedTcs.TrySetResult(false);
+	}
+
+	/// <summary>
+	/// Routes decoded CS2 GC replies into the wait registry. Everything here
+	/// rides the excluded SteamKit2 wiring; wrong-shape payloads are dropped
+	/// with a debug line rather than failing the callback pump.
+	/// </summary>
+	private void OnGcMessage(SteamGameCoordinator.MessageCallback callback)
+	{
+		if (callback.AppID != Cs2GcProtocol.AppId)
+		{
+			return;
+		}
+
+		try
+		{
+			switch (callback.EMsg)
+			{
+				case Cs2GcProtocol.ClientWelcomeMsg:
+					_gcWaits.Complete(callback.EMsg, new ClientGCMsgProtobuf<CMsgClientWelcome>(callback.Message).Body);
+					break;
+				case Cs2GcProtocol.ItemCustomizationNotificationMsg:
+					_gcWaits.Complete(callback.EMsg, new ClientGCMsgProtobuf<CMsgGCItemCustomizationNotification>(callback.Message).Body);
+					break;
+			}
+		}
+		catch (Exception ex)
+		{
+			_logger.LogDebug(ex, "Failed to decode CS2 GC message {EMsg}", callback.EMsg);
+		}
 	}
 
 	private void OnLoggedOn(SteamUser.LoggedOnCallback callback)

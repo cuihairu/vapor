@@ -1,4 +1,4 @@
-namespace Vapor.Plugins.CaseOpening;
+namespace Vapor.Plugins.Csgo;
 
 /// <summary>
 /// The case-opening probability engine: Valve's published rarity table, uniform

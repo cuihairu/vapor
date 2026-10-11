@@ -1,9 +1,9 @@
-using Vapor.Plugins.CaseOpening;
+using Vapor.Plugins.Csgo;
 using Vapor.Steam.Core.Models;
 
 using Xunit;
 
-namespace Vapor.Plugins.CaseOpening.Tests;
+namespace Vapor.Plugins.Csgo.Tests;
 
 public class CaseInventoryClassifierTests
 {

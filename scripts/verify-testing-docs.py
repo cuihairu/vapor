@@ -28,7 +28,7 @@ DETAIL_MAP = {
         "Vapor.Plugins.MobileAuthenticator.Tests",
         "Vapor.Plugins.MarketWatch.Tests",
         "Vapor.Plugins.Monitoring.Tests",
-        "Vapor.Plugins.CaseOpening.Tests",
+        "Vapor.Plugins.Csgo.Tests",
         "Vapor.Plugins.GameData.Tests",
         "Vapor.Plugins.GameAccess.Tests",
     ],

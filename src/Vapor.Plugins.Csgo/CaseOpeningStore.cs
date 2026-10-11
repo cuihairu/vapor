@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Vapor.Plugins.CaseOpening;
+namespace Vapor.Plugins.Csgo;
 
 /// <summary>Wire/archive shape of an <see cref="OpenResult"/> (stable JSON names).</summary>
 public sealed record OpenResultDto(

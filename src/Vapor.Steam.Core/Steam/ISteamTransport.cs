@@ -109,6 +109,20 @@ public interface ISteamTransport
 
 	/// <summary>Refreshes the access token for the given account using stored credentials.</summary>
 	Task<bool> RefreshAccessTokenAsync(string accountName, CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Brings up (or verifies) the CS2 game-coordinator session for this
+	/// connection: marks CS2 as playing, sends the client hello with resends
+	/// until Steam answers. Idempotent while the session is live.
+	/// </summary>
+	Task<Cs2GcSessionResult> EnsureCs2SessionAsync(CancellationToken cancellationToken = default);
+
+	/// <summary>
+	/// Opens one CS2 crate through the game coordinator with the given key and
+	/// returns the reported prize asset ids. Null when no GC session is live,
+	/// the handler is unavailable, or Steam did not answer within the window.
+	/// </summary>
+	Task<Cs2OpenCrateResult?> OpenCrateAsync(ulong crateAssetId, ulong keyAssetId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
