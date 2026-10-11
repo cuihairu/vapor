@@ -90,6 +90,34 @@ dotnet test tests/Vapor.Steam.Core.Tests -c Release \
 
 来源：`tests/Vapor.ControlPlane.Tests/Performance/ResourceFootprintBenchmarks.cs`、`CacheBenchmarks.cs`。
 
+### 容量画像 — 100 / 1k / 10k（2026-10-11，本机实测）
+
+同一工作负载在 100 / 1,000 / 10,000 存量行（作业、审计条目）与同规模突发
+事件下的表现。**读法**：
+
+- SQLite 读路径不随存量退化（索引查询）：`ListJobs(100)` p95 三个规模均
+  ≤21 ms，审计 `QueryAsync` p50 0→0→1 ms；`GetJob` 恒 0 ms。种子耗时随规模
+  线性增长（写放大在 10k 段明显），但那是建库的一次性写入成本，不是查询路径
+  的回归信号。claim + finish ×100 首规模（100）偏慢属进程内 JIT 预热，同
+  方法内越跑越快，三个规模都远在预算内。
+- EventBroker 有界通道（容量 256，DropOldest）= 文档化的 at-most-once 契约：
+  突发 > 256 时订阅方的确定性交付下限是 min(256, 规模)——实测 100 / 1,000 /
+  10,000 突发分别送达 100 / 256 / 256。消费跟不上发布时早期事件被丢弃，订阅
+  方拿到的是通道保留的最近 256 条；突发 ≤ 256 全量送达。
+
+| 基准 | 100 | 1,000 | 10,000 |
+|---|---|---|---|
+| job 种子（全量写入） | 854 ms | 1050 ms | 13389 ms |
+| `ListJobs(100)` p50 / p95 | 1 / 19 ms | 4 / 21 ms | 1 / 15 ms |
+| `GetJob` p50 | 0 ms | 0 ms | 0 ms |
+| claim + finish ×100 | 1128 ms | 834 ms | 430 ms |
+| 审计种子 | 98 ms | 204 ms | 4275 ms |
+| `QueryAsync(AuditQuery)` p50 / p95 | 0 / 13 ms | 0 / 4 ms | 1 / 7 ms |
+| EventBroker 突发发布 | 17 ms，送达 100（= 规模） | 19 ms，送达 256（下限） | 152 ms，送达 256（下限） |
+
+来源：`tests/Vapor.ControlPlane.Tests/Performance/CapacityProfileBenchmarks.cs`
+（`./scripts/run-benchmarks.sh -f CapacityProfile`）。
+
 ## 归档
 
 > **2026-09-15：初始基线**（本机实测，环境见文首）。本表取代 `tests/TESTING.md`

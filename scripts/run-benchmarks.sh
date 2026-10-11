@@ -31,10 +31,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-ARGS=(--filter "$FILTER")
+# dotnet test accepts a single --filter; extra filters must be combined
+# into one expression with & (a second --filter is a CLI parse error).
 if [[ -n "$EXTRA_FILTER" ]]; then
-  ARGS+=(--filter "$EXTRA_FILTER")
+  FILTER="$FILTER & $EXTRA_FILTER"
 fi
+
+ARGS=(--filter "$FILTER")
 
 echo "==> ControlPlane benchmarks"
 dotnet test tests/Vapor.ControlPlane.Tests -c Release --nologo \

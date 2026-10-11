@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Capacity profile benchmarks (round 72): `CapacityProfileBenchmarks` runs the
+  same workload against 100 / 1,000 / 10,000 stored rows and bursts, closing
+  the last §28 residual. The baselines, now recorded in `docs/performance.md`,
+  show what the architecture promises: SQLite reads stay flat as the dataset
+  grows (`ListJobs(100)` p95 ≤ 21 ms at every scale, audit queries ≤ 1 ms p50)
+  while one-off seeding grows linearly, and the event broker's bounded channel
+  delivers exactly `min(256, burst)` events under fire — the documented
+  at-most-once floor (100/1,000/10,000 bursts delivered 100/256/256). The
+  `-f` option of `scripts/run-benchmarks.sh` now works: it used to pass a
+  second `--filter`, which `dotnet test` rejects; extra filters are combined
+  into one expression instead.
 - SSE event-name convention (round 72): a canonical table of every broker
   event name in `domain-model.md` §"SSE event names" — name, Domain or
   Operational layer, and publisher — alongside `scripts/verify-sse-event-names.py`,
