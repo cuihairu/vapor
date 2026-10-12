@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- End-to-end test for the plugin action pipeline (41-4, local half): the
+  Csgo plugin's own build output is packaged, installed on a live agent
+  through the direct-mode REST endpoint, and its three `case_*` actions are
+  then dispatched scheduler → WebSocket tunnel → agent task executor →
+  plugin action. Covers the dry-run happy path plus the `open.enabled`,
+  session login and `consume.enabled` rejection arms; the real-Steam
+  acceptance half stays pending operator credentials. `E2EStack` gained a
+  `requiredCapability` wait and an in-place agent restart helper, since
+  capabilities only reach the scheduler on the next WebSocket connection.
 - Declared package signatures for plugin installs (40.10-4, signature
   slice): a catalog index entry may now carry a `signing` block with a
   `publicKey` (base64 SubjectPublicKeyInfo) and a `signature` (base64

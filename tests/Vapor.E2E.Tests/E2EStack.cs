@@ -137,7 +137,7 @@ public sealed class E2EStack : IAsyncLifetime
 	/// Starts an additional agent process against the shared control plane for tests that
 	/// need multi-agent scenarios (e.g. orchestration rebalancing). The caller owns disposal.
 	/// </summary>
-	internal async Task<VaporProcess> StartAgentAsync(string agentId, string region)
+	internal async Task<VaporProcess> StartAgentAsync(string agentId, string region, string requiredCapability = "echo")
 	{
 		string agentDll = TestInfrastructure.FindAppDll("Vapor.Agent", "Vapor.Agent.dll");
 		string homeDir = Path.Combine(_workDir, $"home-{agentId}");
@@ -160,7 +160,7 @@ public sealed class E2EStack : IAsyncLifetime
 
 		try
 		{
-			await WaitForAgentOnlineAsync(agent, agentId);
+			await WaitForAgentOnlineAsync(agent, agentId, requiredCapability);
 		}
 		catch
 		{
@@ -171,7 +171,21 @@ public sealed class E2EStack : IAsyncLifetime
 		return agent;
 	}
 
-	private async Task WaitForAgentOnlineAsync(VaporProcess process, string agentId)
+	/// <summary>
+	/// Restarts the stack's primary agent in place — same agent id, same plugin
+	/// directory, so a plugin installed into that directory is picked up from disk
+	/// on boot — and waits until the fresh hello declares <paramref name="requiredCapability"/>.
+	/// Needed because capabilities are computed per WebSocket connection: an action
+	/// registered by a hot plugin load only reaches the scheduler's hello view after
+	/// a reconnect.
+	/// </summary>
+	public async Task RestartAgentAsync(string requiredCapability)
+	{
+		_agent?.Dispose();
+		_agent = await StartAgentAsync(AgentId, AgentRegion, requiredCapability);
+	}
+
+	private async Task WaitForAgentOnlineAsync(VaporProcess process, string agentId, string requiredCapability = "echo")
 	{
 		for (int attempt = 0; attempt < 150; attempt++)
 		{
@@ -195,20 +209,28 @@ public sealed class E2EStack : IAsyncLifetime
 					{
 						if (agent.TryGetProperty("agentId", out var id) && id.GetString() == agentId)
 						{
-							// The scheduler only routes actions the agent declared in its hello;
-							// require the built-in echo action before tests start creating jobs.
-							bool supportsEcho = agent.TryGetProperty("capabilities", out var capabilities) &&
+							// The scheduler only routes actions the agent declared in its
+							// hello; wait for the capability tests will dispatch.
+							bool supports = agent.TryGetProperty("capabilities", out var capabilities) &&
 								capabilities.EnumerateObject().Any(c =>
-									c.Name.Equals("echo", StringComparison.OrdinalIgnoreCase) &&
+									c.Name.Equals(requiredCapability, StringComparison.OrdinalIgnoreCase) &&
 									c.Value.ValueKind == JsonValueKind.True);
 
-							if (supportsEcho)
+							if (supports)
 							{
 								return;
 							}
 
-							throw new InvalidOperationException(
-								$"Agent '{agentId}' registered without 'echo' capability: {agent.GetRawText()}");
+							// 'echo' is declared by every healthy agent at first hello, so a
+							// registration without it is a broken stack — fail fast. Any
+							// other capability arrives only after a plugin install and agent
+							// restart, where the still-registered stale hello is old state
+							// rather than breakage: keep polling until it refreshes.
+							if (requiredCapability.Equals("echo", StringComparison.Ordinal))
+							{
+								throw new InvalidOperationException(
+									$"Agent '{agentId}' registered without 'echo' capability: {agent.GetRawText()}");
+							}
 						}
 					}
 				}
