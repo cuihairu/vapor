@@ -1,0 +1,22 @@
+{
+  "id": "vapor.dota2",
+  "name": "Vapor Dota 2",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "description": "Dota 2 (app 570) trading shell: read-only inventory read with a tradability/cooldown split, trade-offer listing flagged for Dota items, and one-offer-per-call trade sending behind the explicit 'trade.enabled' gate (default off) with Steam's 7-day market trade cooldown surfaced in validation errors. Reuses the shared trade-offer, confirmation, inventory and rate-limit foundations; crafting, battle-pass and in-match automation stay non-goals.",
+  "trust": "official",
+  "permissions": [
+    "actions"
+  ],
+  "resources": [
+    "network"
+  ],
+  "entryAssembly": "Vapor.Plugins.Dota2.dll",
+  "entryType": "Vapor.Plugins.Dota2.Dota2Plugin",
+  "configuration": {
+    "trade.enabled": "false"
+  },
+  "configurationSchema": {
+    "trade.enabled": { "type": "bool" }
+  }
+}

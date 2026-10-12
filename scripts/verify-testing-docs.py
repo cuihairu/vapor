@@ -29,6 +29,7 @@ DETAIL_MAP = {
         "Vapor.Plugins.MarketWatch.Tests",
         "Vapor.Plugins.Monitoring.Tests",
         "Vapor.Plugins.Csgo.Tests",
+        "Vapor.Plugins.Dota2.Tests",
         "Vapor.Plugins.GameData.Tests",
         "Vapor.Plugins.GameAccess.Tests",
     ],

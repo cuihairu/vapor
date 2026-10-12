@@ -4,7 +4,7 @@ Vapor's agent ships a plugin system: isolated loading, SemVer-gated API
 compatibility, a trust/permission model and a small, explicit API surface. This guide
 walks through building, declaring, configuring and debugging a plugin.
 
-Everything described here is exercised by six official plugins and the test suites —
+Everything described here is exercised by seven official plugins and the test suites —
 `Vapor.Plugins.TestPlugin` (infrastructure tests), `Vapor.Plugins.MarketWatch` (the
 richest example), and the load/unload tests in `Vapor.Plugins.Core.Tests`.
 
@@ -429,6 +429,7 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Monitoring | `vapor.monitoring` | Actions + web routes; self-hosted Prometheus endpoint, background metrics pump |
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
 | CS2/CSGO | `vapor.csgo` | Actions + web routes + configuration + result recording/archive + consumption ledger; the dry-run CS:GO case simulator, read-only backpack bookkeeping, and a gated real game-coordinator case open (see its section above) |
+| Dota 2 | `vapor.dota2` | Actions only; the Dota 2 scoping of the game-agnostic trade foundations — read-only inventory with 7-day-cooldown classification, Dota-scoped trade-offer listing, and a gated (`trade.enabled`) single-offer send with live ownership validation (see [Valve game plugins](game-plugins.md)) |
 | Game Data | `vapor.game-data` | Actions only; read-only Steam Web API digests (Dota 2 matches/heroes/items, TF2/CS2 schema) with agent-side key handling (see its section below) |
 | Game Access | `vapor.game-access` | Actions only; sixteen game-access actions — the fourteen split out of the host with unchanged names/payloads (farming, licenses & keys, achievements, inventory, loot, points shop) plus the game-economy pair `get_game_inventory`/`get_item_details` — the wire-compatible extraction precedent (see its section below) |
 

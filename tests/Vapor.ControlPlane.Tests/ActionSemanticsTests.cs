@@ -6,12 +6,12 @@ namespace Vapor.ControlPlane.Tests;
 public class ActionSemanticsTests
 {
 	[Fact]
-	public void ClassificationTable_CoversAll62InTreeActions_WithNoUnknownEntries()
+	public void ClassificationTable_CoversAll65InTreeActions_WithNoUnknownEntries()
 	{
 		var names = ActionSemantics.ActionNames;
 
-		Assert.Equal(62, names.Count);
-		Assert.Equal(62, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+		Assert.Equal(65, names.Count);
+		Assert.Equal(65, names.Distinct(StringComparer.OrdinalIgnoreCase).Count());
 		foreach (string name in names)
 		{
 			Assert.NotEqual(ActionSafety.Unknown, ActionSemantics.SafetyOf(name));
@@ -28,10 +28,10 @@ public class ActionSemanticsTests
 			.GroupBy(s => s)
 			.ToDictionary(g => g.Key, g => g.Count());
 
-		Assert.Equal(31, byClass[ActionSafety.ReadOnly]);
+		Assert.Equal(33, byClass[ActionSafety.ReadOnly]);
 		Assert.Equal(11, byClass[ActionSafety.Idempotent]);
 		Assert.Equal(12, byClass[ActionSafety.GuardedWrite]);
-		Assert.Equal(8, byClass[ActionSafety.NonIdempotent]);
+		Assert.Equal(9, byClass[ActionSafety.NonIdempotent]);
 	}
 
 	[Theory]
@@ -39,6 +39,7 @@ public class ActionSemanticsTests
 	[InlineData("create_market_listing")] // NonIdempotent
 	[InlineData("script_exec")] // NonIdempotent: an arbitrary operator script can double side effects on re-run
 	[InlineData("case_open")] // NonIdempotent: the gated real mode burns a crate + key
+	[InlineData("dota2_send_trade")] // NonIdempotent: moves items between Steam accounts behind the trade.enabled gate
 	[InlineData("accept_trade_offer")] // GuardedWrite
 	[InlineData("redeem_key")] // GuardedWrite
 	public void MaxDispatchAttempts_UnsafeClasses_CapAtConservativeCeiling(string action)

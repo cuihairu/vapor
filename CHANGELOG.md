@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dota 2 trading plugin shell (round 75): a new `vapor.dota2` plugin
+  (`src/Vapor.Plugins.Dota2/`) scopes the game-agnostic trade foundations to
+  Dota 2 (app 570, context 2) with three actions — `dota2_inventory` (read-only
+  three-bucket classification: ready / under Steam's 7-day market trade
+  cooldown with the unlock time listed / locked with no unlock time reported),
+  `dota2_send_trade` (one offer per call behind the `trade.enabled` gate, env
+  `VAPOR_DOTA2_TRADE_ENABLED`, **default off**; partner via trade URL or
+  SteamID; strict payload parsing — unparsable entries and foreign app ids are
+  errors, never silent drops; the give side is validated against the live
+  inventory before anything is sent, and every cooldown or non-tradable
+  rejection names the 7-day cooldown) and `dota2_trades` (Dota-scoped trade
+  offer listing with per-direction dota counts). The plugin is actions-only —
+  confirmations ride the game-agnostic mobile-authenticator actions; crafting,
+  battle-pass and in-match automation stay documented non-goals. The send rate
+  rides the shared per-account `TradeRateLimiter` when the host provides one.
+  ActionSemantics mirror table and `docs/actions.md` grow to 65 classified
+  actions; `docs/game-plugins.md` and `docs/plugins.md` register the second
+  title-scoped plugin. 80 new tests; repo total 3,925 → 4,006 (plus one ControlPlane theory case).
+
 - Case inventory and consumption ledger (§41): the CS2/CSGO plugin now
   reads the real CS2 backpack — `case_inventory` walks the same paginated
   `ISteamTradeClient.GetInventoryAsync` channel as `get_inventory` on app 730 /

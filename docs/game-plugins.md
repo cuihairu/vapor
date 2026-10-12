@@ -6,11 +6,13 @@ exist, which do not, and why**. The short version:
 - The plugin **mechanism** (discovery, manifest, trust/permissions, isolated
   loading, hot install) is complete and ASF-aligned — see
   [Plugin development](plugins.md). Nothing in this page blocks on it.
-- The official plugin **catalog** is deliberately small. Only one plugin is
+- The official plugin **catalog** is deliberately small. Two plugins are
   tied to a specific Valve title today: `vapor.csgo` (CS:GO/CS2, dry-run
   simulator + read-only backpack bookkeeping + a gated real game-coordinator
-  case open). There is **no** dedicated Dota 2 plugin beyond that, and some
-  of that gap is structural, not backlog.
+  case open) and `vapor.dota2` (Dota 2, read-only inventory/trade listing +
+  a gated single-offer send over the game-agnostic trade foundations).
+  Crafting, battle-pass and in-match automation stay out of scope for both,
+  and some of that gap is structural, not backlog.
 
 ## The game-agnostic base already covers most of it
 
@@ -97,6 +99,7 @@ The honest per-game plugin surface is therefore three shapes:
 | CS:GO / CS2 | inventory/trade/market tooling | ✅ via generic catalog | inventory, duplicates, trade offers, §39 storage collect, market actions |
 | CS:GO / CS2 | item schema digest (read-only, `IEconItems_730`) | ✅ shipped via `vapor.game-data` | `econ_item_schema` appid 730 — compact digest only; full schema stays at the Web API |
 | Dota 2 | read-only match/econ analytics (`IDOTA2Match_570` / `IEconDOTA2_570`) | ✅ shipped via `vapor.game-data` | `dota2_match_history` / `dota2_heroes` / `dota2_game_items`; card farming and playtime already work through the generic catalog |
+| Dota 2 | inventory/trade tooling | ✅ shipped via `vapor.dota2` | `dota2_inventory` (7-day-cooldown classification), `dota2_trades` (Dota-scoped offer listing), `dota2_send_trade` (gated `trade.enabled`, one offer per call, 100-item cap); confirmations ride the game-agnostic mobile-authenticator actions |
 | TF2 | read-only schema digest (`IEconItems_440`) | ✅ shipped via `vapor.game-data` | same `econ_item_schema` action, appid 440 |
 | any title | market watch / price alerts | ✅ `vapor.market-watch` | economy-wide, not title-specific |
 

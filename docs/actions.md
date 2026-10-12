@@ -1,6 +1,6 @@
 # Actions catalog
 
-Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **62 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data, 3 from the CS2/CSGO plugin and 6 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
+Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **65 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data, 3 from the CS2/CSGO plugin, 3 from the Dota 2 plugin and 6 agent host actions — with their payload keys and output dictionaries, as read from the implementation.
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
@@ -423,6 +423,25 @@ Records one consumption entry (cases + keys + awards) into the plugin's ledger. 
 Payload: `caseId` string **required** (must exist in the plugin's catalog); `count` integer optional default `1` (clamped to 1..100); `keys` integer optional (defaults to `count` — one key per case — clamped to 1..100); `awards` string array optional (the awards the operator reports receiving, echoed into the entry).
 Output: `mode` (`"ledger"`), `caseId`, `cases`, `keys`, `awards`, `ledger` `{ entries, cases, keys }` (totals after the record). Classified `NonIdempotent`: each call appends one ledger line. The ledger keeps the most recent 1000 entries in memory and appends every entry as one JSON line to `ledger.path` when configured (archive I/O errors are swallowed by design).
 
+## Dota 2 plugin (`vapor.dota2`, `src/Vapor.Plugins.Dota2/Dota2Plugin.cs`)
+
+Three actions that scope the game-agnostic trade foundations (trade offers, inventory pagination, rate limiting) to Dota 2 (app `570`, context `2`). The plugin is actions-only — plugin web routes carry no bot session, so there is no plugin web API; the Mobile Authenticator plugin's confirmation actions cover Dota 2 trade confirmations unchanged. Strict payload parsing: unparsable entries and foreign app ids are errors, never silent drops. **Gated** sending, default **off**: `trade.enabled` (or `VAPOR_DOTA2_TRADE_ENABLED`) unlocks `dota2_send_trade`; the read actions are ungated. Ownership validation runs against the live Dota 2 inventory and names Steam's 7-day market trade cooldown in every rejection. Crafting, battle-pass automation and in-match automation are documented non-goals. Per-plugin boundary: [game-plugins.md](game-plugins.md).
+
+### `dota2_inventory` — `src/Vapor.Plugins.Dota2/Dota2InventoryAction.cs` (`Dota2InventoryAction`) (login: yes, timeout: 60s, safety: ReadOnly)
+Pages the Dota 2 inventory through the shared paginator (app `570`, context `2`) and classifies it into three buckets: ready to trade, under Steam's 7-day market trade cooldown (`TradabilityDate` in the future — the unlock time is listed per item), and locked (`Tradable=false` with no future unlock time reported — gifted or event-locked items Steam never marks tradable).
+Payload: `steam_id` string optional — defaults to the session's own (from its web cookies; fails with explicit guidance when no web session exists or the cookies carry no SteamID).
+Output: `mode` (`"readonly"`), `steam_id`, `app_id`, `context_id`, `total_count`, `ready_count`, `cooldown_count`, `locked_count`, `checked_at`, `cooldown_items[]` `{ asset_id, name, cooldown_until }` and `locked_items[]` `{ asset_id, name }` — both lists cap at 50 entries while the counts stay honest totals.
+
+### `dota2_trades` — `src/Vapor.Plugins.Dota2/Dota2TradesAction.cs` (`Dota2TradesAction`) (login: yes, timeout: 30s, safety: ReadOnly)
+Lists the session account's trade offers and keeps the Dota 2 ones in focus. By default only offers actually touching an app-`570` asset are listed (with `dota` counts for both directions); `include_all=true` keeps foreign offers visible, flagged `dota_involved=false`.
+Payload: `active_only` bool optional default `true` (passed through to the Steam transport); `include_all` bool optional default `false`.
+Output: `mode` (`"readonly"`), `app_id`, `dota_only`, `active_only`, `received` / `sent` — each `{ total, dota, offers[] }` with `offers[]` `{ trade_offer_id, partner_steam_id, state, is_our_offer, message (null when none), time_created, time_expires (null when none), dota_involved, items_to_give[] / items_to_receive[] { asset_id, app_id, context_id, amount } }`.
+
+### `dota2_send_trade` — `src/Vapor.Plugins.Dota2/Dota2SendTradeAction.cs` (`Dota2SendTradeAction`) (login: yes, timeout: 60s, safety: NonIdempotent)
+Sends one Dota 2 trade offer (items to give, receive, or both). **Refuses to run while `trade.enabled` is off** (the default) with guidance on the config key and its environment override. The partner comes from `trade_url` (parsed via the shared trade-URL rules; the token is extracted automatically) or `partner_steam_id`. Before sending, the give side is validated against the live inventory: items must be owned app-`570` items with sufficient stack amounts, and anything under Steam's 7-day market trade cooldown (or not tradable at all) fails the call with the unlock time named — the error arrives before any offer is created.
+Payload: `trade_url` string or `partner_steam_id` string — one is required (`trade_url` wins when both are present; its token fills in when no explicit `token` is given); `items_to_give` / `items_to_receive` arrays of `{ asset_id, amount? (default 1), app_id? (must be 570), context_id? (must be 2) }` — at least one item across both lists, at most 100 per offer (batch or automated trading is a non-goal — repeat the call for more offers); `token` string optional (trade-offer token when `partner_steam_id` is used); `message` string optional.
+Output: `mode` (`"trade"`), `app_id`, `trade_offer_id` (null when Steam returns none), `partner_steam_id`, `requires_mobile_confirmation`, `ownership_verified` (true when the give side was validated against the live inventory), `items_to_give`, `items_to_receive`. Classified `NonIdempotent`: each call creates a new offer — a dispatch retry would double the offer, so retries are the operator's responsibility; the shared per-account rate limiter gates the send when the host provides one.
+
 ## Game Data plugin (`vapor.game-data`, `src/Vapor.Plugins.GameData/GameDataPlugin.cs`)
 
 Four read-only actions over the official Steam Web API (`api.steampowered.com`, key-authed GETs). The API key lives **agent-side** in the plugin configuration (`webapi.key`) or the `VAPOR_GAME_DATA_WEBAPI_KEY` environment variable — the control plane never sees it — and a missing key fails every action with explicit guidance instead of faking data. Every action catches transport (`HttpRequestException`) and parse (`JsonException`) failures into failed results with the operation name. Projections are compact digests, not raw payloads. Per-title plugin boundaries: [game-plugins.md](game-plugins.md).
@@ -492,9 +511,10 @@ Output: `exitCode` (null when killed), `timedOut` (bool), `stdout` / `stderr` (e
 | Mobile Authenticator plugin (`vapor.mobile-authenticator`) | 9 |
 | Market Watch plugin (`vapor.market-watch`) | 3 |
 | CS2/CSGO plugin (`vapor.csgo`) | 3 |
+| Dota 2 plugin (`vapor.dota2`) | 3 |
 | Monitoring plugin (`vapor.monitoring`) | 1 |
 | Game Data plugin (`vapor.game-data`) | 4 |
 | Agent host (`Vapor.Agent/HostActions/`) | 6 |
-| **Total** | **62** |
+| **Total** | **65** |
 
-The counts are the classified (mirrored) actions. All three CS2/CSGO plugin actions are classified; `case_open` carries `NonIdempotent` because its gated real path burns one crate + one key per call, while its simulation path stays a local dry-run.
+The counts are the classified (mirrored) actions. All three CS2/CSGO plugin actions are classified; `case_open` carries `NonIdempotent` because its gated real path burns one crate + one key per call, while its simulation path stays a local dry-run. All three Dota 2 plugin actions are classified; `dota2_send_trade` carries `NonIdempotent` because each call creates a new offer (a retry would double it), while its gate-off default refuses before touching anything.

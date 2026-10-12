@@ -519,7 +519,7 @@ would make the store refuse its own output.
 
 ## Testing
 
-The repository runs 3,925 tests across 14 test projects (2026-10-12
+The repository runs 4,006 tests across 15 test projects (2026-10-12
 measured), covering unit, integration, contract and performance layers, and
 the coverage gate requires 100% line and branch coverage on every CI run —
 `scripts/coverage-summary.py --min 100 --min-branch 100` is the referee.

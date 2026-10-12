@@ -85,6 +85,14 @@ public static class ActionSemantics
 			["case_open"] = ActionSafety.NonIdempotent,
 			["case_consume"] = ActionSafety.NonIdempotent,
 
+			// Dota 2 plugin (3). send_trade is NonIdempotent because it moves
+			// items between Steam accounts; with the 'trade.enabled' gate off
+			// (default) it refuses before touching anything, but the
+			// classification must match the worst case the action can take.
+			["dota2_inventory"] = ActionSafety.ReadOnly,
+			["dota2_trades"] = ActionSafety.ReadOnly,
+			["dota2_send_trade"] = ActionSafety.NonIdempotent,
+
 			// Monitoring plugin (1).
 			["get_metrics"] = ActionSafety.ReadOnly,
 
