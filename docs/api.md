@@ -447,7 +447,7 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
 Job records: `Job = { id, action, region?, targets: string[], meta?: {string:string}, status, createdAt, updatedAt, schedule?, nextRunAt? }` (status: `queued|running|scheduled|finished|failed|canceled`);
 `JobTask = { id, jobId, target, action, region?, payload?, status, attempt, createdAt, updatedAt, error?, output? }` (task status: `queued|running|finished|failed|canceled`);
 `JobWithTasks = { job, tasks: [JobTask] }`;
-`JobSchedule = { intervalSeconds: int (default 0), cron?: string, missed: "skip"|"runOnce" (default "skip"), overlap: "skip"|"allow" (default "allow") }` — either `intervalSeconds` or `cron` (5-field, UTC) must be set; cron wins when both given.
+`JobSchedule = { intervalSeconds: int (default 0), cron?: string, missed: "skip"|"runOnce" (default "skip"), overlap: "skip"|"allow" (default "allow") }` — exactly one of `intervalSeconds` (≥ 5) or `cron` (5-field, UTC) must be set; both → 400 `schedule accepts intervalSeconds or cron, not both`, neither → 400 `schedule requires intervalSeconds > 0 or a cron expression`.
 
 #### `POST /v1/jobs`
 - Purpose: create a job (dispatched by the scheduler to a capable agent in the job's region; a job with a `schedule` becomes a recurring template).
@@ -745,7 +745,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 Ordered orchestration over the script repository: a flow is a list of steps, each pairing one stored script with one target agent and a failure policy. A run walks the steps in order on the control plane, dispatching each script via the `script_exec` host action and persisting per-step status.
 
-`ScriptFlowRecord = { id, name, description, steps, createdAtMs, updatedAtMs }` with `steps: [ { scriptId, agentId, onFailure } ]` (`onFailure`: `"stop"` halts the run on that step's failure, `"continue"` keeps walking; default `"stop"`). `ScriptFlowRunRecord = { id, flowId, flowName, status, steps, startedAtMs, finishedAtMs? }`; run status is `completed` (every step succeeded), `completed_with_failures` (continued past failures), `failed` (halted by a stop-policy failure) or `pending` (a step job never resolved inside the wait window — its job stays pollable via the jobs surface). Each run step is `{ index, scriptId, agentId, status, jobId?, error?, output? }` with step status `succeeded`, `failed`, `pending` or `skipped` (not attempted because the run halted before it). Runs share the script repository database; deleting a flow keeps its runs as history.
+`ScriptFlowRecord = { id, name, description, steps, createdAtMs, updatedAtMs, schedule?, nextRunAtMs? }` with `steps: [ { scriptId, agentId, onFailure } ]` (`onFailure`: `"stop"` halts the run on that step's failure, `"continue"` keeps walking; default `"stop"`). `schedule` is the optional recurring plan — the same `JobSchedule` shape the scheduled job templates use (§4.5); when set, the recurring flow scheduler fires the flow per plan with `nextRunAtMs` as its due cursor (runs execute under audit actor `scheduler`, and the missed/overlap policies behave exactly like the recurring job scheduler's). Omitting the schedule means the flow only runs through the manual run route; both fields are omitted from JSON while absent. `ScriptFlowRunRecord = { id, flowId, flowName, status, steps, startedAtMs, finishedAtMs? }`; run status is `completed` (every step succeeded), `completed_with_failures` (continued past failures), `failed` (halted by a stop-policy failure) or `pending` (a step job never resolved inside the wait window — its job stays pollable via the jobs surface). Each run step is `{ index, scriptId, agentId, status, jobId?, error?, output? }` with step status `succeeded`, `failed`, `pending` or `skipped` (not attempted because the run halted before it). Runs share the script repository database; deleting a flow keeps its runs as history.
 
 #### `GET /v1/script-flows`
 - Purpose: list the script flows (ordered by name).
@@ -764,15 +764,16 @@ Ordered orchestration over the script repository: a flow is a list of steps, eac
   - `name` — string, **required non-blank** (else 400 `name is required`)
   - `description` — string, optional (default `""`)
   - `steps` — array, **required with 1–50 entries** (else 400 `at least one step is required` / `a flow supports at most 50 steps`); each entry needs a non-blank `scriptId` and `agentId` (else 400 `every step needs a scriptId` / `every step needs an agentId`), optional `onFailure` trimmed and lowercased (`"stop"` default; anything else → 400 `onFailure must be 'stop' or 'continue'`)
+  - `schedule` — `JobSchedule`, optional; invalid cadence → 400 with the `ScheduleClock.Validate` message, and a cron that can never match again → 400 `schedule cron never matches again` (an armed flow whose cron is dead could never fire). The first trigger point is computed at write time and returned as `nextRunAtMs`.
 - Rule: shapes are validated at write time; step prerequisites (script exists, agent connected) are checked when a run starts.
-- 201: `ScriptFlowRecord`, `Location: /v1/script-flows/{id}`. Errors: 400, 401. Audit: `flow_created` (`flowId`, `name`, `steps`).
+- 201: `ScriptFlowRecord`, `Location: /v1/script-flows/{id}`. Errors: 400, 401. Audit: `flow_created` (`flowId`, `name`, `steps`, `scheduled`).
 
 #### `PUT /v1/script-flows/{id}`
 - Purpose: replace a flow (full update; the created timestamp is preserved).
 - Auth: admin.
 - Body (`UpsertFlowRequest`): same field rules as `POST /v1/script-flows`.
-- Rule: unknown id → 404 (checked before validation).
-- 200: `ScriptFlowRecord`. Errors: 400, 404, 401. Audit: `flow_updated` (`flowId`, `name`, `steps`).
+- Rule: unknown id → 404 (checked before validation). PUT replaces the whole definition including the schedule: including `schedule` re-arms the cursor from now; leaving it out disarms the flow back to manual-only (the response then omits both schedule fields).
+- 200: `ScriptFlowRecord`. Errors: 400, 404, 401. Audit: `flow_updated` (`flowId`, `name`, `steps`, `scheduled`).
 
 #### `DELETE /v1/script-flows/{id}`
 - Purpose: delete a flow definition (past runs are kept).

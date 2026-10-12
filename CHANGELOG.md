@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Scheduled script flows (40.12-4): script flows can now carry a recurring
+  plan — the same `JobSchedule` shape scheduled job templates use
+  (`intervalSeconds`/`cron` cadence with `missed` skip/runOnce and `overlap`
+  skip/allow policies). A new `RecurringFlowScheduler` background service
+  reuses the recurring job scheduler's machinery: it fires due flows through
+  the same `ScriptFlowRunner` the manual run route uses (runs land in the
+  audit log under actor `scheduler`), chain-advances the due cursor through
+  downtime gaps (`skip` drops them and stays on cadence, `runOnce` fires one
+  catch-up), defers while a previous run is still active (`skip`) or runs in
+  parallel (`allow`), refuses hot-looping on a dead trigger (a pre-flight
+  failure still advances the cursor and is audited as a skip), and disarms a
+  flow whose cron can never match again. `POST`/`PUT /v1/script-flows`
+  validate the plan at write time (a never-matching cron is a 400) and arm or
+  re-arm the cursor; a PUT without a schedule disarms back to manual-only.
+  The store gains the `schedule`/`next_run_at_ms` columns with in-place
+  migration — pre-schedule flows stay manual-only. Audit persistence stays
+  best-effort on the scheduled path too — a down audit store never fails a
+  tick or a run, while cancellation still propagates. 26 new tests;
+  repo total 4,006 → 4,032.
+
 - Dota 2 trading plugin shell (round 75): a new `vapor.dota2` plugin
   (`src/Vapor.Plugins.Dota2/`) scopes the game-agnostic trade foundations to
   Dota 2 (app 570, context 2) with three actions — `dota2_inventory` (read-only

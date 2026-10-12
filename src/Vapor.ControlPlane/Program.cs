@@ -50,6 +50,11 @@ builder.Services.AddSingleton<DesiredStateReconciler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DesiredStateReconciler>());
 builder.Services.AddSingleton<RecurringJobScheduler>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RecurringJobScheduler>());
+// Script flows share the script repository database; the runner backs both the
+// manual run endpoint and the recurring flow scheduler (actor "scheduler").
+builder.Services.AddSingleton<ScriptFlowRunner>();
+builder.Services.AddSingleton<RecurringFlowScheduler>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<RecurringFlowScheduler>());
 builder.Services.AddSingleton<SqliteCrawlStore>(sp => new SqliteCrawlStore(sp.GetRequiredService<Config>().CrawlDbPath));
 builder.Services.AddSingleton<SqliteScriptStore>(sp => new SqliteScriptStore(sp.GetRequiredService<Config>().ScriptDbPath));
 // Flows share the script repository database: both aggregates are the same
@@ -1567,7 +1572,9 @@ app.MapPost("/v1/script-flows", async Task<IResult> (HttpContext ctx, Config cfg
 			AgentId: s.AgentId.Trim(),
 			OnFailure: NormalizeFlowOnFailure(s.OnFailure))).ToList(),
 		CreatedAtMs: now.ToUnixTimeMilliseconds(),
-		UpdatedAtMs: now.ToUnixTimeMilliseconds());
+		UpdatedAtMs: now.ToUnixTimeMilliseconds(),
+		Schedule: request.Schedule,
+		NextRunAtMs: ArmFlowCursor(request.Schedule, now));
 	await flows.UpsertFlowAsync(flow, ctx.RequestAborted);
 	await WriteAuditLog(
 		auditLogger,
@@ -1578,7 +1585,8 @@ app.MapPost("/v1/script-flows", async Task<IResult> (HttpContext ctx, Config cfg
 		{
 			["flowId"] = flow.Id,
 			["name"] = flow.Name,
-			["steps"] = flow.Steps.Count
+			["steps"] = flow.Steps.Count,
+			["scheduled"] = request.Schedule is not null
 		});
 	return Results.Created($"/v1/script-flows/{flow.Id}", flow);
 })
@@ -1609,6 +1617,7 @@ app.MapPut("/v1/script-flows/{id}", async Task<IResult> (HttpContext ctx, Config
 
 	// Validation proved the step list non-empty; the compiler cannot see it.
 	List<UpsertFlowStepRequest> flowSteps = request.Steps!;
+	DateTimeOffset updatedNow = DateTimeOffset.UtcNow;
 	ScriptFlowRecord updated = existing with
 	{
 		Name = request.Name.Trim(),
@@ -1617,7 +1626,11 @@ app.MapPut("/v1/script-flows/{id}", async Task<IResult> (HttpContext ctx, Config
 			ScriptId: s.ScriptId.Trim(),
 			AgentId: s.AgentId.Trim(),
 			OnFailure: NormalizeFlowOnFailure(s.OnFailure))).ToList(),
-		UpdatedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+		UpdatedAtMs = updatedNow.ToUnixTimeMilliseconds(),
+		// PUT replaces the whole definition: a schedule re-arms from now, and
+		// leaving it out disarms (the flow falls back to manual-only).
+		Schedule = request.Schedule,
+		NextRunAtMs = ArmFlowCursor(request.Schedule, updatedNow)
 	};
 	await flows.UpsertFlowAsync(updated, ctx.RequestAborted);
 	await WriteAuditLog(
@@ -1629,7 +1642,8 @@ app.MapPut("/v1/script-flows/{id}", async Task<IResult> (HttpContext ctx, Config
 		{
 			["flowId"] = updated.Id,
 			["name"] = updated.Name,
-			["steps"] = updated.Steps.Count
+			["steps"] = updated.Steps.Count,
+			["scheduled"] = request.Schedule is not null
 		});
 	return Results.Ok(updated);
 })
@@ -1666,7 +1680,7 @@ app.MapDelete("/v1/script-flows/{id}", async Task<IResult> (HttpContext ctx, Con
 	.Produces<ErrorResponse>(404)
 	.Produces(401);
 
-app.MapPost("/v1/script-flows/{id}/run", async Task<IResult> (HttpContext ctx, Config cfg, IAuditStore audit, SqliteScriptStore scripts, SqliteFlowStore flows, AgentRegistry agents, IJobStore store, string id) =>
+app.MapPost("/v1/script-flows/{id}/run", async Task<IResult> (HttpContext ctx, Config cfg, SqliteFlowStore flows, ScriptFlowRunner runner, string id) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
 	{
@@ -1679,167 +1693,16 @@ app.MapPost("/v1/script-flows/{id}/run", async Task<IResult> (HttpContext ctx, C
 		return Results.NotFound(new ErrorResponse($"flow '{id}' does not exist"));
 	}
 
-	// Pre-flight every step before touching any machine: a run either starts
-	// with all prerequisites satisfied or does not start at all. Per step the
-	// script existence check precedes the agent connectivity check, mirroring
-	// the single-script execute route.
-	for (int i = 0; i < flow.Steps.Count; i++)
+	// The executor is the shared ScriptFlowRunner: the same walk backs the
+	// recurring flow scheduler (which passes its own actor). A pre-flight
+	// refusal surfaces here as the same 404 shape the inline version used.
+	FlowRunStart start = await runner.RunAsync(flow, GetAuditActor(ctx), ctx.RequestAborted);
+	if (start.Error is not null)
 	{
-		FlowStep step = flow.Steps[i];
-		if (await scripts.GetAsync(step.ScriptId, ctx.RequestAborted) is null)
-		{
-			return Results.NotFound(new ErrorResponse($"step {i} references script '{step.ScriptId}' which does not exist"));
-		}
-
-		if (agents.Get(step.AgentId) is null)
-		{
-			return Results.NotFound(new ErrorResponse($"step {i} targets agent '{step.AgentId}' which is not connected; connect it and retry"));
-		}
+		return Results.NotFound(new ErrorResponse(start.Error));
 	}
 
-	var started = new ScriptFlowRunRecord(
-		Id: Id.New(),
-		FlowId: flow.Id,
-		FlowName: flow.Name,
-		Status: "running",
-		Steps: flow.Steps.Select((s, i) => new FlowRunStep(i, s.ScriptId, s.AgentId, "pending")).ToList(),
-		StartedAtMs: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-	await flows.CreateRunAsync(started, ctx.RequestAborted);
-	await WriteAuditLog(
-		auditLogger,
-		audit,
-		ctx,
-		"flow_run_started",
-		details: new Dictionary<string, object?>
-		{
-			["flowId"] = flow.Id,
-			["flowName"] = flow.Name,
-			["runId"] = started.Id,
-			["steps"] = flow.Steps.Count
-		});
-
-	// The executor lives in the request: steps walk strictly in order, each
-	// riding the same bounded script_exec dispatch as the single-script
-	// execute route. Every step outcome is persisted (so a concurrent reader
-	// sees progress) and audited.
-	List<FlowRunStep> steps = started.Steps.Select(s => s with { }).ToList();
-	bool halt = false;       // a stop-policy failure ends the run
-	bool unresolved = false; // a step never resolved inside the wait window
-	bool anyFailed = false;
-	for (int i = 0; i < flow.Steps.Count; i++)
-	{
-		FlowStep step = flow.Steps[i];
-		if (halt || unresolved)
-		{
-			steps[i] = steps[i] with { Status = "skipped" };
-			continue;
-		}
-
-		ScriptRecord script = (await scripts.GetAsync(step.ScriptId, ctx.RequestAborted))!;
-		var payload = new Dictionary<string, object?>
-		{
-			["scriptId"] = script.Id,
-			["name"] = script.Name,
-			["language"] = script.Language,
-			["content"] = script.Content
-		};
-
-		TaskRunResult result = await AccountTaskRunner.DispatchHostActionAsync(
-			store,
-			"script_exec",
-			step.AgentId,
-			payload,
-			ctx.RequestAborted);
-
-		if (result.Status == JobTaskStatus.Queued)
-		{
-			// The step job stays pollable via the jobs surface; later steps
-			// must not run out of order, so the run ends unresolved.
-			steps[i] = new FlowRunStep(i, step.ScriptId, step.AgentId, "pending", result.JobId);
-			unresolved = true;
-			await WriteAuditLog(
-				auditLogger,
-				audit,
-				ctx,
-				"flow_step_pending",
-				jobId: result.JobId,
-				details: new Dictionary<string, object?>
-				{
-					["runId"] = started.Id,
-					["index"] = i,
-					["scriptId"] = step.ScriptId,
-					["agentId"] = step.AgentId
-				});
-		}
-		else if (result.Status == JobTaskStatus.Finished)
-		{
-			steps[i] = new FlowRunStep(i, step.ScriptId, step.AgentId, "succeeded", result.JobId, Output: result.Output);
-			await WriteAuditLog(
-				auditLogger,
-				audit,
-				ctx,
-				"flow_step_completed",
-				jobId: result.JobId,
-				details: new Dictionary<string, object?>
-				{
-					["runId"] = started.Id,
-					["index"] = i,
-					["scriptId"] = step.ScriptId,
-					["agentId"] = step.AgentId
-				});
-		}
-		else
-		{
-			steps[i] = new FlowRunStep(i, step.ScriptId, step.AgentId, "failed", result.JobId, result.Error ?? $"task ended as {result.Status}");
-			anyFailed = true;
-			await WriteAuditLog(
-				auditLogger,
-				audit,
-				ctx,
-				"flow_step_failed",
-				jobId: result.JobId,
-				details: new Dictionary<string, object?>
-				{
-					["runId"] = started.Id,
-					["index"] = i,
-					["scriptId"] = step.ScriptId,
-					["agentId"] = step.AgentId,
-					["error"] = steps[i].Error
-				});
-			if (step.OnFailure == FlowOnFailureStop)
-			{
-				halt = true;
-			}
-		}
-
-		await flows.UpdateRunAsync(started with { Steps = steps }, ctx.RequestAborted);
-	}
-
-	string status = unresolved ? "pending" : halt ? "failed" : anyFailed ? "completed_with_failures" : "completed";
-	ScriptFlowRunRecord finished = started with
-	{
-		Status = status,
-		Steps = steps,
-		FinishedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-	};
-	await flows.UpdateRunAsync(finished, ctx.RequestAborted);
-	await WriteAuditLog(
-		auditLogger,
-		audit,
-		ctx,
-		"flow_run_finished",
-		details: new Dictionary<string, object?>
-		{
-			["flowId"] = flow.Id,
-			["flowName"] = flow.Name,
-			["runId"] = started.Id,
-			["status"] = status,
-			["succeeded"] = steps.Count(s => s.Status == "succeeded"),
-			["failed"] = steps.Count(s => s.Status == "failed"),
-			["pending"] = steps.Count(s => s.Status == "pending"),
-			["skipped"] = steps.Count(s => s.Status == "skipped")
-		});
-	return Results.Ok(finished);
+	return Results.Ok(start.Run);
 })
 	.WithTags("Scripts")
 	.WithSummary("Run a script flow: walk the steps in order, dispatching each stored script to its target agent via script_exec; per-step status lands in the run record and the audit log")
@@ -4477,7 +4340,42 @@ static string? ValidateFlowRequest(UpsertFlowRequest request)
 		}
 	}
 
+	// Recurring plan uses the same cadence rules as scheduled job templates;
+	// a plan whose cron can never match again would sit armed-but-undead, so
+	// the cursor computation doubles as the last validation gate.
+	if (request.Schedule is not null)
+	{
+		try
+		{
+			ScheduleClock.Validate(request.Schedule);
+			if (ScheduleClock.NextRun(request.Schedule, DateTimeOffset.UtcNow) is null)
+			{
+				return "schedule cron never matches again";
+			}
+		}
+		catch (ArgumentException ex)
+		{
+			return ex.Message;
+		}
+	}
+
 	return null;
+}
+
+// First recurring trigger point for a flow schedule, or null when the flow
+// stays manual (no schedule) — the value stored as the scheduler's due cursor.
+// Validation runs in the same request and already proved a present schedule
+// always has a next point (never-matching crons are a 400), so the cursor
+// computation carries no null arm of its own.
+static long? ArmFlowCursor(JobSchedule? schedule, DateTimeOffset now)
+{
+	if (schedule is null)
+	{
+		return null;
+	}
+
+	DateTimeOffset? next = ScheduleClock.NextRun(schedule, now);
+	return next!.Value.ToUnixTimeMilliseconds();
 }
 
 // Failure policy is a lowercase tag; omitted or blank means "stop".
@@ -5169,10 +5067,15 @@ public sealed record ExecuteScriptRequest(string AgentId, int? TimeoutSeconds = 
 // Body for creating or replacing a script flow (ordered orchestration steps).
 public sealed record UpsertFlowStepRequest(string ScriptId, string AgentId, string? OnFailure = null);
 
+// Body for creating or replacing a script flow (ordered orchestration steps).
+// Schedule is the optional recurring plan — the same JobSchedule shape the
+// scheduled job templates use; omitting it keeps the flow manual-only (and a
+// PUT without a schedule disarms a previously scheduled flow).
 public sealed record UpsertFlowRequest(
 	string Name,
 	string? Description = null,
-	List<UpsertFlowStepRequest>? Steps = null
+	List<UpsertFlowStepRequest>? Steps = null,
+	JobSchedule? Schedule = null
 );
 
 public sealed record UpsertScriptRequest(

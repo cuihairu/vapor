@@ -404,6 +404,36 @@ public sealed class ScriptFlowApiTests
 	}
 
 	[Fact]
+	public async Task Flow_Run_FailureWithoutErrorText_FallsBackToStatusLine()
+	{
+		await using var factory = CreateFactory(removeHosted: true);
+		RegisterAgent(factory, "agent-exec");
+		using var client = CreateAdminClient(factory);
+		string scriptA = await CreateScript(client, "fails-silent");
+		string flowId = await CreateFlow(client, "silent-fail", steps: new object[]
+		{
+			new { scriptId = scriptA, agentId = "agent-exec" }
+		});
+
+		IJobStore store = factory.Services.GetRequiredService<IJobStore>();
+		using var cts = new CancellationTokenSource();
+		// The task fails without carrying an error message: the step falls back
+		// to a status-derived line instead of recording an empty error.
+		Task responder = Task.Run(() => RespondToScriptExecTasksAsync(
+			store,
+			index => (false, null, null),
+			cts.Token));
+
+		HttpResponseMessage response = await client.PostAsync($"/v1/script-flows/{flowId}/run", content: null);
+		cts.Cancel();
+
+		Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Equal("failed", doc.RootElement.GetProperty("status").GetString());
+		Assert.Equal("task ended as Failed", doc.RootElement.GetProperty("steps")[0].GetProperty("error").GetString());
+	}
+
+	[Fact]
 	public async Task Flow_Run_ContinuePolicy_CompletesWithFailures()
 	{
 		await using var factory = CreateFactory(removeHosted: true);
@@ -522,6 +552,113 @@ public sealed class ScriptFlowApiTests
 
 		using HttpResponseMessage unknownRun = await client.GetAsync("/v1/script-flows/runs/missing");
 		Assert.Equal(HttpStatusCode.NotFound, unknownRun.StatusCode);
+	}
+
+	[Fact]
+	public async Task Flow_Create_WithSchedule_ArmsTheCursor()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+
+		using HttpResponseMessage create = await client.PostAsJsonAsync(
+			"/v1/script-flows",
+			new
+			{
+				name = "每日巡检",
+				steps = new[] { new { scriptId = "s", agentId = "a" } },
+				schedule = new { cron = "0 3 * * *", missed = "runOnce", overlap = "allow" }
+			});
+		Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+		using var createdDoc = JsonDocument.Parse(await create.Content.ReadAsStringAsync());
+		string id = createdDoc.RootElement.GetProperty("id").GetString()!;
+
+		// The schedule rides back verbatim (camelCase policies) and the first
+		// trigger point is armed; the audit flag marks the flow as scheduled.
+		JsonElement schedule = createdDoc.RootElement.GetProperty("schedule");
+		Assert.Equal("0 3 * * *", schedule.GetProperty("cron").GetString());
+		Assert.Equal("runOnce", schedule.GetProperty("missed").GetString());
+		Assert.Equal("allow", schedule.GetProperty("overlap").GetString());
+		Assert.True(createdDoc.RootElement.GetProperty("nextRunAtMs").GetInt64() > 0);
+
+		using HttpResponseMessage get = await client.GetAsync($"/v1/script-flows/{id}");
+		using var getDoc = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+		Assert.Equal("0 3 * * *", getDoc.RootElement.GetProperty("schedule").GetProperty("cron").GetString());
+		Assert.Equal(createdDoc.RootElement.GetProperty("nextRunAtMs").GetInt64(), getDoc.RootElement.GetProperty("nextRunAtMs").GetInt64());
+	}
+
+	[Fact]
+	public async Task Flow_Create_ScheduleValidationArms()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+
+		async Task<string?> PostWithScheduleAsync(object schedule)
+		{
+			using HttpResponseMessage response = await client.PostAsJsonAsync(
+				"/v1/script-flows",
+				new { name = "f", steps = new[] { new { scriptId = "s", agentId = "a" } }, schedule });
+			Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+			using JsonDocument doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+			return doc.RootElement.GetProperty("error").GetString();
+		}
+
+		// Neither cadence at all (the JobSchedule validation message).
+		Assert.Equal("schedule requires intervalSeconds > 0 or a cron expression", await PostWithScheduleAsync(new { }));
+		// Both cadences at once.
+		Assert.Equal("schedule accepts intervalSeconds or cron, not both", await PostWithScheduleAsync(new { intervalSeconds = 60, cron = "* * * * *" }));
+		// Below the interval floor.
+		Assert.Equal("schedule intervalSeconds must be at least 5", await PostWithScheduleAsync(new { intervalSeconds = 1 }));
+		// Malformed expression (prefix ours; wording comes from the Cronos parser).
+		Assert.StartsWith("invalid cron expression:", await PostWithScheduleAsync(new { cron = "not a cron" }));
+		// An expression that can never match: arming it would leave a dead cursor.
+		Assert.Equal("schedule cron never matches again", await PostWithScheduleAsync(new { cron = "0 0 30 2 *" }));
+	}
+
+	[Fact]
+	public async Task Flow_Put_ReplacesTheSchedule_AndDisarmsWithoutOne()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+		string flowId = await CreateFlow(client, "scheduled", steps: new[] { new { scriptId = "s", agentId = "a" } });
+
+		// A PUT with a schedule re-arms the cursor from now.
+		using HttpResponseMessage rearm = await client.PutAsJsonAsync(
+			$"/v1/script-flows/{flowId}",
+			new { name = "scheduled", steps = new[] { new { scriptId = "s", agentId = "a" } }, schedule = new { intervalSeconds = 120 } });
+		Assert.Equal(HttpStatusCode.OK, rearm.StatusCode);
+		using var rearmDoc = JsonDocument.Parse(await rearm.Content.ReadAsStringAsync());
+		Assert.Equal(120, rearmDoc.RootElement.GetProperty("schedule").GetProperty("intervalSeconds").GetInt32());
+		Assert.True(rearmDoc.RootElement.GetProperty("nextRunAtMs").GetInt64() > 0);
+
+		// A PUT that leaves the schedule out disarms: the flow goes back to
+		// manual-only and the two fields disappear from the JSON.
+		using HttpResponseMessage disarm = await client.PutAsJsonAsync(
+			$"/v1/script-flows/{flowId}",
+			new { name = "scheduled", steps = new[] { new { scriptId = "s", agentId = "a" } } });
+		Assert.Equal(HttpStatusCode.OK, disarm.StatusCode);
+		using var disarmDoc = JsonDocument.Parse(await disarm.Content.ReadAsStringAsync());
+		Assert.False(disarmDoc.RootElement.TryGetProperty("schedule", out _));
+		Assert.False(disarmDoc.RootElement.TryGetProperty("nextRunAtMs", out _));
+	}
+
+	[Fact]
+	public async Task Flow_Put_ScheduleValidationArms()
+	{
+		await using var factory = CreateFactory();
+		using var client = CreateAdminClient(factory);
+		string flowId = await CreateFlow(client, "scheduled", steps: new[] { new { scriptId = "s", agentId = "a" } });
+
+		using HttpResponseMessage response = await client.PutAsJsonAsync(
+			$"/v1/script-flows/{flowId}",
+			new { name = "scheduled", steps = new[] { new { scriptId = "s", agentId = "a" } }, schedule = new { cron = "0 0 30 2 *" } });
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+		Assert.Equal("schedule cron never matches again", doc.RootElement.GetProperty("error").GetString());
+
+		// The failed PUT leaves the flow untouched.
+		using HttpResponseMessage get = await client.GetAsync($"/v1/script-flows/{flowId}");
+		using var getDoc = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+		Assert.False(getDoc.RootElement.TryGetProperty("schedule", out _));
 	}
 
 	/// <summary>Plays the agent side: claims every queued script_exec task in arrival order and reports the scripted outcome.</summary>
