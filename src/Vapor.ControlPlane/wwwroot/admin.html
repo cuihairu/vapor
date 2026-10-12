@@ -2137,7 +2137,7 @@
                     <div class="row-head">
                         <div class="title-group">
                             <div class="strong">${escapeHtml(entry.name)} <span class="tiny mono">${escapeHtml(entry.id)}</span></div>
-                            <div class="tiny mono">v${escapeHtml(entry.version)} · api ${escapeHtml(entry.apiVersion)}</div>
+                            <div class="tiny mono">v${escapeHtml(entry.version)} · api ${escapeHtml(entry.apiVersion)}${entry.publisher ? ` · pub ${escapeHtml(entry.publisher)}` : ""}</div>
                         </div>
                         <div style="display: flex; gap: 6px; align-items: center;">
                             <span class="badge ${trustBadgeClass(entry.trust)}">${escapeHtml(entry.trust || "unknown")}</span>
@@ -2199,11 +2199,14 @@
                             : (update && update.status === "notComparable"
                                 ? ' <span class="badge pending">版本不可比</span>'
                                 : "");
+                        const publisherBadge = update && update.publisherChanged
+                            ? ' <span class="badge pending" title="索引候选声明的发布者与已装清单声明不一致(声明值,非签名校验)">pub 变更</span>'
+                            : "";
                         return `
                         <div class="row-head">
                             <div class="title-group">
-                                <div class="strong">${escapeHtml(plugin.name || plugin.id)} <span class="tiny mono">v${escapeHtml(plugin.version)}</span>${updateBadge}</div>
-                                <div class="summary-row">${(plugin.resources || []).length ? `<span class="agent-chip" title="运行期资源声明(仅登记,不拦截)">res:${(plugin.resources || []).map((r) => escapeHtml(r)).join(",")}</span>` : ""}${(plugin.actions || []).map((a) => `<span class="agent-chip">${escapeHtml(a)}</span>`).join("")}</div>
+                                <div class="strong">${escapeHtml(plugin.name || plugin.id)} <span class="tiny mono">v${escapeHtml(plugin.version)}</span>${updateBadge}${publisherBadge}</div>
+                                <div class="summary-row">${plugin.publisher ? `<span class="agent-chip" title="清单声明发布者(安装对账+更新漂移检测,声明值非签名)">pub:${escapeHtml(plugin.publisher)}</span>` : ""}${(plugin.resources || []).length ? `<span class="agent-chip" title="运行期资源声明(仅登记,不拦截)">res:${(plugin.resources || []).map((r) => escapeHtml(r)).join(",")}</span>` : ""}${(plugin.actions || []).map((a) => `<span class="agent-chip">${escapeHtml(a)}</span>`).join("")}</div>
                             </div>
                             <div style="display: flex; gap: 6px; align-items: center;">
                                 <span class="badge ${trustBadgeClass(plugin.trust)}">${escapeHtml(plugin.trust || "unknown")}</span>

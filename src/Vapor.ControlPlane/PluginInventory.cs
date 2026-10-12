@@ -72,7 +72,8 @@ public sealed class PluginInventory
 				GetString("trust"),
 				permissions,
 				actions,
-				resources));
+				resources,
+				GetString("publisher")));
 		}
 
 		List<PluginUpdateStatus>? updates = null;
@@ -89,7 +90,12 @@ public sealed class PluginInventory
 						GetField("id") ?? string.Empty,
 						GetField("catalogVersion") ?? string.Empty,
 						GetField("installedVersion"),
-						GetField("status") ?? string.Empty);
+						GetField("status") ?? string.Empty,
+						// Only the literal JSON true counts: the agent emits the key when a
+						// declared publisher would change, so anything else stays unparsed.
+						item.TryGetProperty("publisherChanged", out var changed) && changed.ValueKind == JsonValueKind.True
+							? true
+							: null);
 				})
 				.Where(u => u.Id.Length > 0)
 				.OrderBy(u => u.Id, StringComparer.Ordinal)
@@ -114,13 +120,16 @@ public sealed record AgentPlugins(
 
 /// <summary>
 /// One plugin_update_check candidate verdict as reported by an agent:
-/// updateAvailable / upToDate / notComparable / notInstalled.
+/// updateAvailable / upToDate / notComparable / notInstalled, plus the
+/// declared-publisher drift flag when an update would change the publisher
+/// both sides declare.
 /// </summary>
 public sealed record PluginUpdateStatus(
 	string Id,
 	string CatalogVersion,
 	string? InstalledVersion,
-	string Status);
+	string Status,
+	bool? PublisherChanged = null);
 
 /// <summary>A plugin installed on an agent, as reported by the agent itself.</summary>
 public sealed record PluginInventoryEntry(
@@ -131,4 +140,5 @@ public sealed record PluginInventoryEntry(
 	string? Trust,
 	IReadOnlyList<string> Permissions,
 	IReadOnlyList<string> Actions,
-	IReadOnlyList<string> Resources);
+	IReadOnlyList<string> Resources,
+	string? Publisher = null);

@@ -40,7 +40,7 @@ public sealed class PluginPackageInstaller
 	/// <summary>
 	/// Downloads and installs the package. Fails (returns an error, no state change)
 	/// on download errors, size overruns, checksum mismatches, malformed manifests,
-	/// id/version mismatches with the instruction, trust/permissions/apiVersion
+	/// id/version mismatches with the instruction, trust/permissions/apiVersion/publisher
 	/// divergences from the catalog's declared expectations, or load failures.
 	/// </summary>
 	public async Task<PluginInstallResult> InstallAsync(
@@ -52,7 +52,8 @@ public sealed class PluginPackageInstaller
 		CancellationToken cancellationToken,
 		string? expectedTrust = null,
 		IReadOnlyList<string>? expectedPermissions = null,
-		string? expectedApiVersion = null)
+		string? expectedApiVersion = null,
+		string? expectedPublisher = null)
 	{
 		if (!Uri.TryCreate(url, UriKind.Absolute, out var packageUri) ||
 			(packageUri.Scheme != Uri.UriSchemeHttps && packageUri.Scheme != Uri.UriSchemeHttp && packageUri.Scheme != Uri.UriSchemeFile))
@@ -143,6 +144,15 @@ public sealed class PluginPackageInstaller
 			{
 				divergences.Add(
 					$"permissions [{string.Join(", ", manifest.Permissions ?? [])}] != catalog [{string.Join(", ", wantedPermissions)}]");
+			}
+
+			// The declared publisher is reconciled like every other catalog claim:
+			// it stays a statement the index and the manifest make about themselves,
+			// so a divergence is an integrity signal, not a cryptographic verdict.
+			if (expectedPublisher is { } wantedPublisher &&
+				!string.Equals(wantedPublisher, manifest.Publisher, StringComparison.OrdinalIgnoreCase))
+			{
+				divergences.Add($"publisher '{manifest.Publisher ?? "<none>"}' != catalog '{wantedPublisher}'");
 			}
 
 			if (divergences.Count > 0)
@@ -372,7 +382,7 @@ public sealed record PluginInstallResult(
 /// <summary>Shared JSON helpers for the plugin host actions' output payloads.</summary>
 public static class PluginOutput
 {
-	/// <summary>Serializes the currently-loaded plugins (id/version/trust/permissions/resources/actions).</summary>
+	/// <summary>Serializes the currently-loaded plugins (id/version/publisher/trust/permissions/resources/actions).</summary>
 	public static IReadOnlyList<object> ListLoaded(PluginManager? manager)
 	{
 		if (manager is null)
@@ -387,6 +397,7 @@ public static class PluginOutput
 				["id"] = p.Descriptor.Manifest.Id,
 				["name"] = p.Descriptor.Manifest.Name,
 				["version"] = p.Descriptor.Manifest.Version,
+				["publisher"] = p.Descriptor.Manifest.Publisher,
 				["apiVersion"] = p.Descriptor.Manifest.ApiVersion,
 				["trust"] = p.Descriptor.Trust.ToString().ToLowerInvariant(),
 				["permissions"] = p.GrantedPermissions,

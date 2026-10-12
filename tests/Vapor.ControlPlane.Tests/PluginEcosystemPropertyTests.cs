@@ -139,6 +139,11 @@ public sealed class PluginEcosystemPropertyTests
 					writer.WriteString("trust", entry.Trust);
 				}
 
+				if (entry.Publisher is not null)
+				{
+					writer.WriteString("publisher", entry.Publisher);
+				}
+
 				if (entry.Permissions.Count > 0)
 				{
 					writer.WritePropertyName("permissions");
@@ -170,6 +175,7 @@ public sealed class PluginEcosystemPropertyTests
 		&& a.Sha256 == b.Sha256
 		&& a.Description == b.Description
 		&& a.Trust == b.Trust
+		&& a.Publisher == b.Publisher
 		&& a.Permissions.SequenceEqual(b.Permissions);
 
 	/// <summary>Co-indexes into a parallel array, tolerating empty and null-bearing samples.</summary>
@@ -183,6 +189,7 @@ public sealed class PluginEcosystemPropertyTests
 	public Property ParseIndex_PreservesFields_NormalizesSha_AndSortsByIdOrdinal(
 		bool withDescription,
 		bool withTrust,
+		bool withPublisher,
 		string?[] ids,
 		string?[] names,
 		string?[] versions,
@@ -191,6 +198,7 @@ public sealed class PluginEcosystemPropertyTests
 		string?[] shas,
 		string?[] descriptions,
 		string?[] trusts,
+		string?[] publishers,
 		string?[][] permissions)
 	{
 		// FsCheck cannot synthesize IReadOnlyList<string>, so entries are built
@@ -204,6 +212,7 @@ public sealed class PluginEcosystemPropertyTests
 			Sha256: At(shas, i),
 			Description: withDescription ? At(descriptions, i) : null,
 			Trust: withTrust ? At(trusts, i) : null,
+			Publisher: withPublisher ? At(publishers, i) : null,
 			Permissions: AtList(permissions, i)))];
 
 		// Expected side: what the parser contract says each field becomes —

@@ -7,10 +7,10 @@ namespace Vapor.Agent;
 
 /// <summary>
 /// Host action "plugin_update_check": compares the catalog candidates carried in
-/// the payload ({id, version} pairs staged from the plugin index) against the
-/// plugins actually loaded on this agent and reports a verdict per candidate.
-/// Read-only by design — nothing is downloaded or replaced here; the operator
-/// decides what (and where) to install with plugin_install.
+/// the payload ({id, version, publisher?} triples staged from the plugin index)
+/// against the plugins actually loaded on this agent and reports a verdict per
+/// candidate. Read-only by design — nothing is downloaded or replaced here; the
+/// operator decides what (and where) to install with plugin_install.
 /// </summary>
 public sealed class PluginUpdateCheckAction : IHostAction
 {
@@ -44,20 +44,36 @@ public sealed class PluginUpdateCheckAction : IHostAction
 		// duplicated id across ALCs is a pre-existing anomaly, not a version race.
 		var installed = _manager.LoadedPlugins
 			.GroupBy(p => p.Descriptor.Manifest.Id, StringComparer.OrdinalIgnoreCase)
-			.ToDictionary(g => g.Key, g => g.First().Descriptor.Manifest.Version, StringComparer.OrdinalIgnoreCase);
+			.ToDictionary(
+				g => g.Key,
+				g => (Version: g.First().Descriptor.Manifest.Version, Publisher: g.First().Descriptor.Manifest.Publisher),
+				StringComparer.OrdinalIgnoreCase);
 
 		var updates = ReadCandidates(payload)
 			.OrderBy(c => c.Id, StringComparer.Ordinal)
 			.Select(c =>
 			{
-				string? current = installed.TryGetValue(c.Id, out var version) ? version : null;
-				return (object)new Dictionary<string, object?>
+				(string? Version, string? Publisher) current = installed.TryGetValue(c.Id, out var found)
+					? found
+					: (null, null);
+				var verdict = new Dictionary<string, object?>
 				{
 					["id"] = c.Id,
 					["catalogVersion"] = c.Version,
-					["installedVersion"] = current,
-					["status"] = Classify(current, c.Version)
+					["installedVersion"] = current.Version,
+					["status"] = Classify(current.Version, c.Version)
 				};
+				// Declared-publisher drift: both sides must state a publisher for the
+				// comparison to mean anything; an undeclared side stays silent rather
+				// than crying wolf over an absent claim.
+				if (current.Publisher is { } installedPublisher &&
+					c.Publisher is { } candidatePublisher &&
+					!string.Equals(installedPublisher, candidatePublisher, StringComparison.OrdinalIgnoreCase))
+				{
+					verdict["publisherChanged"] = true;
+				}
+
+				return (object)verdict;
 			})
 			.ToList();
 
@@ -95,7 +111,7 @@ public sealed class PluginUpdateCheckAction : IHostAction
 		return catalog > installed ? "updateAvailable" : "upToDate";
 	}
 
-	private static IReadOnlyList<(string Id, string Version)> ReadCandidates(IReadOnlyDictionary<string, object?> payload)
+	private static IReadOnlyList<(string Id, string Version, string? Publisher)> ReadCandidates(IReadOnlyDictionary<string, object?> payload)
 	{
 		if (!payload.TryGetValue("candidates", out var raw))
 		{
@@ -108,9 +124,10 @@ public sealed class PluginUpdateCheckAction : IHostAction
 				.Where(item => item.ValueKind == JsonValueKind.Object)
 				.Select(item => (
 					Id: item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetString() : null,
-					Version: item.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.String ? version.GetString() : null))
+					Version: item.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.String ? version.GetString() : null,
+					Publisher: item.TryGetProperty("publisher", out var publisher) && publisher.ValueKind == JsonValueKind.String ? publisher.GetString() : null))
 				.Where(c => !string.IsNullOrWhiteSpace(c.Id))
-				.Select(c => (c.Id!, c.Version ?? string.Empty))
+				.Select(c => (c.Id!, c.Version ?? string.Empty, c.Publisher))
 				.ToList();
 		}
 
@@ -119,9 +136,10 @@ public sealed class PluginUpdateCheckAction : IHostAction
 			return items.OfType<IReadOnlyDictionary<string, object?>>()
 				.Select(item => (
 					Id: item.TryGetValue("id", out var id) ? id as string : null,
-					Version: item.TryGetValue("version", out var version) ? version as string : null))
+					Version: item.TryGetValue("version", out var version) ? version as string : null,
+					Publisher: item.TryGetValue("publisher", out var publisher) ? publisher as string : null))
 				.Where(c => !string.IsNullOrWhiteSpace(c.Id))
-				.Select(c => (c.Id!, c.Version ?? string.Empty))
+				.Select(c => (c.Id!, c.Version ?? string.Empty, c.Publisher))
 				.ToList();
 		}
 

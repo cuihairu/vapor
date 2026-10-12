@@ -424,7 +424,7 @@ public sealed class PluginPackageInstallerTests
 		return (new Uri(packagePath).AbsoluteUri, PluginTestPackages.Sha256Hex(File.ReadAllBytes(packagePath)));
 	}
 
-	internal static string ManifestJson(string? trust, string apiVersion, string[]? permissions)
+	internal static string ManifestJson(string? trust, string apiVersion, string[]? permissions, string? publisher = null)
 	{
 		var fields = new Dictionary<string, object?>
 		{
@@ -435,6 +435,11 @@ public sealed class PluginPackageInstallerTests
 			["entryAssembly"] = "Vapor.Plugins.TestPlugin.dll",
 			["entryType"] = "Vapor.Plugins.TestPlugin.TestPlugin"
 		};
+		if (publisher is { } publisherValue)
+		{
+			fields["publisher"] = publisherValue;
+		}
+
 		if (trust is { } trustValue)
 		{
 			fields["trust"] = trustValue;
@@ -538,6 +543,47 @@ public sealed class PluginPackageInstallerTests
 	}
 
 	[Fact]
+	public async Task InstallAsync_PublisherDivergenceFromCatalogFailsAndNamesBothSides()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("publisher-divergence");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+
+			// Manifest without a publisher claim vs a catalog that declares one.
+			(string bareUrl, string bareSha) = StagePackage(root, ManifestJson(null, "1.0", null));
+			PluginInstallResult undeclared = await installer.InstallAsync(
+				bareUrl, bareSha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedPublisher: "vapor");
+			Assert.False(undeclared.Success);
+			Assert.Contains("does not match the catalog entry", undeclared.Error);
+			Assert.Contains("publisher '<none>' != catalog 'vapor'", undeclared.Error);
+
+			// Manifest declares a different publisher than the catalog.
+			(string url, string sha) = StagePackage(root, ManifestJson(null, "1.0", null, "someone-else"));
+			PluginInstallResult divergent = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedPublisher: "vapor");
+			Assert.False(divergent.Success);
+			Assert.Contains("publisher 'someone-else' != catalog 'vapor'", divergent.Error);
+			Assert.Empty(manager.LoadedPlugins);
+
+			// The comparison itself is case-insensitive: matching claims install.
+			(string matchUrl, string matchSha) = StagePackage(root, ManifestJson(null, "1.0", null, "vapor"));
+			PluginInstallResult matching = await installer.InstallAsync(
+				matchUrl, matchSha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedPublisher: "Vapor");
+			Assert.True(matching.Success, matching.Error);
+			Assert.Single(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
 	public async Task InstallAsync_MatchingCatalogClaimsInstallAndHotLoad()
 	{
 		string root = PluginTestPackages.NewPluginsRoot("catalog-match");
@@ -573,13 +619,14 @@ public sealed class PluginPackageInstallerTests
 		{
 			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
 			await using var manager = PluginTestPackages.CreateManager();
-			(string url, string sha) = StagePackage(root, ManifestJson("official", "1.0", new[] { "actions" }));
+			(string url, string sha) = StagePackage(root, ManifestJson("official", "1.0", new[] { "actions" }, "someone-else"));
 
 			PluginInstallResult result = await installer.InstallAsync(
 				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
 				expectedTrust: "community",
 				expectedPermissions: new[] { "web" },
-				expectedApiVersion: "2.0");
+				expectedApiVersion: "2.0",
+				expectedPublisher: "vapor");
 
 			Assert.False(result.Success);
 			Assert.NotNull(result.Error);
@@ -587,6 +634,7 @@ public sealed class PluginPackageInstallerTests
 			Assert.Contains("trust 'official' != catalog 'community'", result.Error);
 			Assert.Contains("apiVersion '1.0' != catalog '2.0'", result.Error);
 			Assert.Contains("permissions [actions] != catalog [web]", result.Error);
+			Assert.Contains("publisher 'someone-else' != catalog 'vapor'", result.Error);
 			Assert.Empty(manager.LoadedPlugins);
 		}
 		finally
@@ -1230,16 +1278,18 @@ public sealed class PluginInstallActionTests
 				pluginId = PluginTestPackages.PluginId,
 				expectedTrust = "community",
 				expectedPermissions = new[] { "web" },
-				expectedApiVersion = "2.0"
+				expectedApiVersion = "2.0",
+				expectedPublisher = "vapor"
 			});
 			var divergent = JsonSerializer.Deserialize<Dictionary<string, object?>>(divergentJson)!;
 			ActionResult failed = await action.ExecuteAsync(divergent, CancellationToken.None);
 			Assert.False(failed.Success);
 			Assert.Contains("does not match the catalog entry", failed.Error);
 			Assert.Contains("trust 'official' != catalog 'community'", failed.Error);
+			Assert.Contains("publisher '<none>' != catalog 'vapor'", failed.Error);
 
 			(string matchUrl, string matchSha) = PluginPackageInstallerTests.StagePackage(
-				root, PluginPackageInstallerTests.ManifestJson("official", "1.0", new[] { "actions" }));
+				root, PluginPackageInstallerTests.ManifestJson("official", "1.0", new[] { "actions" }, "vapor"));
 			string matchingJson = JsonSerializer.Serialize(new
 			{
 				url = matchUrl,
@@ -1247,7 +1297,8 @@ public sealed class PluginInstallActionTests
 				pluginId = PluginTestPackages.PluginId,
 				expectedTrust = "official",
 				expectedPermissions = new[] { "actions" },
-				expectedApiVersion = "1.0"
+				expectedApiVersion = "1.0",
+				expectedPublisher = "vapor"
 			});
 			var matching = JsonSerializer.Deserialize<Dictionary<string, object?>>(matchingJson)!;
 			ActionResult installed = await action.ExecuteAsync(matching, CancellationToken.None);
@@ -1647,6 +1698,83 @@ public sealed class PluginUpdateCheckActionTests
 		Assert.Equal(3, result.Output!["count"]);
 		var updates = Assert.IsType<List<object>>(result.Output["updates"]);
 		Assert.All(updates, entry => Assert.Equal("notInstalled", Assert.IsType<Dictionary<string, object?>>(entry)["status"]));
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_FlagsPublisherDriftOnlyWhenBothSidesDeclareOne()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("update-check-publisher");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = PluginPackageInstallerTests.StagePackage(
+				root, PluginPackageInstallerTests.ManifestJson(null, "1.0", null, "vapor"));
+			PluginInstallResult installedResult = await installer.InstallAsync(url, sha, null, null, manager, CancellationToken.None);
+			Assert.True(installedResult.Success, installedResult.Error);
+
+			var action = new PluginUpdateCheckAction(manager);
+			// The installed id repeats across candidates on purpose: a verdict is
+			// computed per candidate, and the drift comparison is candidate-scoped.
+			var payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(new
+			{
+				candidates = new object[]
+				{
+					new { id = "vapor.test-plugin", version = "2.0.0", publisher = "vapor" },
+					new { id = "vapor.test-plugin", version = "2.0.0", publisher = "someone-else" },
+					new { id = "vapor.test-plugin", version = "2.0.0" },
+					new { id = "vapor.test-plugin", version = "2.0.0", publisher = 5 }
+				}
+			}))!;
+
+			ActionResult result = await action.ExecuteAsync(payload, CancellationToken.None);
+
+			Assert.True(result.Success);
+			var updates = Assert.IsType<List<object>>(result.Output!["updates"]);
+			Assert.Equal(4, updates.Count);
+			var same = Assert.IsType<Dictionary<string, object?>>(updates[0]);
+			Assert.Equal("updateAvailable", same["status"]);
+			Assert.False(same.ContainsKey("publisherChanged")); // identical declared publisher stays silent
+			var drifted = Assert.IsType<Dictionary<string, object?>>(updates[1]);
+			Assert.Equal("updateAvailable", drifted["status"]);
+			Assert.Equal(true, drifted["publisherChanged"]); // declared publisher would change on update
+			var undeclared = Assert.IsType<Dictionary<string, object?>>(updates[2]);
+			Assert.False(undeclared.ContainsKey("publisherChanged")); // candidate without a claim stays silent
+			var nonString = Assert.IsType<Dictionary<string, object?>>(updates[3]);
+			Assert.False(nonString.ContainsKey("publisherChanged")); // a non-string publisher is not a claim
+
+			// The declared publisher mirrors into the plugins output like every other
+			// manifest field, so the ControlPlane inventory can carry it.
+			var plugins = Assert.IsType<List<object>>(result.Output["plugins"]);
+			var loaded = Assert.IsType<Dictionary<string, object?>>(plugins.Single());
+			Assert.Equal("vapor", loaded["publisher"]);
+
+			// In-process candidate shape: the publisher key reads the same way.
+			var inProcess = new Dictionary<string, object?>
+			{
+				["candidates"] = new List<object>
+				{
+					new Dictionary<string, object?> { ["id"] = "vapor.test-plugin", ["version"] = "2.0.0", ["publisher"] = "someone-else" },
+					new Dictionary<string, object?> { ["id"] = "vapor.test-plugin4", ["version"] = "2.0.0" },
+					new Dictionary<string, object?> { ["id"] = "vapor.test-plugin", ["version"] = "2.0.0", ["publisher"] = 42 }
+				}
+			};
+			ActionResult second = await action.ExecuteAsync(inProcess, CancellationToken.None);
+			Assert.True(second.Success);
+			var secondUpdates = Assert.IsType<List<object>>(second.Output!["updates"]);
+			var driftedInProcess = Assert.IsType<Dictionary<string, object?>>(secondUpdates[0]);
+			Assert.Equal(true, driftedInProcess["publisherChanged"]);
+			var notInstalled = Assert.IsType<Dictionary<string, object?>>(secondUpdates[2]);
+			Assert.Equal("notInstalled", notInstalled["status"]);
+			Assert.False(notInstalled.ContainsKey("publisherChanged"));
+			var nonStringInProcess = Assert.IsType<Dictionary<string, object?>>(secondUpdates[1]);
+			Assert.Equal("updateAvailable", nonStringInProcess["status"]);
+			Assert.False(nonStringInProcess.ContainsKey("publisherChanged"));
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
 	}
 
 	[Fact]

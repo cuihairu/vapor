@@ -22,6 +22,15 @@ public sealed record PluginManifest
 
 	public string? Description { get; init; }
 
+	/// <summary>
+	/// Declared publisher identity — a free-form label the plugin author states
+	/// about themselves. It is advisory, not a cryptographic origin proof: the
+	/// catalog install reconciles it against the index entry's declaration when
+	/// one exists, and the update check flags a change, but nothing here verifies
+	/// who actually signed the package. Trimmed; empty/whitespace becomes null.
+	/// </summary>
+	public string? Publisher { get; init; }
+
 	/// <summary>File name of the assembly containing the plugin, relative to the plugin directory.</summary>
 	public required string EntryAssembly { get; init; }
 
@@ -126,6 +135,7 @@ public sealed record PluginManifest
 			Trust = NormalizeTrust(manifest.Trust, source),
 			Permissions = NormalizePermissions(manifest.Permissions, source),
 			Resources = NormalizeResources(manifest.Resources, source),
+			Publisher = NormalizePublisher(manifest.Publisher),
 			ConfigurationSchema = NormalizeConfigurationSchema(manifest.ConfigurationSchema, source),
 			Dependencies = NormalizeDependencies(manifest.Dependencies, manifest.Id, source)
 		};
@@ -251,6 +261,12 @@ public sealed record PluginManifest
 		}
 
 		return normalized;
+	}
+
+	private static string? NormalizePublisher(string? publisher)
+	{
+		var normalized = publisher?.Trim();
+		return string.IsNullOrEmpty(normalized) ? null : normalized;
 	}
 
 	private static string? NormalizeTrust(string? trust, string source)

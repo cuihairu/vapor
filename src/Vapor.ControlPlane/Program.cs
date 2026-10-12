@@ -1040,10 +1040,11 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 		payload["version"] = version.Trim();
 	}
 
-	// Catalog mode carries the index's own trust/permissions/apiVersion declaration
-	// into the instruction: the agent reconciles it against the package manifest, so
-	// the metadata the operator browsed is verified together with the content, not
-	// on separate channels. Fields the index does not declare are not checked.
+	// Catalog mode carries the index's own trust/permissions/apiVersion/publisher
+	// declaration into the instruction: the agent reconciles it against the package
+	// manifest, so the metadata the operator browsed is verified together with the
+	// content, not on separate channels. Fields the index does not declare are not
+	// checked.
 	if (catalogEntry is { } declared)
 	{
 		if (declared.Trust is { } declaredTrust)
@@ -1057,6 +1058,11 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 		}
 
 		payload["expectedApiVersion"] = declared.ApiVersion;
+
+		if (declared.Publisher is { } declaredPublisher)
+		{
+			payload["expectedPublisher"] = declaredPublisher;
+		}
 	}
 
 	var dispatched = new List<object>();
@@ -1082,6 +1088,7 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 		{
 			["pluginId"] = pluginId,
 			["version"] = request.Version,
+			["publisher"] = catalogEntry?.Publisher,
 			["url"] = url,
 			["agents"] = request.AgentIds,
 			["jobs"] = dispatched.Count
@@ -1215,12 +1222,24 @@ app.MapPost("/v1/plugins/update-check", async Task<IResult> (HttpContext ctx, Co
 	// The whole index rides along as candidates: each agent classifies every
 	// candidate against its own loaded plugins (updateAvailable / upToDate /
 	// notComparable / notInstalled) and reports back — nothing is downloaded and
-	// nothing is replaced by this action.
+	// nothing is replaced by this action. The declared publisher rides with each
+	// candidate so the agent can flag a would-be publisher change on an update.
 	var payload = new Dictionary<string, object?>
 	{
 		["candidates"] = snapshot.Entries
 			.OrderBy(e => e.Id, StringComparer.Ordinal)
-			.Select(e => (object)new Dictionary<string, object?> { ["id"] = e.Id, ["version"] = e.Version })
+			.Select(e =>
+			{
+				// Undeclared stays absent rather than riding as a null the payload
+				// store would persist: candidates are compared per declared claim.
+				var candidate = new Dictionary<string, object?> { ["id"] = e.Id, ["version"] = e.Version };
+				if (e.Publisher is { } declaredPublisher)
+				{
+					candidate["publisher"] = declaredPublisher;
+				}
+
+				return (object)candidate;
+			})
 			.ToList()
 	};
 

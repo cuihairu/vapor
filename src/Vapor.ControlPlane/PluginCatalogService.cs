@@ -5,7 +5,7 @@ namespace Vapor.ControlPlane;
 /// <summary>
 /// Fetches and caches the plugin index — a JSON document naming installable
 /// plugins with their package URL and SHA-256 checksum:
-/// `{ "plugins": [ { "id", "name", "version", "apiVersion", "description",
+/// `{ "plugins": [ { "id", "name", "publisher", "version", "apiVersion", "description",
 /// "url", "sha256", "trust", "permissions" } ] }`. The index is the only
 /// plugin-related state the ControlPlane holds; packages themselves are pulled
 /// by the agents directly from the package URL.
@@ -120,7 +120,8 @@ public sealed class PluginCatalogService
 			Sha256: Get("sha256").ToLowerInvariant(),
 			Description: item.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
 			Trust: item.TryGetProperty("trust", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null,
-			Permissions: permissions
+			Permissions: permissions,
+			Publisher: item.TryGetProperty("publisher", out var pub) && pub.ValueKind == JsonValueKind.String ? pub.GetString() : null
 		);
 	}
 }
@@ -146,4 +147,5 @@ public sealed record PluginIndexEntry(
 	string Sha256,
 	string? Description,
 	string? Trust,
-	IReadOnlyList<string> Permissions);
+	IReadOnlyList<string> Permissions,
+	string? Publisher = null);

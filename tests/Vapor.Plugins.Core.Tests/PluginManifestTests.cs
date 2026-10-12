@@ -493,4 +493,33 @@ public class PluginManifestTests
 		var ex = Assert.Throws<PluginException>(() => PluginManifest.Parse(json));
 		Assert.Contains("'id' is required", ex.Message);
 	}
+
+	[Fact]
+	public void Parse_Publisher_RoundTripsAndTrims()
+	{
+		var json = """
+			{ "id": "x", "name": "x", "version": "1.0.0", "apiVersion": "1.0", "entryAssembly": "x.dll",
+			  "publisher": "  vapor  " }
+			""";
+
+		Assert.Equal("vapor", PluginManifest.Parse(json).Publisher);
+	}
+
+	[Fact]
+	public void Parse_PublisherBlankOrNull_BecomesNull()
+	{
+		var blank = """{ "id": "x", "name": "x", "version": "1.0.0", "apiVersion": "1.0", "entryAssembly": "x.dll", "publisher": "   " }""";
+		var nullValue = """{ "id": "x", "name": "x", "version": "1.0.0", "apiVersion": "1.0", "entryAssembly": "x.dll", "publisher": null }""";
+
+		Assert.Null(PluginManifest.Parse(blank).Publisher);
+		Assert.Null(PluginManifest.Parse(nullValue).Publisher);
+	}
+
+	[Fact]
+	public void Parse_PublisherOmitted_StaysNull()
+	{
+		var json = """{ "id": "x", "name": "x", "version": "1.0.0", "apiVersion": "1.0", "entryAssembly": "x.dll" }""";
+
+		Assert.Null(PluginManifest.Parse(json).Publisher);
+	}
 }

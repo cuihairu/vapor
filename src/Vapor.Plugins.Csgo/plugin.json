@@ -1,6 +1,7 @@
 {
   "id": "vapor.csgo",
   "name": "Vapor CS2/CSGO",
+  "publisher": "vapor",
   "version": "1.0.0",
   "apiVersion": "1.0",
   "description": "CS2/CSGO inventory and case plugin: backpack classification and read-only bookkeeping, a dry-run case-opening simulator over Valve's published odds, and a real game-coordinator open behind the explicit 'open.enabled' gate (default off).",

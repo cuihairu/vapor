@@ -638,8 +638,8 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ### 4.10 Plugins
 
-`PluginIndexEntry = { id, name, version, apiVersion, url, sha256, description?, trust?, permissions: string[] }`;
-`PluginInventoryEntry = { id, name, version, apiVersion, trust?, permissions: string[], actions: string[], resources: string[] }` (`resources` mirrors the manifest's advisory runtime-resource declaration, empty when undeclared).
+`PluginIndexEntry = { id, name, version, apiVersion, url, sha256, description?, trust?, publisher?, permissions: string[] }`;
+`PluginInventoryEntry = { id, name, version, apiVersion, trust?, publisher?, permissions: string[], actions: string[], resources: string[] }` (`resources` mirrors the manifest's advisory runtime-resource declaration, empty when undeclared; `publisher` mirrors the manifest's declared publisher label, absent when undeclared).
 
 #### `GET /v1/plugins/catalog`
 - Purpose: browse the plugin index source (cached 60 s).
@@ -651,7 +651,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 #### `GET /v1/plugins/installed`
 - Purpose: last-reported plugin inventory per agent (mirrored from `plugin_*` task outputs).
 - Auth: admin. Body: none.
-- 200: `{ "agents": [ { "agentId", "reportedAt", "plugins": [ PluginInventoryEntry ], "updates": [ PluginUpdateStatus ]? } ] }` (ordered by `agentId`; `PluginUpdateStatus = { id, catalogVersion, installedVersion?, status: "updateAvailable"|"upToDate"|"notComparable"|"notInstalled" }`, present after the agent last ran `plugin_update_check`).
+- 200: `{ "agents": [ { "agentId", "reportedAt", "plugins": [ PluginInventoryEntry ], "updates": [ PluginUpdateStatus ]? } ] }` (ordered by `agentId`; `PluginUpdateStatus = { id, catalogVersion, installedVersion?, status: "updateAvailable"|"upToDate"|"notComparable"|"notInstalled", publisherChanged?: true }` — `publisherChanged` appears only when both the installed manifest and the catalog candidate declare a publisher and the two differ case-insensitively; present after the agent last ran `plugin_update_check`).
 - Errors: 401.
 
 #### `POST /v1/plugins/install`
@@ -664,7 +664,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
   - `sha256` — string, optional; required in direct mode as a 64-char hex digest (else 400 `sha256 must be a 64-character hex digest of the package`)
   - `version` — string, optional
   - Rule: neither `url` nor `pluginId` → 400 `either url or pluginId is required`; `pluginId` not in catalog → 404 `plugin '<id>' is not in the catalog`.
-  - Catalog reconciliation: catalog mode stages the index entry's own `trust`/`permissions`/`apiVersion` declaration into the task payload as `expectedTrust`/`expectedPermissions`/`expectedApiVersion` (only fields the entry actually declares; direct mode stages none). The agent reconciles them against the package's embedded manifest before hot-load — any divergence fails the install with one aggregated error naming every divergent field (`package manifest does not match the catalog entry: …`), so the metadata the index advertised is verified together with the content.
+  - Catalog reconciliation: catalog mode stages the index entry's own `trust`/`permissions`/`apiVersion`/`publisher` declaration into the task payload as `expectedTrust`/`expectedPermissions`/`expectedApiVersion`/`expectedPublisher` (only fields the entry actually declares; direct mode stages none). The agent reconciles them against the package's embedded manifest before hot-load — any divergence fails the install with one aggregated error naming every divergent field (`package manifest does not match the catalog entry: …`), so the metadata the index advertised is verified together with the content.
 - 202: `Location: /v1/plugins/installed`, body `{ "jobs": [ { "agentId", "jobId", "taskId" } ] }`.
 - Errors: 400, 404, 401. Audit: `plugin_install_dispatched`.
 
@@ -684,7 +684,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 - Errors: 409 `{ "error": "no connected agents to refresh" }`, 401.
 
 #### `POST /v1/plugins/update-check`
-- Purpose: dispatch `plugin_update_check` to the named (or all connected) agents — each agent compares the whole index against its own loaded plugins and reports a verdict per candidate; nothing is downloaded or replaced.
+- Purpose: dispatch `plugin_update_check` to the named (or all connected) agents — each agent compares the whole index against its own loaded plugins and reports a verdict per candidate; nothing is downloaded or replaced. Candidates whose declared publisher differs from the installed manifest's (both must declare one) additionally surface `publisherChanged: true` in the verdict.
 - Auth: admin.
 - Body (`PluginUpdateCheckRequest`, optional — may be omitted entirely): `agentIds` — string[], optional (default: all connected agents).
 - Errors: 400 `{ "error": "plugin index is not configured (set Vapor_PLUGIN_INDEX_URL)" }`, 409 `{ "error": "no connected agents to check" }`, 401.

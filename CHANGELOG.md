@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Declared plugin publisher identity (40.10-4, declared slice): plugin
+  manifests and catalog index entries may both carry an optional free-form
+  `publisher` label. Catalog-mode installs stage `expectedPublisher` only
+  when the index declares one, and the agent reconciles it against the
+  package's manifest (case-insensitive) alongside the existing
+  trust/permissions/apiVersion expectations — a divergence fails the install
+  with the same aggregated error naming both sides. Update checks flag
+  `publisherChanged: true` only when both the installed manifest and the
+  catalog candidate declare a publisher and the two differ; all four version
+  verdicts are unchanged. The publisher rides the inventory mirror
+  end-to-end and surfaces in the admin console (catalog row, installed
+  `pub:` chip and a `pub 变更` drift badge). This is declared metadata, not
+  a signature — the cryptographic package-signing system stays deferred.
 - Scheduled script flows (40.12-4): script flows can now carry a recurring
   plan — the same `JobSchedule` shape scheduled job templates use
   (`intervalSeconds`/`cron` cadence with `missed` skip/runOnce and `overlap`

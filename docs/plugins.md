@@ -96,6 +96,7 @@ plugin loads at startup.
 | `entryAssembly` | yes | DLL file name, relative to the plugin directory |
 | `entryType` | no | Full type name of the `IPlugin` implementation; omit when the assembly has exactly one public implementation |
 | `trust` | no | `unknown` (default), `community` or `official` — see [Trust and permissions](#trust-and-permissions) |
+| `publisher` | no | Free-form declared publisher label; blank/whitespace is stored as absent. Advisory only — compared against the catalog index at install time and drift-flagged at update checks, never a signature. See [Trust boundary, stated plainly](#trust-boundary-stated-plainly) |
 | `permissions` | no | Array of `actions` / `commands` / `web` / `events` — see below |
 | `resources` | no | Array of `network` / `filesystem` / `process` — advisory runtime-resource declaration; see [Runtime resource declarations](#runtime-resource-declarations) |
 | `configuration` | no | Free-form string key/values handed to the plugin at initialization |
@@ -492,15 +493,17 @@ them. A failed install leaves no trace in the plugin directory.
 ### Catalog reconciliation at install time
 
 Catalog-mode installs (`POST /v1/plugins/install` with `pluginId`) carry the
-index entry's own `trust`/`permissions`/`apiVersion` declaration into the
-install instruction as `expectedTrust`/`expectedPermissions`/`expectedApiVersion`.
+index entry's own `trust`/`permissions`/`apiVersion`/`publisher` declaration
+into the install instruction as
+`expectedTrust`/`expectedPermissions`/`expectedApiVersion`/`expectedPublisher`.
 The agent reconciles those expectations against the manifest that actually
 ships in the package before hot-loading: trust and permission names compare
 case-insensitively (permissions as an order-insensitive set), `apiVersion`
-compares exactly, and fields the index does not declare are not checked. Any
-divergence fails the install with a single aggregated error naming every
-divergent field — the metadata an operator browsed in the catalog is verified
-together with the package content, not on separate channels.
+compares exactly, publisher compares case-insensitively, and fields the index
+does not declare are not checked. Any divergence fails the install with a
+single aggregated error naming every divergent field — the metadata an
+operator browsed in the catalog is verified together with the package
+content, not on separate channels.
 
 ### ControlPlane PluginStore
 
@@ -512,7 +515,8 @@ jobs to the named agents:
 { "plugins": [ { "id": "vapor.monitoring", "name": "Monitoring",
   "version": "1.0.0", "apiVersion": "1.0", "description": "...",
   "url": "https://.../vapor.monitoring.zip", "sha256": "<64 hex>",
-  "trust": "official", "permissions": ["actions"] } ] }
+  "trust": "official", "permissions": ["actions"],
+  "publisher": "vapor" } ] }
 ```
 
 - `GET /v1/plugins/catalog` — the fetched index (60s cache, `error` surfaced inline)
@@ -529,8 +533,15 @@ per-agent targeting and one-click batch install.
 
 The checksum guarantees *integrity against the digest you pinned*, not the
 origin of the package; `trust` remains a manifest-declared label and the
-host's `MinimumTrust` policy is unchanged. Point `Vapor_PLUGIN_INDEX_URL` only
-at index sources you control, and pin digests you computed yourself.
+host's `MinimumTrust` policy is unchanged. The `publisher` field is the same
+kind of statement: a free-form label the index and the manifest declare about
+themselves, reconciled at install time and drift-flagged at update checks
+(`publisherChanged`) when both sides state one and they differ. It is
+advisory metadata, **not** a signature — no key is distributed, nothing is
+cryptographically verified, and a malicious index source can declare any
+publisher it likes. Cryptographic package signing remains future work.
+Point `Vapor_PLUGIN_INDEX_URL` only at index sources you control, and pin
+digests you computed yourself.
 
 ## Alignment with ASF (ArchiPlugin)
 

@@ -45,6 +45,7 @@ public sealed class PluginInstallAction : IHostAction
 		string? expectedTrust = PayloadReader.GetString(payload, "expectedTrust");
 		string? expectedApiVersion = PayloadReader.GetString(payload, "expectedApiVersion");
 		IReadOnlyList<string>? expectedPermissions = PayloadReader.GetStringList(payload, "expectedPermissions");
+		string? expectedPublisher = PayloadReader.GetString(payload, "expectedPublisher");
 
 		if (string.IsNullOrWhiteSpace(url))
 		{
@@ -63,7 +64,7 @@ public sealed class PluginInstallAction : IHostAction
 
 		var result = await _installer.InstallAsync(
 			url, sha256, pluginId, version, _manager, cancellationToken,
-			expectedTrust, expectedPermissions, expectedApiVersion).ConfigureAwait(false);
+			expectedTrust, expectedPermissions, expectedApiVersion, expectedPublisher).ConfigureAwait(false);
 		if (!result.Success)
 		{
 			_logger.LogWarning("plugin_install failed: {Error}", result.Error);

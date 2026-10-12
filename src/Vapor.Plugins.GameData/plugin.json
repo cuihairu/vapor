@@ -1,6 +1,7 @@
 {
   "id": "vapor.game-data",
   "name": "Vapor Game Data",
+  "publisher": "vapor",
   "version": "1.0.0",
   "apiVersion": "1.0",
   "description": "Read-only Valve game data from the official Steam Web API (Dota 2 match history, heroes, items; TF2/CS2 item schema summary). The API key stays agent-side; no game-client automation — see docs/game-plugins.md.",

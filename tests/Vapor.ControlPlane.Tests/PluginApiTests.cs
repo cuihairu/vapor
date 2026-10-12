@@ -161,7 +161,7 @@ public sealed class PluginApiTests
 	[Fact]
 	public async Task Install_CatalogMode_ResolvesUrlAndChecksumAndTargetsNamedAgents()
 	{
-		var index = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/test.zip","sha256":"AABBCCDD","trust":"official","permissions":["actions","web"]}]}""";
+		var index = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","publisher":"vapor","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/test.zip","sha256":"AABBCCDD","trust":"official","permissions":["actions","web"]}]}""";
 		await using var factory = CreateFactory(services =>
 		{
 			services.RemoveAll<PluginCatalogService>();
@@ -206,6 +206,7 @@ public sealed class PluginApiTests
 				new[] { "actions", "web" },
 				((JsonElement)payload["expectedPermissions"]!).EnumerateArray().Select(e => e.GetString()).ToArray());
 			Assert.Equal("1.0", ((JsonElement)payload["expectedApiVersion"]!).GetString());
+			Assert.Equal("vapor", ((JsonElement)payload["expectedPublisher"]!).GetString());
 		}
 	}
 
@@ -241,6 +242,7 @@ public sealed class PluginApiTests
 		IReadOnlyDictionary<string, object?> payload = created.Tasks[0].Payload!;
 		Assert.False(payload.ContainsKey("expectedTrust"));
 		Assert.False(payload.ContainsKey("expectedPermissions"));
+		Assert.False(payload.ContainsKey("expectedPublisher"));
 		Assert.Equal("1.0", ((JsonElement)payload["expectedApiVersion"]!).GetString());
 	}
 
@@ -625,7 +627,7 @@ public sealed class PluginApiTests
 	[Fact]
 	public async Task UpdateCheck_DispatchesIndexCandidatesToNamedAgents()
 	{
-		var index = """{"plugins":[{"id":"vapor.beta","name":"Beta","version":"2.0.0","apiVersion":"1.0","url":"https://pkg/b.zip","sha256":"AABB"},{"id":"vapor.alpha","name":"Alpha","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/a.zip","sha256":"CCDD"}]}""";
+		var index = """{"plugins":[{"id":"vapor.beta","name":"Beta","publisher":"vapor","version":"2.0.0","apiVersion":"1.0","url":"https://pkg/b.zip","sha256":"AABB"},{"id":"vapor.alpha","name":"Alpha","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/a.zip","sha256":"CCDD"}]}""";
 		await using var factory = CreateFactory(services =>
 		{
 			services.RemoveAll<PluginCatalogService>();
@@ -662,8 +664,10 @@ public sealed class PluginApiTests
 			Assert.Equal(2, candidates.GetArrayLength());
 			Assert.Equal("vapor.alpha", candidates[0].GetProperty("id").GetString());
 			Assert.Equal("1.0.0", candidates[0].GetProperty("version").GetString());
+			Assert.False(candidates[0].TryGetProperty("publisher", out _)); // undeclared stays omitted
 			Assert.Equal("vapor.beta", candidates[1].GetProperty("id").GetString());
 			Assert.Equal("2.0.0", candidates[1].GetProperty("version").GetString());
+			Assert.Equal("vapor", candidates[1].GetProperty("publisher").GetString());
 		}
 	}
 
@@ -808,15 +812,22 @@ public sealed class PluginCatalogServiceTests
 	[Fact]
 	public void ParseIndex_LowercasesChecksumAndKeepsOptionalFields()
 	{
+		var declared = """{"id":"vapor.x","name":"X","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/x.zip","sha256":"AABB","permissions":["actions","web"],"trust":"community","publisher":"vapor"}""";
+		var nonString = """{"id":"vapor.y","name":"Y","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/y.zip","sha256":"CCDD","publisher":5}""";
+		var omitted = """{"id":"vapor.z","name":"Z","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/z.zip","sha256":"EEFF"}""";
 		PluginCatalog catalog = PluginCatalogService.ParseIndex(
-			"""{"plugins":[{"id":"vapor.x","name":"X","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/x.zip","sha256":"AABB","permissions":["actions","web"],"trust":"community"}]}""",
+			"""{"plugins":[""" + declared + "," + nonString + "," + omitted + "]}",
 			"https://x/index.json");
 
-		Assert.Single(catalog.Entries);
+		Assert.Equal(3, catalog.Entries.Count);
 		PluginIndexEntry entry = catalog.Entries[0];
 		Assert.Equal("aabb", entry.Sha256);
 		Assert.Equal("community", entry.Trust);
 		Assert.Equal(new[] { "actions", "web" }, entry.Permissions);
+		Assert.Equal("vapor", entry.Publisher);
+		// A non-string or absent publisher is simply undeclared, not an error.
+		Assert.Null(catalog.Entries[1].Publisher);
+		Assert.Null(catalog.Entries[2].Publisher);
 	}
 
 	[Fact]
@@ -881,14 +892,15 @@ public sealed class PluginInventoryTests
 	{
 		var entry = new PluginInventoryEntry(
 			"vapor.echo", "Echo", "1.0.0", "1.0", "official",
-			new[] { "actions" }, new[] { "plugin_echo" }, new[] { "network" });
+			new[] { "actions" }, new[] { "plugin_echo" }, new[] { "network" }, "vapor");
 
 		PluginInventoryEntry copy = entry with { };
 		Assert.True(entry.Equals(copy));
 		Assert.Equal(entry.GetHashCode(), copy.GetHashCode());
 		Assert.NotEqual(entry, entry with { Version = "2.0.0" });
+		Assert.NotEqual(entry, entry with { Publisher = null });
 
-		(string id, string name, string version, string apiVersion, string? trust, IReadOnlyList<string> permissions, IReadOnlyList<string> actions, IReadOnlyList<string> resources) = entry;
+		(string id, string name, string version, string apiVersion, string? trust, IReadOnlyList<string> permissions, IReadOnlyList<string> actions, IReadOnlyList<string> resources, string? publisher) = entry;
 		Assert.Equal("vapor.echo", id);
 		Assert.Equal("Echo", name);
 		Assert.Equal("1.0.0", version);
@@ -897,6 +909,7 @@ public sealed class PluginInventoryTests
 		Assert.Equal(new[] { "actions" }, permissions);
 		Assert.Equal(new[] { "plugin_echo" }, actions);
 		Assert.Equal(new[] { "network" }, resources);
+		Assert.Equal("vapor", publisher);
 
 		Assert.Contains("vapor.echo", entry.ToString(), StringComparison.Ordinal);
 	}
@@ -935,6 +948,7 @@ public sealed class PluginInventoryTests
 					["id"] = "vapor.b",
 					["name"] = "B",
 					["version"] = "2.0.0",
+					["publisher"] = "vapor",
 					["apiVersion"] = "1.0",
 					["trust"] = "official",
 					["permissions"] = new List<string> { "actions" },
@@ -965,9 +979,11 @@ public sealed class PluginInventoryTests
 		Assert.Equal("official", agent.Plugins[1].Trust);
 		Assert.Equal(new[] { "b_one" }, agent.Plugins[1].Actions);
 		Assert.Equal(new[] { "network", "fileSystem" }, agent.Plugins[1].Resources);
+		Assert.Equal("vapor", agent.Plugins[1].Publisher);
 		// vapor.a declares no resources: the mirror records an empty list, and a
 		// non-array value is tolerated the same way (third-party output).
 		Assert.Empty(agent.Plugins[0].Resources);
+		Assert.Null(agent.Plugins[0].Publisher);
 	}
 
 	[Fact]
@@ -1077,7 +1093,8 @@ public sealed class PluginInventoryTests
 				new Dictionary<string, object?>
 				{
 					["id"] = "vapor.b", ["catalogVersion"] = "2.0.0",
-					["installedVersion"] = "1.0.0", ["status"] = "updateAvailable"
+					["installedVersion"] = "1.0.0", ["status"] = "updateAvailable",
+					["publisherChanged"] = true
 				},
 				"junk",
 				new Dictionary<string, object?> { ["catalogVersion"] = "3.0.0", ["status"] = "notInstalled" },
@@ -1087,7 +1104,8 @@ public sealed class PluginInventoryTests
 				{
 					["id"] = "vapor.a", ["catalogVersion"] = "v2",
 					["installedVersion"] = null,
-					["status"] = "notComparable"
+					["status"] = "notComparable",
+					["publisherChanged"] = "bogus"
 				}
 			}
 		});
@@ -1101,9 +1119,12 @@ public sealed class PluginInventoryTests
 		Assert.Equal("v2", agent.Updates[0].CatalogVersion);
 		Assert.Null(agent.Updates[0].InstalledVersion);
 		Assert.Equal("notComparable", agent.Updates[0].Status);
+		// Only the literal JSON true reads as a drift flag; anything else is unparsed.
+		Assert.Null(agent.Updates[0].PublisherChanged);
 		Assert.Equal("vapor.b", agent.Updates[1].Id);
 		Assert.Equal("1.0.0", agent.Updates[1].InstalledVersion);
 		Assert.Equal("updateAvailable", agent.Updates[1].Status);
+		Assert.True(agent.Updates[1].PublisherChanged);
 	}
 
 	[Fact]
