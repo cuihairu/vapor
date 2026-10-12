@@ -638,7 +638,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 
 ### 4.10 Plugins
 
-`PluginIndexEntry = { id, name, version, apiVersion, url, sha256, description?, trust?, publisher?, permissions: string[] }`;
+`PluginIndexEntry = { id, name, version, apiVersion, url, sha256, description?, trust?, publisher?, permissions: string[], signing?: { publicKey, signature } }` (`signing` is declared only when the index states both halves — a half-declared block is dropped, never staged as a partial trust instruction);
 `PluginInventoryEntry = { id, name, version, apiVersion, trust?, publisher?, permissions: string[], actions: string[], resources: string[] }` (`resources` mirrors the manifest's advisory runtime-resource declaration, empty when undeclared; `publisher` mirrors the manifest's declared publisher label, absent when undeclared).
 
 #### `GET /v1/plugins/catalog`
@@ -664,9 +664,9 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
   - `sha256` — string, optional; required in direct mode as a 64-char hex digest (else 400 `sha256 must be a 64-character hex digest of the package`)
   - `version` — string, optional
   - Rule: neither `url` nor `pluginId` → 400 `either url or pluginId is required`; `pluginId` not in catalog → 404 `plugin '<id>' is not in the catalog`.
-  - Catalog reconciliation: catalog mode stages the index entry's own `trust`/`permissions`/`apiVersion`/`publisher` declaration into the task payload as `expectedTrust`/`expectedPermissions`/`expectedApiVersion`/`expectedPublisher` (only fields the entry actually declares; direct mode stages none). The agent reconciles them against the package's embedded manifest before hot-load — any divergence fails the install with one aggregated error naming every divergent field (`package manifest does not match the catalog entry: …`), so the metadata the index advertised is verified together with the content.
+  - Catalog reconciliation: catalog mode stages the index entry's own `trust`/`permissions`/`apiVersion`/`publisher` declaration into the task payload as `expectedTrust`/`expectedPermissions`/`expectedApiVersion`/`expectedPublisher` (only fields the entry actually declares; direct mode stages none). The agent reconciles them against the package's embedded manifest before hot-load — any divergence fails the install with one aggregated error naming every divergent field (`package manifest does not match the catalog entry: …`), so the metadata the index advertised is verified together with the content. A declared `signing` block is staged as both halves (`expectedSigningPublicKey`/`expectedSigningSignature`) and verified by the agent after the checksum passes and before the zip is unpacked, against the keys the agent pins (`VAPOR_PLUGIN_TRUST_KEYS`); with no keys pinned a declared signature fails closed rather than being skipped.
 - 202: `Location: /v1/plugins/installed`, body `{ "jobs": [ { "agentId", "jobId", "taskId" } ] }`.
-- Errors: 400, 404, 401. Audit: `plugin_install_dispatched`.
+- Errors: 400, 404, 401. Audit: `plugin_install_dispatched` (details carry `signed`, true only when the resolved catalog entry declares a signing block).
 
 #### `POST /v1/plugins/uninstall/{pluginId}`
 - Purpose: dispatch plugin uninstalls to named agents (`plugin_uninstall` job per agent).

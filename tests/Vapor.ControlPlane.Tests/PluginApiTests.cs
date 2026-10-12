@@ -161,7 +161,7 @@ public sealed class PluginApiTests
 	[Fact]
 	public async Task Install_CatalogMode_ResolvesUrlAndChecksumAndTargetsNamedAgents()
 	{
-		var index = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","publisher":"vapor","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/test.zip","sha256":"AABBCCDD","trust":"official","permissions":["actions","web"]}]}""";
+		var index = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","publisher":"vapor","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/test.zip","sha256":"AABBCCDD","trust":"official","permissions":["actions","web"],"signing":{"publicKey":"dGhlLWtleQ==","signature":"dGhlLXNpZw=="}}]}""";
 		await using var factory = CreateFactory(services =>
 		{
 			services.RemoveAll<PluginCatalogService>();
@@ -207,6 +207,11 @@ public sealed class PluginApiTests
 				((JsonElement)payload["expectedPermissions"]!).EnumerateArray().Select(e => e.GetString()).ToArray());
 			Assert.Equal("1.0", ((JsonElement)payload["expectedApiVersion"]!).GetString());
 			Assert.Equal("vapor", ((JsonElement)payload["expectedPublisher"]!).GetString());
+
+			// The declared signature travels as both halves so a half-declared
+			// signature can never reach the agent as a partial trust instruction.
+			Assert.Equal("dGhlLWtleQ==", ((JsonElement)payload["expectedSigningPublicKey"]!).GetString());
+			Assert.Equal("dGhlLXNpZw==", ((JsonElement)payload["expectedSigningSignature"]!).GetString());
 		}
 	}
 
@@ -243,7 +248,62 @@ public sealed class PluginApiTests
 		Assert.False(payload.ContainsKey("expectedTrust"));
 		Assert.False(payload.ContainsKey("expectedPermissions"));
 		Assert.False(payload.ContainsKey("expectedPublisher"));
+		Assert.False(payload.ContainsKey("expectedSigningPublicKey"));
+		Assert.False(payload.ContainsKey("expectedSigningSignature"));
 		Assert.Equal("1.0", ((JsonElement)payload["expectedApiVersion"]!).GetString());
+	}
+
+	[Fact]
+	public async Task Install_AuditRecordsWhetherTheCatalogEntryIsSigned()
+	{
+		// A declared signature is a claim the operator has to back with pinned keys;
+		// the audit trail records whether the catalog made that claim.
+		static async Task<IReadOnlyDictionary<string, object?>?> InstallAuditAsync(
+			string? index,
+			bool catalogMode)
+		{
+			await using var factory = CreateFactory(services =>
+			{
+				if (index is not null)
+				{
+					services.RemoveAll<PluginCatalogService>();
+					services.AddSingleton(_ => new PluginCatalogService(
+						new HttpClient(new FakeIndexHandler(index)),
+						NullLogger<PluginCatalogService>.Instance,
+						() => "https://plugins.example/index.json"));
+				}
+			});
+			using var client = CreateAdminClient(factory);
+
+			object body = catalogMode
+				? new { pluginId = "vapor.test-plugin", agentIds = new[] { "agent-1" } }
+				: new { url = "https://pkg/direct.zip", sha256 = new string('A', 64), agentIds = new[] { "agent-1" } };
+			using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", body);
+			Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+			await using var scope = factory.Services.CreateAsyncScope();
+			var audit = scope.ServiceProvider.GetRequiredService<IAuditStore>();
+			var entries = await audit.QueryAsync(
+				new AuditQuery(Action: "plugin_install_dispatched", Limit: 1), CancellationToken.None);
+			return entries.Count == 1 ? entries[0].Details : null;
+		}
+
+		string signedIndex = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","publisher":"vapor","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/s.zip","sha256":"AABB","signing":{"publicKey":"a2V5","signature":"c2ln"}}]}""";
+		string bareIndex = """{"plugins":[{"id":"vapor.test-plugin","name":"Test","publisher":"vapor","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/b.zip","sha256":"CCDD"}]}""";
+
+		IReadOnlyDictionary<string, object?>? signed = await InstallAuditAsync(signedIndex, catalogMode: true);
+		Assert.NotNull(signed);
+		Assert.True(((JsonElement)signed!["signed"]!).GetBoolean());
+		Assert.Equal("vapor", ((JsonElement)signed["publisher"]!).GetString());
+
+		IReadOnlyDictionary<string, object?>? bare = await InstallAuditAsync(bareIndex, catalogMode: true);
+		Assert.NotNull(bare);
+		Assert.False(((JsonElement)bare!["signed"]!).GetBoolean());
+
+		// Direct mode has no catalog entry at all — never signed, whatever the index says.
+		IReadOnlyDictionary<string, object?>? direct = await InstallAuditAsync(null, catalogMode: false);
+		Assert.NotNull(direct);
+		Assert.False(((JsonElement)direct!["signed"]!).GetBoolean());
 	}
 
 	[Fact]
@@ -815,19 +875,44 @@ public sealed class PluginCatalogServiceTests
 		var declared = """{"id":"vapor.x","name":"X","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/x.zip","sha256":"AABB","permissions":["actions","web"],"trust":"community","publisher":"vapor"}""";
 		var nonString = """{"id":"vapor.y","name":"Y","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/y.zip","sha256":"CCDD","publisher":5}""";
 		var omitted = """{"id":"vapor.z","name":"Z","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/z.zip","sha256":"EEFF"}""";
+
+		// The signing block keeps every optional-field rule: a complete object is
+		// parsed, and each half-missing or wrong-typed shape is undeclared, not an error.
+		var complete = """{"id":"vapor.a","name":"A","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/a.zip","sha256":"AA01","signing":{"publicKey":"a2V5","signature":"c2ln"}}""";
+		var nonObject = """{"id":"vapor.b","name":"B","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/b.zip","sha256":"BB02","signing":5}""";
+		var noKey = """{"id":"vapor.c","name":"C","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/c.zip","sha256":"CC03","signing":{"signature":"c2ln"}}""";
+		var keyNonString = """{"id":"vapor.d","name":"D","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/d.zip","sha256":"DD04","signing":{"publicKey":5,"signature":"c2ln"}}""";
+		var noSignature = """{"id":"vapor.e","name":"E","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/e.zip","sha256":"EE05","signing":{"publicKey":"a2V5"}}""";
+		var signatureNonString = """{"id":"vapor.f","name":"F","version":"1.0.0","apiVersion":"1.0","url":"https://pkg/f.zip","sha256":"FF06","signing":{"publicKey":"a2V5","signature":5}}""";
+
 		PluginCatalog catalog = PluginCatalogService.ParseIndex(
-			"""{"plugins":[""" + declared + "," + nonString + "," + omitted + "]}",
+			"""{"plugins":[""" + complete + "," + nonObject + "," + noKey + "," + keyNonString + "," + noSignature + "," + signatureNonString + "," + declared + "," + nonString + "," + omitted + "]}",
 			"https://x/index.json");
 
-		Assert.Equal(3, catalog.Entries.Count);
-		PluginIndexEntry entry = catalog.Entries[0];
+		Assert.Equal(9, catalog.Entries.Count);
+		PluginIndexEntry entry = catalog.Entries[6];
 		Assert.Equal("aabb", entry.Sha256);
 		Assert.Equal("community", entry.Trust);
 		Assert.Equal(new[] { "actions", "web" }, entry.Permissions);
 		Assert.Equal("vapor", entry.Publisher);
 		// A non-string or absent publisher is simply undeclared, not an error.
-		Assert.Null(catalog.Entries[1].Publisher);
-		Assert.Null(catalog.Entries[2].Publisher);
+		Assert.Null(catalog.Entries[7].Publisher);
+		Assert.Null(catalog.Entries[8].Publisher);
+
+		// The complete block parses into both halves, keyed by the entry's own digest.
+		PluginIndexEntry signed = catalog.Entries[0];
+		Assert.Equal("aa01", signed.Sha256);
+		Assert.NotNull(signed.Signing);
+		Assert.Equal("a2V5", signed.Signing!.PublicKey);
+		Assert.Equal("c2ln", signed.Signing.Signature);
+
+		// Every half-declared shape is treated as undeclared, never staged partial.
+		Assert.Null(catalog.Entries[1].Signing);
+		Assert.Null(catalog.Entries[2].Signing);
+		Assert.Null(catalog.Entries[3].Signing);
+		Assert.Null(catalog.Entries[4].Signing);
+		Assert.Null(catalog.Entries[5].Signing);
+		Assert.Null(entry.Signing);
 	}
 
 	[Fact]

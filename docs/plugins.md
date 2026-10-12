@@ -505,6 +505,14 @@ single aggregated error naming every divergent field — the metadata an
 operator browsed in the catalog is verified together with the package
 content, not on separate channels.
 
+When the index also declares a `signing` block, the catalog stages both halves
+as `expectedSigningPublicKey`/`expectedSigningSignature`. The agent verifies
+the package signature **after the checksum passes and before the zip is
+unpacked** — an unverified package is never extracted. The signature scheme is
+RSA-PSS (SHA-256) over the ASCII bytes of the lowercase hex digest the
+operator pinned, so what is verified is exactly the digest the operator pinned,
+not some re-serialized form of it.
+
 ### ControlPlane PluginStore
 
 The ControlPlane adds a plugin **index source** (`Vapor_PLUGIN_INDEX_URL`, a
@@ -516,7 +524,8 @@ jobs to the named agents:
   "version": "1.0.0", "apiVersion": "1.0", "description": "...",
   "url": "https://.../vapor.monitoring.zip", "sha256": "<64 hex>",
   "trust": "official", "permissions": ["actions"],
-  "publisher": "vapor" } ] }
+  "publisher": "vapor",
+  "signing": { "publicKey": "<base64 SPKI>", "signature": "<base64 RSA-PSS>" } } ] }
 ```
 
 - `GET /v1/plugins/catalog` — the fetched index (60s cache, `error` surfaced inline)
@@ -537,11 +546,23 @@ host's `MinimumTrust` policy is unchanged. The `publisher` field is the same
 kind of statement: a free-form label the index and the manifest declare about
 themselves, reconciled at install time and drift-flagged at update checks
 (`publisherChanged`) when both sides state one and they differ. It is
-advisory metadata, **not** a signature — no key is distributed, nothing is
-cryptographically verified, and a malicious index source can declare any
-publisher it likes. Cryptographic package signing remains future work.
-Point `Vapor_PLUGIN_INDEX_URL` only at index sources you control, and pin
-digests you computed yourself.
+advisory metadata, **not** a signature — nothing about it is verified, and a
+malicious index source can declare any publisher it likes. Where origin
+matters, see the `signing` block below; point `Vapor_PLUGIN_INDEX_URL` at
+index sources you control and pin digests you computed yourself.
+
+The `signing` block is the one origin claim that is actually verified, and
+it is verified only against keys **you** pin on the agent. Set
+`VAPOR_PLUGIN_TRUST_KEYS` (comma-separated base64 SubjectPublicKeyInfo) to
+the publisher keys you accept. An agent that pins no keys **fails closed**
+on a catalog entry that declares a signature — an origin claim it cannot
+anchor is treated as unmet rather than skipped. Keys are compared as
+canonicalized SPKI bytes, so base64 line wrapping does not matter, and one
+unparseable pin is skipped without disabling the rest. There is no CA, no
+certificate chain and no revocation list: revoking a publisher means editing
+your pin list, which is a config change rather than infrastructure. Trust
+`Vapor_PLUGIN_INDEX_URL` to *name* the key — the key itself still has to be
+yours — and keep `VAPOR_PLUGIN_TRUST_KEYS` short enough to audit at a glance.
 
 ## Alignment with ASF (ArchiPlugin)
 

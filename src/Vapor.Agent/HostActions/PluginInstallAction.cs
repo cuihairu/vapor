@@ -7,7 +7,9 @@ namespace Vapor.Agent;
 
 /// <summary>
 /// Host action "plugin_install": installs a plugin package (zip) named by URL and
-/// mandatory SHA-256 checksum, validates it against the manifest and hot-loads it.
+/// mandatory SHA-256 checksum (plus a declared package signature when the catalog
+/// ships one and the agent pins trusted publisher keys), validates it against the
+/// manifest and hot-loads it.
 /// The output always carries the full installed-plugin list so the ControlPlane can
 /// mirror this agent's inventory wholesale.
 /// </summary>
@@ -46,6 +48,8 @@ public sealed class PluginInstallAction : IHostAction
 		string? expectedApiVersion = PayloadReader.GetString(payload, "expectedApiVersion");
 		IReadOnlyList<string>? expectedPermissions = PayloadReader.GetStringList(payload, "expectedPermissions");
 		string? expectedPublisher = PayloadReader.GetString(payload, "expectedPublisher");
+		string? expectedSigningPublicKey = PayloadReader.GetString(payload, "expectedSigningPublicKey");
+		string? expectedSigningSignature = PayloadReader.GetString(payload, "expectedSigningSignature");
 
 		if (string.IsNullOrWhiteSpace(url))
 		{
@@ -64,7 +68,8 @@ public sealed class PluginInstallAction : IHostAction
 
 		var result = await _installer.InstallAsync(
 			url, sha256, pluginId, version, _manager, cancellationToken,
-			expectedTrust, expectedPermissions, expectedApiVersion, expectedPublisher).ConfigureAwait(false);
+			expectedTrust, expectedPermissions, expectedApiVersion, expectedPublisher,
+			expectedSigningPublicKey, expectedSigningSignature).ConfigureAwait(false);
 		if (!result.Success)
 		{
 			_logger.LogWarning("plugin_install failed: {Error}", result.Error);

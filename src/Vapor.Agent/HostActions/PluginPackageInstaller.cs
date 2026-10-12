@@ -27,11 +27,24 @@ public sealed class PluginPackageInstaller
 	private readonly Func<HttpClient> _httpClientFactory;
 	private readonly ILogger _logger;
 
-	public PluginPackageInstaller(string pluginsRoot, Func<HttpClient>? httpClientFactory, ILogger logger)
+	/// <summary>
+	/// Publisher keys pinned by the operator (<c>VAPOR_PLUGIN_TRUST_KEYS</c>,
+	/// base64 SubjectPublicKeyInfo, comma-separated). The trust anchor for
+	/// declared package signatures; empty when the operator pins nothing and
+	/// signed installs fail closed.
+	/// </summary>
+	public IReadOnlyList<string> TrustedPublisherKeys { get; }
+
+	public PluginPackageInstaller(
+		string pluginsRoot,
+		Func<HttpClient>? httpClientFactory,
+		ILogger logger,
+		IReadOnlyList<string>? trustedPublisherKeys = null)
 	{
 		_pluginsRoot = pluginsRoot;
 		_httpClientFactory = httpClientFactory ?? CreateDefaultHttpClient;
 		_logger = logger;
+		TrustedPublisherKeys = trustedPublisherKeys ?? [];
 	}
 
 	/// <summary>The plugins root this installer swaps directories under.</summary>
@@ -39,9 +52,10 @@ public sealed class PluginPackageInstaller
 
 	/// <summary>
 	/// Downloads and installs the package. Fails (returns an error, no state change)
-	/// on download errors, size overruns, checksum mismatches, malformed manifests,
-	/// id/version mismatches with the instruction, trust/permissions/apiVersion/publisher
-	/// divergences from the catalog's declared expectations, or load failures.
+	/// on download errors, size overruns, checksum mismatches, signature
+	/// verification failures, malformed manifests, id/version mismatches with the
+	/// instruction, trust/permissions/apiVersion/publisher divergences from the
+	/// catalog's declared expectations, or load failures.
 	/// </summary>
 	public async Task<PluginInstallResult> InstallAsync(
 		string url,
@@ -53,7 +67,9 @@ public sealed class PluginPackageInstaller
 		string? expectedTrust = null,
 		IReadOnlyList<string>? expectedPermissions = null,
 		string? expectedApiVersion = null,
-		string? expectedPublisher = null)
+		string? expectedPublisher = null,
+		string? expectedSigningPublicKey = null,
+		string? expectedSigningSignature = null)
 	{
 		if (!Uri.TryCreate(url, UriKind.Absolute, out var packageUri) ||
 			(packageUri.Scheme != Uri.UriSchemeHttps && packageUri.Scheme != Uri.UriSchemeHttp && packageUri.Scheme != Uri.UriSchemeFile))
@@ -86,6 +102,20 @@ public sealed class PluginPackageInstaller
 		if (!string.Equals(actual, sha256, StringComparison.OrdinalIgnoreCase))
 		{
 			return PluginInstallResult.Fail($"checksum mismatch: expected {sha256.ToLowerInvariant()}, got {actual.ToLowerInvariant()}");
+		}
+
+		// 1b. Origin check, before the zip is unpacked: a declared signature is a
+		//     verification instruction, not a hint. It is checked against the pinned
+		//     digest (equal to the computed one at this point), so what is verified
+		//     is exactly what the operator pinned.
+		if (expectedSigningPublicKey is { } signingPublicKey && expectedSigningSignature is { } signingSignature)
+		{
+			var (signed, signError) = PluginSignatureVerifier.Verify(
+				sha256.ToLowerInvariant(), signingPublicKey, signingSignature, TrustedPublisherKeys);
+			if (!signed)
+			{
+				return PluginInstallResult.Fail($"signature verification failed: {signError}");
+			}
 		}
 
 		// 2. Stage the extraction, then validate the manifest from the staged copy.

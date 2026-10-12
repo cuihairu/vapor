@@ -6,7 +6,8 @@ namespace Vapor.ControlPlane;
 /// Fetches and caches the plugin index — a JSON document naming installable
 /// plugins with their package URL and SHA-256 checksum:
 /// `{ "plugins": [ { "id", "name", "publisher", "version", "apiVersion", "description",
-/// "url", "sha256", "trust", "permissions" } ] }`. The index is the only
+/// "url", "sha256", "trust", "permissions", "signing": { "publicKey", "signature" } } ] }`.
+/// The index is the only
 /// plugin-related state the ControlPlane holds; packages themselves are pulled
 /// by the agents directly from the package URL.
 /// </summary>
@@ -111,6 +112,17 @@ public sealed class PluginCatalogService
 			permissions.AddRange(perms.EnumerateArray().Where(p => p.ValueKind == JsonValueKind.String).Select(p => p.GetString()!));
 		}
 
+		// The signing block is only meaningful when complete: a half-declared
+		// signature (key without signature or the reverse) is treated as
+		// undeclared rather than staged as a partial trust instruction.
+		PluginIndexSigning? signing = null;
+		if (item.TryGetProperty("signing", out var sig) && sig.ValueKind == JsonValueKind.Object &&
+			sig.TryGetProperty("publicKey", out var sigKey) && sigKey.ValueKind == JsonValueKind.String &&
+			sig.TryGetProperty("signature", out var sigValue) && sigValue.ValueKind == JsonValueKind.String)
+		{
+			signing = new PluginIndexSigning(sigKey.GetString()!, sigValue.GetString()!);
+		}
+
 		return new PluginIndexEntry(
 			Id: Get("id"),
 			Name: Get("name"),
@@ -121,7 +133,8 @@ public sealed class PluginCatalogService
 			Description: item.TryGetProperty("description", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null,
 			Trust: item.TryGetProperty("trust", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null,
 			Permissions: permissions,
-			Publisher: item.TryGetProperty("publisher", out var pub) && pub.ValueKind == JsonValueKind.String ? pub.GetString() : null
+			Publisher: item.TryGetProperty("publisher", out var pub) && pub.ValueKind == JsonValueKind.String ? pub.GetString() : null,
+			Signing: signing
 		);
 	}
 }
@@ -148,4 +161,15 @@ public sealed record PluginIndexEntry(
 	string? Description,
 	string? Trust,
 	IReadOnlyList<string> Permissions,
-	string? Publisher = null);
+	string? Publisher = null,
+	PluginIndexSigning? Signing = null);
+
+/// <summary>
+/// Package-origin signature declared by the index: an RSA-PSS (SHA-256)
+/// signature over the entry's lowercase hex digest, made by the RSA key in
+/// <see cref="PublicKey"/> (base64 SubjectPublicKeyInfo). The agent only
+/// honors it when the presented key is among the keys the operator pinned
+/// via <c>VAPOR_PLUGIN_TRUST_KEYS</c> — the pinned set is the trust anchor,
+/// not the index itself.
+/// </summary>
+public sealed record PluginIndexSigning(string PublicKey, string Signature);

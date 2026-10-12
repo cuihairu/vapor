@@ -1044,7 +1044,7 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 	// declaration into the instruction: the agent reconciles it against the package
 	// manifest, so the metadata the operator browsed is verified together with the
 	// content, not on separate channels. Fields the index does not declare are not
-	// checked.
+	// checked. A declared package signature becomes a verification instruction.
 	if (catalogEntry is { } declared)
 	{
 		if (declared.Trust is { } declaredTrust)
@@ -1062,6 +1062,15 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 		if (declared.Publisher is { } declaredPublisher)
 		{
 			payload["expectedPublisher"] = declaredPublisher;
+		}
+
+		// The declared package signature travels as two keys: a trust
+		// instruction that is only meaningful when both halves are staged, so a
+		// half declaration is left un-staged rather than sent half-built.
+		if (declared.Signing is { } declaredSigning)
+		{
+			payload["expectedSigningPublicKey"] = declaredSigning.PublicKey;
+			payload["expectedSigningSignature"] = declaredSigning.Signature;
 		}
 	}
 
@@ -1089,6 +1098,7 @@ app.MapPost("/v1/plugins/install", async Task<IResult> (HttpContext ctx, Config 
 			["pluginId"] = pluginId,
 			["version"] = request.Version,
 			["publisher"] = catalogEntry?.Publisher,
+			["signed"] = catalogEntry?.Signing is not null,
 			["url"] = url,
 			["agents"] = request.AgentIds,
 			["jobs"] = dispatched.Count

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Declared package signatures for plugin installs (40.10-4, signature
+  slice): a catalog index entry may now carry a `signing` block with a
+  `publicKey` (base64 SubjectPublicKeyInfo) and a `signature` (base64
+  RSA-PSS over the SHA-256 of the ASCII bytes of the entry's lowercase hex
+  digest). Catalog-mode installs stage both halves as
+  `expectedSigningPublicKey`/`expectedSigningSignature`, and the agent
+  verifies the signature after the checksum passes and before the zip is
+  unpacked, so an unverified package is never extracted. The trust anchor is
+  the operator's own pinned key set (`VAPOR_PLUGIN_TRUST_KEYS`,
+  comma-separated base64 SubjectPublicKeyInfo, read once at agent startup):
+  an agent with no pins **fails closed** on a signed catalog entry rather than
+  skipping the check, and keys that are not pinned are rejected. Keys compare
+  as canonicalized SPKI bytes so base64 wrapping is irrelevant, and one
+  unparseable pin is skipped without disabling the rest. A half-declared
+  signing block (key without signature or the reverse) is treated as
+  undeclared rather than staged as a partial instruction. There is no CA, no
+  certificate chain and no revocation list — revoking a publisher is editing
+  the pin list, which is a config change. The install audit entry records
+  `signed` so an operator can tell which dispatches carried an origin claim,
+  and the admin console marks signed catalog rows.
 - Declared plugin publisher identity (40.10-4, declared slice): plugin
   manifests and catalog index entries may both carry an optional free-form
   `publisher` label. Catalog-mode installs stage `expectedPublisher` only

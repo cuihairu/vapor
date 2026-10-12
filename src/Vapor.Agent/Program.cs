@@ -197,7 +197,11 @@ var (pluginManager, pluginEvents, pluginsDirectory) = await LoadPluginsAsync(ser
 // They ride the regular task pipeline so retries/audits/jobs-panel apply, and are
 // advertised in hello capabilities like any other action.
 var hostLoggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
-var installer = new PluginPackageInstaller(pluginsDirectory, null, hostLoggerFactory.CreateLogger<PluginPackageInstaller>());
+// Operator-pinned publisher keys (base64 SPKI, comma-separated) anchor declared
+// package signatures; an empty pin list makes signed installs fail closed.
+IReadOnlyList<string> trustedPublisherKeys = (Environment.GetEnvironmentVariable("VAPOR_PLUGIN_TRUST_KEYS") ?? string.Empty)
+	.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var installer = new PluginPackageInstaller(pluginsDirectory, null, hostLoggerFactory.CreateLogger<PluginPackageInstaller>(), trustedPublisherKeys);
 IReadOnlyDictionary<string, IHostAction> hostActions = new Dictionary<string, IHostAction>(StringComparer.OrdinalIgnoreCase)
 {
 	["plugin_install"] = new PluginInstallAction(installer, pluginManager, hostLoggerFactory.CreateLogger<PluginInstallAction>()),

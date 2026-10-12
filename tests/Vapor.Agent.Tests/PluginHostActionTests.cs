@@ -584,6 +584,118 @@ public sealed class PluginPackageInstallerTests
 	}
 
 	[Fact]
+	public async Task InstallAsync_DeclaredSignatureFailsClosedWithoutPinnedKeys()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("signature-nopins");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			using var signer = RSA.Create(2048);
+			(string url, string sha) = StagePackage(root, ManifestJson(null, "1.0", null));
+			var signature = PluginSignatureVerifier.Sign(sha, signer);
+
+			// A signature declaration with no pinned keys is an origin claim the
+			// agent cannot make: fail closed instead of installing unsigned.
+			PluginInstallResult result = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedSigningPublicKey: Convert.ToBase64String(signer.ExportSubjectPublicKeyInfo()),
+				expectedSigningSignature: signature);
+
+			Assert.False(result.Success);
+			Assert.Contains("signature verification failed", result.Error);
+			Assert.Contains("pins no trusted publisher keys", result.Error);
+			Assert.Empty(manager.LoadedPlugins);
+			// The signature gate sits before the extraction step: nothing unpacked.
+			Assert.Empty(Directory.GetDirectories(root));
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_DeclaredSignatureFromUnpinnedKeyFails()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("signature-unpinned");
+		try
+		{
+			using var pinned = RSA.Create(2048);
+			using var stranger = RSA.Create(2048);
+			var installer = new PluginPackageInstaller(
+				root, null, NullLogger.Instance,
+				[Convert.ToBase64String(pinned.ExportSubjectPublicKeyInfo())]);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = StagePackage(root, ManifestJson(null, "1.0", null));
+
+			PluginInstallResult result = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedSigningPublicKey: Convert.ToBase64String(stranger.ExportSubjectPublicKeyInfo()),
+				expectedSigningSignature: PluginSignatureVerifier.Sign(sha, stranger));
+
+			Assert.False(result.Success);
+			Assert.Contains("not among this agent's pinned", result.Error);
+			Assert.Empty(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_ValidDeclaredSignatureInstalls()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("signature-valid");
+		try
+		{
+			using var signer = RSA.Create(2048);
+			var pin = Convert.ToBase64String(signer.ExportSubjectPublicKeyInfo());
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance, [pin]);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = StagePackage(root, ManifestJson(null, "1.0", null));
+
+			PluginInstallResult result = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedSigningPublicKey: pin,
+				expectedSigningSignature: PluginSignatureVerifier.Sign(sha, signer));
+
+			Assert.True(result.Success, result.Error);
+			Assert.Single(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task InstallAsync_PartialSigningInstructionIsSkipped()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("signature-partial");
+		try
+		{
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			(string url, string sha) = StagePackage(root, ManifestJson(null, "1.0", null));
+
+			// Half a trust instruction is not a trust instruction: only a complete
+			// key+signature pair switches the gate on.
+			PluginInstallResult result = await installer.InstallAsync(
+				url, sha, PluginTestPackages.PluginId, null, manager, CancellationToken.None,
+				expectedSigningPublicKey: "definitely not a key");
+
+			Assert.True(result.Success, result.Error);
+			Assert.Single(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
 	public async Task InstallAsync_MatchingCatalogClaimsInstallAndHotLoad()
 	{
 		string root = PluginTestPackages.NewPluginsRoot("catalog-match");
@@ -1304,6 +1416,47 @@ public sealed class PluginInstallActionTests
 			ActionResult installed = await action.ExecuteAsync(matching, CancellationToken.None);
 			Assert.True(installed.Success, installed.Error);
 			Assert.Single(manager.LoadedPlugins);
+		}
+		finally
+		{
+			PluginTestPackages.DeleteBestEffort(Directory.GetParent(root)!.FullName);
+		}
+	}
+
+	[Fact]
+	public async Task ExecuteAsync_CarriesSignatureInstructionIntoTheInstaller()
+	{
+		string root = PluginTestPackages.NewPluginsRoot("install-signature");
+		try
+		{
+			// No pinned keys on this installer, so a declared signature cannot
+			// verify — which proves the action handed both halves over.
+			var installer = new PluginPackageInstaller(root, null, NullLogger.Instance);
+			await using var manager = PluginTestPackages.CreateManager();
+			var action = new PluginInstallAction(installer, manager, NullLogger.Instance);
+			using var signer = RSA.Create(2048);
+			(string url, string sha) = PluginPackageInstallerTests.StagePackage(
+				root, PluginPackageInstallerTests.ManifestJson("official", "1.0", new[] { "actions" }));
+
+			var payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(JsonSerializer.Serialize(new
+			{
+				url,
+				sha256 = sha,
+				pluginId = PluginTestPackages.PluginId,
+				expectedTrust = "official",
+				expectedApiVersion = "1.0",
+				expectedPublisher = "vapor",
+				expectedSigningPublicKey = Convert.ToBase64String(signer.ExportSubjectPublicKeyInfo()),
+				expectedSigningSignature = PluginSignatureVerifier.Sign(sha, signer)
+			}))!;
+
+			ActionResult failed = await action.ExecuteAsync(payload, CancellationToken.None);
+
+			Assert.False(failed.Success);
+			Assert.Contains("signature verification failed", failed.Error);
+			Assert.Contains("pins no trusted publisher keys", failed.Error);
+			// The mirror still comes back on the failure path like every other failure.
+			Assert.NotNull(failed.Output!["plugins"]);
 		}
 		finally
 		{

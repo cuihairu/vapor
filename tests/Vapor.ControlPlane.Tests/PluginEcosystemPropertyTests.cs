@@ -144,6 +144,15 @@ public sealed class PluginEcosystemPropertyTests
 					writer.WriteString("publisher", entry.Publisher);
 				}
 
+				if (entry.Signing is { } entrySigning)
+				{
+					writer.WritePropertyName("signing");
+					writer.WriteStartObject();
+					writer.WriteString("publicKey", entrySigning.PublicKey);
+					writer.WriteString("signature", entrySigning.Signature);
+					writer.WriteEndObject();
+				}
+
 				if (entry.Permissions.Count > 0)
 				{
 					writer.WritePropertyName("permissions");
@@ -176,6 +185,7 @@ public sealed class PluginEcosystemPropertyTests
 		&& a.Description == b.Description
 		&& a.Trust == b.Trust
 		&& a.Publisher == b.Publisher
+		&& a.Signing == b.Signing
 		&& a.Permissions.SequenceEqual(b.Permissions);
 
 	/// <summary>Co-indexes into a parallel array, tolerating empty and null-bearing samples.</summary>
@@ -190,6 +200,7 @@ public sealed class PluginEcosystemPropertyTests
 		bool withDescription,
 		bool withTrust,
 		bool withPublisher,
+		bool withSigning,
 		string?[] ids,
 		string?[] names,
 		string?[] versions,
@@ -199,6 +210,8 @@ public sealed class PluginEcosystemPropertyTests
 		string?[] descriptions,
 		string?[] trusts,
 		string?[] publishers,
+		string?[] signingPublicKeys,
+		string?[] signingSignatures,
 		string?[][] permissions)
 	{
 		// FsCheck cannot synthesize IReadOnlyList<string>, so entries are built
@@ -213,7 +226,10 @@ public sealed class PluginEcosystemPropertyTests
 			Description: withDescription ? At(descriptions, i) : null,
 			Trust: withTrust ? At(trusts, i) : null,
 			Publisher: withPublisher ? At(publishers, i) : null,
-			Permissions: AtList(permissions, i)))];
+			Permissions: AtList(permissions, i),
+			Signing: withSigning
+				? new PluginIndexSigning(At(signingPublicKeys, i), At(signingSignatures, i))
+				: null))];
 
 		// Expected side: what the parser contract says each field becomes —
 		// optional strings survive verbatim, the checksum is lowercased.

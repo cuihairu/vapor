@@ -2137,7 +2137,7 @@
                     <div class="row-head">
                         <div class="title-group">
                             <div class="strong">${escapeHtml(entry.name)} <span class="tiny mono">${escapeHtml(entry.id)}</span></div>
-                            <div class="tiny mono">v${escapeHtml(entry.version)} · api ${escapeHtml(entry.apiVersion)}${entry.publisher ? ` · pub ${escapeHtml(entry.publisher)}` : ""}</div>
+                            <div class="tiny mono">v${escapeHtml(entry.version)} · api ${escapeHtml(entry.apiVersion)}${entry.publisher ? ` · pub ${escapeHtml(entry.publisher)}` : ""}${entry.signing ? " · sig" : ""}</div>
                         </div>
                         <div style="display: flex; gap: 6px; align-items: center;">
                             <span class="badge ${trustBadgeClass(entry.trust)}">${escapeHtml(entry.trust || "unknown")}</span>
