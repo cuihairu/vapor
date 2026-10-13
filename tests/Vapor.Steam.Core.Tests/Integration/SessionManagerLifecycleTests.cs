@@ -150,13 +150,22 @@ public sealed class SessionManagerLifecycleTests
 
 		// Wait for the first observed tick so disposal is guaranteed to land on an
 		// in-flight WaitForNextTickAsync (a cancel before the task even started
-		// would skip the loop body entirely and never reach the OCE arm).
-		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
-		while (Volatile.Read(ref ticks) == 0 && DateTimeOffset.UtcNow < deadline)
+		// would skip the loop body entirely and never reach the OCE arm). The tick
+		// lands within one check interval (25 ms) when the pool keeps up, so the
+		// deadline is purely CI headroom: a starved runner once missed the first
+		// tick for the whole 5 s window. Liveness is IsCompleted, not Status —
+		// Task.Run over an async delegate returns a promise task whose Status stays
+		// WaitingForActivation for its whole life, so gating on Running would exit
+		// the wait immediately and misreport a healthy loop as dead.
+		DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(20);
+		while (Volatile.Read(ref ticks) == 0
+			&& !loop.IsCompleted
+			&& DateTimeOffset.UtcNow < deadline)
 		{
-			await Task.Delay(10);
+			await Task.Delay(25);
 		}
-		Assert.True(Volatile.Read(ref ticks) >= 1, "refresh loop never ticked");
+		Assert.True(Volatile.Read(ref ticks) >= 1,
+			$"refresh loop never ticked (loop status {loop.Status}, session state {session.State}, account {session.AccountName})");
 
 		manager.Dispose();
 		await loop.WaitAsync(TimeSpan.FromSeconds(10));
