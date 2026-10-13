@@ -97,6 +97,6 @@ failure mode (memory) that no official plugin exercises.
   cheap declarative complement: register what a plugin *may* touch, surface it
   in load reports and audit, no enforcement.
 
-Decision recorded in `todo.md` 40.10: quantification done; the follow-up
+Decision recorded in git history (todo.md 40.10, pre-rewrite): quantification done; the follow-up
 (poisoned-session reclamation / quotas) stays pending until there is a
 third-party plugin ecosystem that makes the fault domain real.

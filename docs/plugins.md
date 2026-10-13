@@ -328,8 +328,8 @@ can adjust behaviour without editing plugin.json:
 var config = context.Configuration;
 var host = config.GetString("metrics.host", "127.0.0.1", "VAPOR_METRICS_HOST");
 var port = config.GetInt32("metrics.port", 9700, "VAPOR_METRICS_PORT", min: 0, max: 65535);
-var verbose = config.GetBool("metrics.verbose", false, "VAPOR_METRICS_VERBOSE");
-var threshold = config.GetDecimal("alert.threshold", 10m, "VAPOR_ALERT_THRESHOLD", min: 0.01m);
+var consumeEnabled = config.GetBool("consume.enabled", false, "VAPOR_CSGO_CONSUME_ENABLED");
+var openEnabled = config.GetBool("open.enabled", false, "VAPOR_CSGO_OPEN_ENABLED");
 ```
 
 Unparsable or out-of-range values fall back silently — validate anything critical at
@@ -613,7 +613,7 @@ everything else in the host is free to change.
 
 ## Game access plugin (`vapor.game-access`)
 
-The sixth official plugin is a **wire-compatible extraction**: the fourteen
+This plugin is a **wire-compatible extraction**: the fourteen
 game-access actions that used to be registered by the agent host directly
 (`play_games`, `get_card_drops`, `get_playtime`, `add_license`, `redeem_key`,
 `get_achievements`, `unlock_achievements`, `reset_achievements`,
@@ -668,7 +668,7 @@ applied to an extraction.
 
 ## CS2/CSGO plugin (`vapor.csgo`)
 
-The second official plugin doubles as the reference example for the full
+This plugin doubles as the reference example for the full
 capability surface: actions + configuration + result recording,
 plus (behind an explicit gate) a real game-coordinator case open.
 
@@ -741,7 +741,7 @@ odds table with a cumulative roll — unlicensed, reference for approach),
 
 - `SimulationBackend` (the default, and the only `backend` configuration
   value accepted today): pure local RNG. No network, no Steam calls, no
-  account required. `case_open` actions report `mode: "simulation"` in their
+  account required. `case_open` actions report `mode: "dry-run"` in their
   output.
 
 Requesting any other `backend` value fails plugin initialization with an
@@ -788,8 +788,8 @@ falling back to simulation.
 
 Every open appends one JSON line (case id, item, rarity, stattrak, float,
 wear, paint seed, timestamp) to the configured results file
-(`results.path`). Aggregates — opens per case, per-rarity counts and observed
-rates — are computed from the same records (`GET stats`). When `results.path`
+(`results.path`). Aggregates — opens per case and per-rarity counts — are
+computed from the same records (`GET stats`). When `results.path`
 is omitted, results are kept in a bounded in-memory ring (last 1000) and not
 persisted.
 
@@ -844,7 +844,7 @@ Stated plainly, so nobody has to guess:
   single gated crate open. There is no trade offer, no market call, and no
   web session action; `case_consume` only appends to a local file, and only
   after the explicit `consume.enabled` gate. Every action and route output
-  carries a `mode` field (`"simulation"` / `"gc"` / `"readonly"` /
+  carries a `mode` field (`"dry-run"` / `"gc"` / `"readonly"` /
   `"ledger"`) so an operator can always tell which surface answered.
 - Steam Web API terms
   ([apiterms](https://steamcommunity.com/dev/apiterms)) additionally restrict
@@ -854,7 +854,7 @@ Stated plainly, so nobody has to guess:
 
 ## Game data plugin (`vapor.game-data`)
 
-The third game plugin (and fifth official one) closes the read-only analytics
+This plugin closes the read-only analytics
 candidates from [Valve game plugins](game-plugins.md): public Dota 2 data and
 the TF2/CS2 item schemas, straight from the official Steam Web API.
 

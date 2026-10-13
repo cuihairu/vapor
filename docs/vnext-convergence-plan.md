@@ -31,13 +31,13 @@ V-next 的收敛方向因此定为：
 
 ### P0-A：Action Execution Semantics
 
-**目标**：给每个 Action 声明执行安全分类，让 Scheduler/重试决策读得到语义，而不是对全部 57 个动作一视同仁。
+**目标**：给每个 Action 声明执行安全分类，让 Scheduler/重试决策读得到语义，而不是对全部动作一视同仁（立项时 57 个，落地后增至 65 个）。
 
 **采纳来源**：审核 §8（Execution Semantics：ReadOnly/IdempotentWrite/NonIdempotent/Interactive/LongRunning/Compensatable）、§11（Capability 元数据）、§7（at-least-once ≠ exactly-once 的工程化落地）。
 
 **范围**：
 - `ActionMetadata` 增加分类字段：`ActionSafety` 枚举 `ReadOnly / Idempotent / GuardedWrite / NonIdempotent`，默认（未声明）为 `Unknown`，按 **NonIdempotent 保守**处理（不可自动重试、不可并行重派）。
-- 57 个动作逐一声明分类（登记期机械核对，不允许漏标）。
+- 65 个动作逐一声明分类（登记期机械核对，不允许漏标）。
 - 最小闭环：重试策略按分类生效——`ReadOnly/Idempotent` 保留现有 `TaskMaxDispatchAttempts` 重试；`NonIdempotent/GuardedWrite` 最多重试 1 次（仅任务管道失败时），避免重复外部副作用；`GuardedWrite` 需显式幂等键（`idempotency_external_key` 支持）才允许多次尝试。Interactive/LongRunning 不新增枚举——分别由现有 `RequiresLogin`/`TimeoutSeconds` 表达（避免过度设计）。
 - `actions.md` 每动作补齐分类列，依赖脚本守护（见 P1-A）。
 - Scheduler 侧改动仅限重试决策读取分类；**不动**隧道协议、Job 队列模型、任务状态机。
@@ -47,7 +47,7 @@ V-next 的收敛方向因此定为：
 - `IAction`/`ActionMetadata` 属于 Plugin API 面：按 `docs/releasing.md` 的 API 兼容规则处理（新增字段带默认值，需随轮验证 in-tree 六个官方插件的加载/卸载测试不回归）。
 
 **验收标准**：
-1. 57 个动作全部显式声明 `ActionSafety`；`ActionRegistry.Register` 拒绝未声明者（至少 warning→后续轮次升级为拒绝）。
+1. 65 个动作全部显式声明 `ActionSafety`；`ActionRegistry.Register` 拒绝未声明者（至少 warning→后续轮次升级为拒绝）。
 2. 重试策略按分类生效，测试覆盖：`NonIdempotent` 动作管道失败不触发二次派发；`Idempotent` 保留重试。
 3. `actions.md` 分类列与代码单源，verify 脚本负探针（人为改一处 → EXIT=1）。
 4. API 兼容：六个官方插件 load/unload 测试全绿；五 verify + format + 全量串行双百门禁全绿（口径见 §6）。
@@ -106,7 +106,7 @@ V-next 的收敛方向因此定为：
 
 - **C1 配置 schema**：manifest 增加可选 `configurationSchema` 字段，插件初始化前按 schema 校验 `configuration`，失败 = 结构化发现错误（含字段级信息）。树内六插件至少一个用上（示例性）。
 - **C2 依赖声明**：manifest 增加可选 `dependencies`（pluginId + apiVersion 约束），启用时构建依赖图：缺失依赖、循环依赖、apiVersion 不匹配 → 发现失败。
-- **C3 升级/回滚/健康/资源策略**：评估为生态级大件，**降 P3 不排期**（处置记录见 todo.md §40.6）。
+- **C3 升级/回滚/健康/资源策略**：评估为生态级大件，**降 P3 不排期**（处置记录见 git 历史）。
 
 **边界**：不做进程化 sandbox（审核 §13/§33 一致，仓库非目标重申）；不引入远程插件源与签名体系（超出收敛目标）。
 

@@ -24,12 +24,13 @@
 |---|---|---|---|---|---|
 | `get_game_info` | store.appdetails | `GameInfo` | 30 min | 2 h | `game:{appId}:{cc}` |
 | `get_game_info_batch` | store.appdetails × N（≤200/批） | `GameInfo[]` + 逐项错误 | 30 min | 2 h | 与单应用共享层级 |
-| `search_games` | storesearch | `GameSearchResult[]` | 1 h | 6 h | `search:{term}:{cc}` |
+| `search_games` | storesearch | `GameSearchResult[]` | 1 h | 6 h | `search:{term}:{limit}:{cc}` |
 | `get_price` | store.appdetails（价格段） | `PriceOverview` | 3 min | 15 min | `price:{appId}:{cc}` |
 | `get_market_listings` | community market | `MarketListingsPage` | 5 min | 30 min | `market:{appId}:{start}:{count}` |
 
 `get_game_info_batch` 是 crawl 的执行单元：单项失败不中断整批（逐项进 `errors`），
 两次真实 HTTP 之间按 `interval_ms`（默认 500 ms，clamp 0–5000）节流，缓存命中零等待。
+缓存键中的 `term` 与 `cc` 均按小写存储（`search_games` 键含 `limit` 段）。
 
 ## 模型字段
 

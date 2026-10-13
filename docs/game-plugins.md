@@ -6,13 +6,15 @@ exist, which do not, and why**. The short version:
 - The plugin **mechanism** (discovery, manifest, trust/permissions, isolated
   loading, hot install) is complete and ASF-aligned — see
   [Plugin development](plugins.md). Nothing in this page blocks on it.
-- The official plugin **catalog** is deliberately small. Two plugins are
-  tied to a specific Valve title today: `vapor.csgo` (CS:GO/CS2, dry-run
+- The official plugin **catalog** is deliberately small. Three plugins are
+  tied to specific Valve titles today: `vapor.csgo` (CS:GO/CS2, dry-run
   simulator + read-only backpack bookkeeping + a gated real game-coordinator
-  case open) and `vapor.dota2` (Dota 2, read-only inventory/trade listing +
-  a gated single-offer send over the game-agnostic trade foundations).
-  Crafting, battle-pass and in-match automation stay out of scope for both,
-  and some of that gap is structural, not backlog.
+  case open), `vapor.dota2` (Dota 2, read-only inventory/trade listing +
+  a gated single-offer send over the game-agnostic trade foundations), and
+  `vapor.game-data` (read-only per-title analytics: Dota 2 match/hero/item
+  data and the TF2/CS2 item schemas).
+  Crafting, battle-pass and in-match automation stay out of scope for all of
+  them, and some of that gap is structural, not backlog.
 
 ## The game-agnostic base already covers most of it
 
@@ -25,7 +27,7 @@ payloads are unchanged:
 | Surface | Core coverage (works for any Valve title) |
 |---------|-------------------------------------------|
 | Playtime / idle / boost | `idle`, `play_games`, `get_playtime`; `boost` desired state with multi-app farming |
-| Trading cards | `get_card_drops` + the farm desired state (two-phase engine) — applies to titles that have card sets (e.g. Dota 2 does; CS:GO/CS2 never had them) |
+| Trading cards | `get_card_drops` + the farm desired state (card-drop queue with rotation) — applies to titles that have card sets (e.g. Dota 2 does; CS:GO/CS2 never had them) |
 | Licenses & keys | `add_license`, `redeem_key` |
 | Achievements | `get_achievements`, `unlock_achievements`, `reset_achievements` |
 | Inventory & trading | `get_inventory`, `find_duplicates`, `swap_duplicates`, trade offers, `loot_inventory` (+ §39 storage-role collect orchestration); game-economy aggregation/valuation via `get_game_inventory` / `get_item_details` |

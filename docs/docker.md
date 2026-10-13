@@ -5,7 +5,7 @@
 | Image | Dockerfile | Notes |
 |-------|------------|-------|
 | `vapor/controlplane` | `src/Vapor.ControlPlane/Dockerfile` | REST + SSE + WebSocket, SQLite under `/app/data` |
-| `vapor/agent` | `src/Vapor.Agent/Dockerfile` | Ships with the Monitoring plugin preinstalled in `/app/plugins` |
+| `vapor/agent` | `src/Vapor.Agent/Dockerfile` | Ships with the Monitoring and GameAccess plugins preinstalled in `/app/plugins` |
 
 Both images are multi-stage builds on `mcr.microsoft.com/dotnet/sdk:10.0` → `mcr.microsoft.com/dotnet/aspnet:10.0`, run as a non-root user (`APP_UID`), and take the repository root as build context:
 
@@ -81,6 +81,7 @@ Exported metric families:
 | `vapor_sessions_by_state` | gauge | `state` | Sessions grouped by state |
 | `vapor_session_events_total` | counter | `type` | Session lifecycle events |
 | `vapor_cache_hits_total` / `vapor_cache_misses_total` | counter | – | Cache statistics |
+| `vapor_cache_stale_hits_total` | counter | – | Stale-while-revalidate serves since process start |
 | `vapor_cache_entries` | gauge | – | Live cache entries |
 | `process_uptime_seconds`, `process_working_set_bytes` | gauge | – | Process basics |
 | `dotnet_gc_heap_size_bytes`, `dotnet_gc_collections_total` | gauge/counter | `generation` | GC state |

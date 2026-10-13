@@ -15,7 +15,7 @@ English | [简体中文](README.zh.md)
 [![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases)
 [![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/)
-[![C#](https://img.shields.io/badge/C%23-12-239120)](https://learn.microsoft.com/dotnet/csharp/)
+[![C#](https://img.shields.io/badge/C%23-13-239120)](https://learn.microsoft.com/dotnet/csharp/)
 [![status](https://img.shields.io/badge/status-alpha-orange)](#development-status)
 
 API-controlled, headless Steam automation platform designed for large-scale batch operations and multi-region deployment. Inspired by [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm)'s Bot/Action model.
@@ -30,7 +30,7 @@ Declarative orchestration: you state `online` / `idle` / `farm` / `boost` per ac
 
 Risky surfaces ship disabled. Market listing creation and cancels default to `dry_run` and need both a per-account and a per-agent switch; trade auto-accept requires an explicit per-account policy with a partner whitelist and gifts-only mode. Every one of those decisions lands in the audit log.
 
-Plugins load into isolated AssemblyLoadContexts and unload without a restart. Manifests carry a SemVer API contract, a trust level and permission grants; the runtime PluginStore installs packages agent-targeted from a catalog. Six official plugins ship in-tree: Monitoring, MobileAuthenticator, MarketWatch, CS2/CSGO, GameData, GameAccess — the last carrying the game-access action surface as a wire-compatible extraction from the host. See [plugin development](docs/plugins.md).
+Plugins load into isolated AssemblyLoadContexts and unload without a restart. Manifests carry a SemVer API contract, a trust level and permission grants; the runtime PluginStore installs packages agent-targeted from a catalog. Seven official plugins ship in-tree: Monitoring, MobileAuthenticator, MarketWatch, CS2/CSGO, Dota 2, GameData, GameAccess — the last carrying the game-access action surface as a wire-compatible extraction from the host. See [plugin development](docs/plugins.md).
 
 For operations: a control-plane script repository to store and dispatch operator scripts to connected agents plus ordered script flows (sequential steps, per-step status, stop/continue failure policy), OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
 

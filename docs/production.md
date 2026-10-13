@@ -60,6 +60,7 @@ are in [docker.md](docker.md).
 | `Vapor_API_RATE_LIMIT_PER_MINUTE` | no | `0` | Per-key sliding-window limit over `/v1` routes (0 = off); rejected requests get 429 + Retry-After (see api.md) |
 | `Vapor_CRAWL_DB_PATH` | no | `data/crawl.db` | SQLite file for crawl plans and per-app harvest results |
 | `Vapor_CONFIG_DB_PATH` | no | `data/config.db` | SQLite file for the declared farm: account specs and settings are write-through persisted here and rehydrated at startup, so a control-plane restart no longer requires re-declaring accounts (`:memory:` restores the pre-persistence behavior) |
+| `VAPOR_SCRIPT_DB_PATH` | no | `data/scripts.db` | SQLite file for the operator script repository (`ScriptRecord`: id, name, description, language, opaque content, timestamps); identity and metadata only — execution semantics live on the agent |
 | `Vapor_CRAWL_WORKER_TICK_SECONDS` | no | `5` | Crawl worker claim/poll cadence; `<= 0` disables crawl orchestration |
 | `Vapor_CRAWL_KEEP_RUNS` | no | `10` | Recent runs whose results are kept per plan (older runs pruned on completion) |
 | `Vapor_CRAWL_MAX_APPS_PER_PLAN` | no | `500` | Upper bound on app_ids per crawl plan (rejects larger requests) |
@@ -153,9 +154,10 @@ fall through to the live fetch) until the connection recovers.
 
 #### Plugins
 
-Plugins live in `VAPOR_PLUGINS_DIR` (default `./plugins`), one subdirectory
-per plugin with a `plugin.json` manifest; the image ships the official
-Monitoring plugin preinstalled. Loading, trust gating, permissions and the
+Plugins live in `VAPOR_PLUGINS_DIR` (default `<app-base>/plugins`, i.e. the
+application directory, not the working directory), one subdirectory per plugin
+with a `plugin.json` manifest; the image ships the official Monitoring and
+GameAccess plugins preinstalled. Loading, trust gating, permissions and the
 manifest format are documented in the
 [plugin development guide](plugins.md). Operational notes:
 
@@ -353,17 +355,17 @@ State lives in two named volumes:
 
 | Volume | Content |
 |--------|---------|
-| `controlplane-data` (`/app/data`) | `controlplane.db` (jobs/tasks/agents), `audit.db`, `crawl.db`, `config.db` (declared specs + settings) |
+| `controlplane-data` (`/app/data`) | `controlplane.db` (jobs/tasks/agents), `audit.db`, `crawl.db`, `config.db` (declared specs + settings), `scripts.db` (operator script repository), `webhook.db` (webhook delivery log) |
 | `agent-data` (`/app/.vapor`) | Per-agent credentials and session data |
 
 Back up with SQLite's online API (consistent while the control plane keeps
 running). The runtime image ships no `sqlite3` CLI — run the official
 `alpine` image and add the `sqlite` package on the fly. The mount must be
 writable — `.backup` writes its output file into the same volume — and all
-four databases belong in the backup set:
+six databases belong in the backup set:
 
 ```bash
-for db in controlplane audit crawl config; do
+for db in controlplane audit crawl config scripts webhook; do
   docker run --rm -v vapor_controlplane-data:/data alpine \
     sh -c "apk add --no-cache sqlite >/dev/null && sqlite3 /data/$db.db \".backup '/data/backup-$db-$(date +%F).db'\""
 done

@@ -123,8 +123,8 @@ healthcheck queries `:9700/metrics`).
 2. **Corrupt SQLite file** — restore from backup (see
    [production.md](production.md)).
 3. **Missing required env** — `Vapor_ADMIN_API_KEY` /
-   `Vapor_AGENT_API_KEYS` unset causes a startup failure with an explicit
-   message.
+   `Vapor_AGENT_API_KEYS` unset does *not* stop the process: it starts, but every admin and tunnel
+   call is rejected 401 (fail closed).
 
 ## Reading job state from SQLite directly
 

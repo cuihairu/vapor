@@ -25,6 +25,8 @@ story is "one writer, one lock, one file". Everything below follows from that.
 | Account specs (desired state) | Control plane | `AccountStore` (memory read path) write-through to SQLite (`SqliteConfigStore`) | Survives CP restart |
 | Audit log | Control plane | SQLite (`SqliteAuditStore`) | Survives CP restart |
 | Crawl plans / results | Control plane | SQLite (`SqliteCrawlStore`) | Survives CP restart |
+| Script repository | Control plane | SQLite (`SqliteScriptStore`) | Survives CP restart |
+| Webhook delivery log | Control plane | SQLite (`SqliteWebhookDeliveryStore`) | Survives CP restart |
 | Global / per-account settings | Control plane | `ConfigStore` (memory read path) write-through to SQLite (`SqliteConfigStore`) | Survives CP restart |
 | Agent registry (who is connected) | Control plane | In-memory `AgentRegistry` | Rebuilt from agent re-hello |
 | Session snapshots | Control plane | In-memory `SessionTracker` (agent-reported) | Re-populated by agent session events |

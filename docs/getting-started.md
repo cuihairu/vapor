@@ -133,7 +133,7 @@ curl -sS -X PUT http://127.0.0.1:8080/v1/accounts/acct-1 \
   -d '{
         "enabled":true,
         "desiredState":"Farm",
-        "idleApps":[730],                 // exclusion list: never farm these
+        "idleApps":["730"],               // exclusion list: never farm these
         "region":"eu-west","agentId":"agent-1",
         "farmPolicy":{"perGameHourBudget":4,"priorityOrder":"CardsDescending","priorityApps":[251570]},
         "updatedBy":"me"

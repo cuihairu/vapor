@@ -8,7 +8,7 @@
 矩阵对齐"能力域"而非逐功能复制。是否纳入 P6 按三条标准裁剪:
 
 1. 契合定位:Vapor 是多账号规模化运营平台(CP + Agent 舰队 + REST/插件/编排),不做单机工具箱功能(网络加速、本地账号切换、游戏内脚本)。
-2. GA 出口条件优先(`todo.md` §0):登录、2FA 已闭环;**库存/交易、基础 farming 是明确未闭环的出口条件**,差距分析以此为最高权重。
+2. GA 出口条件优先(见 git 历史):登录、2FA 已闭环;**库存/交易、基础 farming 是明确未闭环的出口条件**,差距分析以此为最高权重。
 3. 平台杠杆:能复用既有编排/通知/插件/观测底座的功能优先(边际成本低、放大既有投资)。
 
 ## 2. 对标产品速览
@@ -101,16 +101,18 @@
 
 矩阵结论:平台层(舰队编排/插件/观测/REST)是五个对标产品里 Vapor 唯一有、其余四家都没有的层,差距集中在 **Steam 功能纵深**——恰好压在 GA 出口条件 #2 的"库存/交易、基础 farming"上。以下按建议优先级排列(checkbox 供逐项核对,完成后勾选)。
 
-> **2026-09-13 收口**:P6-1 / P6-2 / P6-3 全部落地,GA 出口条件 #2(库存/交易、基础 farming)闭环;剩余差异仅为明确后置(挂单创建 ToS 灰区、成就管理需求弱)与定位外不采用项。落地明细见 `todo.md` §11。
-> **2026-09-14**:P7 立项(市场闭环——挂单读取/批量撤单/挂单创建),挂单两项自 P6-4 后置升级立项——"需库存/定价前置"已被 P6 补齐,ToS 灰区以分期 + dry_run 默认 + per-account 开关缓解;成就管理维持后置。见 `todo.md` §12。
-> **2026-09-14**:P7-1 挂单读取落地(只读零风险增量)——`get_my_market_listings` + `GET /v1/accounts/{name}/market/listings`,mylistings 解析以构造 fixture + 三方互证契约测试锁定,供 P7-2 批量撤单取数。见 `todo.md` §12。
-> **2026-09-14**:P7-2 批量撤单落地——`cancel_market_listings` + `POST /v1/accounts/{name}/market/listings/cancel`,过滤器(应用/名称/价格区间/挂龄)+逐条节奏+单项失败不中断如实汇总,dry_run 默认、无过滤实撤双层拒绝(CP 400 + action 独立拒绝),市场专用保守频控独立于交易限流预算。见 `todo.md` §12。
-> **2026-09-14**:P7-3 挂单创建落地——`create_market_listing` + `POST /v1/accounts/{name}/market/listings` + `MarketFeeCalculator`(Steam 5%+发行商 10% 按卖方所得计费、买/卖两侧换算,契约与官方 economy_v2.js/market_multisell.js 四源互证),send 缺省 dry run 只出定价方案,实撤需账户 `marketListingsEnabled` + agent `AGENT_MARKET_LISTINGS_ENABLED` 双开关;价格仅来自调用方,market 类确认复用既有闭环。P7 市场闭环三期全部完成。见 `todo.md` §12。
-> **2026-09-15**:P8 积分商店认领落地——`get_points_shop_summary` + `claim_points_shop_items` + `GET/POST /v1/accounts/{name}/points-shop/*`(SteamKit2 LoyaltyRewards unified service,语义对齐 ASF RP 命令):免费定义默认认领、付费需 `force=true` 且缺省整批前置拒绝、defid 仅来自调用方显式输入(不做扫描全部可认领的自动化)。矩阵最后一个非后置非定位外缺口收口,§3.6 仅余后置的成就管理。见 `todo.md` §13。
-> **2026-09-18**:成就解锁/管理落地(§33,P1 成就读取 + P2 写入通道 + P3 admin 面板),§3.6 最后一个后置项闭环。写入为显式单发 REST(显式 names 清单,无全量隐式路径;reset 双 confirm),布尔置位划线——成就/stat 数值编辑维持「明确不采用」。见 `todo.md` §33。
-> **2026-09-22**:矩阵回填两处滞后——①§3.7 插件系统行补运行时 PluginStore(§37:目录源→agent 定向安装/卸载/热加载 + admin 面板,ASF 插件需手动放置);②REST API 行 34→50 条 `/v1` 路由(58 个操作;§31 admin 写端点 + §33 成就 + §35/§36 编排 + §37 插件生态五端点累计)。见 `todo.md` §37。
-> **2026-09-30**:矩阵回填两处滞后——①§3.4 库存管理行 Vapor 列「无 UI」更正(轮三十六已交付 admin 背包面板含 duplicates 表,API+UI+动作三件齐全);②§3.7 REST API 行路由 50→70、操作 58→57(轮三十七 QR 端点 + 轮三十八后累计;轮四十二游戏经济双动作后 57)。见 `todo.md` 轮四十五。
-> **2026-10-01**:矩阵勘误+REST 计数口径定谳(轮四十七 维护轮)——上一条(2026-09-30)的「路由 50→70、操作 58→57」字段张冠李戴:70 取自 verify-api-docs 的全部 Map* 方法+路径对(含 `/`、`/healthz`、`/metrics` 三条非 `/v1`),57 实为 distinct `/v1` path 数。核准口径与 api.md 引言一致(路由=distinct `/v1` path、操作=`/v1` 方法+路径对,含 7 条多方法路径),真值 **57 路由 / 67 操作**;api.md 引言 50 routes (58 operations) 一并 stale 刷新。见 `todo.md` 轮四十七。
+> **2026-09-13 收口**:P6-1 / P6-2 / P6-3 全部落地,GA 出口条件 #2(库存/交易、基础 farming)闭环;剩余差异仅为明确后置(挂单创建 ToS 灰区、成就管理需求弱)与定位外不采用项。落地明细见 git 历史。
+> **2026-09-14**:P7 立项(市场闭环——挂单读取/批量撤单/挂单创建),挂单两项自 P6-4 后置升级立项——"需库存/定价前置"已被 P6 补齐,ToS 灰区以分期 + dry_run 默认 + per-account 开关缓解;成就管理维持后置。见 git 历史。
+> **2026-09-14**:P7-1 挂单读取落地(只读零风险增量)——`get_my_market_listings` + `GET /v1/accounts/{name}/market/listings`,mylistings 解析以构造 fixture + 三方互证契约测试锁定,供 P7-2 批量撤单取数。见 git 历史。
+> **2026-09-14**:P7-2 批量撤单落地——`cancel_market_listings` + `POST /v1/accounts/{name}/market/listings/cancel`,过滤器(应用/名称/价格区间/挂龄)+逐条节奏+单项失败不中断如实汇总,dry_run 默认、无过滤实撤双层拒绝(CP 400 + action 独立拒绝),市场专用保守频控独立于交易限流预算。见 git 历史。
+> **2026-09-14**:P7-3 挂单创建落地——`create_market_listing` + `POST /v1/accounts/{name}/market/listings` + `MarketFeeCalculator`(Steam 5%+发行商 10% 按卖方所得计费、买/卖两侧换算,契约与官方 economy_v2.js/market_multisell.js 四源互证),send 缺省 dry run 只出定价方案,实撤需账户 `marketListingsEnabled` + agent `AGENT_MARKET_LISTINGS_ENABLED` 双开关;价格仅来自调用方,market 类确认复用既有闭环。P7 市场闭环三期全部完成。见 git 历史。
+> **2026-09-15**:P8 积分商店认领落地——`get_points_shop_summary` + `claim_points_shop_items` + `GET/POST /v1/accounts/{name}/points-shop/*`(SteamKit2 LoyaltyRewards unified service,语义对齐 ASF RP 命令):免费定义默认认领、付费需 `force=true` 且缺省整批前置拒绝、defid 仅来自调用方显式输入(不做扫描全部可认领的自动化)。矩阵最后一个非后置非定位外缺口收口,§3.6 仅余后置的成就管理。见 git 历史。
+> **2026-09-18**:成就解锁/管理落地(§33,P1 成就读取 + P2 写入通道 + P3 admin 面板),§3.6 最后一个后置项闭环。写入为显式单发 REST(显式 names 清单,无全量隐式路径;reset 双 confirm),布尔置位划线——成就/stat 数值编辑维持「明确不采用」。见 git 历史。
+> **2026-09-22**:矩阵回填两处滞后——①§3.7 插件系统行补运行时 PluginStore(§37:目录源→agent 定向安装/卸载/热加载 + admin 面板,ASF 插件需手动放置);②REST API 行 34→50 条 `/v1` 路由(58 个操作;§31 admin 写端点 + §33 成就 + §35/§36 编排 + §37 插件生态五端点累计)。见 git 历史。
+> **2026-09-30**:矩阵回填两处滞后——①§3.4 库存管理行 Vapor 列「无 UI」更正(轮三十六已交付 admin 背包面板含 duplicates 表,API+UI+动作三件齐全);②§3.7 REST API 行路由 50→70、操作 58→57(轮三十七 QR 端点 + 轮三十八后累计;轮四十二游戏经济双动作后 57)。见 git 历史。
+> **2026-10-01**:矩阵勘误+REST 计数口径定谳(轮四十七 维护轮)——上一条(2026-09-30)的「路由 50→70、操作 58→57」字段张冠李戴:70 取自 verify-api-docs 的全部 Map* 方法+路径对(含 `/`、`/healthz`、`/metrics` 三条非 `/v1`),57 实为 distinct `/v1` path 数。核准口径与 api.md 引言一致(路由=distinct `/v1` path、操作=`/v1` 方法+路径对,含 7 条多方法路径),真值 **57 路由 / 67 操作**;api.md 引言 50 routes (58 operations) 一并 stale 刷新。见 git 历史。
+
+> **2026-10-13 后续勘误**:上一条(2026-10-01)定谳的 **57 路由 / 67 操作** 已被后续落地再次推高——现值 **68 路由 / 84 操作**(口径不变:路由=distinct `/v1` path、操作=`/v1` 方法+路径对)。本矩阵 REST 行以最新真值为准。
 
 ### P6-1 卡牌 farming 闭环(GA 出口条件,平台杠杆最大)✅ 全部完成
 
@@ -135,9 +137,9 @@
 ### P6-4 竞品对齐但后置(记录待决,不承诺)
 
 - [x] Web Dashboard 读优先面板(对标 ASF-ui 只读部分):`wwwroot/dashboard.html` 落地——统计卡/账户/Agent/会话/作业/审计 + 双 SSE 流 + 轮询兜底,写操作白名单单写(合同测试守护:PUT/DELETE 永禁,POST 恰一处 reconcile);管理功能走 admin.html(2026-09-18 §31 扩展为全功能管理台:账户生命周期/交易与确认/市场与认领/爬虫计划/配置管理五个面板,写端点全覆盖,破坏性操作二次确认,契约测试守护)。
-- [x] 挂单创建/批量撤单(对标 SGI):ToS 灰区 + 需要库存/定价前置,后置。(2026-09-14 前置条件经 P6 补齐,立项为 P7 市场闭环,见 `todo.md` §12)
+- [x] 挂单创建/批量撤单(对标 SGI):ToS 灰区 + 需要库存/定价前置,后置。(2026-09-14 前置条件经 P6 补齐,立项为 P7 市场闭环,见 git 历史)
 - [x] QR 扫码登录(对标 SGI/steamguard-cli):SteamKit2 QR 挑战 + 轮询落地;挑战 URL 经 session 事件上浮供人扫码,request_key 与 token 均不出 agent;管理面 admin.html 会话面板内置"QR 扫码登录"按钮一键触发(✅ 2026-09-16 UI 按钮落地,后置项闭环)。
-- [x] 成就解锁/管理(对标 SGI):需求弱,后置。(2026-09-18 立项为 §33 并落地:读取走社区成就页,解锁/重置走 client stats 协议手工消息的显式单发 REST——显式 names + reset 双 confirm + 写后读回逐条验证;布尔置位划线,数值编辑维持不采用,见 `todo.md` §33)
+- [x] 成就解锁/管理(对标 SGI):需求弱,后置。(2026-09-18 立项为 §33 并落地:读取走社区成就页,解锁/重置走 client stats 协议手工消息的显式单发 REST——显式 names + reset 双 confirm + 写后读回逐条验证;布尔置位划线,数值编辑维持不采用,见 git 历史)
 
 ### 明确不采用(定位外)
 

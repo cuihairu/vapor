@@ -67,7 +67,7 @@ here. `Scope` is one of:
 | `test-fleet` | Every test project **must** declare it, at exactly this version |
 | `any` | A project that declares it **must** use exactly this version (declaring it at all is optional) |
 
-A *test project* here is a `*.Tests` project, and every one of the 14 of
+A *test project* here is a `*.Tests` project, and every one of the 15 of
 them also sets `<IsTestProject>true</IsTestProject>` — the script checks
 that property too, because it is what `Directory.Build.props` keys the
 coverage defaults off. Three plugin test projects were created without
@@ -79,10 +79,9 @@ on either signal and fails when the two disagree.
 `test-fleet` exists because the test toolchain has to behave identically
 in all 15 test projects: a single project left on an older runner is how
 you get a test that passes locally and reports nothing, or a coverage
-denominator that quietly changes shape. The canonical example is in
-`todo.md` — `Vapor.ControlPlane.Tests` sat on xunit 2.6.2 / test SDK
-17.8.0 / runner 2.5.4 for the entire life of the project while the other
-11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
+denominator that quietly changes shape. The canonical example: `Vapor.ControlPlane.Tests` sat on xunit 2.6.2 /
+test SDK 17.8.0 / runner 2.5.4 for the entire life of the project while the
+other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 
 <!-- verify-dependency-versions:packages -->
 
@@ -180,7 +179,7 @@ their tests cannot prove the upgrade safe:
   behaviour with known vectors (see the TOTP and confirmation-hash
   property tests in `Vapor.Steam.Core`); a major bump that changes login
   challenge routing or trade state transitions is a product change.
-- **Microsoft.Data.Sqlite** — owns the four SQLite databases. Migrations
+- **Microsoft.Data.Sqlite** — owns the six SQLite databases. Migrations
   are idempotent-on-start and additive (see `docs/production.md` § Data,
   backup and upgrades), so an upgrade that adds a column is safe, but it
   has the repo's only known CI flake signature:

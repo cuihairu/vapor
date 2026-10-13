@@ -89,6 +89,7 @@ nav:
       - Dependency policy: dependencies.md
       - Releasing: releasing.md
       - Troubleshooting: troubleshooting.md
+      - Doc-code consistency audit: 审计-文档一致性.md
 
 extra:
   status:

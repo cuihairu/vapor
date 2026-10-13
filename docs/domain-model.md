@@ -108,9 +108,9 @@ One target's slice of a job — the actual unit of dispatch, execution and resul
 | Lifecycle | `JobTaskStatus` 5 states: `Queued` —claim→ `Running` —result→ `Finished` / `Failed` (terminal, error + output kept), `Canceled`. Claim is atomic (`ClaimNextQueuedTask`); a `Running` task whose lease expires (`TaskLeaseSeconds`, default 300 s, no heartbeat) is requeued (`RequeueStaleRunningTasks`). |
 | Persistence | SQLite (`SqliteJobStore`), one row per task; exactly one terminal record per task — attempt fencing makes late duplicates no-ops. |
 | Identity | 32-char lowercase hex (`Id.New()`); tasks are also (logically) keyed by `JobId` + `Target`. |
-| Consistency | At-least-once delivery with fencing: a requeued task may re-execute (hence the Action safety classes), but result writes are fenced by attempt and a task cannot finish twice. Dispatch picks a connected, capability-matching agent in the task's region (deterministic lowest `agentId`), or pins to `agent:{id}` for host actions. |
+| Consistency | At-least-once delivery with fencing: a requeued task may re-execute (hence the Action safety classes), but result writes are fenced by attempt and a task cannot finish twice. Dispatch picks a connected, capability-matching agent in the task's region (least-loaded, agent-id tie-break), or pins to `agent:{id}` for host actions. |
 
-Code index: `JobTask` (`Id`, `JobId`, `Target`, `Action`, `Region`, `Payload`, `Status`, `Attempt`, `Error?`, `Output?`), `JobTaskStatus`, `TaskResult`, `TaskHeartbeat`, `TaskCancel` — `src/Vapor.Protocol/Models.cs`; claim/lease/fence SQL — `SqliteJobStore.cs`. The full delivery semantics live in [`consistency.md`](consistency.md) §2.
+Code index: `JobTask` (`Id`, `JobId`, `Target`, `Action`, `Region`, `Payload`, `Status`, `Attempt`, `CreatedAt`, `UpdatedAt`, `Error?`, `Output?`), `JobTaskStatus`, `TaskResult`, `TaskHeartbeat`, `TaskCancel` — `src/Vapor.Protocol/Models.cs`; claim/lease/fence SQL — `SqliteJobStore.cs`. The full delivery semantics live in [`consistency.md`](consistency.md) §2.
 
 ## 6. Attempt
 
@@ -128,7 +128,7 @@ Code index: `JobTask.Attempt`, `TaskResult.Attempt` — `src/Vapor.Protocol/Mode
 
 ## 7. Action
 
-A named unit of Steam work, declared with metadata and an execution-safety class. 57 in-tree actions across core and plugins.
+A named unit of Steam work, declared with metadata and an execution-safety class. 65 in-tree actions across core and plugins.
 
 | Facet | Definition |
 |-------|-----------|

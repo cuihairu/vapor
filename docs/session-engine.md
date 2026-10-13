@@ -51,7 +51,7 @@ Task<ActionResult> ExecuteAsync(
 
 ## 动作
 
-全仓 57 个动作的完整目录（payload 字段、超时、安全分类）见 [actions catalog](actions.md)。这里列 5 个最小的作示例：
+全仓 65 个动作的完整目录（payload 字段、超时、安全分类）见 [actions catalog](actions.md)。这里列 5 个最小的作示例：
 
 | 动作名 | 说明 | 需要登录 | 超时 |
 |--------|------|----------|------|
@@ -79,6 +79,7 @@ public sealed class MyAction : IAction
         CancellationToken cancellationToken)
     {
         // 实现动作逻辑
+        var output = new Dictionary<string, object?>();
         return Task.FromResult<ActionResult>(new ActionResult(true, null, output));
     }
 }
@@ -107,7 +108,7 @@ var result = await session.ExecuteActionAsync(
 SteamClientManager 负责与 Steam 网络通信：
 - 管理单个共享的 SteamClient 实例
 - 通过 CallbackManager 处理 Steam 回调
-- 支持多账户同时登录
+- 管理多账户凭据并在共享连接上逐个登录(单客户端同一时刻只进行一个账户的登录)
 - 处理认证码和 2FA 请求
 - 支持 access token 和 refresh token 保存
 

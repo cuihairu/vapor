@@ -42,7 +42,7 @@ Create a job — `POST /v1/jobs` (admin auth header; `CreateJobRequest` in `src/
 
 Response: `202 Accepted`, `Location: /v1/jobs/{id}`, body `{ "job": { id, action, region, targets, meta, status, createdAt, updatedAt, schedule?, nextRunAt? } }`. Status enum: `queued | running | scheduled | finished | failed | canceled`.
 
-Dispatch: `TaskSchedulerService` polls every 250 ms; account-targeted tasks go to the deterministic pick (lowest agent id) among the region's connected agents that advertise the action in their hello `capabilities`; `agent:{id}` targets go to that exact agent (capability-checked).
+Dispatch: `TaskSchedulerService` polls every 250 ms; account-targeted tasks go to the least-loaded pick (fewest running tasks, agent id as tie-break) among the region's connected agents that advertise the action in their hello `capabilities`; `agent:{id}` targets go to that exact agent (capability-checked).
 
 Read results — `GET /v1/jobs/{jobId}` returns `JobWithTasks`:
 
@@ -244,7 +244,7 @@ Output: `app_ids`, `sub_ids`, `apps_result` (Steam result string), `granted_app_
 Redeems a Steam product key; retries transient failures up to 3 attempts (250 ms × attempt backoff).
 Payload: `key` string, **required**.
 Output: `action`, `key` (**masked** — middle segments `*`-ed), `result` (Steam result name), `resultCode` (int), `attempts`, `success`, `requestId`, `durationMs`, `grantedAppIds`, `grantedPackageIds`, `receiptDetails` (each present when non-empty/non-null).
-Safety: `RateLimitExceeded` surfaces as "Too many key redemption attempts"; `AlreadyOwned` and `DuplicateRequest` count as success.
+Safety: `RateLimitExceeded` surfaces as "Too many key redemption attempts. Please try again later."; `AlreadyOwned` and `DuplicateRequest` count as success.
 
 ## Achievements
 
@@ -406,12 +406,12 @@ Output: `format` (`"prometheus"`), `metrics` (Prometheus exposition text), `summ
 
 ## CS2/CSGO plugin (`vapor.csgo`, `src/Vapor.Plugins.Csgo/CsgoPlugin.cs`)
 
-The dry-run simulator plus a **gated** real game-coordinator open (`case_open`, now classified `NonIdempotent`: a gated real open burns one crate + one key — the worst-case side effect the safety class exists for), the live CS2 backpack read that classifies the bag into cases/keys/other, and a gated consumption ledger the operator records into after physically opening. Two gates, default **off**: `open.enabled` unlocks the real GC open path (Steam client transport + CS2 handshake + `OpenCrate`); `consume.enabled` only unlocks ledger bookkeeping. Every output carries a `mode` field (`"simulation"`, `"gc"`, `"readonly"`, `"ledger"`). Per-plugin boundary: [plugins.md](plugins.md).
+The dry-run simulator plus a **gated** real game-coordinator open (`case_open`, now classified `NonIdempotent`: a gated real open burns one crate + one key — the worst-case side effect the safety class exists for), the live CS2 backpack read that classifies the bag into cases/keys/other, and a gated consumption ledger the operator records into after physically opening. Two gates, default **off**: `open.enabled` unlocks the real GC open path (Steam client transport + CS2 handshake + `OpenCrate`); `consume.enabled` only unlocks ledger bookkeeping. Every output carries a `mode` field (`"dry-run"`, `"gc"`, `"readonly"`, `"ledger"`). Per-plugin boundary: [plugins.md](plugins.md).
 
 ### `case_open` — `src/Vapor.Plugins.Csgo/CsgoPlugin.cs` (`CaseOpenAction`) (login: no, timeout: 180s, safety: NonIdempotent)
 Without `crateAssetId`/`keyAssetId` (and with the gate off) runs the local dry-run simulator: samples the case's item pool and appends a simulation result — no Steam traffic, no capability. With numeric asset ids or with `open.enabled=true` the action takes the real path, which **refuses to run while the gate is off** with guidance on `open.enabled` / `VAPOR_CSGO_OPEN_ENABLED`; a gated real open burns exactly one crate + one key per request (`count != 1` is rejected — repeat the call to open more).
 Payload: `caseId` string **required** (must exist in the plugin's catalog); `crateAssetId`/`keyAssetId` optional numeric (ulong as number, string, or JSON number — both together or both absent, non-zero; explicit ids skip the pre-open backpack scan); `count` integer optional default `1` (simulation only).
-Output (simulation): `mode` (`"simulation"`), `caseId`, `caseName`, `awards[]`, `ledger`. Output (real `gc` path): `mode` (`"gc"`), `case_id`, `case_name`, `crate_asset_id`, `key_asset_id`, `prizes[]` `{ asset_id, name (null when the backpack lagged past the retries), matched }`, `ledger` `{ entries, cases, keys }`. The real path performs the CS2 GC handshake (PlayGames → `ClientHello` → `ClientWelcome`), sends `OpenCrate` (2534), waits up to 120s for the `ItemCustomizationNotification` with request `1007`, then re-reads the backpack (up to 3 attempts) to map prize asset ids to market names and records the consumption into the ledger. Classified `NonIdempotent` (worst case: a gated call spends a crate and a key) — dispatch retries are the operator's responsibility.
+Output: wrapped one level deep under a `payload` key. Simulation inner shape: `mode` (`"dry-run"`), `caseId`, `opened`, `rarityCounts[]` `{ rarity, count }`, `results[]`. Real `gc` inner shape: `mode` (`"gc"`), `case_id`, `case_name`, `crate_asset_id`, `key_asset_id`, `prizes[]` `{ asset_id, name (null when the backpack lagged past the retries), matched }`, `ledger` `{ entries, cases, keys }`. The real path performs the CS2 GC handshake (PlayGames → `ClientHello` → `ClientWelcome`), sends `OpenCrate` (2534), waits up to 120s for the `ItemCustomizationNotification` with request `1007`, then re-reads the backpack (up to 3 attempts) to map prize asset ids to market names and records the consumption into the ledger. Classified `NonIdempotent` (worst case: a gated call spends a crate and a key) — dispatch retries are the operator's responsibility.
 
 ### `case_inventory` — `src/Vapor.Plugins.Csgo/CaseActions.cs` (`CaseInventoryAction`) (login: yes, timeout: 60s, safety: ReadOnly)
 Pages the CS2 backpack through the shared inventory paginator (app `730`, context `2`) and classifies it: a market hash name ending in `"Case"` is a case container (carrying the catalog case id when the container name matches a known case), one ending in `"Key"` is a key (a "Case Key" is a key), everything else is other. Stackable amounts are summed; groups are ordered by name.
@@ -482,7 +482,7 @@ Output: `pluginId`, `removed`, `plugins` (remaining list).
 
 ### `plugin_list` (login: no, timeout: 15s, safety: ReadOnly)
 Reports the currently loaded plugins and the plugins root. No payload fields.
-Output: `directory` (plugins root path), `count`, `plugins` (loaded-plugin list; each entry carries `id`, `name`, `version`, `apiVersion`, `trust`, `permissions`, `resources` (manifest's advisory runtime-resource declaration, empty when undeclared), `actions`).
+Output: `directory` (plugins root path), `count`, `plugins` (loaded-plugin list; each entry carries `id`, `name`, `version`, `apiVersion`, `trust`, `permissions`, `publisher` (manifest's advisory publisher, absent when undeclared), `resources` (manifest's advisory runtime-resource declaration, empty when undeclared), `actions`).
 
 ### `plugin_update_check` (login: no, timeout: 15s, safety: ReadOnly)
 Compares the catalog candidates staged from the plugin index against the plugins actually loaded on this agent and reports a verdict per candidate. Read-only by design — nothing is downloaded or replaced here; the operator decides what (and where) to install with `plugin_install`.
@@ -493,7 +493,7 @@ Output: `count`, `updates` (per candidate: `id`, `catalogVersion`, `installedVer
 Assigns (or clears) an account's egress proxy: validates the endpoint, persists it in **this agent's** credential store and, when a live session exists, rebuilds that session through the new exit (remove → restore → token re-login). A failed rebuild is not an error: the assignment persists and the next login picks it up (`sessionRestarted=false`).
 Payload: `account` string **required**; `proxy` string optional — the endpoint (`http|https|socks5://[user:pass@]host:port`); **omitted/empty means clear** (the REST layer enforces explicitness so an accidental empty call cannot strip a pinned exit).
 Output: `account`, `proxy` (**masked form only** — `socks5://user:<redacted>@host:port`; credentials never leave the agent), `cleared` (bool), `sessionRestarted` (bool).
-Note: this action is host-scoped (`agent:{id}` target) but keyed by account — the ControlPlane refuses assignment for accounts without a pinned agent, because the endpoint would otherwise persist into whichever agent claims the task. Pair with `check_proxy` to verify the live exit. Rationale: Steam correlates logins by IP; an account's exit is pinned once and changed rarely (see `todo.md` §39).
+Note: this action is host-scoped (`agent:{id}` target) but keyed by account — the ControlPlane refuses assignment for accounts without a pinned agent, because the endpoint would otherwise persist into whichever agent claims the task. Pair with `check_proxy` to verify the live exit. Rationale: Steam correlates logins by IP; an account's exit is pinned once and changed rarely.
 
 ### `script_exec` (login: no, timeout: 300s, safety: NonIdempotent)
 Runs an operator script from the control-plane script repository on this agent machine. The repository lives control-plane side, so the payload carries the full script body; the agent resolves the interpreter from `language`, captures stdout/stderr plus the exit code, and reports all three back on the task result. The only surface is this host action — `POST /v1/scripts/{id}/execute` is the operator-facing entry that stages the payload.

@@ -59,8 +59,8 @@ Responsibilities:
 - Store minimal local state: session caches and transient runtime info.
 
 Interfaces:
-- Outbound Agent Tunnel: WebSocket (initial) or gRPC stream (future) with mTLS.
-- Optional localhost admin/health endpoint.
+- Outbound Agent Tunnel: WebSocket, authenticated with a per-agent bearer key (mTLS evaluated as unnecessary for the single control plane + outbound-tunnel design).
+- No HTTP listener on the agent itself; the Monitoring plugin self-hosts a Prometheus `/metrics` endpoint (default `127.0.0.1:9700`).
 
 ## Execution flow (job → tasks → results)
 
@@ -95,11 +95,11 @@ Interfaces:
     per tenant (there is no tenant concept).
   - Never expose raw secrets (passwords, refresh tokens, 2FA seeds) over API.
 - Agent tunnel:
-  - Agents authenticate with short-lived tokens or mTLS certs.
+  - Agents authenticate with static bearer keys (each key optionally carrying an `@<ISO-8601>` expiry suffix for rotation).
   - Control plane authorizes what each agent can execute (region scoping, capabilities).
-  - All messages signed/authenticated; replay protection via `taskId` + nonce.
+  - Messages are authenticated by the tunnel key; fencing is `taskId` + `attempt` — there are no per-message signatures or nonces.
 - Secret storage:
-  - Use KMS/Vault/Keychain for encryption and rotation.
+  - Encryption keys come from environment variables or a key file (`VAPOR_ENCRYPTION_KEY` / `VAPOR_ENCRYPTION_KEY_BASE64` / `VAPOR_ENCRYPTION_KEY_FILE`); KMS/Vault/Keychain integration is not implemented.
   - Agent should fetch only region-scoped secrets needed for active tasks.
 
 ## Queueing and reliability
@@ -519,7 +519,7 @@ would make the store refuse its own output.
 
 ## Testing
 
-The repository runs 4,032 tests across 15 test projects (2026-10-12
+The repository runs 4,052 tests across 15 test projects (2026-10-13
 measured), covering unit, integration, contract and performance layers, and
 the coverage gate requires 100% line and branch coverage on every CI run —
 `scripts/coverage-summary.py --min 100 --min-branch 100` is the referee.

@@ -15,12 +15,13 @@ Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS 
 
 ### Authentication
 
-Two static bearer token sets, both configured by environment variables (`Config.LoadFromEnvironment`):
+Three static bearer token sets, all configured by environment variables (`Config.LoadFromEnvironment`):
 
 | Role | Env var | Format |
 |---|---|---|
 | Admin | `VAPOR_ADMIN_API_KEY` | single token (compose dev default `admin-dev-token`) |
 | Agent | `VAPOR_AGENT_API_KEYS` | comma-separated list of tokens (dev default `agent-dev-token`) |
+| Viewer | `VAPOR_VIEWER_API_KEY` | single token; read-only — accepted on safe methods (GET/HEAD/OPTIONS) across `/v1`, every write rejected with `401` |
 
 Header convention (matching the OpenAPI security definition `bearer`): `Authorization: Bearer <token>`.
 
@@ -447,7 +448,7 @@ Account spec record — `AccountSpec`: `{ accountName, enabled, desiredState, id
 Job records: `Job = { id, action, region?, targets: string[], meta?: {string:string}, status, createdAt, updatedAt, schedule?, nextRunAt? }` (status: `queued|running|scheduled|finished|failed|canceled`);
 `JobTask = { id, jobId, target, action, region?, payload?, status, attempt, createdAt, updatedAt, error?, output? }` (task status: `queued|running|finished|failed|canceled`);
 `JobWithTasks = { job, tasks: [JobTask] }`;
-`JobSchedule = { intervalSeconds: int (default 0), cron?: string, missed: "skip"|"runOnce" (default "skip"), overlap: "skip"|"allow" (default "allow") }` — exactly one of `intervalSeconds` (≥ 5) or `cron` (5-field, UTC) must be set; both → 400 `schedule accepts intervalSeconds or cron, not both`, neither → 400 `schedule requires intervalSeconds > 0 or a cron expression`.
+`JobSchedule = { intervalSeconds: int (default 0), cron?: string, missed: "skip"|"runOnce" (default "skip"), overlap: "skip"|"allow" (default "skip") }` — exactly one of `intervalSeconds` (≥ 5) or `cron` (5-field, UTC) must be set; both → 400 `schedule accepts intervalSeconds or cron, not both`, neither → 400 `schedule requires intervalSeconds > 0 or a cron expression`.
 
 #### `POST /v1/jobs`
 - Purpose: create a job (dispatched by the scheduler to a capable agent in the job's region; a job with a `schedule` becomes a recurring template).
