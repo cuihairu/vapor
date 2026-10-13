@@ -158,9 +158,23 @@ public sealed class PluginCaseOpeningE2ETests
 			Assert.Equal(CaseId, output.GetProperty("caseId").GetString());
 			Assert.Equal(3, output.GetProperty("cases").GetInt32());
 			Assert.Equal(5, output.GetProperty("keys").GetInt32());
-			Assert.Equal(1, output.GetProperty("ledger").GetProperty("entries").GetInt32());
-			Assert.Equal(3, output.GetProperty("ledger").GetProperty("cases").GetInt32());
-			Assert.Equal(5, output.GetProperty("ledger").GetProperty("keys").GetInt32());
+
+			// Delivery is at-least-once with attempt fencing (consistency.md §2): a
+			// first attempt whose result is lost is superseded and redispatched, and
+			// case_consume is deliberately NonIdempotent, capped at two dispatch
+			// attempts. A redispatch can therefore have executed the action twice, and
+			// the ledger — an audit trail of what was actually consumed — must record
+			// every execution that happened. The attempt number reported for the task
+			// tells the two worlds apart: with one attempt the exactly-once shape must
+			// hold (this is what catches a spurious double record); with two, one or
+			// two records are both contract-legal.
+			int attempt = task.GetProperty("attempt").GetInt32();
+			int entries = output.GetProperty("ledger").GetProperty("entries").GetInt32();
+			Assert.InRange(attempt, 1, 2);
+			Assert.True(attempt == 1 ? entries == 1 : entries >= 1 && entries <= attempt,
+				$"ledger entries {entries} outside the delivery contract for attempt {attempt}");
+			Assert.Equal(3 * entries, output.GetProperty("ledger").GetProperty("cases").GetInt32());
+			Assert.Equal(5 * entries, output.GetProperty("ledger").GetProperty("keys").GetInt32());
 
 			// The gate is open but the catalog stays authoritative: an unknown case id
 			// must fail with the catalog error instead of silently recording an entry.
@@ -169,12 +183,12 @@ public sealed class PluginCaseOpeningE2ETests
 				["caseId"] = "vapor.cases.missing",
 			}, "unknown case");
 
-			// The archive holds one durable JSONL line for the recorded entry, which
-			// is what lets ledger totals survive agent restarts (the constructor
-			// replays well-formed lines).
+			// The archive holds one durable JSONL line per recorded entry — the
+			// in-memory total is that replay plus the live appends, so the two counts
+			// must agree — which is what lets ledger totals survive agent restarts.
 			string[] lines = File.ReadAllLines(ledgerPath);
-			Assert.Single(lines);
-			using var doc = JsonDocument.Parse(lines[0]);
+			Assert.Equal(entries, lines.Length);
+			using var doc = JsonDocument.Parse(lines[^1]);
 			Assert.Equal(CaseId, doc.RootElement.GetProperty("caseId").GetString());
 			Assert.Equal(3, doc.RootElement.GetProperty("cases").GetInt32());
 			Assert.Equal(5, doc.RootElement.GetProperty("keys").GetInt32());
