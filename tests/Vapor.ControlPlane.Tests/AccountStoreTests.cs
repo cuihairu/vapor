@@ -343,7 +343,7 @@ public sealed class AccountStoreTests
 	{
 		var store = new AccountStore();
 
-		// Red line ② of todo §32: an empty whitelist means the policy is off —
+		// Red line ② of round 32 (git history): an empty whitelist means the policy is off —
 		// the declaration-time interlock must reject the contradictory combo
 		// instead of letting the reconciler silently skip everything.
 		Assert.Throws<ArgumentException>(
@@ -384,7 +384,7 @@ public sealed class AccountStoreTests
 		Assert.Null(updated.TradePolicy);
 	}
 
-	// ── farm policy normalization (todo §38 P3-a) ──
+	// ── farm policy normalization (round 38 P3-a; git history) ──
 
 	[Theory]
 	[InlineData(0)]

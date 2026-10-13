@@ -9,7 +9,7 @@ namespace Vapor.ControlPlane.Tests.Performance;
 /// <summary>
 /// Capacity profile — the same workload measured at 100 / 1,000 / 10,000
 /// stored rows (job store, audit store) or published events (event broker),
-/// the §28 residual. The question is how per-operation latency moves as the
+/// the round-28 residual. The question is how per-operation latency moves as the
 /// dataset grows, not raw throughput (covered by <see cref="ControlPlaneBenchmarks"/>).
 ///
 /// SQLite reads are index-backed, so they should stay flat across scales;

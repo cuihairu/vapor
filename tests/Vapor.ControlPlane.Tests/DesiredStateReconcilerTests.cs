@@ -2205,7 +2205,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		await loop; // returns (not hangs, not faults) — the exhausted-timer arm ran
 	}
 
-	// ── §38 P2 standing check loop ──
+	// ── round 38 P2 standing check loop ──
 
 	private static Dictionary<string, object?> StandingOutput(string summary, string economy = "none") => new()
 	{
@@ -2548,7 +2548,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.NotNull(banned.CheckedAt);
 	}
 
-	// ── §32 gift auto-accept loop ──
+	// ── round 32 gift auto-accept loop ──
 
 	private const ulong Partner64 = 76561197960265728 + 456; // whitelist entry (steamId64)
 
@@ -2779,7 +2779,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 		Assert.Single(jobs.Created);
 	}
 
-	// ── §35 reconciliation guard coverage ──
+	// ── round 35 reconciliation guard coverage ──
 
 	[Fact]
 	public async Task Boost_NoCapableAgent_MarksDeviationWithoutDispatch()

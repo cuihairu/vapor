@@ -6,7 +6,7 @@ using Xunit;
 namespace Vapor.E2E.Tests;
 
 /// <summary>
-/// Full-chain restart resilience (roadmap §40.8-⑩): killing the control plane
+/// Full-chain restart resilience (roadmap §9; round 40.8-⑩ in git history): killing the control plane
 /// mid-flight must lose no work — the restarted process rehydrates the same
 /// database, the fault requeues the in-flight task and the chain finishes it
 /// under a fresh attempt. Faults are in-memory only, so the restart also

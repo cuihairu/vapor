@@ -7,7 +7,7 @@ using Xunit;
 namespace Vapor.ControlPlane.Tests;
 
 /// <summary>
-/// Residual fault-injection scenarios (roadmap §40.8-⑩): a corrupted store file,
+/// Residual fault-injection scenarios (roadmap §8; round 40.8-⑩ in git history): a corrupted store file,
 /// a partitioned task attempt and the concurrent-claim double-dispatch fence.
 /// The dispatch/API fault planes above them have their own suites
 /// (FaultInjectorTests / FaultApiTests / TaskSchedulerServiceTests); these pin the

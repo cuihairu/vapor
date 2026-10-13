@@ -201,7 +201,7 @@ public sealed class DashboardStaticTests
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
 
-		// todo §31 red line ②: every irreversible write gates on a native
+		// round 31 (git history) red line ②: every irreversible write gates on a native
 		// confirm/prompt whose text names the consequence. Spot-check one anchor
 		// phrase per destructive channel so an edit that drops the gate fails
 		// here instead of silently shipping a one-click write.
@@ -213,8 +213,8 @@ public sealed class DashboardStaticTests
 		Assert.Contains("ToS 灰区操作", html, StringComparison.Ordinal); // market listing create
 		Assert.Contains("积分消费不可逆", html, StringComparison.Ordinal); // points shop force claim
 		Assert.Contains("已沉淀的采集结果会保留", html, StringComparison.Ordinal); // crawl plan delete
-		Assert.Contains("项成就置为已解锁", html, StringComparison.Ordinal); // achievement unlock gate (§33)
-		Assert.Contains("此操作不可逆：将清零账户", html, StringComparison.Ordinal); // achievement reset, confirm #1 (§33: destructive, double-gated in the UI)
+		Assert.Contains("项成就置为已解锁", html, StringComparison.Ordinal); // achievement unlock gate (round 33)
+		Assert.Contains("此操作不可逆：将清零账户", html, StringComparison.Ordinal); // achievement reset, confirm #1 (round 33: destructive, double-gated in the UI)
 		Assert.Contains("再次确认：向账户", html, StringComparison.Ordinal); // achievement reset, confirm #2
 	}
 
@@ -223,7 +223,7 @@ public sealed class DashboardStaticTests
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
 
-		// todo §31 P5 contract: password-class settings keys render masked; the
+		// round 31 (git history) P5 contract: password-class settings keys render masked; the
 		// input stays empty and an untouched empty input submits the stored
 		// value, so secrets never round-trip through the DOM.
 		Assert.Contains("const SENSITIVE_KEY_PATTERN = /password|secret|token|key|credential/i;", html, StringComparison.Ordinal);
@@ -236,7 +236,7 @@ public sealed class DashboardStaticTests
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
 
-		// §38 P2 contract: the account list pulls the standing snapshot, renders
+		// round 38 P2 contract: the account list pulls the standing snapshot, renders
 		// a clean/restricted/banned badge plus a quarantine flag, and the manual
 		// "体检" button hits the forced-check endpoint (results land only via the
 		// orchestrator's own settle path, never by dispatching a raw job).
@@ -251,7 +251,7 @@ public sealed class DashboardStaticTests
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
 
-		// §39 P-a contract: proxy pinning lives in the account editor but rides
+		// round 39 P-a contract: proxy pinning lives in the account editor but rides
 		// its own audited action (POST /v1/accounts/{name}/proxy), never the PUT
 		// save. Clearing goes through the empty-input confirm naming the
 		// consequence, and the console never echoes a stored endpoint (the
@@ -268,7 +268,7 @@ public sealed class DashboardStaticTests
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
 
-		// §39 P-b contract: the account editor declares the role plus the
+		// round 39 P-b contract: the account editor declares the role plus the
 		// storage account's own SteamID64 (the loot partner address), and the
 		// collect panel only offers declared storage accounts. A collect is a
 		// confirmed, irreversible one-shot (not the account PUT save) and both
@@ -293,7 +293,7 @@ public sealed class DashboardStaticTests
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
 
-		// §38 P3 contract: the account list pulls the farm snapshot and renders
+		// round 38 P3 contract: the account list pulls the farm snapshot and renders
 		// an efficiency badge (farming app / remaining / collected / done+skipped),
 		// and the account editor carries the farm policy fields (per-game budget,
 		// queue ordering, priority apps) with the server-side semantics mirrored
@@ -312,7 +312,7 @@ public sealed class DashboardStaticTests
 	{
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
 
-		// §38 P4 contract: the PluginStore panel browses the plugin index,
+		// round 38 P4 contract: the PluginStore panel browses the plugin index,
 		// installs to a checked set of agents (checksum call-out visible), and
 		// mirrors the reported inventory with uninstall + re-sync actions.
 		Assert.Contains("/v1/plugins/catalog", html, StringComparison.Ordinal);
@@ -342,7 +342,7 @@ public sealed class DashboardStaticTests
 	[Fact]
 	public void AdminHtml_InventoryPanel_ReadOnlyAgentTruthSurface()
 	{
-		// §39 P-c contract: the account card grows a read-only 背包 view that
+		// round 39 P-c contract: the account card grows a read-only 背包 view that
 		// hits the existing GET inventory/duplicates endpoints with app/context
 		// filters, and states the no-cache discipline (the agent is the source
 		// of truth, SWR) instead of holding any inventory state.
@@ -375,7 +375,7 @@ public sealed class DashboardStaticTests
 	[Fact]
 	public void AdminHtml_InventoryPanel_ShowsAsyncJobSemanticsAndPolls()
 	{
-		// §39 P-c async contract: 202 (queued) is surfaced with a bounded poll
+		// round 39 P-c async contract: 202 (queued) is surfaced with a bounded poll
 		// of the job endpoint, 502 (task failed) shows the error verbatim, and
 		// neither path fabricates inventory data.
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/admin.html"));
@@ -391,7 +391,7 @@ public sealed class DashboardStaticTests
 	[Fact]
 	public void DashboardHtml_FailedJobs_SurfaceReasonsFromDetailEndpoint()
 	{
-		// §19 failure-reason surface: the list endpoint carries no error field,
+		// round 19 failure-reason surface: the list endpoint carries no error field,
 		// so failed jobs pull their reason from the existing per-job detail
 		// endpoint, lazily, cached per job id and bounded per refresh — no new
 		// backend surface.
@@ -407,7 +407,7 @@ public sealed class DashboardStaticTests
 	[Fact]
 	public void DashboardHtml_AgentCards_ShowConnectionHealth()
 	{
-		// §19 agent health card: the card renders the connection age next to
+		// round 19 agent health card: the card renders the connection age next to
 		// the connected-at timestamp (formatDuration over /v1/agents/status's
 		// connectedAt), so a stale-or-fresh fleet is visible at a glance.
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));
@@ -419,7 +419,7 @@ public sealed class DashboardStaticTests
 	[Fact]
 	public void DashboardHtml_SessionCards_SummarizeStateDistribution()
 	{
-		// §19 session health card: a client-side state distribution summary
+		// round 19 session health card: a client-side state distribution summary
 		// (per-state counts as colored badges) precedes the session rows.
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));
 
@@ -430,7 +430,7 @@ public sealed class DashboardStaticTests
 	[Fact]
 	public void DashboardHtml_AuditRows_SurfaceExecutionIds()
 	{
-		// §19 audit view: the round-65 execution-ID fields (agent/task/attempt/
+		// round 19 audit view: the round-65 execution-ID fields (agent/task/attempt/
 		// session/trace) render as chips on each audit row when present — the
 		// cross-link anchors for tracing one row back to job, task and agent.
 		string html = File.ReadAllText(FindRepoFile("src/Vapor.ControlPlane/wwwroot/dashboard.html"));

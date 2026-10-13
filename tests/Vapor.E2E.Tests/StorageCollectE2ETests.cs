@@ -7,7 +7,7 @@ using Xunit;
 namespace Vapor.E2E.Tests;
 
 /// <summary>
-/// End-to-end tests for the §39 P-b warehouse collect orchestration against the real
+/// End-to-end tests for the warehouse collect orchestration (round 39 P-b; git history) against the real
 /// Control Plane process: declaring a storage + farm fleet over the REST API, POSTing
 /// a collect run that fans one loot_inventory task per eligible farm into a single
 /// job, and observing the storage.collect audit entry plus the snapshot read-back —

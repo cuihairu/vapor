@@ -33,7 +33,7 @@ public sealed class CardSwapMatcherPropertyTests
 		(item.AppId, item.ClassId, item.InstanceId);
 
 	/// <summary>DuplicateGroup is a record whose list field compares by reference, so
-	/// group equality must be checked field by field (§36 lesson).</summary>
+	/// group equality must be checked field by field (round 36 lesson; git history).</summary>
 	private static bool SameGroups(List<DuplicateGroup> a, List<DuplicateGroup> b) =>
 		a.Count == b.Count &&
 		a.Zip(b).All(p =>

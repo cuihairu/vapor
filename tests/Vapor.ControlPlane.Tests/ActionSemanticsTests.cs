@@ -21,7 +21,7 @@ public class ActionSemanticsTests
 	[Fact]
 	public void ClassificationTable_MatchesDocumentedDistribution()
 	{
-		// The per-action decision log lives in todo.md 轮五十; the distribution is
+		// The per-action decision log lives in round fifty (git history); the distribution is
 		// asserted here so an annotation change requires a deliberate review.
 		var byClass = ActionSemantics.ActionNames
 			.Select(ActionSemantics.SafetyOf)

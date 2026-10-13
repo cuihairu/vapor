@@ -9,7 +9,7 @@ namespace Vapor.ControlPlane.Tests;
 
 /// <summary>
 /// Property-based invariants over the plugin-ecosystem primitives introduced in
-/// §38 P4: the agent:{id} host-target convention (round-trip and exact-acceptance),
+/// round 38 P4 (git history): the agent:{id} host-target convention (round-trip and exact-acceptance),
 /// the install checksum normalizer (acceptance predicate, canonical form,
 /// idempotence — over an alphabet-stretched 64-hex generator so the acceptance
 /// region is densely sampled), and the index parser (field transparency plus
