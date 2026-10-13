@@ -107,6 +107,18 @@ curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
 
 Then open the consoles: [`/admin.html`](http://127.0.0.1:8080/admin.html) (full management UI) · [`/dashboard.html`](http://127.0.0.1:8080/dashboard.html) (read-first, one whitelisted reconcile action) · [`/gamedata.html`](http://127.0.0.1:8080/gamedata.html) (game data dictionary). The full walkthrough — login, challenges, farming, plugins — is in [docs/getting-started.md](docs/getting-started.md).
 
+
+## 本地测试口径
+
+CI 与本地开发按改动面三路分流——改一行文档不该全量编译。
+
+1. **文档改动**（`*.md`、`docs/**`、图片）：不编译。主 CI workflow 的
+   `paths-ignore` 已跳过这些路径。
+2. **代码改动**：只跑改动子集，不全量。
+   - `dotnet test <改动 csproj>`
+3. **全量**（`dotnet test -c Release`）：仅以下情形触发——*.csproj / *.sln、
+   `.github/**`、Docker/Compose 配置、发布前。
+
 ## Documentation
 
 | Section | Contents |
