@@ -102,7 +102,7 @@ public static class ActionSemantics
 			["dota2_game_items"] = ActionSafety.ReadOnly,
 			["econ_item_schema"] = ActionSafety.ReadOnly,
 
-			// Agent host actions (5).
+			// Agent host actions (6).
 			["plugin_install"] = ActionSafety.Idempotent,
 			["plugin_uninstall"] = ActionSafety.Idempotent,
 			["plugin_list"] = ActionSafety.ReadOnly,
