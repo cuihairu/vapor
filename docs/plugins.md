@@ -265,6 +265,12 @@ public sealed class MyPingCommand : IPluginCommand
 }
 ```
 
+The host collects commands at load time (gated by the `commands` permission)
+but **no in-tree host ships a front-end that runs them** — Vapor's control
+plane and agent are headless. The interface is reserved contract surface;
+reach for actions (callable through the job pipeline) when a plugin needs a
+reachable capability today.
+
 ### Web routes (`IWebApiPlugin`)
 
 Host-independent HTTP handlers — useful for dashboards or metrics endpoints that must
