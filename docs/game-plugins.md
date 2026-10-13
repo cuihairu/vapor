@@ -118,8 +118,9 @@ The mechanism side is ready — nothing needs to change to add one, and
   `trust: official` and honest `permissions`; official-trust plugins must pin
   the host's plugin API version exactly (ASF `HasSameVersion` alignment).
 - Follow the `vapor.csgo` reference shape: actions through
-  `IActionPlugin` (callable from jobs and orchestration), read-only dashboards
-  through `IWebApiPlugin`, configuration through the manifest `configuration`
+  `IActionPlugin` (callable from jobs and orchestration — the reachable
+  surface, since no host mounts `IWebApiPlugin` routes yet), configuration
+  through the manifest `configuration`
   map with env overrides, and — where a real integration might one day exist —
   a single honest backend seam like `ICaseOpeningBackend`, defaulting to the
   simulation/read-only implementation and **rejecting** anything else at

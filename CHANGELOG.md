@@ -681,6 +681,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- Plugin capability-surface truth pass: `IWebApiPlugin` web routes and
+  `ICommandPlugin` commands are collected and permission-gated at load, but
+  no host mounts or runs them — the docs now say so instead of claiming
+  hosts serve them (capability table, permissions table, ASF comparison,
+  the web-routes guide section, the Csgo and Monitoring plugin
+  descriptions, and the game-plugins authoring guidance). Self-hosting
+  (the monitoring plugin's own TCP listener) is documented as the working
+  pattern; mounting routes in a host stays a non-goal until an operator
+  signals it.
 - Docs-vs-implementation reconciliation pass (round 51): a full sweep of
   README and the docs site against the current code fixed eight stale or
   missing claims — the action count is now stated as 57 everywhere

@@ -16,8 +16,8 @@ It can contribute any combination of:
 | Capability | Interface | What the host does with it |
 |------------|-----------|----------------------------|
 | Actions | `IActionPlugin` | Registers the contributed `IAction`s in the agent's action registry; they become callable through jobs (`run_action`) |
-| Console commands | `ICommandPlugin` | Adds interactive commands to host front-ends |
-| Web routes | `IWebApiPlugin` | Serves host-independent `PluginWebRoute`s (e.g. the monitoring endpoint) |
+| Console commands | `ICommandPlugin` | Collected at load and gated by the `commands` permission; no in-tree host ships a console front-end that runs them yet, so they are contract surface only |
+| Web routes | `IWebApiPlugin` | Collected at load and gated by the `web` permission; no host mounts them over HTTP yet (the monitoring plugin self-hosts its endpoint on its own listener instead) — see [Web routes](#web-routes-iwebapiplugin) |
 | Session events | `IEventPlugin` | Receives every session event (state changes, auth/2FA prompts, errors) through the `PluginEventDispatcher` |
 
 ## Quick start
@@ -167,8 +167,8 @@ minimum (see the market survey, §7).
 | Permission | Grants |
 |------------|--------|
 | `actions` | `IActionPlugin.GetActions()` results are registered |
-| `commands` | `ICommandPlugin.GetCommands()` results are registered |
-| `web` | `IWebApiPlugin.GetRoutes()` results are served |
+| `commands` | `ICommandPlugin.GetCommands()` results are collected at load; no in-tree host runs them yet |
+| `web` | `IWebApiPlugin.GetRoutes()` results are collected at load; no host mounts them over HTTP yet |
 | `events` | The plugin is subscribed to session events |
 
 The enforcement model is minimal trust by default:
@@ -278,6 +278,14 @@ public IEnumerable<PluginWebRoute> GetRoutes()
         (_, _) => Task.FromResult(PluginWebResponse.Json("{\"ok\":true}")));
 }
 ```
+
+The host collects these at load time (gated by the `web` permission, stripped when it
+is not declared) but **does not mount them over HTTP yet** — no agent or control-plane
+listener serves `PluginWebRoute`s today. Until a host-side listener with an exposure
+and auth story exists, the working pattern for a host-independent endpoint is
+self-hosting, as the monitoring plugin does with its own TCP listener for
+`/metrics`. Mounting routes in a host is a deliberate non-goal until an operator
+signals the need.
 
 ### Session events (`IEventPlugin`)
 
@@ -427,9 +435,9 @@ Each plugin loads into its own collectible `AssemblyLoadContext`. In practice:
 | Plugin | Manifest id | Demonstrates |
 |--------|-------------|--------------|
 | Mobile Authenticator | `vapor.mobile-authenticator` | Actions only; TOTP/confirmation logic kept out of the host |
-| Monitoring | `vapor.monitoring` | Actions + web routes; self-hosted Prometheus endpoint, background metrics pump |
+| Monitoring | `vapor.monitoring` | Actions; self-hosted Prometheus endpoint, background metrics pump |
 | Market Watch | `vapor.market-watch` | Actions + background polling + configuration + webhook alerts; full trust/permission declarations |
-| CS2/CSGO | `vapor.csgo` | Actions + web routes + configuration + result recording/archive + consumption ledger; the dry-run CS:GO case simulator, read-only backpack bookkeeping, and a gated real game-coordinator case open (see its section above) |
+| CS2/CSGO | `vapor.csgo` | Actions + configuration + result recording/archive + consumption ledger; the dry-run CS:GO case simulator, read-only backpack bookkeeping, and a gated real game-coordinator case open (see its section above) |
 | Dota 2 | `vapor.dota2` | Actions only; the Dota 2 scoping of the game-agnostic trade foundations — read-only inventory with 7-day-cooldown classification, Dota-scoped trade-offer listing, and a gated (`trade.enabled`) single-offer send with live ownership validation (see [Valve game plugins](game-plugins.md)) |
 | Game Data | `vapor.game-data` | Actions only; read-only Steam Web API digests (Dota 2 matches/heroes/items, TF2/CS2 schema) with agent-side key handling (see its section below) |
 | Game Access | `vapor.game-access` | Actions only; sixteen game-access actions — the fourteen split out of the host with unchanged names/payloads (farming, licenses & keys, achievements, inventory, loot, points shop) plus the game-economy pair `get_game_inventory`/`get_item_details` — the wire-compatible extraction precedent (see its section below) |
@@ -586,7 +594,7 @@ and community plugins such as FreePackages and ASFEnhance.)
 | Auto-update | GitHub-release assets keyed by host version (`Plugin-V6-0.zip` convention), opt-in whitelist, applied on restart | PluginStore: index URL + SHA-256-pinned zip + `plugin_install` job, hot-loaded immediately | Vapor installs at runtime without a restart; update *policy* (opt-in, digest-pinned) matches ASF's conservatism |
 | Isolation | Default load context, loaded for process lifetime; swap requires restart | Collectible `AssemblyLoadContext` per plugin; `plugin_uninstall` hot-unloads and verifies collection | Beyond ASF |
 | Trust & permissions | Custom plugins load with full trust (a `-modded` warning is the only signal) | Manifest-declared `trust` gate + per-capability `permissions`, evaluated *before* any plugin code runs; undeclared capabilities are stripped (or rejected in strict mode) | Beyond ASF; Vapor plugins are untrusted by default |
-| Web surface | Plugin assemblies become MVC application parts; `IWebServiceProvider`/`IWebInterface` hooks | Host-agnostic `PluginWebRoute`s mounted by hosts under their plugin route prefix | Smaller, host-independent surface |
+| Web surface | Plugin assemblies become MVC application parts; `IWebServiceProvider`/`IWebInterface` hooks | Host-agnostic `PluginWebRoute` contract — collected and permission-gated at load, not mounted by any host yet (in-tree host-independent endpoints self-host, e.g. the monitoring TCP listener) | Smaller, host-independent surface |
 
 **Compatibility policy (adopted from ASF's deprecation discipline):** new
 capabilities are new optional interfaces; when a hook's signature must change,
@@ -655,7 +663,7 @@ applied to an extraction.
 ## CS2/CSGO plugin (`vapor.csgo`)
 
 The second official plugin doubles as the reference example for the full
-capability surface: actions + web routes + configuration + result recording,
+capability surface: actions + configuration + result recording,
 plus (behind an explicit gate) a real game-coordinator case open.
 
 ### What it is
@@ -663,8 +671,9 @@ plus (behind an explicit gate) a real game-coordinator case open.
 A **dry-run case-opening simulator**. It rolls Valve's published CS:GO/CS2
 case-opening odds against a local case catalog, records every result, and
 exposes catalog/open/results/stats through an action (`case_open`, callable
-through the job pipeline) and plugin web routes (`GET cases`, `POST open`,
-`GET results`, `GET stats`). Unless the operator enables the `open.enabled`
+through the job pipeline); its declared plugin web routes (`GET cases`,
+`POST open`, `GET results`, `GET stats`) are contract surface no host mounts
+yet. Unless the operator enables the `open.enabled`
 gate (default **off**), nothing in the plugin can open a case — see
 [ToS boundary](#tos-boundary) and [the gated real path](#modes-and-the-backend-seam).
 
