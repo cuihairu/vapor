@@ -23,7 +23,7 @@ public sealed class AgentRegistry
 	public ConnectedAgent? Pick(string region, string action) => Pick(region, action, null);
 
 	/// <summary>
-	/// Placement matcher (roadmap §40.8-⑥): region match, capability filter, then
+	/// Placement matcher (roadmap §2; round 40.8-⑥ in git history): region match, capability filter, then
 	/// least-loaded with the agent id as the deterministic tie-break — the same
 	/// ordering the account reconciler applies. Load is the running-task count per
 	/// agent attributed in the task store (see <c>CountRunningTasksByAgent</c>); a

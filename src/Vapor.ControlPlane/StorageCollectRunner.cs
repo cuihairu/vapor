@@ -4,7 +4,7 @@ using Vapor.Protocol;
 namespace Vapor.ControlPlane;
 
 /// <summary>
-/// §39 P-b storage-collect orchestration: fans one <c>loot_inventory</c> task
+/// Storage-collect orchestration (round 39 P-b; git history): fans one <c>loot_inventory</c> task
 /// per farm source into a single job (so the existing per-job SSE stream is the
 /// progress channel), bounded-waits the run, then chains the sender-side mobile
 /// confirmations the same way the single-account loot endpoint does — an

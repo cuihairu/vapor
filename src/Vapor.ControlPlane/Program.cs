@@ -776,7 +776,7 @@ app.MapGet("/v1/orchestration/farm", (HttpContext ctx, Config cfg, DesiredStateR
 	.Produces(200)
 	.Produces(401);
 
-// §39 P-b storage-collect: fans one loot_inventory task per enabled farm
+// Storage-collect (round 39 P-b; git history): fans one loot_inventory task per enabled farm
 // account into a single job (its SSE stream is the progress channel), waits
 // bounded, then chains sender-side mobile confirmations. The loot+partner
 // semantics are reused deliberately — no dedicated warehouse table, the jobs
@@ -815,7 +815,7 @@ app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config 
 		return Results.BadRequest(new ErrorResponse($"storage account '{storage.AccountName}' has no steam_id declared; set steamId on the account before collecting"));
 	}
 
-	// Standing quarantine (§38-P2) gates explicit dispatches too: a warehouse
+	// Standing quarantine (round 38 P2; git history) gates explicit dispatches too: a warehouse
 	// with a detected ban must not receive a batch of offers unless the
 	// operator forces it. Never-checked accounts (no reconcile history) are
 	// unknown, not bad, and pass.
@@ -2632,7 +2632,7 @@ app.MapPost("/v1/accounts/{name}/loot", async (HttpContext ctx, Config cfg, IAud
 		return Results.NotFound(new ErrorResponse($"account '{name}' is not declared"));
 	}
 
-	// Standing quarantine (§38-P2) gates explicit dispatches too: an account
+	// Standing quarantine (round 38 P2; git history) gates explicit dispatches too: an account
 	// with a detected ban must not create offers in its name unless the
 	// operator forces the (audited) rescue. Never-checked accounts (no
 	// reconcile history) are unknown, not bad, and pass.
@@ -4731,7 +4731,7 @@ static async Task<IResult> RunOfferDecisionAsync(
 
 /// <summary>
 /// Shared body of the achievement unlock/reset endpoints: the control-plane
-/// side of the §33 double gate — names must be an explicit non-empty list
+/// side of the double gate from round 33 (git history) — names must be an explicit non-empty list
 /// (no implicit full-batch path exists) and reset additionally demands
 /// confirm: true. The action layer enforces the same two gates independently.
 /// </summary>
@@ -4979,7 +4979,7 @@ public sealed record LootRequest(
 	bool Force = false
 );
 
-// Request body for the §39 P-b storage-collect orchestration: the storage
+// Request body for the storage-collect orchestration (round 39 P-b; git history): the storage
 // account is named explicitly (role=storage + its own SteamId64 declared on
 // the spec), the sources are derived from the declared fleet. force=true
 // overrides a standing-check quarantine on the storage target (audited);

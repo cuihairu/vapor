@@ -10,7 +10,7 @@ namespace Vapor.Plugins.GameAccess;
 /// <summary>
 /// "unlock_achievements": sets the named achievements to unlocked on the
 /// logged-on account via the client stats protocol. The names must be listed
-/// explicitly — there is no "unlock everything" path (see todo §33 red lines).
+/// explicitly — there is no "unlock everything" path (see round 33 red lines, git history).
 /// Each achievement is reported individually; one failure never stops the rest.
 /// </summary>
 public sealed class UnlockAchievementsAction : IAction

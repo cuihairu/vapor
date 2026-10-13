@@ -12,7 +12,7 @@ namespace Vapor.ControlPlane;
 /// Deliberate scope: byte mode, ECC level M, versions 1-6 — up to 106 UTF-8
 /// bytes, which covers Steam QR-login challenge URLs ("https://s.team/q/1/…").
 ///
-/// Why in-repo instead of alternatives (todo §18 deferral, resolved here):
+/// Why in-repo instead of alternatives (round 18 deferral, resolved here; git history):
 /// QRCoder would break the zero-new-NuGet rule, an embedded JS encoder has no
 /// test guard (static assets are outside the coverage ratchet), and a
 /// third-party image service would send the login token off-box (security red

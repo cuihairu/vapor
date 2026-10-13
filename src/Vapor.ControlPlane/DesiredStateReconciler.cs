@@ -804,7 +804,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 
 	/// <summary>
 	/// Gift auto-accept loop for a connected account with
-	/// <see cref="TradePolicy.AutoAcceptGifts"/> enabled (todo §32). Mirrors the
+	/// <see cref="TradePolicy.AutoAcceptGifts"/> enabled (round 32; git history). Mirrors the
 	/// farm/boost pattern: periodically dispatches get_trade_offers (throttled
 	/// by <see cref="Config.ReconcileTradeRefreshSeconds"/>), then accepts the
 	/// filtered result one offer per pass — an offer only qualifies when its

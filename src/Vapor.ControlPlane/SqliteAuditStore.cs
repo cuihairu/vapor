@@ -275,7 +275,7 @@ public sealed class SqliteAuditStore : IAuditStore, IDisposable
 			""";
 		cmd.ExecuteNonQuery();
 
-		// Execution-id columns (40.8-7): added idempotently so stores created by
+		// Execution-id columns (round 40.8-7; git history): added idempotently so stores created by
 		// older builds keep their rows and gain the nullable columns in place.
 		EnsureColumn("task_id", "TEXT");
 		EnsureColumn("attempt", "INTEGER");
