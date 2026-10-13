@@ -601,7 +601,13 @@ public sealed class SqliteJobStoreTests
 		// Placement load is the dispatch signal, so it has to survive a control-plane
 		// restart: an orphaned running task still holds the worker's attention.
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
-		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+		// This is the only test in the file that opens the store twice, so it does two
+		// cold connection-plus-schedule passes where its siblings do one. Every other
+		// test here fits the shared 3 s budget with orders of magnitude to spare; this
+		// one is the only one that can exhaust it on a starved runner, which happened on
+		// a Windows Release job where a sibling SQLite test also ran 13 s instead of
+		// ~1 ms. The deadline is still a deadline, just with room for cold work.
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 		try
 		{
 			using (var store = new SqliteJobStore(dbPath))
