@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Consume-ledger end-to-end coverage for the Csgo case plugin (41-4, local
+  half): a second test re-stages the package with `consume.enabled` and a
+  pinned `ledger.path` in its own manifest, installs it over the running
+  agent (the hot swap re-runs plugin initialization), dispatches
+  `case_consume` through the real scheduler-tunnel-executor pipeline, and
+  asserts the flat ledger totals, the unknown-case rejection arm and the
+  durable one-line JSONL archive. Package staging gained manifest
+  configuration overrides so per-test knobs ride the package instead of
+  agent-wide environment variables (environment outranks the manifest and
+  would leak across the collection).
 - End-to-end test for the plugin action pipeline (41-4, local half): the
   Csgo plugin's own build output is packaged, installed on a live agent
   through the direct-mode REST endpoint, and its three `case_*` actions are
