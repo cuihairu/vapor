@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="steam">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vapor Dashboard · 原型</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="components.css">
+  <script src="theme.js" defer></script>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Hero：只读总览入口 + 实时流状态 + 页间导航（对应线上 dashboard.html 顶部） -->
+  <header class="hero">
+    <div class="hero-side">
+      <div>
+        <div class="eyebrow">Steam Automation Control Plane</div>
+        <h1>Vapor Dashboard</h1>
+        <p class="lede">只读总览：内部状态、账户、作业、审计日志、Agent 与实时事件。凭据与挑战码永不展示。</p>
+      </div>
+    </div>
+    <div class="status-cluster">
+      <div class="status-pill"><span class="status-dot"></span><span>实时流已连接</span></div>
+      <div class="token-box">
+        <input id="apiKeyInput" type="password" placeholder="管理员 API Key">
+        <button class="btn btn-secondary btn-small" id="saveTokenButton">保存</button>
+        <button class="btn btn-secondary btn-small" id="reconnectButton">重连流</button>
+      </div>
+      <nav class="nav-links">
+        <a href="admin.html">→ 管理视图（admin）</a>
+        <a href="gamedata.html">→ 游戏数据（gamedata）</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 状态卡：Accounts / Agents / Sessions / In Flight / Finished / Failed -->
+  <section class="stats" aria-label="状态总览">
+    <div class="stat-card"><div class="stat-label">Accounts</div><div class="stat-value">36</div><div class="stat-footnote">声明状态与调度位置</div></div>
+    <div class="stat-card"><div class="stat-label">Agents</div><div class="stat-value">5</div></div>
+    <div class="stat-card"><div class="stat-label">Sessions</div><div class="stat-value">23</div></div>
+    <div class="stat-card"><div class="stat-label">In Flight</div><div class="stat-value">3</div></div>
+    <div class="stat-card"><div class="stat-label">Finished</div><div class="stat-value">148</div></div>
+    <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value">7</div></div>
+  </section>
+
+  <!-- 内部状态总览 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">内部状态总览</h2>
+        <div class="panel-subtitle">控制面自检 / 代理探测 / 运行状态 / 账号一致性（/v1/system/status，凭据与挑战码永不展示）。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshSystemStatusButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list" id="systemStatusList">
+        <div class="row-item">
+          <span class="badge b-ok">通过</span>
+          <div class="meta"><span class="title">控制面自检</span><span class="sub">版本 40.10 · 数据库 42ms · 队列积压 0</span></div>
+          <span class="hint">2026-10-14 09:47</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-run">探测中</span>
+          <div class="meta"><span class="title">代理探测</span><span class="sub">4/5 出口可用 · us-west 延迟 230ms</span></div>
+          <span class="hint">2026-10-14 09:46</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-ok">一致</span>
+          <div class="meta"><span class="title">账号一致性</span><span class="sub">声明 36 · 已上报会话 23 · 差集 13（预期内）</span></div>
+          <span class="hint">2026-10-14 09:47</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 账户 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">账户 <span class="readonly-tag">只读</span></h2>
+        <div class="panel-subtitle">声明状态与调度位置（/v1/accounts）。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshAccountsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list scroll" id="accountList">
+        <div class="row-item">
+          <span class="badge b-ok">farm</span>
+          <div class="meta"><span class="title">farm-cn-01</span><span class="sub">agent-cn-1 · 76561198012345678</span></div>
+          <span class="hint">队列: idle</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-run">play</span>
+          <div class="meta"><span class="title">farm-cn-02</span><span class="sub">agent-cn-1 · 76561198012345679</span></div>
+          <span class="hint">当前 730</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-muted">disabled</span>
+          <div class="meta"><span class="title">farm-us-07</span><span class="sub">未调度 · 密码轮换中</span></div>
+          <span class="hint">—</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 作业 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">作业</h2>
+        <div class="panel-subtitle">最近 50 个作业，点击查看任务明细（/v1/jobs）。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshJobsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list scroll" id="jobList">
+        <div class="row-item">
+          <span class="badge b-run">执行中</span>
+          <div class="meta"><span class="title">job-0192 · play_games</span><span class="sub">cn-north · 6 targets</span></div>
+          <span class="hint">4/6 完成</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-ok">成功</span>
+          <div class="meta"><span class="title">job-0191 · redeem_key</span><span class="sub">cn-east · 4 targets</span></div>
+          <span class="hint">09:12</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-warn">部分成功</span>
+          <div class="meta"><span class="title">job-0189 · get_inventory</span><span class="sub">us-west · 12 targets</span></div>
+          <span class="hint">11/12</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 审计日志 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">审计日志</h2>
+        <div class="panel-subtitle">最近 30 条持久化审计记录（/v1/audit/logs）。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshAuditButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list scroll" id="auditList">
+        <div class="row-item">
+          <span class="badge b-run">账户变更</span>
+          <div class="meta"><span class="title">farm-cn-01 期望状态 farm → play</span><span class="sub">管理员 · 2026-10-14 09:31:40</span></div>
+          <span class="hint">PUT /v1/accounts</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-warn">插件更新</span>
+          <div class="meta"><span class="title">agent-cn-2 安装 GameData 2.1.0（签名校验通过）</span><span class="sub">管理员 · 2026-10-14 09:20:05</span></div>
+          <span class="hint">POST /v1/plugins/install</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-err">任务失败</span>
+          <div class="meta"><span class="title">job-0184 send_trade_offer 目标 farm-us-03 失败</span><span class="sub">系统 · 2026-10-14 08:02:19</span></div>
+          <span class="hint">代理超时</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">Agent</h2>
+        <div class="panel-subtitle">已连接 Agent 与能力分布（/v1/agents/status）。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshAgentsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list" id="agentList">
+        <div class="row-item">
+          <span class="badge b-ok">在线</span>
+          <div class="meta"><span class="title">agent-cn-1</span><span class="sub">cn-north · farm, market, trade · 已连接 1h12m</span></div>
+          <span class="hint">心跳 12s 前</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-warn">降级</span>
+          <div class="meta"><span class="title">agent-cn-2</span><span class="sub">cn-east · farm, inventory · 已连接 46m</span></div>
+          <span class="hint">心跳 58s 前</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 会话 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">会话</h2>
+        <div class="panel-subtitle">账户会话快照（/v1/sessions）。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshSessionsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list scroll" id="sessionList">
+        <div class="row-item">
+          <span class="badge b-ok">在线</span>
+          <div class="meta"><span class="title">farm-cn-01</span><span class="sub">agent-cn-1 · 队列 idle · 剩余 52 分钟</span></div>
+          <span class="hint">09:45 上报</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-muted">冷却</span>
+          <div class="meta"><span class="title">farm-us-02</span><span class="sub">agent-us-1 · 市场冷却 02:14:55</span></div>
+          <span class="hint">09:46 上报</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 实时事件 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">实时事件</h2>
+        <div class="panel-subtitle">任务 / 会话 / 认证事件流（SSE，保留 60 条）。</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="event-log" id="eventsLog">
+        <div class="log-line"><span class="log-time">09:47:20</span><span class="log-kind k-auth"></span><span class="log-msg">farm-cn-03 发起 2FA 移动确认挑战</span></div>
+        <div class="log-line"><span class="log-time">09:47:03</span><span class="log-kind k-job"></span><span class="log-msg">job-0192 play_games 目标 5/6 完成</span></div>
+        <div class="log-line"><span class="log-time">09:46:51</span><span class="log-kind k-session"></span><span class="log-msg">farm-us-02 会话转入市场冷却</span></div>
+        <div class="log-line"><span class="log-time">09:45:44</span><span class="log-kind k-job"></span><span class="log-msg">job-0191 redeem_key 成功结束（4/4）</span></div>
+        <div class="log-line"><span class="log-time">09:44:10</span><span class="log-kind k-sys"></span><span class="log-msg">agent-eu-1 心跳恢复（失联 40s）</span></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

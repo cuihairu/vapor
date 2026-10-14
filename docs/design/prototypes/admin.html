@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="steam">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vapor Admin Console · 原型</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="components.css">
+  <script src="theme.js" defer></script>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Hero：标题 + 实时流状态 + API Key 框 + 页间导航（对应线上 admin.html 顶部） -->
+  <header class="hero">
+    <div class="hero-top">
+      <div>
+        <div class="eyebrow">Steam Automation Control Plane</div>
+        <h1>Vapor Admin Console</h1>
+        <p class="lede">统一查看任务、会话、认证挑战和区域 Agent 状态。这个界面直接复用现有 Control Plane API，并保持长连接事件流实时刷新。</p>
+      </div>
+      <div class="status-cluster">
+        <div class="status-pill"><span class="status-dot" id="connectionDot"></span><span id="connectionStatus">实时流已连接</span></div>
+        <div class="token-box">
+          <input id="apiKeyInput" type="password" placeholder="管理员 API Key">
+          <button class="btn btn-secondary btn-small" id="saveTokenButton">保存</button>
+          <button class="btn btn-secondary btn-small" id="reconnectButton">重连流</button>
+        </div>
+        <nav class="nav-links">
+          <a href="dashboard.html">→ 只读视图（dashboard）</a>
+          <a href="gamedata.html">→ 游戏数据（gamedata）</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- 状态卡：Jobs / Running / Finished / Agents / Sessions -->
+  <section class="stats" aria-label="状态总览">
+    <div class="stat-card"><div class="stat-label">Jobs</div><div class="stat-value">12</div><div class="stat-footnote">队列中与执行中</div></div>
+    <div class="stat-card"><div class="stat-label">Running</div><div class="stat-value">3</div></div>
+    <div class="stat-card"><div class="stat-label">Finished</div><div class="stat-value">148</div><div class="stat-footnote">成功结束的作业</div></div>
+    <div class="stat-card"><div class="stat-label">Agents</div><div class="stat-value">5</div></div>
+    <div class="stat-card"><div class="stat-label">Sessions</div><div class="stat-value">23</div><div class="stat-footnote">最近上报的账户会话</div></div>
+  </section>
+
+  <!-- 创建任务 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">创建任务</h2>
+        <div class="panel-subtitle">按动作、区域和目标账户直接创建批处理作业。</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="action-row">
+        <button class="btn btn-primary btn-small" id="createJobButton">创建任务</button>
+        <button class="btn btn-secondary btn-small" id="clearPayloadButton">清空负载</button>
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label for="actionSelect">动作</label>
+          <select id="actionSelect">
+            <optgroup label="基础">
+              <option>ping</option><option>echo</option><option>login</option>
+              <option>check_proxy</option><option>idle</option><option>play_games</option>
+            </optgroup>
+            <optgroup label="Key 与许可">
+              <option>redeem_key</option><option>add_license</option>
+            </optgroup>
+            <optgroup label="数据查询">
+              <option>get_game_info</option><option>get_game_info_batch</option>
+              <option>search_games</option><option>get_price</option>
+              <option>get_market_listings</option><option>get_card_drops</option>
+              <option>get_inventory</option>
+            </optgroup>
+            <optgroup label="交易">
+              <option>get_trade_offers</option><option>send_trade_offer</option>
+              <option>accept_trade_offer</option><option>decline_trade_offer</option>
+              <option>cancel_trade_offer</option><option>loot_inventory</option>
+              <option>find_duplicates</option><option>swap_duplicates</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field">
+          <label for="regionInput">区域</label>
+          <input id="regionInput" type="text" list="regionList" placeholder="留空为任意">
+          <datalist id="regionList"><option>cn-north</option><option>cn-east</option><option>us-west</option><option>eu-central</option></datalist>
+        </div>
+        <div class="field">
+          <label for="targetInput">目标账户</label>
+          <input id="targetInput" type="text" placeholder="account CSV，留空为全部">
+        </div>
+        <div class="field wide">
+          <label for="payloadInput">任务负载 JSON</label>
+          <textarea id="payloadInput" spellcheck="false">{ "games": [730], "shuffle": true }</textarea>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 任务列表 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">任务列表</h2>
+        <div class="panel-subtitle">点击任意作业查看明细和每个 target 的执行状态。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshJobsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list scroll" id="jobList">
+        <div class="row-item">
+          <span class="badge b-run">执行中</span>
+          <div class="meta"><span class="title">job-0192 · play_games</span><span class="sub">cn-north · 6 targets · 2026-10-14 09:41:07</span></div>
+          <button class="btn btn-secondary btn-small">查看</button>
+        </div>
+        <div class="row-item">
+          <span class="badge b-ok">成功</span>
+          <div class="meta"><span class="title">job-0191 · redeem_key</span><span class="sub">cn-east · 4 targets · 2026-10-14 09:12:52</span></div>
+          <button class="btn btn-secondary btn-small">查看</button>
+        </div>
+        <div class="row-item">
+          <span class="badge b-warn">部分成功</span>
+          <div class="meta"><span class="title">job-0189 · get_inventory</span><span class="sub">us-west · 12 targets · 2026-10-14 08:58:31</span></div>
+          <button class="btn btn-secondary btn-small">查看</button>
+        </div>
+        <div class="row-item">
+          <span class="badge b-err">失败</span>
+          <div class="meta"><span class="title">job-0184 · send_trade_offer</span><span class="sub">eu-central · 3 targets · 2026-10-14 08:02:19</span></div>
+          <button class="btn btn-secondary btn-small">查看</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 作业详情 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">作业详情</h2>
+        <div class="panel-subtitle">展示当前选中作业的状态汇总、任务清单和 payload。</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="row-grid">
+        <div class="row-cell"><span class="k">作业</span><span class="v">job-0192</span></div>
+        <div class="row-cell"><span class="k">动作</span><span class="v">play_games</span></div>
+        <div class="row-cell"><span class="k">区域</span><span class="v">cn-north</span></div>
+        <div class="row-cell"><span class="k">目标</span><span class="v">6</span></div>
+        <div class="row-cell"><span class="k">成功</span><span class="v">4</span></div>
+        <div class="row-cell"><span class="k">失败</span><span class="v">1</span></div>
+      </div>
+      <div class="list scroll">
+        <div class="row-item">
+          <span class="badge b-ok">成功</span>
+          <div class="meta"><span class="title">farm-cn-01</span><span class="sub">agent-cn-1 · 完成于 09:42:31</span></div>
+          <span class="hint">已上报 3 场会话</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-run">执行中</span>
+          <div class="meta"><span class="title">farm-cn-02</span><span class="sub">agent-cn-1 · 已排队 1 分钟</span></div>
+          <span class="hint">—</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-err">失败</span>
+          <div class="meta"><span class="title">farm-cn-04</span><span class="sub">agent-cn-2 · 代理不可达（重试 1/2）</span></div>
+          <button class="btn btn-secondary btn-small">重试</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Agent 概览 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">Agent 概览</h2>
+        <div class="panel-subtitle">已连接 agent 与 capability 分布。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshAgentsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Agent</th><th>区域</th><th>能力</th><th>已连接</th><th>最后心跳</th></tr></thead>
+          <tbody>
+            <tr><td class="num">agent-cn-1</td><td class="num">cn-north</td><td>farm, market, trade</td><td class="num">1h12m</td><td class="num">12s 前</td></tr>
+            <tr><td class="num">agent-cn-2</td><td class="num">cn-east</td><td>farm, inventory</td><td class="num">46m</td><td class="num">31s 前</td></tr>
+            <tr><td class="num">agent-us-1</td><td class="num">us-west</td><td>market, key</td><td class="num">3h05m</td><td class="num">9s 前</td></tr>
+            <tr><td class="num">agent-eu-1</td><td class="num">eu-central</td><td>trade, loot</td><td class="num">2h40m</td><td class="num">22s 前</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 活动会话 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">活动会话</h2>
+        <div class="panel-subtitle">基于 /v1/sessions 与会话事件流实时更新。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshSessionsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list scroll">
+        <div class="row-item">
+          <span class="badge b-ok">在线</span>
+          <div class="meta"><span class="title">farm-cn-01</span><span class="sub">agent-cn-1 · 76561198012345678</span></div>
+          <span class="hint">队列: idle · 剩余 52 分钟</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-run">登录中</span>
+          <div class="meta"><span class="title">farm-cn-03</span><span class="sub">agent-cn-2 · 76561198098765432</span></div>
+          <span class="hint">等待 2FA 挑战</span>
+        </div>
+        <div class="row-item">
+          <span class="badge b-muted">冷却</span>
+          <div class="meta"><span class="title">farm-us-02</span><span class="sub">agent-us-1 · 76561198123456701</span></div>
+          <span class="hint">市场冷却 02:14:55</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 认证挑战 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">认证挑战</h2>
+        <div class="panel-subtitle">处理邮箱验证码或 2FA/TOTP 续登需求。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshChallengesButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="stack" id="authChallenges">
+        <div class="row-item" style="grid-template-columns: auto 1fr auto auto;">
+          <span class="badge b-warn">2FA</span>
+          <div class="meta"><span class="title">farm-cn-03 · 移动确认</span><span class="sub">挑战 2026-10-14 09:47:20 创建</span></div>
+          <button class="btn btn-secondary btn-small">QR 扫码登录</button>
+          <button class="btn btn-secondary btn-small">提交确认</button>
+        </div>
+        <div class="row-item" style="grid-template-columns: auto 1fr auto;">
+          <span class="badge b-warn">邮箱码</span>
+          <div class="meta"><span class="title">farm-eu-01 · SteamGuard 邮件</span><span class="sub">挑战 2026-10-14 09:45:02 创建</span></div>
+          <div class="token-box"><input type="text" placeholder="输入邮件验证码" style="width:170px;"><button class="btn btn-secondary btn-small">提交</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 账户管理 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">账户管理</h2>
+        <div class="panel-subtitle">期望状态、Boost 目标与账户生命周期（全量 PUT 语义：保存提交所有字段）。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="cancelEditButton">取消编辑</button>
+        <button class="btn btn-primary btn-small" id="saveAccountButton">保存变更</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="field-grid">
+        <div class="field">
+          <label for="accountSelect">账户</label>
+          <select id="accountSelect"><option>farm-cn-01</option><option>farm-cn-02</option><option>farm-us-02</option></select>
+        </div>
+        <div class="field">
+          <label for="expectedState">期望状态</label>
+          <select id="expectedState"><option>farm</option><option>play</option><option>idle</option><option>trade</option><option>disabled</option></select>
+        </div>
+        <div class="field">
+          <label for="repoRole">仓库角色</label>
+          <select id="repoRole"><option>farm</option><option>storage</option><option>trader</option></select>
+        </div>
+        <div class="field">
+          <label for="steamId">SteamID64（storage 号的归集目标地址）</label>
+          <input id="steamId" type="text" value="76561198012345678">
+        </div>
+        <div class="field">
+          <label for="idleWhitelist">Idle 白名单 / Farm 排除名单（app 名 CSV）</label>
+          <input id="idleWhitelist" type="text" value="CS2, Dota 2">
+        </div>
+        <div class="field">
+          <label for="boostTarget">Boost 目标（appid:目标小时 CSV）</label>
+          <input id="boostTarget" type="text" value="730:20">
+        </div>
+        <div class="field">
+          <label for="farmBudget">Farm 单游戏时长预算（小时，留空不限）</label>
+          <input id="farmBudget" type="number" value="4">
+        </div>
+        <div class="field">
+          <label for="farmOrder">Farm 队列排序</label>
+          <input id="farmOrder" type="text" value="730,570,440">
+        </div>
+        <div class="field">
+          <label for="farmTop">Farm 优先置顶（appid CSV，列表顺序即优先顺序）</label>
+          <input id="farmTop" type="text" value="730">
+        </div>
+        <div class="field">
+          <label for="proxyUrl">出口代理（http/https/socks5，凭据可内嵌）</label>
+          <input id="proxyUrl" type="text" placeholder="留空为直连">
+        </div>
+        <div class="field">
+          <label for="remark">备注</label>
+          <input id="remark" type="text" placeholder="可选">
+        </div>
+        <label class="check-row"><input type="checkbox" checked> 启用账户</label>
+        <label class="check-row"><input type="checkbox"> 允许市场挂单（灰区操作）</label>
+      </div>
+    </div>
+  </section>
+
+  <!-- 交易与确认 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">交易与确认</h2>
+        <div class="panel-subtitle">报价处理、mobile 确认批量、loot 与换卡。接受与发送均为资产转移操作，请核实对方身份。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="fetchOffersButton">拉取报价</button>
+        <button class="btn btn-secondary btn-small" id="confirmBatchButton">执行批量确认</button>
+        <button class="btn btn-secondary btn-small" id="sendLootButton">发送 Loot</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="field-grid">
+        <div class="field">
+          <label for="offerApp">App 筛选（appid CSV，留空 = 默认 CS2 730/2）</label>
+          <input id="offerApp" type="text" value="730, 753">
+        </div>
+        <div class="field">
+          <label for="offerContext">Context ID（单 app 模式可选，默认 2；753 卡牌在 6）</label>
+          <input id="offerContext" type="text" value="2">
+        </div>
+        <div class="field">
+          <label for="dupKeep">重复卡保留份数（查重复卡用，1-100）</label>
+          <input id="dupKeep" type="number" value="1">
+        </div>
+        <label class="check-row"><input type="checkbox" checked> 仅显示可交易</label>
+        <label class="check-row"><input type="checkbox"> 仅显示可市场出售</label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>App</th><th>物品</th><th class="num">共有</th><th class="num">超出</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="num">730</td><td>AK-47 | 红线（略有磨损）</td><td class="num">3</td><td class="num">1</td><td><button class="btn btn-secondary btn-small">换卡</button></td></tr>
+            <tr><td class="num">753</td><td>Steam 夏季卡牌</td><td class="num">5</td><td class="num">2</td><td><button class="btn btn-secondary btn-small">换卡</button></td></tr>
+            <tr><td class="num">440</td><td>TF2 钥匙</td><td class="num">1</td><td class="num">0</td><td><span class="hint">—</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 仓库归集 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">仓库归集</h2>
+        <div class="panel-subtitle">把全部启用中的 farm 号可交易物品统一归集到指定 storage 仓库号（一次性任务，逐源 loot + 自动续派 mobile 确认）</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary btn-small" id="runLootButton">执行归集</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="field-grid">
+        <div class="field">
+          <label for="storageId">SteamID64（role=storage）</label>
+          <input id="storageId" type="text" value="76561198012345678">
+        </div>
+        <div class="field">
+          <label for="lootApp">限定 app（CSV，留空为全部可交易物品）</label>
+          <input id="lootApp" type="text" value="730">
+        </div>
+        <div class="field">
+          <label for="lootKeep">每张保留份数</label>
+          <input id="lootKeep" type="number" value="1">
+        </div>
+        <div class="field wide">
+          <label for="lootNote">报价留言（可选）</label>
+          <input id="lootNote" type="text" placeholder="交易报价附言">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 市场与认领 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">市场与认领</h2>
+        <div class="panel-subtitle">挂单管理与撤单、真实挂单（灰区，需账户开关）、积分商店与免费 license 认领。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="fetchListingsButton">拉取挂单</button>
+        <button class="btn btn-secondary btn-small" id="pricingPreviewButton">定价预览（dry_run）</button>
+        <button class="btn btn-danger btn-small" id="sendListingButton">真实挂单（send）</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="filters">
+        <div class="field"><label for="mktApp">App ID</label><input id="mktApp" type="text" value="730"></div>
+        <div class="field"><label for="mktHash">hash 名称（精确）</label><input id="mktHash" type="text" value="AK-47 | 红线"></div>
+        <div class="field"><label for="mktMin">最低价（分）</label><input id="mktMin" type="number" placeholder="1"></div>
+        <div class="field"><label for="mktMax">最高价（分）</label><input id="mktMax" type="number" placeholder="9999"></div>
+        <div class="field"><label for="mktAge">挂龄超过（秒）</label><input id="mktAge" type="number" placeholder="3600"></div>
+        <label class="check-row"><input type="checkbox" id="mktDry"> 仅预览（dry_run）</label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>App</th><th>类型</th><th>可交易</th><th>可出售</th><th class="num">Asset ID</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="num">730</td><td>武器皮肤</td><td><span class="badge b-ok">可交易</span></td><td><span class="badge b-muted">不可出售</span></td><td class="num">31077654321</td><td><button class="btn btn-secondary btn-small">执行撤单</button></td></tr>
+            <tr><td class="num">753</td><td>集换卡牌</td><td><span class="badge b-ok">可交易</span></td><td><span class="badge b-ok">可出售</span></td><td class="num">31077659876</td><td><button class="btn btn-secondary btn-small">执行撤单</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 爬虫计划管理 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">爬虫计划管理</h2>
+        <div class="panel-subtitle">采集计划的增改、账号池、分片与节流配置。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="clearPlanButton">清空表单（新建模式）</button>
+        <button class="btn btn-primary btn-small" id="createPlanButton">创建计划</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="field-grid">
+        <div class="field"><label for="planName">计划名称</label><input id="planName" type="text" value="cs2-weekly-price"></div>
+        <div class="field wide"><label for="planApps">app ids（CSV，必填）</label><input id="planApps" type="text" value="730, 440"></div>
+        <div class="field"><label for="planPool">账号池（CSV，留空用全部采集账号）</label><input id="planPool" type="text" value="farm-cn-01,farm-cn-02"></div>
+        <div class="field"><label for="planAppAcct">app 指定账号（appId=account CSV）</label><input id="planAppAcct" type="text" placeholder="730=farm-cn-01"></div>
+        <div class="field"><label for="planShard">分片大小（默认 200）</label><input id="planShard" type="number" value="200"></div>
+        <div class="field"><label for="planThrottle">节流 interval_ms（同 app 缓存未命中间）</label><input id="planThrottle" type="number" value="3000"></div>
+        <div class="field"><label for="planCc">国家码（默认 us）</label><input id="planCc" type="text" value="cn"></div>
+        <div class="field"><label for="planCron">cron（与周期秒数二选一）</label><input id="planCron" type="text" placeholder="0 3 * * *"></div>
+        <div class="field"><label for="planPeriod">周期秒数</label><input id="planPeriod" type="number" placeholder="86400"></div>
+        <label class="check-row"><input type="checkbox" checked> 立即执行首轮（周期计划适用）</label>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>名称</th><th class="num">计划 ID</th><th class="num">应用数</th><th>区域</th><th>调度</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td class="num">cs2-weekly-price</td><td class="num">plan-0007</td><td class="num">2</td><td class="num">cn</td><td class="num">0 3 * * *</td><td><span class="badge b-ok">运行中</span></td></tr>
+            <tr><td class="num">tf2-key-snapshot</td><td class="num">plan-0005</td><td class="num">1</td><td class="num">us</td><td class="num">86400s</td><td><span class="badge b-muted">已暂停</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 配置管理 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">配置管理</h2>
+        <div class="panel-subtitle">全局与账户级 settings（整字典替换语义）。密码类键值打码显示：留空保留现值，输入新值覆盖。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="addKeyButton">添加键</button>
+        <button class="btn btn-primary btn-small" id="saveGlobalButton">保存全局</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>键</th><th>值</th><th>作用域</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td class="num">farm.daily.session.max</td><td class="num">8</td><td><span class="badge b-muted">全局</span></td><td><button class="btn btn-secondary btn-small">编辑</button></td></tr>
+            <tr><td class="num">market.listing.age.minutes</td><td class="num">15</td><td><span class="badge b-muted">全局</span></td><td><button class="btn btn-secondary btn-small">编辑</button></td></tr>
+            <tr><td class="num">account.farm-cn-02.proxy</td><td class="num">••••••••（已打码）</td><td><span class="badge b-run">账户</span></td><td><button class="btn btn-secondary btn-small">编辑</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 插件管理 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">插件管理</h2>
+        <div class="panel-subtitle">PluginStore:浏览插件索引源并批量安装到 Agent;已装清单由各 Agent 的 plugin_list 回报。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="syncPluginsButton">同步已装清单</button>
+        <button class="btn btn-secondary btn-small" id="checkUpdatesButton">检查更新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>插件</th><th class="num">版本</th><th class="num">最新</th><th>Agent</th><th>签名</th></tr></thead>
+          <tbody>
+            <tr><td>MarketWatch</td><td class="num">1.4.0</td><td class="num">1.4.0</td><td class="num">4 台</td><td><span class="badge b-ok">已验签</span></td></tr>
+            <tr><td>GameData</td><td class="num">2.0.1</td><td class="num">2.1.0</td><td class="num">5 台</td><td><span class="badge b-ok">已验签</span></td></tr>
+            <tr><td>CS2</td><td class="num">1.2.3</td><td class="num">1.2.3</td><td class="num">3 台</td><td><span class="badge b-muted">未声明</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 脚本仓库 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">脚本仓库</h2>
+        <div class="panel-subtitle">控制中心侧的运维脚本库:集中存档、快速取用;「执行」按目标 agent 定向派发(经任务面板查看结果)。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-primary btn-small" id="newScriptButton">新建脚本</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="list scroll">
+        <div class="row-item">
+          <span class="badge b-ok">就绪</span>
+          <div class="meta"><span class="title">snapshot-inventory.ps1</span><span class="sub">12.4 KB · 更新于 2026-10-12 · 3 个 agent 已同步</span></div>
+          <button class="btn btn-secondary btn-small">执行</button>
+        </div>
+        <div class="row-item">
+          <span class="badge b-ok">就绪</span>
+          <div class="meta"><span class="title">market-relist.sh</span><span class="sub">3.1 KB · 更新于 2026-10-08 · 2 个 agent 已同步</span></div>
+          <button class="btn btn-secondary btn-small">执行</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 脚本编排 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">脚本编排</h2>
+        <div class="panel-subtitle">把脚本仓库里的脚本串成顺序流程:每步=脚本×目标 agent×失败策略;「运行」在控制中心逐步派发,每步状态与结果写入运行记录。</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="newPipelineButton">新建编排</button>
+        <button class="btn btn-primary btn-small" id="runPipelineButton">运行</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="stack" id="pipelineSteps">
+        <div class="row-item step-item">
+          <span class="step-no">1</span>
+          <div class="meta"><span class="title">snapshot-inventory.ps1 → agent-cn-1</span><span class="sub">失败策略: 重试 2 次后中止</span></div>
+          <span class="badge b-ok">成功</span>
+        </div>
+        <div class="row-item step-item">
+          <span class="step-no">2</span>
+          <div class="meta"><span class="title">market-relist.sh → agent-cn-2</span><span class="sub">失败策略: 跳过并告警</span></div>
+          <span class="badge b-run">执行中</span>
+        </div>
+        <div class="row-item step-item">
+          <span class="step-no">3</span>
+          <div class="meta"><span class="title">verify-session.ps1 → 全部</span><span class="sub">失败策略: 重试 1 次</span></div>
+          <span class="badge b-muted">待运行</span>
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-small" id="addStepButton">+ 添加步骤</button>
+    </div>
+  </section>
+
+  <!-- 事件日志 -->
+  <section class="panel">
+    <div class="panel-header">
+      <div>
+        <h2 class="panel-title">事件日志</h2>
+        <div class="panel-subtitle">保留最近 60 条任务、会话与认证事件。</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="event-log" id="eventsLog">
+        <div class="log-line"><span class="log-time">09:47:20</span><span class="log-kind k-auth"></span><span class="log-msg">farm-cn-03 发起 2FA 移动确认挑战</span></div>
+        <div class="log-line"><span class="log-time">09:47:03</span><span class="log-kind k-job"></span><span class="log-msg">job-0192 play_games 目标 5/6 完成（farm-cn-04 失败）</span></div>
+        <div class="log-line"><span class="log-time">09:46:51</span><span class="log-kind k-session"></span><span class="log-msg">farm-us-02 会话转入市场冷却（剩余 02:14:55）</span></div>
+        <div class="log-line"><span class="log-time">09:45:44</span><span class="log-kind k-job"></span><span class="log-msg">job-0191 redeem_key 成功结束（4/4）</span></div>
+        <div class="log-line"><span class="log-time">09:44:10</span><span class="log-kind k-sys"></span><span class="log-msg">agent-eu-1 心跳恢复（失联 40s）</span></div>
+        <div class="log-line"><span class="log-time">09:43:57</span><span class="log-kind k-session"></span><span class="log-msg">farm-cn-01 会话进入 idle 队列（剩余 52 分钟）</span></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

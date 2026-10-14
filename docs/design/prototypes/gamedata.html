@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="steam">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>游戏数据字典与采集记录 · 原型</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="components.css">
+  <script src="theme.js" defer></script>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Hero：字典页入口 + 页间导航（对应线上 gamedata.html 顶部） -->
+  <header class="hero">
+    <div class="hero-side">
+      <div>
+        <div class="eyebrow">Steam Automation Control Plane</div>
+        <h1>游戏数据字典与采集记录</h1>
+        <p class="lede">数据来源与缓存层级、字段字典、采集计划、轮次记录与结果浏览。数据均为示例。</p>
+      </div>
+    </div>
+    <div class="status-cluster">
+      <div class="token-box">
+        <input id="apiKeyInput" type="password" placeholder="管理员 API Key">
+        <button class="btn btn-secondary btn-small" id="saveTokenButton">保存</button>
+      </div>
+      <nav class="nav-links">
+        <a href="dashboard.html">→ 实时面板（dashboard）</a>
+        <a href="admin.html">→ 管理视图（admin）</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 数据来源与缓存层级 -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title">数据来源与缓存层级</h2>
+        <div class="panel-subtitle">fresh 为直接回缓存的有效期；stale 为过期后仍可返回旧值的窗口</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>action</th><th>Steam 端点</th><th>返回模型</th><th class="num">fresh</th><th class="num">stale</th><th>缓存键</th></tr></thead>
+          <tbody>
+            <tr><td class="num">get_game_info</td><td>store.appdetails</td><td>GameInfo</td><td class="num">30 分钟</td><td class="num">2 小时</td><td class="num">game:{appId}:{cc}</td></tr>
+            <tr><td class="num">get_game_info_batch</td><td>store.appdetails × N</td><td>GameInfo 数组</td><td class="num">30 分钟</td><td class="num">2 小时</td><td class="num">与单应用共享</td></tr>
+            <tr><td class="num">search_games</td><td>storesearch</td><td>GameSearchResult 数组</td><td class="num">1 小时</td><td class="num">6 小时</td><td class="num">search:{term}:{cc}</td></tr>
+            <tr><td class="num">get_price</td><td>store.appdetails（价格段）</td><td>PriceOverview</td><td class="num">3 分钟</td><td class="num">15 分钟</td><td class="num">price:{appId}:{cc}</td></tr>
+            <tr><td class="num">get_market_listings</td><td>community market</td><td>MarketListingsPage</td><td class="num">5 分钟</td><td class="num">30 分钟</td><td class="num">market:{appId}:{start}:{count}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 字段字典 -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title">字段字典</h2>
+        <div class="panel-subtitle">JSON 键为 API 实际输出（camelCase）· 权威源 docs/data-dictionary.md</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>字段</th><th>JSON 键</th><th>类型</th><th>语义</th></tr></thead>
+          <tbody>
+            <tr><td>AppId</td><td class="num">appId</td><td class="num">uint</td><td>Steam AppID</td></tr>
+            <tr><td>Name</td><td class="num">name</td><td class="num">string</td><td>游戏显示名</td></tr>
+            <tr><td>IsFree</td><td class="num">isFree</td><td class="num">bool</td><td>是否免费游玩</td></tr>
+            <tr><td>RequiresPurchase</td><td class="num">requiresPurchase</td><td class="num">bool</td><td>是否需要购买/订阅才能使用</td></tr>
+            <tr><td>Currency</td><td class="num">currency</td><td class="num">string</td><td>币种代码（USD、CNY 等）</td></tr>
+            <tr><td>DiscountPercent</td><td class="num">discountPercent</td><td class="num">int</td><td>折扣百分比（0–100）</td></tr>
+            <tr><td>ListingId</td><td class="num">listingId</td><td class="num">ulong</td><td>挂单 ID（搜索聚合结果为 0）</td></tr>
+            <tr><td>AssetId</td><td class="num">assetId</td><td class="num">ulong</td><td>资产 ID（搜索聚合为 0）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 采集计划 -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title">采集计划</h2>
+        <div class="panel-subtitle">点击行查看轮次 · 仅展示，触发走 REST</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshPlansButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>名称</th><th class="num">计划 ID</th><th class="num">应用数</th><th>账号池</th><th class="num">分片</th><th class="num">区域</th><th>调度</th><th>状态</th><th>下次触发</th><th class="num">已跑轮次</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="num">cs2-weekly-price</td><td class="num">plan-0007</td><td class="num">2</td><td>farm-cn-01, farm-cn-02</td><td class="num">200</td><td class="num">cn</td><td class="num">0 3 * * *</td><td><span class="badge b-ok">运行中</span></td><td class="num">2026-10-15 03:00</td><td class="num">12</td></tr>
+            <tr><td class="num">tf2-key-snapshot</td><td class="num">plan-0005</td><td class="num">1</td><td>全部采集账号</td><td class="num">200</td><td class="num">us</td><td class="num">86400s</td><td><span class="badge b-muted">已暂停</span></td><td class="num">—</td><td class="num">31</td></tr>
+            <tr><td class="num">dota-rare-price</td><td class="num">plan-0009</td><td class="num">1</td><td>farm-cn-01</td><td class="num">200</td><td class="num">cn</td><td class="num">0 */6 * * *</td><td><span class="badge b-run">待首轮</span></td><td class="num">2026-10-14 18:00</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 轮次记录 -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title">轮次记录</h2>
+        <div class="panel-subtitle">已选择计划 cs2-weekly-price（plan-0007）</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary btn-small" id="refreshRunsButton">刷新</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th class="num">轮次 ID</th><th>开始</th><th>最近结果</th><th class="num">总数</th><th class="num">成功</th><th class="num">失败</th></tr></thead>
+          <tbody>
+            <tr><td class="num">run-202610140300</td><td class="num">2026-10-14 03:00</td><td><span class="badge b-ok">成功</span></td><td class="num">200</td><td class="num">200</td><td class="num">0</td></tr>
+            <tr><td class="num">run-202610130300</td><td class="num">2026-10-13 03:00</td><td><span class="badge b-warn">部分成功</span></td><td class="num">200</td><td class="num">198</td><td class="num">2</td></tr>
+            <tr><td class="num">run-202610120300</td><td class="num">2026-10-12 03:00</td><td><span class="badge b-ok">成功</span></td><td class="num">200</td><td class="num">200</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 结果浏览 -->
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="panel-title">结果浏览</h2>
+        <div class="panel-subtitle">逐应用采集结果，data 列可展开原始 JSON</div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="filters">
+        <div class="field"><label for="filterPlanId">计划 ID</label><input id="filterPlanId" class="wide" placeholder="计划 ID（planId）"></div>
+        <div class="field"><label for="filterRunId">轮次 ID</label><input id="filterRunId" placeholder="轮次 ID（runId）"></div>
+        <div class="field"><label for="filterAppId">AppID</label><input id="filterAppId" placeholder="AppID"></div>
+        <div class="field"><label for="filterAccount">账号</label><input id="filterAccount" placeholder="账号"></div>
+        <div class="field">
+          <label for="filterOk">结果</label>
+          <select id="filterOk">
+            <option value="">全部结果</option>
+            <option value="true">成功</option>
+            <option value="false">失败</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="applyFiltersButton">查询</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>时间</th><th class="num">AppID</th><th>名称</th><th>账号</th><th class="num">轮次</th><th>结果</th><th>data</th></tr></thead>
+          <tbody>
+            <tr><td class="num">2026-10-14 03:00:42</td><td class="num">730</td><td>Counter-Strike 2</td><td>farm-cn-01</td><td class="num">run-202610140300</td><td><span class="badge b-ok">成功</span></td><td><button class="btn btn-secondary btn-small">展开</button></td></tr>
+            <tr><td class="num">2026-10-14 03:00:51</td><td class="num">440</td><td>Team Fortress 2</td><td>farm-cn-01</td><td class="num">run-202610140300</td><td><span class="badge b-ok">成功</span></td><td><button class="btn btn-secondary btn-small">展开</button></td></tr>
+            <tr><td class="num">2026-10-13 03:01:07</td><td class="num">730</td><td>Counter-Strike 2</td><td>farm-cn-02</td><td class="num">run-202610130300</td><td><span class="badge b-err">失败</span></td><td><button class="btn btn-secondary btn-small">展开</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn btn-secondary btn-small" id="prevPageButton">上一页</button>
+        <button class="btn btn-secondary btn-small" id="nextPageButton">下一页</button>
+        <span class="page-info" id="pageInfo">第 1 页 / 共 3 页</span>
+      </div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

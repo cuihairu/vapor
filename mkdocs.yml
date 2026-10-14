@@ -78,6 +78,7 @@ nav:
       - Valve game plugins: game-plugins.md
       - Feature matrix (vs. ASF): feature-matrix.md
       - Performance: performance.md
+      - Admin UI redesign (prototypes): design/admin-ui.md
   - Research:
       - Market survey: research/market-survey.md
       - Process boundary: research/process-boundary.md

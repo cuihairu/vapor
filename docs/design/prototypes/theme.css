@@ -1,0 +1,137 @@
+/* ============================================================
+   Vapor 后台界面设计令牌 · 主题体系（docs/design/admin-ui.md）
+   布局不随主题变化：所有主题只覆盖 --t-* 语义令牌。
+   用法：<html data-theme="steam"> 或 JS 切换 data-theme。
+   默认主题 = Steam 风格（深蓝灰底 + 克制蓝高亮）。
+   ============================================================ */
+
+/* ---------- 结构令牌（主题无关） ---------- */
+:root {
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  --font-body: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-num: ui-monospace, "SF Mono", Consolas, monospace;
+
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 24px;
+  --fs-2xl: 30px;
+
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+}
+
+/* ---------- ① 默认 · Steam 风格 ----------
+   深蓝灰底 + 卡片式布局 + 克制蓝高亮。 */
+[data-theme="steam"], :root {
+  --t-bg: #171a21;
+  --t-sunken: #10151d;
+  --t-card: #1b2838;
+  --t-card-raised: #20374f;
+  --t-input-bg: #0e141c;
+  --t-fg: #c7d5e0;
+  --t-fg-muted: #8f98a0;
+  --t-fg-subtle: #617080;
+  --t-brand: #66c0f4;
+  --t-brand-strong: #1a9fff;
+  --t-brand-soft: rgb(102 192 244 / 14%);
+  --t-on-brand: #0d1820;
+  --t-hero-grad: linear-gradient(180deg, #1b2838 0%, #171d25 100%);
+  --t-border: #2a475e;
+  --t-border-strong: #3d5a76;
+  --t-success: #7cb342;
+  --t-warning: #d9a036;
+  --t-danger: #cf4a3d;
+  --t-info: #5c9fd6;
+  --t-table-stripe: rgb(255 255 255 / 2%);
+  --t-shadow: rgb(0 0 0 / 35%);
+}
+
+/* ---------- ② 午夜 ----------
+   近黑中性底 + 低饱和蓝高亮。 */
+[data-theme="midnight"] {
+  --t-bg: #0e1114;
+  --t-sunken: #090c0f;
+  --t-card: #151a20;
+  --t-card-raised: #1c232c;
+  --t-input-bg: #0a0d10;
+  --t-fg: #d6dde4;
+  --t-fg-muted: #7c8894;
+  --t-fg-subtle: #525d68;
+  --t-brand: #4f9edb;
+  --t-brand-strong: #3a86c2;
+  --t-brand-soft: rgb(79 158 219 / 14%);
+  --t-on-brand: #0a1016;
+  --t-hero-grad: linear-gradient(180deg, #151a20 0%, #0e1114 100%);
+  --t-border: #262d36;
+  --t-border-strong: #39434f;
+  --t-success: #6fbf5a;
+  --t-warning: #d9a036;
+  --t-danger: #d05a4e;
+  --t-info: #5c9fd6;
+  --t-table-stripe: rgb(255 255 255 / 2%);
+  --t-shadow: rgb(0 0 0 / 45%);
+}
+
+/* ---------- ③ 日间 ----------
+   浅色底 + 深蓝文字 + 同族蓝高亮。 */
+[data-theme="daylight"] {
+  --t-bg: #eef1f4;
+  --t-sunken: #e2e7ec;
+  --t-card: #ffffff;
+  --t-card-raised: #f4f7fa;
+  --t-input-bg: #f7f9fb;
+  --t-fg: #1b2838;
+  --t-fg-muted: #56656f;
+  --t-fg-subtle: #8a97a1;
+  --t-brand: #1666a8;
+  --t-brand-strong: #0f4f83;
+  --t-brand-soft: rgb(22 102 168 / 10%);
+  --t-on-brand: #ffffff;
+  --t-hero-grad: linear-gradient(180deg, #ffffff 0%, #eef1f4 100%);
+  --t-border: #d4dbe2;
+  --t-border-strong: #b9c4cd;
+  --t-success: #4e8a2f;
+  --t-warning: #a8741a;
+  --t-danger: #b23a2e;
+  --t-info: #1666a8;
+  --t-table-stripe: rgb(27 40 56 / 3%);
+  --t-shadow: rgb(27 40 56 / 12%);
+}
+
+/* ---------- ④ 暮橙 ----------
+   暖暗底 + 琥珀高亮。 */
+[data-theme="ember"] {
+  --t-bg: #1c1512;
+  --t-sunken: #140f0c;
+  --t-card: #261c17;
+  --t-card-raised: #32241d;
+  --t-input-bg: #17110d;
+  --t-fg: #e8d9cd;
+  --t-fg-muted: #a08a7a;
+  --t-fg-subtle: #756154;
+  --t-brand: #e8863c;
+  --t-brand-strong: #d06f24;
+  --t-brand-soft: rgb(232 134 60 / 14%);
+  --t-on-brand: #241305;
+  --t-hero-grad: linear-gradient(180deg, #261c17 0%, #1c1512 100%);
+  --t-border: #4a2f24;
+  --t-border-strong: #63402f;
+  --t-success: #9ab84a;
+  --t-warning: #d9a036;
+  --t-danger: #cf5a45;
+  --t-info: #d98a5c;
+  --t-table-stripe: rgb(255 255 255 / 2%);
+  --t-shadow: rgb(0 0 0 / 40%);
+}
