@@ -62,5 +62,8 @@ coverage/
 # Docs site mirror built by .github/workflows/docs.yml from tests/TESTING.md
 docs/testing.md
 
+# Local mkdocs build output (CI builds to _site, see .github/workflows/docs.yml)
+site/
+
 # Bytecode caches from the python scripts under scripts/
 __pycache__/
