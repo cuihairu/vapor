@@ -22,7 +22,7 @@ hide:
 
     A single public HTTP API submits jobs; regional agents execute them close to Steam, partners and users — with idempotency, retries and partial-success accounting.
 
-    [:arrow-right: Architecture](architecture.md)
+    [:material-arrow-right: Architecture](architecture.md)
 
 -   :material-robot:{ .lg .middle } **ASF-style session engine**
 
@@ -30,7 +30,7 @@ hide:
 
     Steam session logic ("Bot" sessions + pluggable **Actions**) stays isolated and reusable: login with SteamGuard/2FA challenges, card farming, trading, market listings, inventory scanning and more.
 
-    [:arrow-right: Session engine](session-engine.md)
+    [:material-arrow-right: Session engine](session-engine.md)
 
 -   :material-puzzle:{ .lg .middle } **Plugin platform**
 
@@ -38,7 +38,7 @@ hide:
 
     Load-context isolated plugins with manifest, SemVer API contract, permission grants and an event dispatcher — seven official plugins ship in-tree (Monitoring, MobileAuthenticator, MarketWatch, CS2/CSGO, Dota 2, GameData, GameAccess).
 
-    [:arrow-right: Plugin development](plugins.md)
+    [:material-arrow-right: Plugin development](plugins.md)
 
 -   :material-shield-lock:{ .lg .middle } **Secure by default**
 
@@ -46,7 +46,23 @@ hide:
 
     API-key auth, audit logs, AES-GCM encrypted credential stores, redacting log pipeline and circuit-broken Steam web access.
 
-    [:arrow-right: Security model](architecture.md#security-model-public-internet-api)
+    [:material-arrow-right: Security model](architecture.md#security-model-public-internet-api)
+
+-   :material-database:{ .lg .middle } **Game data pipeline**
+
+    ---
+
+    Batch game info, price and market listing actions with a layered cache, a sharded collection planner and a public field dictionary.
+
+    [:material-arrow-right: Data dictionary](data-dictionary.md)
+
+-   :material-radar:{ .lg .middle } **Operate with confidence**
+
+    ---
+
+    Docker Compose topology, Prometheus/Grafana metrics, OpenAPI reference and a 3-OS CI matrix keep the operational surface honest.
+
+    [:material-arrow-right: Production deployment](production.md)
 
 </div>
 
