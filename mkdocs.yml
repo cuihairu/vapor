@@ -33,7 +33,6 @@ theme:
   features:
     - content.action.edit
     - navigation.footer
-    - navigation.instant
     - navigation.sections
     - navigation.top
     - navigation.tracking
@@ -65,6 +64,24 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.tasklist:
       custom_checkbox: true
+
+# Suffix i18n: docs/index.md + docs/index.zh.md side by side. Pages without a
+# .zh.md twin fall back to the default-language content, so the Chinese site
+# can grow page by page without nav holes.
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: zh
+          name: 简体中文
+          build: true
 
 nav:
   - Home: index.md

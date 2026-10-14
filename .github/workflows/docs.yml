@@ -40,8 +40,10 @@ jobs:
         python-version: '3.12'
 
     - name: Install mkdocs-material
-      # Pinned minor line: theme output changes between majors; bump deliberately.
-      run: pip install "mkdocs-material==9.6.*"
+      # Pinned minor lines: theme output changes between majors; bump deliberately.
+      # mkdocs-static-i18n powers the suffix-based zh translations (mkdocs.yml
+      # plugins.i18n) and must track the mkdocs-material minor line it supports.
+      run: pip install "mkdocs-material==9.6.*" "mkdocs-static-i18n==1.3.*"
 
     # The testing overview lives in the repo as the source of truth; mirror it
     # into the site at build time so the docs stay a single-copy authority.

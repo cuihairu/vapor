@@ -56,27 +56,27 @@ For operations: a control-plane script repository to store and dispatch operator
                                Steam network       Steam network
 ```
 
-## 演示站点 (Live demo)
+## Live demo
 
-**演示站点 https://vapor.cuihairu.site/ ｜ 演示账号 `demo` / `demo-899d0e86ad4d1c524da9c47a9d0f160e`（体验用，数据定期重置）**
+**Demo site https://vapor.cuihairu.site/ | demo account `demo` / `demo-899d0e86ad4d1c524da9c47a9d0f160e` (for trial use, data resets periodically)**
 
-- The demo key is a dedicated **read-only sandbox**（只读沙箱）: it authenticates
+- The demo key is a dedicated **read-only sandbox**: it authenticates
   reads (GET/HEAD) on the REST API and both consoles, while every write — job
   creation, account changes, agent dispatch — is rejected with `401`. The real
   admin key lives only on the deploy machine and is never published.
-- Sign-in: open [`/admin.html`](https://vapor.cuihairu.site/admin.html)（管理台）
-  or [`/dashboard.html`](https://vapor.cuihairu.site/dashboard.html)（只读面板）
-  and paste the demo password into the API-key prompt（在 API Key 框粘贴密码即可登录）.
+- Sign-in: open [`/admin.html`](https://vapor.cuihairu.site/admin.html) (admin console)
+  or [`/dashboard.html`](https://vapor.cuihairu.site/dashboard.html) (read-only dashboard)
+  and paste the demo password into the API-key prompt.
 - Deployed by CI straight from `main`: deploys happen only when the full test
   gate (all-green suite + 100% line/branch coverage) and the image build are
   green, with automatic rollback on failure. Demo data is reset on every
   deploy — a demo agent stays connected and seeded demo accounts/jobs keep the
   consoles populated.
-- 账号为演示专用（非真实管理员账号）；请勿在演示实例中输入任何真实 Steam 凭据。
+- The demo account exists for demonstration only (it is not a real admin account); never enter real Steam credentials into the demo instance.
 
-### 预览 (Preview)
+### Preview
 
-| Control plane console | Account fleet |
+| Control plane console | Account overview |
 |---|---|
 | ![Control plane console](docs/assets/screenshots/admin-overview.png) | ![Account fleet](docs/assets/screenshots/admin-accounts.png) |
 | **Job history** | **Live event stream** |
@@ -108,16 +108,17 @@ curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
 Then open the consoles: [`/admin.html`](http://127.0.0.1:8080/admin.html) (full management UI) · [`/dashboard.html`](http://127.0.0.1:8080/dashboard.html) (read-first, one whitelisted reconcile action) · [`/gamedata.html`](http://127.0.0.1:8080/gamedata.html) (game data dictionary). The full walkthrough — login, challenges, farming, plugins — is in [docs/getting-started.md](docs/getting-started.md).
 
 
-## 本地测试口径
+## Local test policy
 
-CI 与本地开发按改动面三路分流——改一行文档不该全量编译。
+CI and local development branch three ways by change surface — a one-line docs
+edit should not compile the world.
 
-1. **文档改动**（`*.md`、`docs/**`、图片）：不编译。主 CI workflow 的
-   `paths-ignore` 已跳过这些路径。
-2. **代码改动**：只跑改动子集，不全量。
-   - `dotnet test <改动 csproj>`
-3. **全量**（`dotnet test -c Release`）：仅以下情形触发——*.csproj / *.sln、
-   `.github/**`、Docker/Compose 配置、发布前。
+1. **Docs changes** (`*.md`, `docs/**`, images): no compile. The main CI
+   workflow's `paths-ignore` already skips these paths.
+2. **Code changes**: run only the affected subset, not the world.
+   - `dotnet test <changed csproj>`
+3. **Full run** (`dotnet test -c Release`): only triggered by — *.csproj /
+   *.sln, `.github/**`, Docker/Compose config, and pre-release.
 
 ## Documentation
 
