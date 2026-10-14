@@ -3,8 +3,21 @@ name: ci
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '*.svg'
+      - '.editorconfig'
   pull_request:
-
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+      - '*.svg'
+      - '.editorconfig'
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   DOTNET_NOLOGO: true
