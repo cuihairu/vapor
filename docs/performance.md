@@ -1,30 +1,34 @@
-# 性能基线（performance baseline）
+English | [简体中文](zh/performance/)
 
-> 权威源。本文件是仓库唯一的性能基线数字记录处；基准测试内的断言只做功能正确性
-> + 宽数量级上限校验（防 CI 抖动 flake），**打印出来的数字才是基线**。刷新基线时
-> 把当前表整体移入文末归档区，再以新环境重跑转录（归档范式同 `tests/TESTING.md`
-> 覆盖率基线）。
+# Performance Baseline
 
-## 测量环境（2026-09-15 实采）
+> Authoritative source. This file is the single record of performance baseline numbers in the repo; assertions
+> inside the benchmarks only check functional correctness + wide order-of-magnitude upper bounds (to guard against
+> CI jitter flakes) — **the printed numbers are the baseline**. When refreshing the baseline, move the current table
+> as a whole into the archive section at the end of the file, then re-run and transcribe in the new environment (same
+> archive pattern as the coverage baseline in `tests/TESTING.md`).
 
-| 项 | 值 |
+## Measurement Environment (2026-09-15 measured)
+
+| Item | Value |
 |---|---|
-| CPU | Intel i9-10880H，8 核 |
-| 内存 | 30 GiB |
-| OS | Ubuntu 26.04（Linux 7.0.0-31-generic） |
-| .NET | SDK 10.0.112，runtime 10.0.12 |
-| 构建配置 | Release，`RunConfiguration.MaxCpuCount=2` |
+| CPU | Intel i9-10880H, 8 cores |
+| RAM | 30 GiB |
+| OS | Ubuntu 26.04 (Linux 7.0.0-31-generic) |
+| .NET | SDK 10.0.112, runtime 10.0.12 |
+| Build Configuration | Release, `RunConfiguration.MaxCpuCount=2` |
 
-数字与测量机器强相关：换机器或换运行时后重跑刷新，不做跨环境横向比较。
+Numbers are strongly tied to the measuring machine: re-run and refresh after changing machines or runtimes; no
+cross-environment comparison.
 
-## 运行方法
+## How to Run
 
 ```bash
-./scripts/run-benchmarks.sh                # 两个基准项目全套
-./scripts/run-benchmarks.sh -f <filter>    # 追加 --filter
+./scripts/run-benchmarks.sh                # full suite of both benchmark projects
+./scripts/run-benchmarks.sh -f <filter>    # append --filter
 ```
 
-或手动（`--logger` 必须用 detailed，否则 xunit 不显示基准打印的数字）：
+Or manually (`--logger` must be detailed, otherwise xunit does not show the benchmark-printed numbers):
 
 ```bash
 dotnet test tests/Vapor.ControlPlane.Tests -c Release \
@@ -35,27 +39,28 @@ dotnet test tests/Vapor.Steam.Core.Tests -c Release \
   --filter "FullyQualifiedName~Performance" -- RunConfiguration.MaxCpuCount=2
 ```
 
-基准不挂 CI（延续"本地开发机实测为准"口径，CI 只保证测试通过不保证数字）。
+Benchmarks are not hooked into CI (following the "local dev machine measured numbers are authoritative" stance; CI
+only guarantees tests pass, not the numbers).
 
-## 口径说明
+## Measurement Conventions
 
-- **时延基准**走 `WebApplicationFactory` 的 in-memory handler：覆盖框架管道 +
-  序列化 + 存储成本，**不含真实网络栈**——记录的是被测代码的回归基线，不是端到端
-  网络时延。
-- 时延宿主用真实 `:memory:` 存储并移除全部托管后台服务（`RemoveAll<IHostedService>`），
-  避免后台轮询混入测量窗口；种子数据：50 账号 / 200 作业 / 100 审计条目 /
-  5 采集计划 × 40 结果。
-- **分配量**用 `GC.GetTotalAllocatedBytes(precise: false)` 进程级差值 ÷ 操作数
-  （异步代码在线程池线程间迁移，per-thread 计数器不适用）；绝对值含测试管道噪声，
-  用途是盯数量级回归，不抠百分比。
-- 并发正确性基准（`Vapor.Steam.Core.Tests/Performance/ConcurrencyTests.cs`）只断言
-  行为正确，不打印吞吐数字，不在此记录。
+- **Latency benchmarks** go through `WebApplicationFactory`'s in-memory handler: covering framework pipeline +
+  serialization + storage costs, **excluding the real network stack** — what's recorded is a regression baseline of
+  the code under test, not end-to-end network latency.
+- The latency host uses a real `:memory:` store and removes all hosted background services
+  (`RemoveAll<IHostedService>`) to keep background polling out of the measurement window; seed data: 50 accounts /
+  200 jobs / 100 audit entries / 5 crawl plans × 40 results.
+- **Allocation** uses `GC.GetTotalAllocatedBytes(precise: false)` process-level deltas ÷ operation count (async code
+  migrates between thread-pool threads, so per-thread counters don't apply); absolute values include test-pipeline
+  noise — the use is watching order-of-magnitude regressions, not splitting percentages.
+- The concurrency-correctness benchmark (`Vapor.Steam.Core.Tests/Performance/ConcurrencyTests.cs`) only asserts
+  behavioral correctness; it prints no throughput numbers and is not recorded here.
 
-## 基线（2026-09-15，本机实测）
+## Baseline (2026-09-15, measured on this machine)
 
-### 时延 — 只读端点（8 并发 × 200 请求）+ 任务派发写入口对照
+### Latency — read-only endpoints (8 concurrency × 200 requests) + job-dispatch write-path comparison
 
-| 端点 | p50 | p95 | max | 吞吐 |
+| Endpoint | p50 | p95 | max | Throughput |
 |---|---|---|---|---|
 | `GET /healthz` | 0 ms | 4 ms | 18 ms | 5445 req/s |
 | `GET /v1/accounts` | 1 ms | 8 ms | 24 ms | 2851 req/s |
@@ -63,63 +68,65 @@ dotnet test tests/Vapor.Steam.Core.Tests -c Release \
 | `GET /v1/crawl/results?limit=100` | 13 ms | 31 ms | 40 ms | 501 req/s |
 | `GET /v1/jobs?limit=100` | 13 ms | 36 ms | 40 ms | 477 req/s |
 | `GET /v1/audit/logs?limit=100` | 16 ms | 47 ms | 52 ms | 420 req/s |
-| `POST /v1/jobs`（串行 200 次创建，202 Accepted） | 1 ms | 3 ms | 20 ms | 498 req/s |
+| `POST /v1/jobs` (200 serial creates, 202 Accepted) | 1 ms | 3 ms | 20 ms | 498 req/s |
 
-来源：`tests/Vapor.ControlPlane.Tests/Performance/ApiLatencyBenchmarks.cs`。
+Source: `tests/Vapor.ControlPlane.Tests/Performance/ApiLatencyBenchmarks.cs`.
 
-### 吞吐 — 组件级
+### Throughput — component level
 
-| 基准 | 规模 | 实测 |
+| Benchmark | Scale | Measured |
 |---|---|---|
-| 任务队列：job 创建 | 500 jobs | 776 ms（644/s） |
-| 任务队列：claim + finish 循环 | 500 tasks | 1463 ms（342/s） |
-| 并发 claimer（4 竞争者） | 200 tasks | 198 ms（1010/s），0 重复派发 |
-| EventBroker 扇出 | 500 job + 100 全局订阅者 × 100 事件 | 38 ms 全量送达 |
-| SSE 并发连接 | 50 连接 | 723 ms 全部收到事件 |
-| 内存缓存写入（`GetOrSetAsync` 填充） | 5000 distinct keys | 73 ms（67,759 写/s） |
-| 内存缓存热读（`GetOrSetStaleWhileRevalidateAsync`，全 fresh 命中） | 4000 读 / 100 keys / 8 worker | 计时窗口 <1 ms（>10⁶ 读/s），0 次 factory 回调 |
+| Job queue: job creation | 500 jobs | 776 ms (644/s) |
+| Job queue: claim + finish loop | 500 tasks | 1463 ms (342/s) |
+| Concurrent claimer (4 contenders) | 200 tasks | 198 ms (1010/s), 0 duplicate dispatches |
+| EventBroker fan-out | 500 jobs + 100 global subscribers × 100 events | 38 ms all delivered |
+| SSE concurrent connections | 50 connections | 723 ms all received events |
+| In-memory cache writes (`GetOrSetAsync` fill) | 5000 distinct keys | 73 ms (67,759 writes/s) |
+| In-memory cache hot reads (`GetOrSetStaleWhileRevalidateAsync`, all fresh hits) | 4000 reads / 100 keys / 8 workers | timing window <1 ms (>10⁶ reads/s), 0 factory callbacks |
 
-来源：`ControlPlaneBenchmarks.cs`（前 5 项）、`tests/Vapor.Steam.Core.Tests/Performance/CacheBenchmarks.cs`（后 2 项）。
+Source: `ControlPlaneBenchmarks.cs` (first 5 items), `tests/Vapor.Steam.Core.Tests/Performance/CacheBenchmarks.cs`
+(last 2 items).
 
-### 资源占用 — 每操作托管分配量
+### Resource Footprint — managed allocation per operation
 
-| 基准 | 实测 |
+| Benchmark | Measured |
 |---|---|
-| `SqliteJobStore` create + claim + finish 全周期 | 68,860 B/操作（200 cycles，892 ms） |
-| `MemoryVaporCache` 热读 | 252 B/读 |
+| `SqliteJobStore` create + claim + finish full cycle | 68,860 B/operation (200 cycles, 892 ms) |
+| `MemoryVaporCache` hot read | 252 B/read |
 
-来源：`tests/Vapor.ControlPlane.Tests/Performance/ResourceFootprintBenchmarks.cs`、`CacheBenchmarks.cs`。
+Source: `tests/Vapor.ControlPlane.Tests/Performance/ResourceFootprintBenchmarks.cs`, `CacheBenchmarks.cs`.
 
-### 容量画像 — 100 / 1k / 10k（2026-10-11，本机实测）
+### Capacity Profile — 100 / 1k / 10k (2026-10-11, measured on this machine)
 
-同一工作负载在 100 / 1,000 / 10,000 存量行（作业、审计条目）与同规模突发
-事件下的表现。**读法**：
+The same workload against 100 / 1,000 / 10,000 existing rows (jobs, audit entries) and same-scale burst events.
+**How to read it**:
 
-- SQLite 读路径不随存量退化（索引查询）：`ListJobs(100)` p95 三个规模均
-  ≤21 ms，审计 `QueryAsync` p50 0→0→1 ms；`GetJob` 恒 0 ms。种子耗时随规模
-  线性增长（写放大在 10k 段明显），但那是建库的一次性写入成本，不是查询路径
-  的回归信号。claim + finish ×100 首规模（100）偏慢属进程内 JIT 预热，同
-  方法内越跑越快，三个规模都远在预算内。
-- EventBroker 有界通道（容量 256，DropOldest）= 文档化的 at-most-once 契约：
-  突发 > 256 时订阅方的确定性交付下限是 min(256, 规模)——实测 100 / 1,000 /
-  10,000 突发分别送达 100 / 256 / 256。消费跟不上发布时早期事件被丢弃，订阅
-  方拿到的是通道保留的最近 256 条；突发 ≤ 256 全量送达。
+- The SQLite read path does not degrade with existing volume (indexed queries): `ListJobs(100)` p95 stays ≤21 ms at
+  all three scales, audit `QueryAsync` p50 goes 0→0→1 ms; `GetJob` is constantly 0 ms. Seed time grows linearly with
+  scale (write amplification is visible in the 10k range), but that's the one-time cost of building the DB, not a
+  query-path regression signal. claim + finish ×100 at the first scale (100) is slow due to in-process JIT
+  warm-up — the same method gets faster the more it runs, and all three scales are well within budget.
+- EventBroker's bounded channel (capacity 256, DropOldest) = the documented at-most-once contract: when bursts
+  exceed 256, the subscriber's deterministic delivery floor is min(256, scale) — measured: bursts of 100 / 1,000 /
+  10,000 delivered 100 / 256 / 256. When consumption can't keep up with publication, early events are dropped and
+  subscribers get the most recent 256 retained by the channel; bursts ≤ 256 are delivered in full.
 
-| 基准 | 100 | 1,000 | 10,000 |
+| Benchmark | 100 | 1,000 | 10,000 |
 |---|---|---|---|
-| job 种子（全量写入） | 854 ms | 1050 ms | 13389 ms |
+| Job seed (full write) | 854 ms | 1050 ms | 13389 ms |
 | `ListJobs(100)` p50 / p95 | 1 / 19 ms | 4 / 21 ms | 1 / 15 ms |
 | `GetJob` p50 | 0 ms | 0 ms | 0 ms |
 | claim + finish ×100 | 1128 ms | 834 ms | 430 ms |
-| 审计种子 | 98 ms | 204 ms | 4275 ms |
+| Audit seed | 98 ms | 204 ms | 4275 ms |
 | `QueryAsync(AuditQuery)` p50 / p95 | 0 / 13 ms | 0 / 4 ms | 1 / 7 ms |
-| EventBroker 突发发布 | 17 ms，送达 100（= 规模） | 19 ms，送达 256（下限） | 152 ms，送达 256（下限） |
+| EventBroker burst publish | 17 ms, delivered 100 (= scale) | 19 ms, delivered 256 (floor) | 152 ms, delivered 256 (floor) |
 
-来源：`tests/Vapor.ControlPlane.Tests/Performance/CapacityProfileBenchmarks.cs`
-（`./scripts/run-benchmarks.sh -f CapacityProfile`）。
+Source: `tests/Vapor.ControlPlane.Tests/Performance/CapacityProfileBenchmarks.cs`
+(`./scripts/run-benchmarks.sh -f CapacityProfile`).
 
-## 归档
+## Archive
 
-> **2026-09-15：初始基线**（本机实测，环境见文首）。本表取代 `tests/TESTING.md`
-> 性能章节内的旧手抄数字（旧数字出处环境未记录，仅存于 git 历史；其中队列创建
-> ~5,200/s 与并发 claimer ~1,760/s 与本机实测差异属环境不同，不构成回归信号）。
+> **2026-09-15: initial baseline** (measured on this machine; environment at the top of the file). This table
+> supersedes the old hand-copied numbers in the performance section of `tests/TESTING.md` (those old numbers came
+> from an unrecorded environment and survive only in git history; the queue-creation ~5,200/s and concurrent-claimer
+> ~1,760/s there differ from this machine's measurements due to different environments, not as regression signals).

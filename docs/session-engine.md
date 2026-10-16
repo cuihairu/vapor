@@ -1,27 +1,29 @@
+English | [简体中文](zh/session-engine/)
+
 # Steam Session Engine
 
-## 概述
+## Overview
 
-Session Engine 基于 [SteamKit2](https://github.com/SteamRE/SteamKit) 实现 ASF 式的 Bot 会话：每个账号一个长连会话，登录、质询、动作执行都收敛在这层。控制面不碰 Steam 协议，动作在 agent 上跑，会话状态与凭据也不出 agent。
+The Session Engine implements ASF-style bot sessions on top of [SteamKit2](https://github.com/SteamRE/SteamKit): one long-lived session per account, with login, challenge handling, and action execution all converging in this layer. The control plane never touches the Steam protocol; actions run on the agent, and session state and credentials never leave the agent.
 
-## 核心组件
+## Core Components
 
 ### BotSession
-- 会话状态机（十态，含 QR 登录等待态）
-- 命令队列处理
-- 事件发布
-- 错误处理和重连逻辑
-- 与 SteamClientManager 集成
+- Session state machine (ten states, including the QR login wait state)
+- Command queue processing
+- Event publishing
+- Error handling and reconnection logic
+- Integration with SteamClientManager
 
-### SessionState 枚举
+### SessionState Enum
 ```
 Disconnected, Connecting, ConnectingWaitAuthCode, ConnectingWait2FA,
 ConnectingWaitQr, Connected, Reconnecting, DisconnectedByUser,
 Disconnecting, FatalError
 ```
 
-### IAction 接口
-所有动作实现此接口：
+### IAction Interface
+All actions implement this interface:
 ```csharp
 string Name { get; }
 ActionMetadata Metadata { get; }
@@ -32,38 +34,38 @@ Task<ActionResult> ExecuteAsync(
 );
 ```
 
-`ActionMetadata` 声明 `RequiresLogin` 与 `TimeoutSeconds`，另有 init-only 的 `Safety`（执行安全分类，调度器据此限制重派次数——`send_trade_offer` 这类重复执行会产生双倍外部副作用的动作，派发上限恒为 2）。
+`ActionMetadata` declares `RequiresLogin` and `TimeoutSeconds`, plus an init-only `Safety` (execution safety classification; the scheduler uses it to cap redispatch counts — actions like `send_trade_offer` whose repeated execution would double the external side effects always have a dispatch limit of 2).
 
 ### ActionRegistry
-- 动作注册和查找
-- 按名称不区分大小写查找
+- Action registration and lookup
+- Case-insensitive lookup by name
 
 ### SessionManager
-- 管理多个 BotSession 实例
-- 获取或创建会话
-- 会话生命周期管理
+- Manages multiple BotSession instances
+- Gets or creates sessions
+- Session lifecycle management
 
 ### SteamClientManager
-- 封装 SteamKit2 的 SteamClient
-- 管理 Steam 回调和连接状态
-- 处理登录、认证码和 2FA 流程
-- 维护多账户登录状态
+- Wraps SteamKit2's SteamClient
+- Manages Steam callbacks and connection state
+- Handles login, auth code, and 2FA flows
+- Maintains multi-account login state
 
-## 动作
+## Actions
 
-全仓 65 个动作的完整目录（payload 字段、超时、安全分类）见 [actions catalog](actions.md)。这里列 5 个最小的作示例：
+The full catalog of all 65 actions in the repo (payload fields, timeouts, safety classifications) is in the [actions catalog](actions.md). Here are 5 of the smallest actions as examples:
 
-| 动作名 | 说明 | 需要登录 | 超时 |
-|--------|------|----------|------|
-| `ping` | 心跳检测 | 否 | 10s |
-| `echo` | 回显 payload | 否 | 10s |
-| `login` | 登录 Steam | 否 | 60s |
-| `idle` | 模拟在线 | 是 | 300s |
-| `redeem_key` | 激活游戏 Key | 是 | 60s |
+| Action | Description | Requires Login | Timeout |
+|--------|-------------|----------------|---------|
+| `ping` | Heartbeat check | No | 10s |
+| `echo` | Echoes the payload | No | 10s |
+| `login` | Logs in to Steam | No | 60s |
+| `idle` | Simulates being online | Yes | 300s |
+| `redeem_key` | Activates a game key | Yes | 60s |
 
-## 使用示例
+## Usage Examples
 
-### 注册自定义动作
+### Registering a Custom Action
 ```csharp
 public sealed class MyAction : IAction
 {
@@ -76,7 +78,8 @@ public sealed class MyAction : IAction
     public Task<ActionResult> ExecuteAsync(
         BotSession session,
         IReadOnlyDictionary<string, object?> payload,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         // 实现动作逻辑
         var output = new Dictionary<string, object?>();
@@ -88,7 +91,7 @@ public sealed class MyAction : IAction
 actionRegistry.Register(new MyAction());
 ```
 
-### 在 Agent 中使用
+### Using in an Agent
 ```csharp
 var session = await sessionManager.GetOrCreateSessionAsync(
     accountName,
@@ -103,22 +106,22 @@ var result = await session.ExecuteActionAsync(
 );
 ```
 
-## SteamKit2 集成
+## SteamKit2 Integration
 
-SteamClientManager 负责与 Steam 网络通信：
-- 管理单个共享的 SteamClient 实例
-- 通过 CallbackManager 处理 Steam 回调
-- 管理多账户凭据并在共享连接上逐个登录(单客户端同一时刻只进行一个账户的登录)
-- 处理认证码和 2FA 请求
-- 支持 access token 和 refresh token 保存
+SteamClientManager handles all network communication with Steam:
+- Manages a single shared SteamClient instance
+- Handles Steam callbacks via CallbackManager
+- Manages multi-account credentials and logs in one account at a time on the shared connection (a single client only performs one account's login at any moment)
+- Handles auth code and 2FA requests
+- Supports saving access token and refresh token
 
-### 认证流程
+### Authentication Flow
 
-1. 初始登录需要密码
-2. Steam 返回需要认证码或 2FA 时，Session 状态变为 `ConnectingWaitAuthCode` 或 `ConnectingWait2FA`；扫码登录走 `ConnectingWaitQr`
-3. 通过 `ProvideAuthCode()` / `Provide2FACode()` 提供代码，或由 SSE 通道送达 admin 面板提交的代码；配置了移动认证器共享密钥的账号可由 agent 侧 `TwoFactorAutoResponder` 自动应答
-4. 登录成功后，access token 和 refresh token 保存用于后续登录——agent 重启后凭此恢复会话，无需人工重登
+1. Initial login requires a password
+2. When Steam responds that an auth code or 2FA is required, the Session state becomes `ConnectingWaitAuthCode` or `ConnectingWait2FA`; QR code login goes through `ConnectingWaitQr`
+3. Codes are provided via `ProvideAuthCode()` / `Provide2FACode()`, or delivered through the SSE channel from codes submitted in the admin panel; accounts configured with a mobile authenticator shared secret can be answered automatically by the agent-side `TwoFactorAutoResponder`
+4. After a successful login, the access token and refresh token are saved for subsequent logins — after an agent restart, the session is restored from them without manual re-login
 
-## 边界
+## Boundaries
 
-会话凭据和 Steam Guard 码不离开 agent（过线只有布尔值）；好友、群组等社交动作未实现；跨区域调度是控制面的职责，本层不管。
+Session credentials and Steam Guard codes never leave the agent (only booleans cross the boundary); social actions such as friends and groups are not implemented; cross-region scheduling is the control plane's responsibility and is out of scope for this layer.

@@ -1,3 +1,5 @@
+English | [简体中文](zh/running/)
+
 # Running (local dev)
 
 ## Control plane

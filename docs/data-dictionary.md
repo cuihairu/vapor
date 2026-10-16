@@ -1,125 +1,132 @@
-# 游戏数据字段字典（data dictionary）
+English | [简体中文](zh/data-dictionary/)
 
-> 权威源。`src/Vapor.ControlPlane/wwwroot/gamedata.html` 的"字段字典"面板与本文件同步维护；
-> 修改任一侧时必须同步另一侧（`DashboardStaticTests.GameDataHtml_DocumentsAllFiveModels` 只锁模型名清单）。
-> 模型定义：`src/Vapor.Steam.Core/Models/GameModels.cs`。
+# Game Data Field Dictionary
 
-## 数据来源与无凭证约束
+> Authoritative source. The "Field Dictionary" panel in `src/Vapor.ControlPlane/wwwroot/gamedata.html` is maintained in sync with this file; when changing either side, the other side must be updated too (`DashboardStaticTests.GameDataHtml_DocumentsAllFiveModels` only locks the model-name list). Model definitions: `src/Vapor.Steam.Core/Models/GameModels.cs`.
 
-- 全部数据来自 **Steam 公开商店/社区端点**（`store.appdetails`、storesearch、community market），
-  **匿名可达**：相关 action `RequiresLogin: false`，抓取全程不接触任何 secret。
-- 多账号分片采集（crawl）中，账号仅作为**分片/派发/审计归属**（不同账号在不同 agent/出口，分摊频控）。
-- **硬约束**：crawl 分片任务经由常规作业队列派发，payload 不携带凭证时 agent 一律回放该账号的
-  已入库会话（`AgentTaskExecutor`：no credentials → `TryRestoreSessionAsync`，未入库即任务失败
-  "No credentials provided and no stored session found"）。因此采集池内的账号必须先在某个 agent
-  完成登录入库；单个账号凭证失效只失败该账号的分片，不阻塞其他分片。
-- 不做市场挂单批量抓取（与 MarketWatch 互补：告警面 vs 数据面）；下游可订阅 `crawl.run_completed` 事件。
+## Data Sources and the No-Credential Constraint
 
-## 来源端点与缓存层级
+- All data comes from **Steam public store/community endpoints** (`store.appdetails`, storesearch, community market),
+  **reachable anonymously**: the related actions set `RequiresLogin: false`, and no secret is touched at any point
+  during crawling.
+- In multi-account sharded crawling, accounts serve only as **sharding/dispatch/audit attribution** (different
+  accounts run on different agents/egresses, spreading rate limits).
+- **Hard constraint**: crawl shard tasks are dispatched through the regular job queue; when the payload carries no
+  credentials, the agent always replays that account's already-stored session (`AgentTaskExecutor`: no credentials
+  → `TryRestoreSessionAsync`, and if nothing is stored the task fails with
+  "No credentials provided and no stored session found"). Therefore, accounts in the crawl pool must first complete
+  login and session storage on some agent; a single account's credential failure only fails that account's shards and
+  does not block other shards.
+- Bulk scraping of market listings is not performed (complementary with MarketWatch: alerting plane vs data plane);
+  downstream consumers can subscribe to the `crawl.run_completed` event.
 
-`FetchCachedAsync`（fresh + stale-while-revalidate）统一管理；载荷可用 `cache_ttl_seconds`
-（`0` 禁用缓存，自定义 fresh 的 stale 窗口为 4 倍）与 `force_refresh` 覆盖。
+## Source Endpoints and Cache Tiers
 
-| action | Steam 端点 | 返回模型 | fresh | stale | 缓存键 |
+`FetchCachedAsync` (fresh + stale-while-revalidate) manages all of it uniformly; payloads can override via
+`cache_ttl_seconds` (`0` disables caching; the custom fresh stale window is 4×) and `force_refresh`.
+
+| action | Steam Endpoint | Returned Model | fresh | stale | Cache Key |
 |---|---|---|---|---|---|
 | `get_game_info` | store.appdetails | `GameInfo` | 30 min | 2 h | `game:{appId}:{cc}` |
-| `get_game_info_batch` | store.appdetails × N（≤200/批） | `GameInfo[]` + 逐项错误 | 30 min | 2 h | 与单应用共享层级 |
+| `get_game_info_batch` | store.appdetails × N (≤200/batch) | `GameInfo[]` + per-item errors | 30 min | 2 h | Shares tier with single app |
 | `search_games` | storesearch | `GameSearchResult[]` | 1 h | 6 h | `search:{term}:{limit}:{cc}` |
-| `get_price` | store.appdetails（价格段） | `PriceOverview` | 3 min | 15 min | `price:{appId}:{cc}` |
+| `get_price` | store.appdetails (price section) | `PriceOverview` | 3 min | 15 min | `price:{appId}:{cc}` |
 | `get_market_listings` | community market | `MarketListingsPage` | 5 min | 30 min | `market:{appId}:{start}:{count}` |
 
-`get_game_info_batch` 是 crawl 的执行单元：单项失败不中断整批（逐项进 `errors`），
-两次真实 HTTP 之间按 `interval_ms`（默认 500 ms，clamp 0–5000）节流，缓存命中零等待。
-缓存键中的 `term` 与 `cc` 均按小写存储（`search_games` 键含 `limit` 段）。
+`get_game_info_batch` is the execution unit of crawling: a single item failure does not abort the whole batch
+(per-item into `errors`), throttling applies between real HTTP calls at `interval_ms` (default 500 ms, clamped
+0–5000), and cache hits incur zero wait. `term` and `cc` in cache keys are stored lowercase (the `search_games` key
+also includes the `limit` segment).
 
-## 模型字段
+## Model Fields
 
-### GameInfo（`get_game_info` / `get_game_info_batch`）
+### GameInfo (`get_game_info` / `get_game_info_batch`)
 
-| 字段 | JSON 键 | 类型 | 语义 |
+| Field | JSON Key | Type | Meaning |
 |---|---|---|---|
 | AppId | `appId` | uint | Steam AppID |
-| Name | `name` | string | 游戏显示名 |
-| Type | `type` | string? | 内容类型：game / dlc / application / music 等 |
-| Developer | `developer` | string? | 开发商（多个时合并） |
-| Publisher | `publisher` | string? | 发行商（多个时合并） |
-| ReleaseDate | `releaseDate` | DateTimeOffset? | 发行时间（未知为空） |
-| IsFree | `isFree` | bool | 是否免费游玩 |
-| RequiresPurchase | `requiresPurchase` | bool | 是否需要购买/订阅才能使用 |
-| Price | `price` | PriceOverview? | 当前价格概览 |
-| MetacriticScore | `metacriticScore` | int? | Metacritic 评分（缺失为空） |
-| RecommendationsTotal | `recommendationsTotal` | long? | 评测总数（好评+差评） |
-| Genres | `genres` | string[] | 类型标签（RPG、动作等） |
-| Categories | `categories` | string[] | 功能分类（单人/多人/云存档等） |
-| HeaderImage | `headerImage` | string? | 页头图 URL |
-| SmallCapsuleImage | `smallCapsuleImage` | string? | 小胶囊图 URL |
-| ShortDescription | `shortDescription` | string? | 简短描述（源侧已截断） |
-| SupportedLanguages | `supportedLanguages` | string? | 支持语言（Steam 原始逗号串） |
-| FetchedAt | `fetchedAt` | DateTimeOffset | 快照抓取时间（缓存新鲜度标记） |
+| Name | `name` | string | Game display name |
+| Type | `type` | string? | Content type: game / dlc / application / music etc. |
+| Developer | `developer` | string? | Developer (merged when multiple) |
+| Publisher | `publisher` | string? | Publisher (merged when multiple) |
+| ReleaseDate | `releaseDate` | DateTimeOffset? | Release date (null when unknown) |
+| IsFree | `isFree` | bool | Free to play |
+| RequiresPurchase | `requiresPurchase` | bool | Purchase/subscription required to use |
+| Price | `price` | PriceOverview? | Current price overview |
+| MetacriticScore | `metacriticScore` | int? | Metacritic score (null when missing) |
+| RecommendationsTotal | `recommendationsTotal` | long? | Total review count (positive + negative) |
+| Genres | `genres` | string[] | Genre tags (RPG, Action, etc.) |
+| Categories | `categories` | string[] | Functional categories (single-player/multi-player/cloud saves, etc.) |
+| HeaderImage | `headerImage` | string? | Header image URL |
+| SmallCapsuleImage | `smallCapsuleImage` | string? | Small capsule image URL |
+| ShortDescription | `shortDescription` | string? | Short description (already truncated on the source side) |
+| SupportedLanguages | `supportedLanguages` | string? | Supported languages (Steam's raw comma-separated string) |
+| FetchedAt | `fetchedAt` | DateTimeOffset | Snapshot fetch time (cache freshness marker) |
 
-### PriceOverview（`get_price` / `GameInfo.price`）
+### PriceOverview (`get_price` / `GameInfo.price`)
 
-| 字段 | JSON 键 | 类型 | 语义 |
+| Field | JSON Key | Type | Meaning |
 |---|---|---|---|
-| Currency | `currency` | string | 币种代码（USD、CNY 等） |
-| Final | `final` | decimal? | 折后现价（主货币单位） |
-| Initial | `initial` | decimal? | 折扣前原价 |
-| DiscountPercent | `discountPercent` | int | 折扣百分比（0–100） |
-| FinalFormatted | `finalFormatted` | string? | Steam 返回的格式化现价（展示用） |
+| Currency | `currency` | string | Currency code (USD, CNY, etc.) |
+| Final | `final` | decimal? | Current price after discount (in the main currency unit) |
+| Initial | `initial` | decimal? | Original price before discount |
+| DiscountPercent | `discountPercent` | int | Discount percentage (0–100) |
+| FinalFormatted | `finalFormatted` | string? | Formatted current price as returned by Steam (for display) |
 
-### GameSearchResult（`search_games`）
+### GameSearchResult (`search_games`)
 
-| 字段 | JSON 键 | 类型 | 语义 |
+| Field | JSON Key | Type | Meaning |
 |---|---|---|---|
 | AppId | `appId` | uint | Steam AppID |
-| Name | `name` | string | 游戏显示名 |
-| Type | `type` | string? | 内容类型 |
-| IsFree | `isFree` | bool | 是否免费 |
-| Price | `price` | PriceOverview? | 价格概览（搜索结果可能缺省） |
-| HeaderImage | `headerImage` | string? | 页头图 URL |
-| FetchedAt | `fetchedAt` | DateTimeOffset | 快照抓取时间 |
+| Name | `name` | string | Game display name |
+| Type | `type` | string? | Content type |
+| IsFree | `isFree` | bool | Free or not |
+| Price | `price` | PriceOverview? | Price overview (may be absent in search results) |
+| HeaderImage | `headerImage` | string? | Header image URL |
+| FetchedAt | `fetchedAt` | DateTimeOffset | Snapshot fetch time |
 
-### MarketListing（`get_market_listings`）
+### MarketListing (`get_market_listings`)
 
-| 字段 | JSON 键 | 类型 | 语义 |
+| Field | JSON Key | Type | Meaning |
 |---|---|---|---|
-| ListingId | `listingId` | ulong | 挂单 ID（搜索聚合结果为 0） |
-| Name | `name` | string? | 物品显示名 |
-| HashName | `hashName` | string? | 市场哈希名（搜索聚合的稳定标识） |
-| SellListings | `sellListings` | int? | 搜索聚合背后的在售挂单数 |
-| AppId | `appId` | uint | 所属应用 |
-| AssetId | `assetId` | ulong | 资产 ID（搜索聚合为 0） |
-| ClassId | `classId` | ulong | 类别 ID（映射物品描述） |
-| InstanceId | `instanceId` | ulong | 实例 ID |
-| TotalPrice | `totalPrice` | decimal? | 买方到手总价（含手续费） |
-| CurrencyId | `currencyId` | int? | Steam 币种 ID（如 2001 = USD） |
-| FetchedAt | `fetchedAt` | DateTimeOffset | 快照抓取时间 |
+| ListingId | `listingId` | ulong | Listing ID (0 for search aggregation results) |
+| Name | `name` | string? | Item display name |
+| HashName | `hashName` | string? | Market hash name (stable identifier for search aggregation) |
+| SellListings | `sellListings` | int? | Number of active sell listings behind a search aggregation |
+| AppId | `appId` | uint | Owning app |
+| AssetId | `assetId` | ulong | Asset ID (0 for search aggregation) |
+| ClassId | `classId` | ulong | Class ID (maps to item description) |
+| InstanceId | `instanceId` | ulong | Instance ID |
+| TotalPrice | `totalPrice` | decimal? | Total price paid by the buyer (including fees) |
+| CurrencyId | `currencyId` | int? | Steam currency ID (e.g. 2001 = USD) |
+| FetchedAt | `fetchedAt` | DateTimeOffset | Snapshot fetch time |
 
-### MarketListingsPage（`get_market_listings`）
+### MarketListingsPage (`get_market_listings`)
 
-| 字段 | JSON 键 | 类型 | 语义 |
+| Field | JSON Key | Type | Meaning |
 |---|---|---|---|
-| AppId | `appId` | uint | 所属应用 |
-| Listings | `listings` | MarketListing[] | 本页挂单列表 |
-| TotalCount | `totalCount` | int | 符合查询的挂单总数 |
-| Start | `start` | int | 本页起始偏移 |
-| PageSize | `pageSize` | int | 页大小 |
-| HasMore | `hasMore` | bool | 是否还有下一页 |
+| AppId | `appId` | uint | Owning app |
+| Listings | `listings` | MarketListing[] | Listing list for this page |
+| TotalCount | `totalCount` | int | Total listings matching the query |
+| Start | `start` | int | Start offset of this page |
+| PageSize | `pageSize` | int | Page size |
+| HasMore | `hasMore` | bool | Whether another page follows |
 
-## 采集（crawl）数据面
+## Crawl Data Plane
 
-计划/轮次/结果的权威落库在控制面独立 DB（`Vapor_CRAWL_DB_PATH`，默认 `data/crawl.db`），
-`CrawlRunWorker` 负责到期认领 → 账号池轮转分片（显式 `overrides` 优先）→ 逐分片派发
-`get_game_info_batch` → 逐应用落 `crawl_results`。REST（admin）：
+The authoritative persistence of plans/runs/results lives in the control plane's separate DB (`Vapor_CRAWL_DB_PATH`,
+default `data/crawl.db`); `CrawlRunWorker` handles due-claim → account-pool rotation sharding (explicit `overrides`
+take priority) → per-shard dispatch of `get_game_info_batch` → per-app writes to `crawl_results`. REST (admin):
 
-| 端点 | 说明 |
+| Endpoint | Description |
 |---|---|
-| `GET /v1/crawl/plans` | 计划列表 |
-| `POST /v1/crawl/plans` | 创建（one-shot 默认立即跑；`cron`/`intervalSeconds` 周期；`startNow=false` 只挂调度） |
-| `GET/PUT/DELETE /v1/crawl/plans/{id}` | 单查/部分更新（省略字段保持）/删除（结果保留） |
-| `POST /v1/crawl/plans/{id}/trigger` | 立即触发（disabled 400；重叠由 worker 跳过计数） |
-| `GET /v1/crawl/plans/{id}/runs?limit=` | 轮次聚合（新→旧，limit clamp 1–100 默认 20） |
-| `GET /v1/crawl/results?planId&runId&appId&account&ok&limit&offset` | 逐应用结果查询（limit clamp 1–500 默认 100） |
+| `GET /v1/crawl/plans` | Plan list |
+| `POST /v1/crawl/plans` | Create (one-shot runs immediately by default; `cron`/`intervalSeconds` for periodic; `startNow=false` only schedules) |
+| `GET/PUT/DELETE /v1/crawl/plans/{id}` | Get / partial update (omitted fields keep their values) / delete (results retained) |
+| `POST /v1/crawl/plans/{id}/trigger` | Trigger immediately (400 when disabled; overlaps are skipped-and-counted by the worker) |
+| `GET /v1/crawl/plans/{id}/runs?limit=` | Run aggregates (newest first, limit clamped 1–100, default 20) |
+| `GET /v1/crawl/results?planId&runId&appId&account&ok&limit&offset` | Per-app result query (limit clamped 1–500, default 100) |
 
-每轮结果保留 `Vapor_CRAWL_KEEP_RUNS`（默认 10）轮；运行时长超过 `Vapor_CRAWL_RUN_TIMEOUT_SECONDS`
-（默认 1800）强制收尾并整片记失败。`wwwroot/gamedata.html` 提供上述数据的只读视图。
+Each run's results are kept for `Vapor_CRAWL_KEEP_RUNS` (default 10) runs; a run exceeding
+`VAPOR_CRAWL_RUN_TIMEOUT_SECONDS` (default 1800) is force-finalized and the whole shard is recorded as failed.
+`wwwroot/gamedata.html` provides a read-only view of the above data.

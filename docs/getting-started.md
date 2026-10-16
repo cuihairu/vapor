@@ -1,3 +1,5 @@
+English | [简体中文](zh/getting-started/)
+
 # Getting started
 
 This walkthrough takes you from an empty machine to a farming Steam account in ten steps: start the stack, declare an account, log in (password or QR), handle a Steam Guard challenge, run your first jobs, then hand the account to the orchestrator for card farming or playtime boosting. Commands use the compose dev defaults; every step links to the reference docs for the production-grade path.
