@@ -1,74 +1,76 @@
-# i18n 诊断报告 — 2026-10-16
+English | [简体中文](../zh/design/i18n-diagnosis-2026-10-16/)
 
-**线上现象**：`/zh/architecture/` 路径服务的内容中，中文 32 字 / 英文 31460 字，即中文站下绝大多数页面仍为英文。
+# i18n Diagnosis Report — 2026-10-16
 
----
-
-## 一、前置校正：站点不是 VitePress，是 MkDocs Material
-
-实测仓库无 `docs/.vitepress/` 目录，也无任何 VitePress 相关配置。实际配置为：
-
-- 框架：MkDocs Material 9.6 + `mkdocs-static-i18n` 1.3
-- 配置文件：`mkdocs.yml`
-- 构建流水线：`.github/workflows/docs.yml`，推送到 `main` 自动部署 GitHub Pages
-
-> 以下结论基于 **MkDocs + mkdocs-static-i18n 后缀式 i18n** 的运行机制。
+**Live symptom**: of the content served under the `/zh/architecture/` path, 32 characters are Chinese vs. 31460 characters English — i.e. the vast majority of pages on the Chinese site are still in English.
 
 ---
 
-## 二、根因结论
+## 1. Preliminary correction: the site is not VitePress, it is MkDocs Material
 
-**根因 = 文档文件缺失（已提交的中文版不足）+ `fallback_to_default: true` 机制将缺失页回退到英文原文。**
+Inspection confirms the repository has no `docs/.vitepress/` directory and no VitePress-related configuration of any kind. The actual setup is:
 
-具体展开：
+- Framework: MkDocs Material 9.6 + `mkdocs-static-i18n` 1.3
+- Config file: `mkdocs.yml`
+- Build pipeline: `.github/workflows/docs.yml`; pushes to `main` auto-deploy GitHub Pages
 
-1. **`main` 分支仅提交了 3 个 `.zh.md` 文件**（`index.zh.md` / `getting-started.zh.md` / `running.zh.md`），其余 20 个 `.zh.md` 尚在本地工作区未跟踪。live site 只能读到这 3 页。
-2. **`architecture.zh.md` 根本不存在**（本地工作区也没有），`/zh/architecture/` 必然回退到英文。
-3. **`mkdocs.yml` 的 `fallback_to_default: true` 是有意设计**（见 `mkdocs.yml:69` 注释），即"缺中文版就显示英文、导航不留洞"。这解释了为什么 `/zh/` 路径下能打开页面但全是英文。
-4. **`reconfigure_material: true` 会把 Material 主题的 UI 字符串切换到 `zh` 语言包**，所以页脚、导航、搜索占位等有少量中文界面文字（约 32 字与实测吻合），但正文是英文回退。
-5. **locales 配置本身是正确的**——不是"缺 locales 配置"，也不是"侧栏未按 locale 分组"，更不是"构建时目录映射错误"。
+> The conclusions below are based on the mechanics of **MkDocs + mkdocs-static-i18n suffix-style i18n**.
 
 ---
 
-## 三、配置现状逐项（file:line）
+## 2. Root-cause conclusion
 
-| 配置项 | 现状 | 位置 | 是否根因 |
+**Root cause = missing documentation files (not enough Chinese versions committed) + the `fallback_to_default: true` mechanism falling missing pages back to the English original.**
+
+Broken down:
+
+1. **Only 3 `.zh.md` files are committed on the `main` branch** (`index.zh.md` / `getting-started.zh.md` / `running.zh.md`); the other 20 `.zh.md` files are still untracked in the local working tree. The live site can only read these 3 pages.
+2. **`architecture.zh.md` does not exist at all** (not even in the local working tree), so `/zh/architecture/` inevitably falls back to English.
+3. **`fallback_to_default: true` in `mkdocs.yml` is intentional design** (see the comment at `mkdocs.yml:69`): "if the Chinese version is missing, show English — leave no holes in the navigation". This explains why pages under `/zh/` open fine but are entirely in English.
+4. **`reconfigure_material: true` switches the Material theme's UI strings to the `zh` language pack**, so the footer, navigation, search placeholder, etc. carry a small amount of Chinese interface text (about 32 characters, matching the measurement), while the body content is the English fallback.
+5. **The locales configuration itself is correct** — this is not "missing locales config", not "the sidebar is not grouped by locale", and certainly not "a directory mapping error at build time".
+
+---
+
+## 3. Configuration status item by item (file:line)
+
+| Config item | Current state | Location | Root cause? |
 |---|---|---|---|
-| i18n 插件是否启用 | 是，`docs_structure: suffix`，en 默认 + zh 构建 | `mkdocs.yml:71-84` | 否 |
-| `fallback_to_default` | `true`（缺 zh 版就回退英文） | `mkdocs.yml:75` | 间接（机制导致现象） |
-| `reconfigure_material` | `true`（主题 UI 随 locale 切换） | `mkdocs.yml:76` | 否（解释了 32 个中文字） |
-| 主题默认语言 | `en` | `mkdocs.yml:17` | 否（zh locale 下被 reconfigure 覆盖） |
-| `nav` 是否按 locale 分组 | 单 nav 共享（suffix 模式正常行为） | `mkdocs.yml:86` | 否（不是 bug） |
-| CI 是否安装 i18n 插件 | 是，`mkdocs-static-i18n==1.3.*` | `.github/workflows/docs.yml:38` | 否 |
-| 构建产物路径 | `_site/`，上传 Pages artifact | `.github/workflows/docs.yml:49-53` | 否 |
+| i18n plugin enabled | Yes, `docs_structure: suffix`, en default + zh build | `mkdocs.yml:71-84` | No |
+| `fallback_to_default` | `true` (a missing zh version falls back to English) | `mkdocs.yml:75` | Indirect (the mechanism produces the symptom) |
+| `reconfigure_material` | `true` (theme UI switches with locale) | `mkdocs.yml:76` | No (explains the 32 Chinese characters) |
+| Theme default language | `en` | `mkdocs.yml:17` | No (overridden by reconfigure under the zh locale) |
+| `nav` grouped by locale | Single shared nav (normal behavior in suffix mode) | `mkdocs.yml:86` | No (not a bug) |
+| CI installs the i18n plugin | Yes, `mkdocs-static-i18n==1.3.*` | `.github/workflows/docs.yml:38` | No |
+| Build output path | `_site/`, uploaded as a Pages artifact | `.github/workflows/docs.yml:49-53` | No |
 
 ---
 
-## 四、中文版覆盖现状
+## 4. Chinese version coverage status
 
-### 4.1 已提交到 main（live site 可见）—— 3 / 23 页
+### 4.1 Committed to main (visible on the live site) — 3 / 23 pages
 
-| 页面 | 状态 |
+| Page | Status |
 |---|---|
 | `index.md` | ✅ `index.zh.md` |
 | `getting-started.md` | ✅ `getting-started.zh.md` |
 | `running.md` | ✅ `running.zh.md` |
 
-覆盖率：**13%**（按 nav 中 23 个页面计）。
+Coverage: **13%** (counting the 23 pages in the nav).
 
-### 4.2 工作区未提交（WIP）—— 新增 17 个 `.zh.md`
+### 4.2 Uncommitted in the working tree (WIP) — 17 new `.zh.md` files
 
-`git status` 显示以下 `.zh.md` 为 untracked：
+`git status` shows the following `.zh.md` files as untracked:
 
-`actions.zh.md`、`consistency.zh.md`、`data-dictionary.zh.md`、`dependencies.zh.md`、`docker.zh.md`、`domain-model.zh.md`、`feature-matrix.zh.md`、`game-plugins.zh.md`、`performance.zh.md`、`plugins.zh.md`、`releasing.zh.md`、`roadmap.zh.md`、`session-engine.zh.md`、`testing.zh.md`、`troubleshooting.zh.md`、`vnext-convergence-plan.zh.md`、`审计-文档一致性.zh.md`
+`actions.zh.md`, `consistency.zh.md`, `data-dictionary.zh.md`, `dependencies.zh.md`, `docker.zh.md`, `domain-model.zh.md`, `feature-matrix.zh.md`, `game-plugins.zh.md`, `performance.zh.md`, `plugins.zh.md`, `releasing.zh.md`, `roadmap.zh.md`, `session-engine.zh.md`, `testing.zh.md`, `troubleshooting.zh.md`, `vnext-convergence-plan.zh.md`, `审计-文档一致性.zh.md`
 
-提交后，覆盖率可升至 ~87%。
+Once committed, coverage can rise to ~87%.
 
-> 其中 `roadmap.md`、`vnext-convergence-plan.md`、`consistency.md` 不在 nav 中，属于未挂出的页面。
+> Of these, `roadmap.md`, `vnext-convergence-plan.md`, and `consistency.md` are not in the nav; they are unlisted pages.
 
-### 4.3 连工作区都缺中文版—— 6 页
+### 4.3 Missing a Chinese version even in the working tree — 6 pages
 
-| 页面 | nav 归属 |
+| Page | Nav location |
 |---|---|
 | `architecture.md` | Design / Architecture |
 | `api.md` | Reference / REST API |
@@ -77,57 +79,57 @@
 | `research/market-survey.md` | Research / Market survey |
 | `research/process-boundary.md` | Research / Process boundary |
 
-即使提交完所有 WIP，这 6 页在 `/zh/` 下仍会回退英文。
+Even after all WIP is committed, these 6 pages will still fall back to English under `/zh/`.
 
 ---
 
-## 五、修复清单（按优先级）
+## 5. Fix checklist (by priority)
 
-### P0 — 立即解决"zh 站基本不可用"
+### P0 — Immediately fix "the zh site is basically unusable"
 
-- **提交工作区 17 个 `.zh.md` 文件**
-  - 依据：`git ls-files docs/ | grep '\.zh\.md$'` 仅返回 3 个文件
-  - 效果：zh 站覆盖率从 13% → ~87%
-  - 操作：`git add docs/*.zh.md` + commit + push，触发 `docs.yml` 重新部署
+- **Commit the 17 `.zh.md` files sitting in the working tree**
+  - Evidence: `git ls-files docs/ | grep '\.zh\.md$'` returns only 3 files
+  - Effect: zh site coverage goes from 13% → ~87%
+  - Action: `git add docs/*.zh.md` + commit + push, which triggers `docs.yml` to redeploy
 
-### P1 — 补齐核心页面翻译，消灭高频英文回退
+### P1 — Translate the core pages to eliminate the highest-traffic English fallbacks
 
-- **翻译 `architecture.md`**（`docs/architecture.md`，691 行 / 44 个标题）
-  - 依据：用户实测 `/zh/architecture/` 为英文，是 Design 组入口页、访问量最高页之一
-  - 产出：`docs/architecture.zh.md`
+- **Translate `architecture.md`** (`docs/architecture.md`, 691 lines / 44 headings)
+  - Evidence: the user observed `/zh/architecture/` in English; it is the Design group's entry page and one of the most visited pages
+  - Output: `docs/architecture.zh.md`
 
-- **翻译 `api.md`**（`docs/api.md`）
-  - 依据：Reference 组首项，API 文档是开发者核心路径
-  - 产出：`docs/api.zh.md`
+- **Translate `api.md`** (`docs/api.md`)
+  - Evidence: first item of the Reference group; API docs are a core developer path
+  - Output: `docs/api.zh.md`
 
-- **翻译 `production.md`**（`docs/production.md`）
-  - 依据：Getting Started 组末环，用户从入门走到生产部署
-  - 产出：`docs/production.zh.md`
+- **Translate `production.md`** (`docs/production.md`)
+  - Evidence: the final step of the Getting Started group; users walk from onboarding all the way to production deployment
+  - Output: `docs/production.zh.md`
 
-### P2 — 补齐次级页面
+### P2 — Translate the secondary pages
 
-- 翻译 `design/admin-ui.md`
-- 翻译 `research/market-survey.md`
-- 翻译 `research/process-boundary.md`
+- Translate `design/admin-ui.md`
+- Translate `research/market-survey.md`
+- Translate `research/process-boundary.md`
 
-### P3 — 体验优化（非根因，锦上添花）
+### P3 — Experience polish (not the root cause, nice to have)
 
-- **在回退页顶部加"未翻译"提示 banner**
-  - 建议做法：mkdocs-static-i18n 的 fallback 页可用 `page.meta` 或自定义 JS 检测当前 locale 与实际内容语言不一致，显示提示条
-  - 依据：目前用户进 zh 站看到全英文会以为是 bug，加提示可降低困惑
+- **Add an "untranslated" notice banner at the top of fallback pages**
+  - Suggested approach: with mkdocs-static-i18n, fallback pages can use `page.meta` or custom JS to detect a mismatch between the current locale and the actual content language, and show a notice bar
+  - Evidence: users who enter the zh site and see all English currently assume it is a bug; a notice reduces confusion
 
-- **评估是否保留 `fallback_to_default: true`**
-  - 若改为 `false`，缺中文版的页面在 zh 导航中会隐藏而不是回退
-  - 取舍：导航无洞 vs. 明确告知"还没翻"
-  - 依据：`mkdocs.yml:75` 当前为 `true`
+- **Evaluate whether to keep `fallback_to_default: true`**
+  - If switched to `false`, pages missing a Chinese version would be hidden from the zh navigation instead of falling back
+  - Trade-off: no holes in the navigation vs. explicitly saying "not translated yet"
+  - Evidence: `mkdocs.yml:75` is currently `true`
 
-- **`审计-文档一致性.md` 命名清理**
-  - 现状：工作区已将原文件重命名为 `.zh.md` 并新增英文版，但 nav 仍指向中文名
-  - 建议：nav 中改为英文文件名，与其余页面命名风格一致（suffix 模式更干净）
-  - 依据：`mkdocs.yml:119` 当前 nav 指向 `审计-文档一致性.md`
+- **Naming cleanup for `审计-文档一致性.md`**
+  - Current state: the working tree has renamed the original file to `.zh.md` and added an English version, but the nav still points at the Chinese name
+  - Suggestion: point the nav at the English filename so it matches the naming style of the other pages (cleaner in suffix mode)
+  - Evidence: `mkdocs.yml:119` currently points the nav at `审计-文档一致性.md`
 
 ---
 
-## 六、一句话总结
+## 6. One-sentence summary
 
-> **不是配置坏了，是翻译没交上去。** `fallback_to_default: true` 保证了 zh 路径下每个页面都能打开，但内容是英文的；把工作区 17 个 `.zh.md` 提交部署，加上补齐 `architecture` / `api` / `production` 三页，zh 站就能基本可用。
+> **The configuration is not broken — the translations were never shipped.** `fallback_to_default: true` guarantees every page under the `/zh/` path opens, but the content is English; commit and deploy the 17 `.zh.md` files from the working tree, plus complete the three pages `architecture` / `api` / `production`, and the zh site becomes basically usable.

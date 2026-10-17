@@ -1,3 +1,5 @@
+English | [简体中文](../zh/research/process-boundary/)
+
 # Plugin process boundary: quantification notes
 
 Conclusion first: the six official plugins cost **≈ 2.3 MB of resident memory in

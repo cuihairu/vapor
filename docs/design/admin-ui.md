@@ -1,3 +1,5 @@
+English | [简体中文](../zh/design/admin-ui/)
+
 # Admin UI redesign (prototypes)
 
 **Status: prototype only — live pages untouched.** The three backend pages under

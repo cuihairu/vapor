@@ -1,3 +1,7 @@
+English | [简体中文](../zh/review/chatgpt-review-2026-10-04/)
+
+> **Note:** this page is a verbatim transcript of an external ChatGPT review conversation (1961 lines, source link below). It is preserved byte-for-byte as a historical record and intentionally left untranslated — a faithful translation of a quoted third-party transcript cannot be produced without falsifying the source. A section-by-section recheck of this review (confirmed / outdated / refuted, with evidence) lives in [chatgpt-review-2026-10-04-recheck](chatgpt-review-2026-10-04-recheck.md).
+
 > 来源：用户 2026-10-04 提供的 ChatGPT 审核分享（https://chatgpt.com/s/t_6ac1d270fa5881919520a45b7d6aebee）。
 
 ## 追问
