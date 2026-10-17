@@ -1,3 +1,5 @@
+English | [简体中文](zh/architecture/)
+
 # Vapor Architecture (ASF-inspired)
 
 This project implements an API-controlled, headless Steam automation platform inspired by ArchiSteamFarm (ASF).

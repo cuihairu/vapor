@@ -1,3 +1,5 @@
+English | [简体中文](zh/api/)
+
 # REST API reference
 
 The control plane exposes every operational capability as an HTTP API under `/v1` — 68 routes (84 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.

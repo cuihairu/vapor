@@ -1,3 +1,5 @@
+English | [简体中文](zh/consistency/)
+
 # Vapor Consistency Model
 
 This document states the consistency and delivery guarantees Vapor actually

@@ -1,3 +1,5 @@
+English | [简体中文](zh/dependencies/)
+
 # Dependency upgrade policy
 
 Vapor ships a headless automation runtime that talks to Steam over

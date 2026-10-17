@@ -1,3 +1,5 @@
+English | [简体中文](zh/actions/)
+
 # Actions catalog
 
 Actions are the unit of work an agent executes: `POST /v1/jobs` names an action, a target set and an optional `payload`, and every target account (or agent) runs it on its own session. This catalog documents all **65 shipped actions** — 20 host actions from the Steam.Core assembly, 16 from the Game Access plugin, 9 from the Mobile Authenticator plugin, 3 from Market Watch, 1 from Monitoring, 4 from Game Data, 3 from the CS2/CSGO plugin, 3 from the Dota 2 plugin and 6 agent host actions — with their payload keys and output dictionaries, as read from the implementation.

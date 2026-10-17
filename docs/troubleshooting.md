@@ -1,3 +1,5 @@
+English | [简体中文](zh/troubleshooting/)
+
 # Troubleshooting
 
 Symptom → diagnosis → fix reference for operating Vapor. All `curl` examples

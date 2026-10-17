@@ -1,3 +1,5 @@
+English | [简体中文](zh/releasing/)
+
 # Releasing
 
 This repo uses Semantic Versioning with tags in the form `vX.Y.Z` (and optional prereleases like `vX.Y.Z-alpha.1`).

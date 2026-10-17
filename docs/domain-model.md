@@ -1,3 +1,5 @@
+English | [简体中文](zh/domain-model/)
+
 # Domain Model Dictionary
 
 This document defines the ten core objects of the Vapor domain — Account, Session, Agent, Job, Task, Attempt, Action, Capability, Event, Plugin — each with five facets: who owns it, how it lives and dies, where it persists, how it is identified, and what consistency it promises. It is a reading of the code as it exists (verified 2026-10-05); every object section ends with the exact types and files it describes. The relationship skeleton follows the convergence-plan diagram (review §31, verified against current state).

@@ -70,3 +70,6 @@
   - 验收：原型覆盖 admin / dashboard / gamedia 三个页面的实际布局（不是泛泛的配色方案），并在文档中展示截图或可打开的静态页
   — 证据:7ff2c42(四主题原型 admin/dashboard/gamedata 齐全,mkdocs strict 绿)
 
+
+- [x] docs 根目录 23 页实质文档全部双语配对 + 首屏语言切换器（来源：用户 2026-10-16 执行单）——19 篇新译中文孪生 + 1 篇占位（api 920 行/plugins 894 行/architecture/production 等全部真实翻译,命令/路径/代码块/专有名词原样保留;testing.zh.md 为占位标注页）+ 3 篇既有（index/getting-started/running）；6 篇中文占英文槽位的文档（data-dictionary/feature-matrix/performance/session-engine/vnext-convergence-plan/审计-文档一致性）英文槽改写为真英文、中文保留在 .zh.md；testing.md（gitignored CI 镜像,权威源 tests/TESTING.md 为 1093 行中文）按「过长只标注不硬译」口径在源文件标注暂无译版；23 页 EN 首行插 `English | [简体中文](zh/<page>/)`、孪生页首行 `简体中文 | [English](../<page>/)`；verify-api-docs.py MATRIX_RE 改双语锚（负探针 FAIL 验证） — 证据:本 commit(mkdocs strict 绿,7 个 verify 脚本 GREEN,site/zh/ 23 页全中文)
+- [ ] docs 子目录双语配对（design/ research/ review/ 共 5 页,2026-10-16 执行单明确下一轮做）

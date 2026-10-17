@@ -1,3 +1,5 @@
+English | [简体中文](zh/game-plugins/)
+
 # Valve game plugins: status and boundaries
 
 This page answers one question precisely: **which Valve-title-specific plugins

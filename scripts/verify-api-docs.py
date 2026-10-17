@@ -24,8 +24,10 @@ api.md 引言 `50 routes (58 operations)` 长期 stale；feature-matrix §3.7 RE
   7. api.md 引言「N routes (M operations)」应恰出现 1 次，且 N/M 与代码口径
      逐字段相等；出现 0 次或多次 → FAIL（结构变化显式失败）。
   8. feature-matrix `| REST API |` 行应恰有 1 条，行内「N 条 `/v1` 路由 /
-     M 个操作」与代码口径逐字段相等；解析不出 → FAIL。历史注记区（§4）
-     不在守护范围——该行锚定表格行，注释散文写错不红也不绿。
+     M 个操作」（中文形态）或「N `/v1` routes / M operations」（英文形态，
+     2026-10-16 docs 双语化起两形态皆收）与代码口径逐字段相等；解析不出 →
+     FAIL。历史注记区（§4）不在守护范围——该行锚定表格行，注释散文写错
+     不红也不绿。
 
 文档端点行只写路由路径——query 参数写在正文 Query 行（achievements 小节
 先例），把 `?x=` 拼进端点标题会被判定漂移。
@@ -40,7 +42,10 @@ METHOD = {"Get": "GET", "Post": "POST", "Put": "PUT", "Delete": "DELETE"}
 
 INTRO_RE = re.compile(r"(\d+) routes \((\d+) operations\)")
 
-MATRIX_RE = re.compile(r"(\d+) 条\s*`/v1`\s*路由\s*/\s*(\d+)\s*个操作")
+# 2026-10-16 docs bilingual: the anchor row may be written in either locale
+# (docs/feature-matrix.md = English slot, .zh.md = Chinese twin); keep the
+# `/v1` backtick token so only the real matrix row matches, never prose.
+MATRIX_RE = re.compile(r"(\d+)\s*(?:条\s*)?`/v1`\s*(?:路由|routes?)\s*/\s*(\d+)\s*(?:个操作|operations?)")
 
 
 def parse_code(text):

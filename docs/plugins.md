@@ -1,3 +1,5 @@
+English | [简体中文](zh/plugins/)
+
 # Vapor Plugin Development Guide
 
 Vapor's agent ships a plugin system: isolated loading, SemVer-gated API
