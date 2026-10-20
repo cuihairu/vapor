@@ -4,7 +4,7 @@
 
 ## 未完成
 
-- [x] 41-4 mock 链路验收(2026-10-18 用户令「先跑 mock,真实账号后补」)——本地 HttpListener mock Steam 730 背包接口,base url 改经构造参数/VAPOR_STEAM_INVENTORY_BASE_URL 环境变量指定(SteamTradeClient.cs:23,36,53-54),agent 侧 plugin.TradeClientFactory 2 参 ctor 读 env var 指向 mock;测试断言拉到背包、箱子数量与 mock 一致、钥匙数量与 mock 一致、case_open 全流程走通,失败即非零退出(CaseInventoryMockServerTests.cs:44,91,128)。测试 3/3 过,全量 3515 全绿。真实账号链路仍待操作者凭据。挂起等操作者提供可用凭据(2026-10-13 三探确认两测试账号被 Steam 侧拒绝 InvalidPassword,非 Vapor 缺陷;本地可跑面已有 E2E 双进程留证)。解封=操作者给可用凭据,先跑裸探针验密码再进全链路。暂停:等用户新账号自测(2026-10-13)。
+- [x] 41-4 mock 链路验收(2026-10-18 用户令「先跑 mock,真实账号后补」)——本地 HttpListener mock Steam 730 背包接口,base url 改经构造参数/VAPOR_STEAM_INVENTORY_BASE_URL 环境变量指定(SteamTradeClient.cs:23,36,53-54),agent 侧 plugin.TradeClientFactory 2 参 ctor 读 env var 指向 mock;测试断言拉到背包、箱子数量与 mock 一致、钥匙数量与 mock 一致、case_open 全流程走通,失败即非零退出(CaseInventoryMockServerTests.cs:44,91,128)。测试 3/3 过,全量 4055 全绿(CI 4562112 macos-Debug/ubuntu-Release 双 job 交叉各 4055)。真实账号链路仍待操作者凭据。挂起等操作者提供可用凭据(2026-10-13 三探确认两测试账号被 Steam 侧拒绝 InvalidPassword,非 Vapor 缺陷;本地可跑面已有 E2E 双进程留证)。解封=操作者给可用凭据,先跑裸探针验密码再进全链路。暂停:等用户新账号自测(2026-10-13)。
 
 ## GA Exit Criteria(5/5 达成 2026-09-15,2026-09-24 复核维持)
 

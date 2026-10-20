@@ -63,6 +63,7 @@ Environment variables:
 - `AGENT_RECONNECT_MAX_DELAY_MS` (optional, default `10000`)
 - `AGENT_RECONNECT_BACKOFF_FACTOR` (optional, default `2`)
 - `AGENT_RECONNECT_MAX_RETRIES` (optional, default `0` for unlimited)
+- `VAPOR_STEAM_INVENTORY_BASE_URL` (optional, testing only: points inventory reads at a local mock instead of steamcommunity.com; unset in production)
 
 Run:
 
