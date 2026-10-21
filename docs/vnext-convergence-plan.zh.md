@@ -1,4 +1,4 @@
-简体中文 | [English](../vnext-convergence-plan/)
+简体中文 | English
 
 # Vapor V-next 收敛改造计划书
 

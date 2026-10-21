@@ -1,4 +1,4 @@
-简体中文 | [English](../../review/chatgpt-review-2026-10-04-recheck/)
+简体中文 | English
 
 # ChatGPT 审核逐条复查报告（2026-10-04）
 

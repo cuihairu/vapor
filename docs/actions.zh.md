@@ -1,4 +1,4 @@
-简体中文 | [English](../actions/)
+简体中文 | English
 
 # 动作目录
 

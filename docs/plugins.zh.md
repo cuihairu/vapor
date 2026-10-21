@@ -1,4 +1,4 @@
-简体中文 | [English](../plugins/)
+简体中文 | English
 
 # Vapor 插件开发指南
 

@@ -1,4 +1,4 @@
-简体中文 | [English](../feature-matrix/)
+简体中文 | English
 
 # Vapor 功能对标矩阵（2026-09-13）
 

@@ -1,4 +1,4 @@
-简体中文 | [English](../data-dictionary/)
+简体中文 | English
 
 # 游戏数据字段字典（data dictionary）
 

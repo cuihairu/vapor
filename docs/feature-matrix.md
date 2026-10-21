@@ -1,4 +1,4 @@
-English | [简体中文](zh/feature-matrix/)
+English | 简体中文
 
 # Vapor Feature Comparison Matrix (2026-09-13)
 

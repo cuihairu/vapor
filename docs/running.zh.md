@@ -1,4 +1,4 @@
-简体中文 | [English](../running/)
+简体中文 | English
 
 # 本地运行（开发环境）
 

@@ -1,4 +1,4 @@
-English | [简体中文](zh/actions/)
+English | 简体中文
 
 # Actions catalog
 

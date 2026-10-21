@@ -1,4 +1,4 @@
-English | [简体中文](zh/api/)
+English | 简体中文
 
 # REST API reference
 

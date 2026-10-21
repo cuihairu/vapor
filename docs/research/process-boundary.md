@@ -1,4 +1,4 @@
-English | [简体中文](../zh/research/process-boundary/)
+English | 简体中文
 
 # Plugin process boundary: quantification notes
 

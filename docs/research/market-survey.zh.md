@@ -1,4 +1,4 @@
-简体中文 | [English](../../research/market-survey/)
+简体中文 | English
 
 # 市场调研:同类功能点与插件设计(2026-10-08)
 

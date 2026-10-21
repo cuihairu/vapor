@@ -1,4 +1,4 @@
-English | [简体中文](zh/production/)
+English | 简体中文
 
 # Production deployment
 

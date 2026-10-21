@@ -1,4 +1,4 @@
-简体中文 | [English](../architecture/)
+简体中文 | English
 
 # Vapor 架构（ASF 风格）
 

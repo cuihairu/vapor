@@ -1,4 +1,4 @@
-English | [简体中文](../zh/design/admin-ui/)
+English | 简体中文
 
 # Admin UI redesign (prototypes)
 

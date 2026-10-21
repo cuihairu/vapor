@@ -1,4 +1,4 @@
-简体中文 | [English](../production/)
+简体中文 | English
 
 # 生产部署
 

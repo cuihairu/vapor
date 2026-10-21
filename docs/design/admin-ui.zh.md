@@ -1,4 +1,4 @@
-简体中文 | [English](../../design/admin-ui/)
+简体中文 | English
 
 # 管理 UI 重设计（原型）
 

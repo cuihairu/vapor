@@ -1,4 +1,4 @@
-简体中文 | [English](../dependencies/)
+简体中文 | English
 
 # 依赖升级策略
 

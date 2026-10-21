@@ -1,4 +1,4 @@
-简体中文 | [English](../game-plugins/)
+简体中文 | English
 
 # Valve 游戏插件：现状与边界
 

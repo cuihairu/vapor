@@ -1,4 +1,4 @@
-English | [简体中文](zh/architecture/)
+English | 简体中文
 
 # Vapor Architecture (ASF-inspired)
 

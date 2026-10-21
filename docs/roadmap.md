@@ -1,4 +1,4 @@
-English | [简体中文](zh/roadmap/)
+English | 简体中文
 
 # Vapor Roadmap — Distributed-System Capability Map
 

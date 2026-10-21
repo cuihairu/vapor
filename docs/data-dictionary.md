@@ -1,4 +1,4 @@
-English | [简体中文](zh/data-dictionary/)
+English | 简体中文
 
 # Game Data Field Dictionary
 

@@ -1,4 +1,4 @@
-English | [简体中文](zh/running/)
+English | 简体中文
 
 # Running (local dev)
 

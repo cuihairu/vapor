@@ -1,4 +1,4 @@
-English | [简体中文](zh/session-engine/)
+English | 简体中文
 
 # Steam Session Engine
 

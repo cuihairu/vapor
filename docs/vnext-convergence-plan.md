@@ -1,4 +1,4 @@
-English | [简体中文](zh/vnext-convergence-plan/)
+English | 简体中文
 
 # Vapor V-next Convergence Plan
 

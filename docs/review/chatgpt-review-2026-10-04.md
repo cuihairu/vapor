@@ -1,4 +1,4 @@
-English | [简体中文](../zh/review/chatgpt-review-2026-10-04/)
+English | 简体中文
 
 > **Note:** this page is a verbatim transcript of an external ChatGPT review conversation (1961 lines, source link below). It is preserved byte-for-byte as a historical record and intentionally left untranslated — a faithful translation of a quoted third-party transcript cannot be produced without falsifying the source. A section-by-section recheck of this review (confirmed / outdated / refuted, with evidence) lives in [chatgpt-review-2026-10-04-recheck](chatgpt-review-2026-10-04-recheck.md).
 

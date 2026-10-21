@@ -1,4 +1,4 @@
-简体中文 | [English](../../research/process-boundary/)
+简体中文 | English
 
 # 插件进程边界：量化笔记
 

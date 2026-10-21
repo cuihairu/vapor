@@ -1,4 +1,4 @@
-简体中文 | [English](../performance/)
+简体中文 | English
 
 # 性能基线（performance baseline）
 
