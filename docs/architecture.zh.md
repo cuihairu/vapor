@@ -79,7 +79,7 @@
 - `Task`: `id`, `jobId`, `targetAccountId`, `status`, `attempt`, `result`, `error`.
 - `Event`: `id`, `jobId?`, `accountId?`, `type`, `ts`, `payload`.
 
-## 安全模型（公网 API）
+## 安全模型（公网 API） { #security-model-public-internet-api }
 
 - 控制平面 API：
   - 一切都用按角色的 API 密钥（操作者的管理员密钥、机队的 Agent 密钥，以及可选的只读观察者密钥用于共享 / 演示控制台访问 —— 在边缘强制，且只放行安全方法）—— 人与自动化走同一套机制。不做 OIDC/RBAC：操作者就一位，再加一层身份联邦只会凭空多出一个依赖，却省不掉任何一个。
