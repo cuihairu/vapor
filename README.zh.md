@@ -10,13 +10,7 @@
 
 # Vapor — 分布式 Steam 自动化控制平面
 
-[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor)
-[![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases)
-[![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/)
-[![status](https://img.shields.io/badge/status-alpha-orange)](#开发状态)
-
+[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor) [![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases) [![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE) [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/) [![status](https://img.shields.io/badge/status-alpha-orange)](#开发状态)
 API 驱动的无头 Steam 自动化平台，面向大规模批量操作与多区域部署。产品形态借鉴 [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm) 的 Bot/Action 模型。
 
 Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit)；但落地形态不是「一台机器一个进程」，而是控制平面 / Agent 拆分，复用 ASF 的 bot 会话概念。一个控制平面可以调度各区域的 Agent，就近接入 Steam 各区域端点——由 Agent 主动连控制平面，控制平面从不反向连接。

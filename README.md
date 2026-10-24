@@ -10,14 +10,7 @@ English | [简体中文](README.zh.md)
 
 # Vapor — Distributed Steam Automation Control Plane
 
-[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor)
-[![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases)
-[![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/)
-[![C#](https://img.shields.io/badge/C%23-13-239120)](https://learn.microsoft.com/dotnet/csharp/)
-[![status](https://img.shields.io/badge/status-alpha-orange)](#development-status)
-
+[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor) [![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases) [![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE) [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/) [![C#](https://img.shields.io/badge/C%23-13-239120)](https://learn.microsoft.com/dotnet/csharp/) [![status](https://img.shields.io/badge/status-alpha-orange)](#development-status)
 API-controlled, headless Steam automation platform designed for large-scale batch operations and multi-region deployment. Inspired by [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm)'s Bot/Action model.
 
 The Steam protocol layer is built on [SteamKit2](https://github.com/SteamRE/SteamKit); the product shape reuses ASF's bot-session concepts in a control-plane / agent split instead of one process per machine. One control plane can steer agents in every region, close to Steam's regional endpoints. Agents reach the control plane, never the other way around.
