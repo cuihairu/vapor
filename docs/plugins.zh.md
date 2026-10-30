@@ -1,4 +1,4 @@
-简体中文 | [English](../plugins/)
+简体中文 | English
 
 # Vapor 插件开发指南
 
@@ -20,10 +20,10 @@ Vapor 的 Agent 内置一套插件系统：隔离加载、按 SemVer 门控
 |------------|-----------|----------------------------|
 | 动作 | `IActionPlugin` | 把贡献的 `IAction` 注册进 Agent 的动作注册表；它们经任务（`run_action`）变为可调用 |
 | 控制台命令 | `ICommandPlugin` | 加载时收集，由 `commands` 权限门控；树内尚无宿主提供运行它们的前端，因此目前只是契约面 |
-| Web 路由 | `IWebApiPlugin` | 加载时收集，由 `web` 权限门控；尚无宿主把它们经 HTTP 挂载（监控插件改为在自己的监听器上自托管端点）——见 [Web 路由](#web-routes-iwebapiplugin) |
+| Web 路由 | `IWebApiPlugin` | 加载时收集，由 `web` 权限门控；尚无宿主把它们经 HTTP 挂载（监控插件改为在自己的监听器上自托管端点）——见 [Web 路由](#web-iwebapiplugin) |
 | 会话事件 | `IEventPlugin` | 经 `PluginEventDispatcher` 接收每一个会话事件（状态变更、认证/两步验证提示、错误） |
 
-## 快速上手
+## 快速上手 { #quick-start }
 
 一个最小的插件目录长这样：
 
@@ -140,7 +140,7 @@ public sealed class MyPlugin : IPlugin, IActionPlugin
 初始化与关停失败是隔离的：一个坏掉的插件绝不会妨碍其他插
 件加载。
 
-## 信任与权限
+## 信任与权限 { #trust-and-permissions }
 
 插件声明*自己是什么*、*需要什么*；宿主决定给什么。
 
@@ -150,7 +150,7 @@ public sealed class MyPlugin : IPlugin, IActionPlugin
 - `community` —— 经审阅的第三方插件
 - `official` —— 随宿主一同发布与维护
 
-### 运行时资源声明
+### 运行时资源声明 { #runtime-resource-declarations }
 
 清单还可声明 `resources` —— 插件*自称*在宿主提供的面之外
 还会触碰什么。已知名称有 `network`（超出宿主 HTTP 客户端
@@ -321,7 +321,7 @@ public sealed class SessionLogger : IEventPlugin
 `Disconnected` 和 `Error`（带 `Message`）。处理器应快速且
 不阻塞；耗时的工作放到你自己的任务上。
 
-## 配置
+## 配置 { #configuration }
 
 清单的 `configuration` 节是一个字符串键值字典，交给 
 `IPluginContext.Configuration`。用 `Vapor.Plugins.Core` 
@@ -364,7 +364,7 @@ schema 对随它发布的这一版插件是权威的，拼错的键会让加载�
 败而不是静默无事发生。环境变量覆盖不经 schema 校验（它们
 经读取器的回退解析）。Market Watch 插件里有一个完整示例。
 
-## 依赖
+## 依赖 { #dependencies }
 
 清单可以声明一个可选的 `dependencies` 数组。每个条目点名
 另一个插件的 `id`，并可选地约束该插件必须声明的 
@@ -567,7 +567,7 @@ ST 端点，把安装任务扇出给点名的 Agent：
 管理控制台的 `插件管理` 面板（PluginStore）渲染目录，支持
 逐 Agent 定向与一键批量安装。
 
-### 信任边界，直白陈述
+### 信任边界，直白陈述 { #trust-boundary-stated-plainly }
 
 校验和保证的是*相对于你钉住的摘要的完整性*，而不是包的来
 源；`trust` 仍是清单声明的标签，宿主的 `MinimumTrust` 策
@@ -745,7 +745,7 @@ ak™ 对有 StatTrak 变体的物品是一次独立的 1:10 掷点。没有
 [kratos1812/Case-Opening](https://github.com/kratos1812/Case-Opening)
 （GPL-3.0，SourceMod —— 另一种加权桶掷点）。
 
-### 模式与后端接缝
+### 模式与后端接缝 { #modes-and-the-backend-seam }
 
 `ICaseOpeningBackend` 是“决定开出了什么”与“它如何而来”之
 间的唯一接缝。插件恰好交付一个实现：
@@ -800,7 +800,7 @@ ak™ 对有 StatTrak 变体的物品是一次独立的 1:10 掷点。没有
 计算（`GET stats`）。省略 `results.path` 时，结果保存在有
 界的内存环（最近 1000 条）中，不落盘。
 
-### 库存与消耗记账
+### 库存与消耗记账 { #inventory-and-consumption-bookkeeping }
 
 对账拆成运维自行配对的两半：
 
@@ -824,7 +824,7 @@ ak™ 对有 StatTrak 变体的物品是一次独立的 1:10 掷点。没有
   保留最近 1000 条）。Web 路由镜像两半：`GET inventory` 供
   台账摘要 + 近期条目，`POST consume` 是门控写入。
 
-### ToS 边界
+### ToS 边界 { #tos-boundary }
 
 直白陈述，免得任何人瞎猜：
 

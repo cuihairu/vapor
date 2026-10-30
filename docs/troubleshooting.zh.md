@@ -1,4 +1,4 @@
-简体中文 | [English](../troubleshooting/)
+简体中文 | English
 
 # 故障排查
 

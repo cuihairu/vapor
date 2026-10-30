@@ -1,4 +1,4 @@
-English | [简体中文](../zh/design/i18n-diagnosis-2026-10-16/)
+English | 简体中文
 
 # i18n Diagnosis Report — 2026-10-16
 

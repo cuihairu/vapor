@@ -1,4 +1,4 @@
-简体中文 | [English](../production/)
+简体中文 | English
 
 # 生产部署
 
@@ -87,6 +87,7 @@
 | `AGENT_TASK_TIMEOUT_SECONDS` | 否 | `900` | 盯单个已派发任务的看门狗（取消该任务、上报结构化的 `task timeout` 失败，循环继续服务）；`<= 0` 关闭。它设在逐动作超时之上，后者先触发 |
 | `AGENT_2FA_AUTO_SUBMIT` | 否 | off | `true` = 用已存的共享密钥（Steam TOTP）在本地应答 2FA 挑战；关闭则交给人工 SSE 通道 |
 | `AGENT_MARKET_LISTINGS_ENABLED` | 否 | off | `true` = 允许创建真实市场挂单（`create_market_listing` 带 `send=true`）；每账号的开关也必须打开（见下文） |
+| `VAPOR_STEAM_INVENTORY_BASE_URL` | 否 | `https://steamcommunity.com` | 覆盖库存读取所用的 Steam Community 主机（mock 支持，41-4）。仅在测试/验收时指向本地 mock，不设置即生产默认值 |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 否 | off | OTLP 端点；开启分布式追踪导出 |
 
 #### 自动应答 2FA（需显式开启）

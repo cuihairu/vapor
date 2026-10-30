@@ -4,7 +4,10 @@
 
 ## 未完成
 
-- [ ] 41-4 真实环境验收:起 agent 连真实账号拉 730 背包并断言箱子/钥匙,CaseOpening 新增 action 全流程 curl 跑通,再补测试。挂起等操作者提供可用凭据(2026-10-13 三探确认两测试账号被 Steam 侧拒绝 InvalidPassword,非 Vapor 缺陷;本地可跑面已有 E2E 双进程留证)。解封=操作者给可用凭据,先跑裸探针验密码再进全链路。暂停:等用户新账号自测(2026-10-13)。
+- [x] 41-4 mock 链路验收(2026-10-18 用户令「先跑 mock,真实账号后补」)——本地 HttpListener mock Steam 730 背包接口,base url 改经构造参数/VAPOR_STEAM_INVENTORY_BASE_URL 环境变量指定(SteamTradeClient.cs:23,36,53-54),agent 侧 plugin.TradeClientFactory 2 参 ctor 读 env var 指向 mock;测试断言拉到背包、箱子数量与 mock 一致、钥匙数量与 mock 一致、case_open 全流程走通,失败即非零退出(CaseInventoryMockServerTests.cs:44,91,128)。测试 3/3 过,全量 4055 全绿(CI 4562112 macos-Debug/ubuntu-Release 双 job 交叉各 4055)。真实账号链路仍待操作者凭据。挂起等操作者提供可用凭据(2026-10-13 三探确认两测试账号被 Steam 侧拒绝 InvalidPassword,非 Vapor 缺陷;本地可跑面已有 E2E 双进程留证)。解封=操作者给可用凭据,先跑裸探针验密码再进全链路。暂停:等用户新账号自测(2026-10-13)。
+      已代决:按 docs/review/2026-10-30-decisions.md 执行(2026-10-30)——维持挂起,需用户输入暂缓:
+      操作者提供可用 Steam 测试账号凭据(或用户新账号自测),先跑裸探针验密码再进全链路;
+      mock 验收已覆盖全流程断言,真实账号缺位不产生新工程缺口,不代决账号/不探测第三方账号
 
 ## GA Exit Criteria(5/5 达成 2026-09-15,2026-09-24 复核维持)
 
@@ -71,5 +74,4 @@
   — 证据:7ff2c42(四主题原型 admin/dashboard/gamedata 齐全,mkdocs strict 绿)
 
 
-- [x] docs 根目录 23 页实质文档全部双语配对 + 首屏语言切换器（来源：用户 2026-10-16 执行单）——19 篇新译中文孪生 + 1 篇占位（api 920 行/plugins 894 行/architecture/production 等全部真实翻译,命令/路径/代码块/专有名词原样保留;testing.zh.md 为占位标注页）+ 3 篇既有（index/getting-started/running）；6 篇中文占英文槽位的文档（data-dictionary/feature-matrix/performance/session-engine/vnext-convergence-plan/审计-文档一致性）英文槽改写为真英文、中文保留在 .zh.md；testing.md（gitignored CI 镜像,权威源 tests/TESTING.md 为 1093 行中文）按「过长只标注不硬译」口径在源文件标注暂无译版；23 页 EN 首行插 `English | [简体中文](zh/<page>/)`、孪生页首行 `简体中文 | [English](../<page>/)`；verify-api-docs.py MATRIX_RE 改双语锚（负探针 FAIL 验证） — 证据:本 commit(mkdocs strict 绿,7 个 verify 脚本 GREEN,site/zh/ 23 页全中文)
 - [x] docs 子目录双语配对（design/ research/ review/ 实盘 6 页,2026-10-16 执行单下一轮项;PATROL1018R2 完成）——3 对真译:admin-ui（EN→中,21 个 prototypes/ 链接逐字保留）、process-boundary（EN→中,全部实测数字逐字保留）、chatgpt-review-recheck（中文占英文槽→英文槽改写真英文+中文留 .zh.md）；2 对双向改写:i18n-diagnosis-2026-10-16、market-survey（英文槽改真英文,中文留 .zh.md,50 条外链引用与截图路径逐字不动）；1 篇逐字稿:chatgpt-review-2026-10-04（1961 行第三方对话逐字稿,按「逐字稿/过长只标注不硬译」口径原文保留+双语占位页互链）；子目录页切换器用 `../zh/<dir>/<page>/` ↔ `../../<dir>/<page>/`（构建实测 href 双向可达） — 证据:本 commit(mkdocs strict 绿,7 verify 脚本 GREEN,site/zh/ 六页全中文)

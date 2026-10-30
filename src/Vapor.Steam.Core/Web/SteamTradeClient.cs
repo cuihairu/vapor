@@ -19,15 +19,21 @@ namespace Vapor.Steam.Core.Web;
 [ExcludeFromCodeCoverage]
 public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 {
+	/// <summary>Environment variable overriding the Steam Community base URL (mock support, 41-4).</summary>
+	public const string InventoryBaseUrlEnvironmentVariable = "VAPOR_STEAM_INVENTORY_BASE_URL";
+
+	private const string DefaultInventoryBaseUrl = "https://steamcommunity.com";
+
 	private readonly SteamWebHandler _webHandler;
 	private readonly ILogger<SteamTradeClient> _logger;
 	private readonly JsonSerializerOptions _jsonOptions;
+	private readonly string _inventoryBaseUrl;
 	private bool _disposed;
 
 	private const uint SteamAppId = 730; // Default to CS2 for inventory
 	private const ulong DefaultContextId = 2; // Default inventory context
 
-	public SteamTradeClient(SteamWebHandler webHandler, ILogger<SteamTradeClient> logger)
+	public SteamTradeClient(SteamWebHandler webHandler, ILogger<SteamTradeClient> logger, string? inventoryBaseUrl = null)
 	{
 		_webHandler = webHandler ?? throw new ArgumentNullException(nameof(webHandler));
 		_logger = logger;
@@ -36,7 +42,22 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 			PropertyNameCaseInsensitive = true,
 			NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
 		};
+
+		// Base URL resolution (41-4 mock): explicit config (constructor) wins,
+		// then the environment variable, then the real Steam Community host. The
+		// address is never hard-coded at the call site — a local mock can stand in
+		// for steamcommunity.com by setting either knob, so the agent keeps its
+		// production default while tests point at a loopback listener.
+		string? resolved = !string.IsNullOrWhiteSpace(inventoryBaseUrl)
+			? inventoryBaseUrl
+			: Environment.GetEnvironmentVariable(InventoryBaseUrlEnvironmentVariable);
+		_inventoryBaseUrl = string.IsNullOrWhiteSpace(resolved)
+			? DefaultInventoryBaseUrl
+			: resolved.Trim().TrimEnd('/');
 	}
+
+	/// <summary>The Steam Community base URL this client issues inventory requests against.</summary>
+	internal string InventoryBaseUrl => _inventoryBaseUrl;
 
 	/// <summary>
 	/// Gets the inventory for a Steam user.
@@ -57,8 +78,9 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 
 		try
 		{
-			// Build inventory URL
-			var url = $"https://steamcommunity.com/inventory/{steamId}/{appId}/{contextId}?l=english&count=5000";
+			// Build inventory URL (base URL is configurable — see ctor — so a local
+			// mock can stand in for steamcommunity.com; 41-4).
+			var url = $"{_inventoryBaseUrl}/inventory/{steamId}/{appId}/{contextId}?l=english&count=5000";
 
 			if (startAssetId.HasValue)
 			{
@@ -659,7 +681,7 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 						? ulong.Parse(assetIdElem.GetString() ?? "0", System.Globalization.CultureInfo.InvariantCulture)
 						: 0;
 					var amount = asset.TryGetProperty("amount", out var amountElem)
-						? amountElem.GetInt32()
+						? ReadInt32Flexible(amountElem, 1)
 						: 1;
 
 					// Get description info
@@ -723,6 +745,30 @@ public sealed class SteamTradeClient : ISteamTradeClient, IDisposable
 				AppId = appId,
 				ContextId = contextId
 			};
+		}
+	}
+
+	/// <summary>
+	/// Reads a JSON element as an Int32, tolerating Steam's habit of encoding
+	/// numbers (like an asset's amount) either as a bare number or a quoted
+	/// string depending on the endpoint. Falls back to <paramref name="fallback"/>
+	/// when the element is absent, empty, or unparseable — a malformed amount
+	/// degrades to the default rather than aborting the whole inventory read.
+	/// </summary>
+	private static int ReadInt32Flexible(JsonElement element, int fallback)
+	{
+		switch (element.ValueKind)
+		{
+			case JsonValueKind.Number when element.TryGetInt32(out int numeric):
+				return numeric;
+			case JsonValueKind.String when int.TryParse(
+				element.GetString(),
+				System.Globalization.NumberStyles.Integer,
+				System.Globalization.CultureInfo.InvariantCulture,
+				out int parsed):
+				return parsed;
+			default:
+				return fallback;
 		}
 	}
 

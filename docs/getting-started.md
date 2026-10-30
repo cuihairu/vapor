@@ -1,4 +1,4 @@
-English | [简体中文](zh/getting-started/)
+English | 简体中文
 
 # Getting started
 

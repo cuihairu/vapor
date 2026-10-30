@@ -1,4 +1,4 @@
-English | [简体中文](zh/docker/)
+English | 简体中文
 
 # Docker & Compose
 

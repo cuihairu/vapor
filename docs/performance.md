@@ -1,4 +1,4 @@
-English | [简体中文](zh/performance/)
+English | 简体中文
 
 # Performance Baseline
 

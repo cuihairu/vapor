@@ -1,4 +1,4 @@
-简体中文 | [English](../running/)
+简体中文 | English
 
 # 本地运行（开发环境）
 
@@ -63,6 +63,7 @@ http://127.0.0.1:8080/
 - `AGENT_RECONNECT_MAX_DELAY_MS`（可选，默认 `10000`）
 - `AGENT_RECONNECT_BACKOFF_FACTOR`（可选，默认 `2`）
 - `AGENT_RECONNECT_MAX_RETRIES`（可选，默认 `0` 表示不限次数）
+- `VAPOR_STEAM_INVENTORY_BASE_URL`（可选，仅测试用：把库存读取指向本地 mock 而非 steamcommunity.com；生产环境不设置）
 
 运行：
 

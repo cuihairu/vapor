@@ -1,4 +1,4 @@
-简体中文 | [English](../consistency/)
+简体中文 | English
 
 # Vapor 一致性模型
 

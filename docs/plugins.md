@@ -1,4 +1,4 @@
-English | [简体中文](zh/plugins/)
+English | 简体中文
 
 # Vapor Plugin Development Guide
 

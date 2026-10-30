@@ -1,4 +1,4 @@
-简体中文 | [English](../session-engine/)
+简体中文 | English
 
 # Steam 会话引擎
 

@@ -1,4 +1,4 @@
-English | [简体中文](zh/dependencies/)
+English | 简体中文
 
 # Dependency upgrade policy
 

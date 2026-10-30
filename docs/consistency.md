@@ -1,4 +1,4 @@
-English | [简体中文](zh/consistency/)
+English | 简体中文
 
 # Vapor Consistency Model
 

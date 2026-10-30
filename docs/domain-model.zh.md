@@ -1,4 +1,4 @@
-简体中文 | [English](../domain-model/)
+简体中文 | English
 
 # 领域模型字典
 

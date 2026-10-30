@@ -1,4 +1,4 @@
-简体中文 | [English](../roadmap/)
+简体中文 | English
 
 # Vapor 路线图 —— 分布式系统能力地图
 

@@ -1,4 +1,4 @@
-English | [简体中文](zh/releasing/)
+English | 简体中文
 
 # Releasing
 

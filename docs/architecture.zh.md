@@ -1,4 +1,4 @@
-简体中文 | [English](../architecture/)
+简体中文 | English
 
 # Vapor 架构（ASF 风格）
 
@@ -79,7 +79,7 @@
 - `Task`: `id`, `jobId`, `targetAccountId`, `status`, `attempt`, `result`, `error`.
 - `Event`: `id`, `jobId?`, `accountId?`, `type`, `ts`, `payload`.
 
-## 安全模型（公网 API）
+## 安全模型（公网 API） { #security-model-public-internet-api }
 
 - 控制平面 API：
   - 一切都用按角色的 API 密钥（操作者的管理员密钥、机队的 Agent 密钥，以及可选的只读观察者密钥用于共享 / 演示控制台访问 —— 在边缘强制，且只放行安全方法）—— 人与自动化走同一套机制。不做 OIDC/RBAC：操作者就一位，再加一层身份联邦只会凭空多出一个依赖，却省不掉任何一个。
@@ -300,7 +300,7 @@ Steam Guard 的交互式认证流程：
 
 ## 测试
 
-仓库在 15 个测试项目里跑 4,052 项测试（2026-10-13 实测），覆盖单元、集成、契约与性能各层；覆盖率门禁要求每次 CI 都达到 100% 行覆盖与 100% 分支覆盖 —— `scripts/coverage-summary.py --min 100 --min-branch 100` 就是裁判。基于属性的测试（FsCheck）钉住线上协议与解析契约。
+仓库在 15 个测试项目里跑 4,055 项测试（2026-10-20 实测），覆盖单元、集成、契约与性能各层；覆盖率门禁要求每次 CI 都达到 100% 行覆盖与 100% 分支覆盖 —— `scripts/coverage-summary.py --min 100 --min-branch 100` 就是裁判。基于属性的测试（FsCheck）钉住线上协议与解析契约。
 
 `tests/TESTING.md` 是详细清单：项目树、每个类的测试数量，以及每一轮补了什么的工作日志。
 

@@ -1,4 +1,4 @@
-English | [简体中文](zh/domain-model/)
+English | 简体中文
 
 # Domain Model Dictionary
 

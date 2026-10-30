@@ -1,4 +1,4 @@
-简体中文 | [English](../releasing/)
+简体中文 | English
 
 # 发布流程
 

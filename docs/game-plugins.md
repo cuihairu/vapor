@@ -1,4 +1,4 @@
-English | [简体中文](zh/game-plugins/)
+English | 简体中文
 
 # Valve game plugins: status and boundaries
 

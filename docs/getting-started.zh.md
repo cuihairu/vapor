@@ -1,4 +1,4 @@
-简体中文 | [English](../getting-started/)
+简体中文 | English
 
 # 上手指南
 

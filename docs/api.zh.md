@@ -1,4 +1,4 @@
-简体中文 | [English](../api/)
+简体中文 | English
 
 # REST API 参考
 

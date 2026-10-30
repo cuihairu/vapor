@@ -1,4 +1,4 @@
-简体中文 | [English](../game-plugins/)
+简体中文 | English
 
 # Valve 游戏插件：现状与边界
 
@@ -95,7 +95,7 @@ CS2 客户端执行的同一笔事务。它遵循的是运营者自己 Steam-bot
 | TF2 | 只读 schema 摘要（`IEconItems_440`） | ✅ 经 `vapor.game-data` 交付 | 同一个 `econ_item_schema` 动作，appid 440 |
 | 任意游戏 | 市场监视 / 价格告警 | ✅ `vapor.market-watch` | 面向整个经济，不专属单游戏 |
 
-三个只读候选全部交付的插件只有一个：[`vapor.game-data`](plugins.md#game-data-plugin-vaporgame-data)：
+三个只读候选全部交付的插件只有一个：[`vapor.game-data`](plugins.md#vaporgame-data)：
 只含动作，对 `api.steampowered.com` 发起 key 认证的 GET，密钥由 agent 侧
 保管，以紧凑摘要代替原始载荷。其余单游戏候选（如果将来真的出现）会沿用同一形态。
 

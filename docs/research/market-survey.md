@@ -1,4 +1,4 @@
-English | [简体中文](../zh/research/market-survey/)
+English | 简体中文
 
 # Market Survey: Comparable Feature Points and Plugin Design (2026-10-08)
 

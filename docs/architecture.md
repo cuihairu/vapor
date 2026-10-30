@@ -1,4 +1,4 @@
-English | [简体中文](zh/architecture/)
+English | 简体中文
 
 # Vapor Architecture (ASF-inspired)
 
@@ -521,7 +521,7 @@ would make the store refuse its own output.
 
 ## Testing
 
-The repository runs 4,052 tests across 15 test projects (2026-10-13
+The repository runs 4,055 tests across 15 test projects (2026-10-20
 measured), covering unit, integration, contract and performance layers, and
 the coverage gate requires 100% line and branch coverage on every CI run —
 `scripts/coverage-summary.py --min 100 --min-branch 100` is the referee.
