@@ -11,6 +11,7 @@ using CMsgGCItemCustomizationNotification = SteamKit2.GC.CSGO.Internal.CMsgGCIte
 using CMsgOpenCrate = SteamKit2.GC.CSGO.Internal.CMsgOpenCrate;
 using SteamKit2.Internal;
 using SteamKit2.WebUI.Internal;
+using CMsgClientGamesPlayed = SteamKit2.Internal.CMsgClientGamesPlayed;
 using Vapor.Steam.Core.Security;
 using System.Diagnostics.CodeAnalysis;
 using Vapor.Steam.Core.Utilities;
