@@ -14,6 +14,14 @@ hide:
 [![license](https://img.shields.io/github/license/cuihairu/vapor)](https://github.com/cuihairu/vapor/blob/main/LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/)
 
+## Architecture overview
+
+![Vapor implemented architecture: control plane, agents, state and optional services](assets/architecture/overview.en.svg)
+
+A single control plane drives regional agents through SQLite task leases. Agents initiate WS and HTTP connections; plugins share the session-engine process. Dashed lines mark optional integrations.
+
+[Full-size SVG](assets/architecture/overview.en.svg) · [Architecture](architecture.md) · [Source review and gaps](review/architecture-2026-10-30.md)
+
 <div class="grid cards" markdown>
 
 -   :material-server-network:{ .lg .middle } **Control plane + regional agents**

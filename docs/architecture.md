@@ -37,18 +37,22 @@ Implementation language: C#/.NET (to stay close to ASF patterns and the SteamKit
 
 ## High-level architecture
 
+![Vapor implemented architecture: control plane, agents, state and optional services](assets/architecture/overview.en.svg)
+
+[Source review, state boundaries and outstanding gaps](review/architecture-2026-10-30.md).
+
 ### Control Plane (public API)
 
 Responsibilities:
 - Authentication/authorization (per-role API keys for admin, agents, and an optional read-only viewer, per-key rate limiting, audit logging).
-- Persisted models: accounts (metadata), regions, agents, jobs, tasks, audit records.
+- Persisted models: account specs, config, jobs, tasks, audit, crawl, scripts and flows. Connected-agent registration is in memory; region is a routing attribute.
 - Job orchestration: split jobs into tasks, route to regions/agents, retries, cancellation.
-- Event aggregation: expose job/session events to clients (SSE/WebSocket) and webhooks.
+- Event aggregation: expose job/session events to clients (SSE) and webhooks.
 - Observability: metrics, structured logs, tracing.
 
 Public interfaces:
 - REST API (submit jobs, query status, manage accounts/regions/agents).
-- Event API (SSE/WebSocket).
+- Event API (SSE).
 
 ### Regional Agents (data plane)
 
@@ -73,7 +77,7 @@ Interfaces:
    - Locate/create the session (Bot-style) for the target account.
    - Run the action with timeouts, retries, rate limits, and necessary locks.
 5. Agent reports `TaskResult` + emits events (progress, errors, auth challenge needed).
-6. Control plane persists results and notifies clients via polling, SSE/WebSocket, and/or webhooks.
+6. Control plane persists results and notifies clients via polling, SSE and/or webhooks.
 
 ## Data model (minimal)
 
@@ -95,31 +99,27 @@ Interfaces:
     layer would add a dependency without removing one.
   - Per-key rate limiting (opt-in) and audit logs — quotas are per key, not
     per tenant (there is no tenant concept).
-  - Never expose raw secrets (passwords, refresh tokens, 2FA seeds) over API.
+  - Agent-local tokens are encrypted and logs/audit are redacted. Passwords/tokens in task payloads enter control-plane SQLite; secret isolation on that path is not implemented.
 - Agent tunnel:
   - Agents authenticate with static bearer keys (each key optionally carrying an `@<ISO-8601>` expiry suffix for rotation).
   - Control plane authorizes what each agent can execute (region scoping, capabilities).
   - Messages are authenticated by the tunnel key; fencing is `taskId` + `attempt` — there are no per-message signatures or nonces.
 - Secret storage:
   - Encryption keys come from environment variables or a key file (`VAPOR_ENCRYPTION_KEY` / `VAPOR_ENCRYPTION_KEY_BASE64` / `VAPOR_ENCRYPTION_KEY_FILE`); KMS/Vault/Keychain integration is not implemented.
-  - Agent should fetch only region-scoped secrets needed for active tasks.
+  - Agents restore local credentials; manual codes travel over control-plane SSE, which currently lacks server-side account-to-agent authorization binding.
 
 ## Queueing and reliability
 
-Production recommendation:
-- Use a durable queue (e.g. NATS JetStream / Kafka / RabbitMQ) for `Task` dispatch.
-- Use a DB-backed state machine for job/task status and idempotency keys.
-- Ensure at-least-once delivery with idempotent task execution and safe retries.
-
-Development / MVP:
-- In-memory queue and in-memory agent registry, with a clear interface boundary to swap in MQ later.
+- SQLite `SqliteJobStore` is the durable task queue of record; the scheduler claims tasks, renews leases and requeues expired attempts.
+- WebSocket send queues and agent registry are in memory. NATS / Kafka / RabbitMQ are not integrated.
+- Delivery is at least once, with `taskId` + `attempt` result fencing; external side effects are not exactly once.
+- SSE is live-only; agents have no durable result outbox.
+- Pending backpressure, queued-task lease and cancellation gaps are detailed in the [implementation review](review/architecture-2026-10-30.md).
 
 ## Multi-region deployment
 
 - Agents run per region (e.g. `us-east`, `eu-west`, `ap-sg`) and connect outbound to control plane.
-- Control plane can be single-region initially; later move to:
-  - active/active control plane with global DB strategy, or
-  - a primary control plane + regional read replicas.
+- Only a single control-plane process with SQLite single-writer ownership is supported. Active/active and regional read replicas are not implemented or committed follow-ups.
 - Routing strategies:
   - static: account pinned to a region
   - dynamic: route by current agent capacity/health
@@ -129,7 +129,7 @@ Development / MVP:
 
 1. ~~Control plane skeleton: job/task models, HTTP API, agent tunnel.~~ (Completed)
 2. ~~Agent skeleton: task executor with action registry (stub actions initially).~~ (Completed)
-3. ~~Persisted storage and durable queue integration.~~ (Completed)
+3. ~~SQLite persisted storage and task lease queue.~~ (Completed)
 4. ~~Steam session engine: Bot-style session + Actions (SteamKit2 integration).~~ (Completed)
 5. ~~Comprehensive test suite: hundreds of tests covering Actions, BotSession, SessionManager, SteamClientManager.~~ (Completed)
 6. ~~Event streaming, auth challenge workflow, admin UI.~~ (Completed)
@@ -317,8 +317,8 @@ sender-side `confirm_trade_offer` tasks for offers Steam requires confirming,
 mirroring the single-account loot endpoint's interlock: an unconfirmed offer
 never reaches the storage partner. Pacing needs no control-plane scheduler
 because the agent-side trade rate limiter already throttles offer creation per
-sender (the binding Steam constraint), while cross-source concurrency is
-deliberate — each farm account has its own session and its own budget. A run
+sender (the binding Steam constraint), while source tasks may run on different agents. Each agent currently consumes
+dispatched tasks serially, even though account sessions have independent budgets. A run
 still in flight when the wait window closes answers `202` with the job id;
 unfinished loot simply re-runs on the next collect, because unaccepted offers
 expire and the items stay where they are. `GET /v1/orchestration/storage/snapshot`
@@ -329,8 +329,8 @@ dedicated warehouse table exists.
 All orchestration decisions are audited (`account.reconciled`,
 `account.spec.updated/enabled/disabled/removed`) and exported as Prometheus
 metrics (`vapor_controlplane_reconcile_actions_total`,
-`vapor_controlplane_accounts_by_desired_state`). Credentials never enter
-the control plane — agents keep them in their local `FileCredentialStore`.
+`vapor_controlplane_accounts_by_desired_state`). Agents keep encrypted local tokens in `FileCredentialStore`; credentials submitted
+in task payloads also enter control-plane persistence.
 
 ### Notifications
 
@@ -343,8 +343,7 @@ the pipelines. The built-in `WebhookNotificationSink` POSTs a JSON envelope
 per event, optionally signing it with HMAC-SHA256
 (`X-Vapor-Timestamp` + `X-Vapor-Signature` over `"{timestamp}.{body}"`),
 retrying with exponential backoff (`base × 2^attempt`). Auth-challenge
-notifications only carry a `codeSupplied` flag — codes themselves never
-leave the control plane. Delivery counters are exported as
+notifications only carry a `codeSupplied` flag — codes are excluded from webhooks, but are sent to agents over dedicated SSE. Delivery counters are exported as
 `vapor_controlplane_notifications_total{sink,outcome}` and
 `vapor_controlplane_notification_retries_total{sink}`.
 

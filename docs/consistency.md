@@ -34,13 +34,14 @@ story is "one writer, one lock, one file". Everything below follows from that.
 | Session snapshots | Control plane | In-memory `SessionTracker` (agent-reported) | Re-populated by agent session events |
 | Auth challenges | Control plane | In-memory `AuthChallengeTracker` | Transient by design |
 | Plugin inventory mirror | Control plane | In-memory `PluginInventory` | Rebuilt from task results |
-| Steam sessions / credentials | **Agent** | Encrypted local store (AES-GCM) | Never leaves the agent |
+| Steam sessions / credentials | **Agent** | Encrypted local store (AES-GCM) | Local encrypted tokens survive restart; API submission path differs below |
 | Live Steam connections | Agent | CM/Web per account | Agent-local; token restore after restart |
 
 The split is deliberate: anything that must not be lost lives in the control
 plane's SQLite; anything derivable (registry, sessions, inventory) is
-in-memory and rebuilt by convergence. Credentials are the exception — they
-never reach the control plane at all (`architecture.md` § Security).
+in-memory and rebuilt by convergence. The agent-local token store is a separate state domain. Credentials submitted
+in task payloads also enter CP SQLite, and manual codes pass through CP SSE;
+see the [implementation review](review/architecture-2026-10-30.md).
 
 ## 2. Tasks: state machine, leases, at-least-once delivery
 

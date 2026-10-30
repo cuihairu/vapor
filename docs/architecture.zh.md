@@ -32,18 +32,22 @@
 
 ## 总体架构
 
+![Vapor 当前实现架构：控制平面、区域 Agent、状态与可选服务](assets/architecture/overview.zh.svg)
+
+[源码分析、状态边界与未完成差异](review/architecture-2026-10-30.md)。
+
 ### 控制平面（公开 API）
 
 职责：
 - 认证 / 授权（按角色的 API 密钥覆盖管理员、Agent 以及可选的只读观察者；按密钥限流；审计日志）。
-- 持久化模型：账号（元数据）、区域、Agent、任务、子任务、审计记录。
+- 持久化模型：账号规格、配置、任务、子任务、审计、采集、脚本与编排；在线 Agent 注册表在内存中，区域是调度属性。
 - 任务编排：把任务拆成子任务，路由到区域 / Agent，处理重试与取消。
-- 事件聚合：把任务 / 会话事件暴露给客户端（SSE/WebSocket）与 webhook。
+- 事件聚合：把任务 / 会话事件暴露给客户端（SSE）与 webhook。
 - 可观测性：指标、结构化日志、追踪。
 
 对外接口：
 - REST API（提交任务、查询状态、管理账号 / 区域 / Agent）。
-- 事件 API（SSE/WebSocket）。
+- 事件 API（SSE）。
 
 ### 区域 Agent（数据平面）
 
@@ -68,7 +72,7 @@
    - 定位 / 创建目标账号的（Bot 风格）会话。
    - 在超时、重试、限流与必要锁之下运行该动作。
 5. Agent 上报 `TaskResult` 并发出事件（进度、错误、需要认证挑战）。
-6. 控制平面持久化结果，并通过轮询、SSE/WebSocket 或 webhook 通知客户端。
+6. 控制平面持久化结果，并通过轮询、SSE 或 webhook 通知客户端。
 
 ## 数据模型（最小集）
 
@@ -84,31 +88,27 @@
 - 控制平面 API：
   - 一切都用按角色的 API 密钥（操作者的管理员密钥、机队的 Agent 密钥，以及可选的只读观察者密钥用于共享 / 演示控制台访问 —— 在边缘强制，且只放行安全方法）—— 人与自动化走同一套机制。不做 OIDC/RBAC：操作者就一位，再加一层身份联邦只会凭空多出一个依赖，却省不掉任何一个。
   - 按密钥限流（可选开启）与审计日志 —— 配额按密钥算，不按租户算（系统里没有租户概念）。
-  - 绝不通过 API 暴露原始密钥（密码、刷新令牌、2FA 种子）。
+  - Agent 本地令牌加密、日志与审计脱敏；任务 payload 中的密码 / 令牌会进入控制平面 SQLite，尚未实现该路径的秘密隔离。
 - Agent 隧道：
   - Agent 用静态 bearer 密钥认证（每个密钥可带 `@<ISO-8601>` 过期后缀以便轮换）。
   - 控制平面按区域范围与能力，授权每个 Agent 可以执行什么。
   - 消息由隧道密钥认证；围栏由 `taskId` + `attempt` 构成 —— 没有逐消息签名，也没有 nonce。
 - 密钥存储：
   - 加密密钥来自环境变量或密钥文件（`VAPOR_ENCRYPTION_KEY` / `VAPOR_ENCRYPTION_KEY_BASE64` / `VAPOR_ENCRYPTION_KEY_FILE`）；未实现 KMS/Vault/Keychain 集成。
-  - Agent 只应取回当前活动子任务所需、且限于本区域的密钥。
+  - Agent 优先从本地凭据存储恢复；人工验证码经控制平面 SSE 下发，尚缺账号所属 Agent 的服务端授权绑定。
 
 ## 队列与可靠性
 
-生产环境建议：
-- 用持久队列（如 NATS JetStream / Kafka / RabbitMQ）派发 `Task`。
-- 用数据库支撑的状态机管理任务 / 子任务状态与幂等键。
-- 用幂等的子任务执行与安全重试保证至少一次交付。
-
-开发 / MVP：
-- 内存队列与内存 Agent 注册表，接口边界清晰，之后可以整体换成 MQ。
+- SQLite `SqliteJobStore` 是持久任务队列的事实源；调度器领取任务、续租和回收过期任务。
+- WebSocket 发送队列与 Agent 注册表在内存中；未集成 NATS / Kafka / RabbitMQ。
+- 交付语义为至少一次，结果由 `taskId` + `attempt` 栅栏保护；外部副作用不保证恰好一次。
+- SSE 为实时通知，不支持历史重放；Agent 没有持久结果发件箱。
+- 排队任务的背压、租约与取消缺口见[架构核对](review/architecture-2026-10-30.md)。
 
 ## 多区域部署
 
 - Agent 按区域部署（如 `us-east`、`eu-west`、`ap-sg`），出站连接控制平面。
-- 控制平面初期可以是单区域；后续演进为：
-  - 多活控制平面 + 全局数据库策略，或
-  - 主控制平面 + 各区域只读副本。
+- 当前只支持单控制平面进程与 SQLite 单写者；双活 / 区域只读副本未实现，也不属于本轮开发承诺。
 - 路由策略：
   - 静态：账号钉定到某个区域
   - 动态：按 Agent 当前容量 / 健康度路由
@@ -118,7 +118,7 @@
 
 1. ~~控制平面骨架：任务 / 子任务模型、HTTP API、Agent 隧道。~~（已完成）
 2. ~~Agent 骨架：带动作注册表的任务执行器（起初是桩动作）。~~（已完成）
-3. ~~持久化存储与持久队列集成。~~（已完成）
+3. ~~SQLite 持久存储与任务租约队列。~~（已完成）
 4. ~~Steam 会话引擎：Bot 风格会话 + 动作（SteamKit2 集成）。~~（已完成）
 5. ~~全面测试套件：数百个测试，覆盖动作、BotSession、SessionManager、SteamClientManager。~~（已完成）
 6. ~~事件流、认证挑战流程、管理界面。~~（已完成）
@@ -219,13 +219,13 @@ Steam Guard 的交互式认证流程：
 - dry-run 模式只通过审计与指标报告每一次偏离，不做任何派发；
 - 默认每 6 小时（`ReconcileStandingRefreshSeconds`），编排器对每个已连接账号做一次异常状态检查：Agent 从已登录的 web 会话里取出该账号的 Steam Web API 密钥，查询 GetPlayerBans 与 GetSteamLevel；聚合结果为 `banned`（VAC / 社区 / 游戏 / 经济封禁）时隔离该账号 —— 交易循环对它跳过所有派发 —— 并写一条 `standing_quarantined` 审计记录，外加一个 `account.standing_alert` 代理事件；之后若结果转为 `clean`，就对称地解除隔离。操作者可以用 `POST /v1/accounts/{name}/standing-check` 强制触发一次检查，用 `GET /v1/orchestration/standing` 读取每账号的状态。
 
-账号规格还带一个面向机队的 `role` 字段：`farm`（默认值，所以该字段出现之前持久化的规格读回来保持不变）标记一个战利品来源，`storage` 标记一个仓库。`POST /v1/orchestration/storage/collect` 是一次性的收取运行：它为每个启用的 farm 来源各扇出一个 `loot_inventory` 子任务，汇入同一个任务 —— 于是该任务现成的 SSE 流就是进度通道 —— 收件方是仓库账号声明的 SteamID64（规格上的公开运营数据，不是凭据）；它对每个来源做有界等待，再把发送方侧那些 Steam 要求确认的报价串上 `confirm_trade_offer` 子任务，与单账号战利品端点的联锁逻辑一致：未经确认的报价绝不会抵达仓库搭档。节奏控制不需要控制平面的调度器，因为 Agent 侧的交易限流器已经按发送方限制了报价创建频率（这才是 Steam 的硬约束）；而跨来源并发是刻意的 —— 每个 farm 账号都有自己的会话和各自的预算。等待窗口关闭时仍在飞的运行返回 `202` 并带上任务 id；没收完的战利品在下次收取时重跑即可，因为无人接受的报价会过期，物品仍留在原地。`GET /v1/orchestration/storage/snapshot` 直接从收取任务本身重建每账号的上次收取统计（识别标志：任务 meta `origin = storage-collect`）—— 任务本身就是记录，因此不存在专门的仓库表。
+账号规格还带一个面向机队的 `role` 字段：`farm`（默认值，所以该字段出现之前持久化的规格读回来保持不变）标记一个战利品来源，`storage` 标记一个仓库。`POST /v1/orchestration/storage/collect` 是一次性的收取运行：它为每个启用的 farm 来源各扇出一个 `loot_inventory` 子任务，汇入同一个任务 —— 于是该任务现成的 SSE 流就是进度通道 —— 收件方是仓库账号声明的 SteamID64（规格上的公开运营数据，不是凭据）；它对每个来源做有界等待，再把发送方侧那些 Steam 要求确认的报价串上 `confirm_trade_offer` 子任务，与单账号战利品端点的联锁逻辑一致：未经确认的报价绝不会抵达仓库搭档。节奏控制不需要控制平面的调度器，因为 Agent 侧的交易限流器已经按发送方限制了报价创建频率（这才是 Steam 的硬约束）；各来源任务可分配到不同 Agent；同一 Agent 当前串行消费派发任务，各账号会话仍有各自的预算。等待窗口关闭时仍在飞的运行返回 `202` 并带上任务 id；没收完的战利品在下次收取时重跑即可，因为无人接受的报价会过期，物品仍留在原地。`GET /v1/orchestration/storage/snapshot` 直接从收取任务本身重建每账号的上次收取统计（识别标志：任务 meta `origin = storage-collect`）—— 任务本身就是记录，因此不存在专门的仓库表。
 
-所有编排决策都记入审计（`account.reconciled`、`account.spec.updated/enabled/disabled/removed`），并以 Prometheus 指标导出（`vapor_controlplane_reconcile_actions_total`、`vapor_controlplane_accounts_by_desired_state`）。凭据从不进入控制平面 —— Agent 把它们留在本地的 `FileCredentialStore` 里。
+所有编排决策都记入审计（`account.reconciled`、`account.spec.updated/enabled/disabled/removed`），并以 Prometheus 指标导出（`vapor_controlplane_reconcile_actions_total`、`vapor_controlplane_accounts_by_desired_state`）。Agent 的 `FileCredentialStore` 保存本地加密令牌；通过任务 payload 提交的凭据也会进入控制平面持久存储，不能据此宣称秘密仅存在 Agent。
 
 ### 通知
 
-后台服务 `NotificationService` 订阅 EventBroker 的全部流（任务、会话、认证挑战），把每个事件扇出给已注册的 `INotificationSink` 实现。每个 sink 带一条 `NotificationRule`（按事件类别 / 类型 / 账号的白名单；留空即全部），且各自隔离 —— 一个失败的 sink 绝不会影响其他 sink 或管线。内置的 `WebhookNotificationSink` 为每个事件 POST 一个 JSON 信封，可选用 HMAC-SHA256 签名（`X-Vapor-Timestamp` + `X-Vapor-Signature`，签的是 `"{timestamp}.{body}"`），失败时按指数退避重试（`base × 2^attempt`）。认证挑战通知只带一个 `codeSupplied` 标志 —— 验证码本身从不离开控制平面。投递计数器以 `vapor_controlplane_notifications_total{sink,outcome}` 与 `vapor_controlplane_notification_retries_total{sink}` 导出。
+后台服务 `NotificationService` 订阅 EventBroker 的全部流（任务、会话、认证挑战），把每个事件扇出给已注册的 `INotificationSink` 实现。每个 sink 带一条 `NotificationRule`（按事件类别 / 类型 / 账号的白名单；留空即全部），且各自隔离 —— 一个失败的 sink 绝不会影响其他 sink 或管线。内置的 `WebhookNotificationSink` 为每个事件 POST 一个 JSON 信封，可选用 HMAC-SHA256 签名（`X-Vapor-Timestamp` + `X-Vapor-Signature`，签的是 `"{timestamp}.{body}"`），失败时按指数退避重试（`base × 2^attempt`）。认证挑战通知只带一个 `codeSupplied` 标志 —— 验证码不发给 webhook，但会经专用 SSE 交付 Agent。投递计数器以 `vapor_controlplane_notifications_total{sink,outcome}` 与 `vapor_controlplane_notification_retries_total{sink}` 导出。
 
 ### 插件生态（PluginStore）
 

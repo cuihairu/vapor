@@ -25,29 +25,15 @@ Risky surfaces ship disabled. Market listing creation and cancels default to `dr
 
 Plugins load into isolated AssemblyLoadContexts and unload without a restart. Manifests carry a SemVer API contract, a trust level and permission grants; the runtime PluginStore installs packages agent-targeted from a catalog. Seven official plugins ship in-tree: Monitoring, MobileAuthenticator, MarketWatch, CS2/CSGO, Dota 2, GameData, GameAccess — the last carrying the game-access action surface as a wire-compatible extraction from the host. See [plugin development](docs/plugins.md).
 
-For operations: a control-plane script repository to store and dispatch operator scripts to connected agents plus ordered script flows (sequential steps, per-step status, stop/continue failure policy), OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
+For operations: a control-plane script repository to store and dispatch operator scripts to connected agents plus ordered script flows (sequential steps, per-step status, stop/continue failure policy), OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest. Agent-local tokens use encrypted storage; manual codes pass through the control plane to agents, while webhooks receive only `codeSupplied`. Credentials submitted in task payloads enter control-plane persistence; see the [architecture review](docs/review/architecture-2026-10-30.md).
 
 ## Architecture at a glance
 
-```
-                    ┌────────────────────────────────────────────┐
-                    │               Control Plane                │
-   operators ──────▶│  REST /v1 (68 routes / 84 ops) · OpenAPI·SSE│
-   (curl / UI)      │  SQLite: jobs · accounts · audit · crawl · scripts │
-                    │  DesiredStateReconciler · schedulers       │
-                    │  admin.html · dashboard.html · gamedata    │
-                    └───────────────┬────────────────────────────┘
-                                    │ outbound WSS tunnel (agent key)
-                    ┌───────────────┴──────────┐  ┌──────────────┐
-                    │         Agent #1         │  │   Agent #N   │   ← one per region
-                    │  session engine (bots)   │  │              │
-                    │  65 actions · plugins   │  │   plugins    │
-                    │  encrypted credentials   │  │              │
-                    └───────────────┬──────────┘  └──────┬───────┘
-                                    │                    │
-                                    ▼                    ▼
-                               Steam network       Steam network
-```
+![Vapor implemented architecture: control plane, agents, state and optional services](docs/assets/architecture/overview.en.svg)
+
+A single control plane drives regional agents through SQLite task leases. Agents initiate WS and HTTP connections; plugins share the session-engine process. Dashed lines mark optional integrations.
+
+[Full-size SVG](docs/assets/architecture/overview.en.svg) · [Architecture](docs/architecture.md) · [Source review and gaps](docs/review/architecture-2026-10-30.md)
 
 ## Live demo
 

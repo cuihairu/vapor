@@ -25,29 +25,15 @@ Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit)；但落�
 
 插件加载进隔离的 AssemblyLoadContext，无需重启即可卸载。清单携带 SemVer API 契约、信任级别与权限授予；运行时 PluginStore 从目录安装面向 Agent 的包。仓内自带七个官方插件：Monitoring、MobileAuthenticator、MarketWatch、CS2/CSGO、Dota 2、GameData、GameAccess——最后一个以线兼容方式从宿主抽出游戏访问动作面。见[插件开发](docs/plugins.md)。
 
-运维侧：控制平面脚本仓库（存放操作脚本并派发给已连接的 Agent）加有序脚本编排（顺序步骤、逐步状态、停止/继续的失败策略）、OpenAPI/Swagger、SSE 事件流（任务、会话、认证挑战）、Prometheus 指标配 Grafana 仪表盘、贯穿 Agent 隧道的 OpenTelemetry 链路追踪、HMAC 签名 webhook，以及在输出侧脱敏凭据与验证码的结构化日志。安全姿态是 AES-GCM 加密凭据存储加密钥轮换工具、按角色的 API Key、落盘即脱敏的审计日志——外加一条硬规矩：Steam Guard 验证码与凭据不出 Agent，跨线的只有一个布尔值。
+运维侧：控制平面脚本仓库（存放操作脚本并派发给已连接的 Agent）加有序脚本编排（顺序步骤、逐步状态、停止/继续的失败策略）、OpenAPI/Swagger、SSE 事件流（任务、会话、认证挑战）、Prometheus 指标配 Grafana 仪表盘、贯穿 Agent 隧道的 OpenTelemetry 链路追踪、HMAC 签名 webhook，以及在输出侧脱敏凭据与验证码的结构化日志。安全姿态是 AES-GCM 加密凭据存储加密钥轮换工具、按角色的 API Key、落盘即脱敏的审计日志。Agent 本地令牌使用加密存储；人工验证码经控制平面转发给 Agent，webhook 仅收到 `codeSupplied` 标志。通过任务 payload 提交的凭据会进入控制平面持久存储，详见[架构核对](docs/review/architecture-2026-10-30.zh.md)。
 
 ## 架构速览
 
-```
-                    ┌────────────────────────────────────────────┐
-                    │               Control Plane                │
-   operators ──────▶│  REST /v1 (68 routes / 84 ops) · OpenAPI·SSE│
-   (curl / UI)      │  SQLite: jobs · accounts · audit · crawl · scripts │
-                    │  DesiredStateReconciler · schedulers       │
-                    │  admin.html · dashboard.html · gamedata    │
-                    └───────────────┬────────────────────────────┘
-                                    │ outbound WSS tunnel (agent key)
-                    ┌───────────────┴──────────┐  ┌──────────────┐
-                    │         Agent #1         │  │   Agent #N   │   ← one per region
-                    │  session engine (bots)   │  │              │
-                    │  65 actions · plugins   │  │   plugins    │
-                    │  encrypted credentials   │  │              │
-                    └───────────────┬──────────┘  └──────┬───────┘
-                                    │                    │
-                                    ▼                    ▼
-                               Steam network       Steam network
-```
+![Vapor 当前实现架构：控制平面、区域 Agent、状态与可选服务](docs/assets/architecture/overview.zh.svg)
+
+单控制平面以 SQLite 任务租约驱动区域 Agent；Agent 主动建立 WS 与 HTTP 连接，插件与会话引擎同进程。虚线表示可选集成。
+
+[查看原尺寸 SVG](docs/assets/architecture/overview.zh.svg) · [架构设计](docs/architecture.zh.md) · [源码分析与差异](docs/review/architecture-2026-10-30.zh.md)
 
 ## 演示站点
 

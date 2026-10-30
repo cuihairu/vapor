@@ -4,10 +4,32 @@
 
 ## 未完成
 
-- [x] 41-4 mock 链路验收(2026-10-18 用户令「先跑 mock,真实账号后补」)——本地 HttpListener mock Steam 730 背包接口,base url 改经构造参数/VAPOR_STEAM_INVENTORY_BASE_URL 环境变量指定(SteamTradeClient.cs:23,36,53-54),agent 侧 plugin.TradeClientFactory 2 参 ctor 读 env var 指向 mock;测试断言拉到背包、箱子数量与 mock 一致、钥匙数量与 mock 一致、case_open 全流程走通,失败即非零退出(CaseInventoryMockServerTests.cs:44,91,128)。测试 3/3 过,全量 4055 全绿(CI 4562112 macos-Debug/ubuntu-Release 双 job 交叉各 4055)。真实账号链路仍待操作者凭据。挂起等操作者提供可用凭据(2026-10-13 三探确认两测试账号被 Steam 侧拒绝 InvalidPassword,非 Vapor 缺陷;本地可跑面已有 E2E 双进程留证)。解封=操作者给可用凭据,先跑裸探针验密码再进全链路。暂停:等用户新账号自测(2026-10-13)。
-      已代决:按 docs/review/2026-10-30-decisions.md 执行(2026-10-30)——维持挂起,需用户输入暂缓:
-      操作者提供可用 Steam 测试账号凭据(或用户新账号自测),先跑裸探针验密码再进全链路;
-      mock 验收已覆盖全流程断言,真实账号缺位不产生新工程缺口,不代决账号/不探测第三方账号
+- [x] 41-4 mock 链路验收(2026-10-18 用户令「先跑 mock,真实账号后补」)——本地 HttpListener mock Steam 730 背包接口,base url 改经构造参数/VAPOR_STEAM_INVENTORY_BASE_URL 环境变量指定(SteamTradeClient.cs:23,36,53-54),agent 侧 plugin.TradeClientFactory 2 参 ctor 读 env var 指向 mock;测试断言拉到背包、箱子数量与 mock 一致、钥匙数量与 mock 一致、case_open 全流程走通,失败即非零退出(CaseInventoryMockServerTests.cs:44,91,128)。测试 3/3 过,全量 4055 全绿(CI 4562112 macos-Debug/ubuntu-Release 双 job 交叉各 4055)。真实账号验证另列下方独立未完成项。
+- [ ] 41-4a 验证真实账号可登录（需用户输入，暂缓）：由操作者提供可用测试账号或自行运行登录探针；验收：获得成功登录的脱敏证据后才解锁 41-4b。沿用 [2026-10-30 决策](docs/review/2026-10-30-decisions.md)，不重复尝试已知无效凭据。
+- [ ] 41-4b 验证真实 CS2 背包 / 开箱链路（依赖 41-4a）：操作者显式开启真实动作门控后完成实测；验收：真实背包、箱子 / 钥匙计数、开箱结果与前后库存变化有脱敏证据，mock 记录不能代替。
+
+## 架构核对（2026-10-30，源码分析后新增）
+
+分析与证据：[架构实现核对](docs/review/architecture-2026-10-30.zh.md)。以下 `[ ]` 是后续工作，本轮未改运行时代码，也未把历史测试数当作本轮测试结果。每项可独立提交、验证和勾选；P0 优先处理秘密边界，P1 处理派发可靠性与内存保留。
+
+- [ ] ARCH-01 / P0：在任务写入前隔离秘密字段；依据 `Program.cs` 的 `POST /v1/jobs`、`SqliteJobStore.InsertTasksAsync`、`AgentTaskExecutor`。验收：直接任务、循环模板及其子任务不能将 password/pass、access/refresh token、auth/2FA code 等受支持别名以明文写进控制平面任务库，账号通过 Agent 本地凭据恢复仍可执行；加入跨 API / SQLite 的回归断言。
+- [ ] ARCH-02 / P0：处理历史任务库中的秘密载荷（依赖 ARCH-01）；依据 `jobs.payload_json` 与 `tasks.payload_json`。验收：提供可预览、可备份的清理 / 迁移路径，覆盖循环模板和普通任务，日志不输出秘密；用合成旧库验证清理后 API 查询不再返回旧凭据，并写明 SQLite WAL / 备份副本的处理范围。
+- [ ] ARCH-03 / P0：为人工验证码 SSE 增加账号所属 Agent 授权；依据 `Program.cs` 的 `/v1/auth/challenges/events` 当前仅检查 Agent 角色。验收：Agent Key 与已认证 Agent 身份绑定，服务端只投递该 Agent 被分配账号的验证码；请求参数不能扩大权限；两个 Agent、跨账号订阅与管理员脱敏投影有回归覆盖。
+- [ ] ARCH-04 / P1：为控制平面 Agent 发送队列实现可观测的背压；依据 `AgentRegistry.cs` 的 `ConnectedAgent._send` 使用 `DropOldest`。验收：队列满时不静默丢失已接收的任务 / 取消消息，调度器能感知拒绝并安全重试；容量边界与取消消息场景有确定性测试。
+- [ ] ARCH-05 / P1：限制 Agent 待执行任务缓冲并向调度器反馈可接收容量；依据 Agent `RunOnce` 的无界 `Channel<WSMessage>` 和串行消费。验收：长任务期间缓冲数量有配置上限、容量耗尽不丢消息，调度不持续向同一 Agent 堆积；压力测试断言队列上限和任务最终状态。
+- [ ] ARCH-06 / P1：补齐已派发但未开跑任务的租约策略（协调 ARCH-05）；依据 `TaskSchedulerService.DispatchOnce` 领取即置 Running，Agent 消费时才启动 `HeartbeatLoop`。验收：首个任务耗时超过租约时，后续排队任务不会在旧派发仍有效时重复执行；覆盖至少两任务、短租约和重连场景，并校验旧 attempt 栅栏。
+- [ ] ARCH-07 / P1：让取消消息对 Agent 排队任务生效；依据 Agent 接收器只匹配 `currentTaskId/currentAttempt`。验收：取消先于任务开跑时不触发该任务的 Action，正在执行的取消语义保持正确，旧 attempt 的取消不误伤新 attempt；增加排队取消和竞态测试。
+- [ ] ARCH-08 / P1：移除或实际消费 EventBroker 两条无消费者全局队列；依据 `_globalSessionChannel` / `_globalAuthChannel` 仅写入、通知服务使用另一套 `Subscribe*`。验收：没有订阅者时不会无界保留会话 / 验证码事件，现有订阅扇出与 webhook 脱敏行为通过验证。
+- [ ] ARCH-09 / P2：为人工验证码交付增加短期确认与过期语义（依赖 ARCH-03）；依据提交端先 `tracker.Clear` 再实时发布，而 SSE 无重放。验收：提交时 Agent 断流不会出现“挑战已清但 Agent 未收到”的静默丢失；只对所属 Agent 重试、过期自动清理、确认后删除，且不扩展为通用 SSE 历史日志。
+- [ ] ARCH-10 / 条件性延后：实现非协作插件的中毒会话隔离与回收；沿用 `docs/research/process-boundary.zh.md` 的既有决定，仅在第三方插件需求触发后启动。验收：构造忽略取消的插件，证明超时后该会话被隔离、后续任务不永久卡住、监控暴露异常；明确同进程方案无法强制终止任意插件代码，不将 ALC 宣称为进程沙箱。
+
+已在本轮完成的文档项（仅文档验收，不代表上述代码缺口已修复）：
+
+- [x] ARCH-D1：生成中英文 SVG，接入双语文档首页、README 与架构页，并附源码分析入口；证据：`docs/assets/architecture/overview.{en,zh}.svg` 与双语分析报告。
+- [x] ARCH-D2：统一当前单控制平面 / SQLite 租约队列口径，移除旧的外部 MQ 集成完成与双活演进承诺；证据：双语 `architecture` 文档。
+- [x] ARCH-D3：修正凭据与验证码绝不经过控制平面的错误表述，区分 Agent 通道和 webhook 投影；证据：双语 README、架构与一致性文档。
+- [x] ARCH-D4：恢复中文首页标题、卡片、代码块与表格的 Markdown 分行；证据：`docs/index.zh.md`。
+- [x] ARCH-D5：将真实账号登录与真实开箱验证从已完成 mock 项拆为独立未勾选项；证据：41-4a / 41-4b。
 
 ## GA Exit Criteria(5/5 达成 2026-09-15,2026-09-24 复核维持)
 
@@ -61,7 +83,7 @@
 - [x] 41-5 门禁全绿才 push、commit 英文简短 — 证据:06ce401..5478728
 - [x] 41-6 插件改名 vapor.csgo + 门控真开箱(GC 协议对齐操作者自建 Steam-bot)— 证据:f4b41c5,26685b6
 - [x] 41-7 Dota2(570)交易插件壳 — 证据:dae07a5
-- [x] 41-4 真实环境实测 — 见「未完成」
+- [ ] 41-4 真实环境实测 — 分项与阻塞条件见「未完成」41-4a / 41-4b；mock 完成不代表真实验收完成。
 
 - [x] 缺陷：文档首页向下滚动出现一大片空白（来源：用户 2026-10-14）——根因：卡片网格 4 卡占 3 列留洞 + 图标短代码缺 emoji 扩展渲染成原文；补满 6 卡成两整行、图标补 material 前缀 — 证据:a4d4b28(mkdocs strict 绿)
 - [x] 文档双语化并支持切换（来源：用户 2026-10-14）——README 英文主文档 + README.zh.md 互链；文档站 mkdocs-static-i18n 后缀双语（index/getting-started/running 三页有中文版，余页回退英文），头部语言切换器按页互跳 — 证据:c985d67(全量 4052 绿)

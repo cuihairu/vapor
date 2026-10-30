@@ -23,10 +23,10 @@
 | 会话快照 | 控制平面 | 内存 `SessionTracker`（Agent 上报） | 由 Agent 会话事件重新填充 |
 | 认证挑战 | 控制平面 | 内存 `AuthChallengeTracker` | 按设计为瞬时 |
 | 插件库存镜像 | 控制平面 | 内存 `PluginInventory` | 由子任务结果重建 |
-| Steam 会话 / 凭据 | **Agent** | 加密的本地存储（AES-GCM） | 从不离开 Agent |
+| Steam 会话 / 凭据 | **Agent** | 加密的本地存储（AES-GCM） | 本地加密令牌跨重启保留；API 提交路径另见下文 |
 | 活跃 Steam 连接 | Agent | 每账号 CM/Web | Agent 本地；重启后令牌恢复 |
 
-这一拆分是刻意的：任何不可丢失的东西都存在控制平面的 SQLite 里；任何可推导的东西（注册表、会话、库存）都在内存中，靠收敛重建。凭据是例外 —— 它们根本从不抵达控制平面（`architecture.md` § Security）。
+这一拆分是刻意的：任何不可丢失的东西都存在控制平面的 SQLite 里；任何可推导的东西（注册表、会话、库存）都在内存中，靠收敛重建。Agent 的本地令牌存储是独立状态域；但 API 任务 payload 中的凭据会进入控制平面 SQLite，人工验证码经控制平面 SSE 下发，不能宣称凭据从不抵达控制平面。见[架构核对](review/architecture-2026-10-30.md)。
 
 ## 2. 子任务：状态机、租约、至少一次交付
 
