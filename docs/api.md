@@ -29,6 +29,13 @@ Header convention (matching the OpenAPI security definition `bearer`): `Authoriz
 
 - `Auth.TryAdmin` — token equals `AdminApiKey` exactly (ordinal).
 - `Auth.TryAgent` — token is a member of `AgentApiKeys` (ordinal).
+- Agent key → Agent ID binding
+  (`Vapor_AGENT_KEY_AGENT_IDS=key1=agent-1,key2=agent-2`, comma-separated
+  `key=agentId` pairs): required by `GET /v1/agent/ws`, which rejects a query
+  `agentId` that does not match the key's binding with
+  `403 { "error": "agentId does not match key" }`. The same binding authorizes
+  `GET /v1/auth/challenges/events`: an agent must name one account declared
+  with that `AgentId`; unbound agent keys behave like invalid keys.
 - Key expiry (`Config.ParseApiKey`): any configured key may carry an
   `@<ISO-8601>` suffix — `VAPOR_AGENT_API_KEYS=new-key,old-key@2026-12-31T23:59:59Z`.
   The suffix is stripped from the credential (only a date parses as an expiry; a key
@@ -105,8 +112,10 @@ Event payload shapes:
 1. Bearer token must match one of `VAPOR_AGENT_API_KEYS` (`Auth.TryAgent`) — header or `?authorization=` fallback; otherwise 401 (empty body).
 2. Must be a WebSocket upgrade request, else 400 `{ "error": "websocket required" }`.
 3. Query parameters `agentId` and `region` are both required, else 400 `{ "error": "agentId and region are required" }`.
-4. First WebSocket frame must be JSON `{ "type": "hello", "hello": { "agentId": "...", "region": "...", "capabilities": { "<action>": true|false, ... }, "meta": { ... } } }` (`WSMessage`/`AgentHello`) with `hello.agentId` / `hello.region` equal to the query params; otherwise the socket is closed with close status `PolicyViolation`, message "hello required".
-5. After registration the server pushes `{type: "task", task: JobTask, traceHeaders?}` frames, `{type: "task_cancel", taskCancel: {taskId, attempt, ts, reason?}}` frames, and accepts inbound `task_result` (`{taskId, success, error?, output?, finishedAt, attempt}`) and `task_heartbeat` (`{taskId, attempt, ts}`) frames (unknown/stale heartbeats are ignored, not errors).
+4. `agentId` must equal the key's binding in `Vapor_AGENT_KEY_AGENT_IDS`
+   (case-insensitive), else 403 `{ "error": "agentId does not match key" }`.
+5. First WebSocket frame must be JSON `{ "type": "hello", "hello": { "agentId": "...", "region": "...", "capabilities": { "<action>": true|false, ... }, "meta": { ... } } }` (`WSMessage`/`AgentHello`) with `hello.agentId` / `hello.region` equal to the query params; otherwise the socket is closed with close status `PolicyViolation`, message "hello required".
+6. After registration the server pushes `{type: "task", task: JobTask, traceHeaders?}` frames, `{type: "task_cancel", taskCancel: {taskId, attempt, ts, reason?}}` frames, and accepts inbound `task_result` (`{taskId, success, error?, output?, finishedAt, attempt}`) and `task_heartbeat` (`{taskId, attempt, ts}`) frames (unknown/stale heartbeats are ignored, not errors).
 
 ---
 
@@ -142,11 +151,11 @@ Legend for the account-task pattern: many `/v1/accounts/{name}/...` endpoints di
 - Audit: `auth.code.submitted` (the `code` value is included in the details dict but redacted by `SensitiveDataRedactor` before persistence — the stored audit never contains the plain code).
 
 #### `GET /v1/auth/challenges/events` (SSE)
-- Purpose: live stream of login challenges; admin sees all (with codes redacted on `code_provided_*`), agent sees only `code_provided_*` (with code).
+- Purpose: live stream of login challenges; admin sees all (with codes redacted on `code_provided_*`), agent sees only `code_provided_*` (with code) for accounts assigned to its key's Agent ID.
 - Auth: admin OR agent.
-- Query: `accountName` (string, optional) — filter to one account.
+- Query: `accountName` (string, optional for admin, required for agent) — filter to one account.
 - 200: `text/event-stream`, frames `event: auth.<challengeType>` with `AuthChallengeEvent` JSON payloads (see §2). Initial `event: ready`.
-- Errors: 401 (no body).
+- Errors: 401 (no body) for an unknown/expired/unbound agent key; 403 when an agent omits `accountName` or the named account is not assigned to that agent.
 
 #### `POST /v1/qr`
 - Purpose: render text as a QR-code SVG for the console — the admin page embeds it in `qr_required` challenge cards so a Steam mobile app can scan the rotating challenge URL directly. The renderer is first-party (in-repo QR encoder, byte mode / ECC M / versions 1-6, ≤ 106 UTF-8 bytes): the login token stays inside the control plane, and no third-party image service is involved (todo §18 red line).

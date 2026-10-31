@@ -224,6 +224,25 @@ public sealed class ConfigEnvironmentTests
 		}
 	}
 
+	[Fact]
+	public void AgentKeyAgentIds_ParsesBindingsAndIgnoresMalformedEntries()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_AGENT_KEY_AGENT_IDS");
+		try
+		{
+			Environment.SetEnvironmentVariable("Vapor_AGENT_KEY_AGENT_IDS", "key-one=agent-1,key-two= agent-2 ,bad,no-equals,=agent-3,key-three=");
+			Config config = Config.LoadFromEnvironment();
+
+			Assert.Equal("agent-1", config.AgentKeyAgentIds!["key-one"]);
+			Assert.Equal("agent-2", config.AgentKeyAgentIds["key-two"]);
+			Assert.Equal(2, config.AgentKeyAgentIds.Count);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_AGENT_KEY_AGENT_IDS", original);
+		}
+	}
+
 	private static int IntegerProperty(Config config, string property) => property switch
 	{
 		nameof(Config.TaskLeaseSeconds) => config.TaskLeaseSeconds,

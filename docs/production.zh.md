@@ -30,6 +30,7 @@
 |----------|----------|---------|-------|
 | `Vapor_ADMIN_API_KEY` | 是 | — | 管理 REST/SSE 端点的 Bearer 密钥；可选带 `@<ISO-8601>` 过期后缀（见 § 密钥） |
 | `Vapor_AGENT_API_KEYS` | 是 | — | Agent 隧道接受的密钥，逗号分隔；每个密钥都可带 `@<ISO-8601>` 过期后缀 |
+| `Vapor_AGENT_KEY_AGENT_IDS` | 是 | — | 逗号分隔的 `key=agentId` 绑定；每个 Agent 密钥都必须映射到它用于 WebSocket 隧道与账号归属校验的 `AGENT_ID` |
 | `Vapor_VIEWER_API_KEY` | 否 | — | 只读控制台密钥：在 GET/HEAD/OPTIONS 上与管理密钥一样被接受；任何写操作（以及 Agent 隧道）仍返回 `401`。必须与管理密钥不同；不支持过期后缀——轮换靠重新部署 |
 | `Vapor_DB_PATH` | 否 | `data/controlplane.db` | 主存储；compose 中挂载为卷 |
 | `Vapor_AUDIT_DB_PATH` | 否 | (derived) | 审计日志存储 |

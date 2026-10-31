@@ -27,8 +27,8 @@ public sealed class PluginApiTests
 
 		using HttpResponseMessage catalog = await client.GetAsync("/v1/plugins/catalog");
 		using HttpResponseMessage installed = await client.GetAsync("/v1/plugins/installed");
-		using HttpResponseMessage install = await client.PostAsJsonAsync("/v1/plugins/install", new { agentIds = new[] { "agent-1" } });
-		using HttpResponseMessage uninstall = await client.PostAsJsonAsync("/v1/plugins/uninstall/vapor.test-plugin", new { agentIds = new[] { "agent-1" } });
+		using HttpResponseMessage install = await client.PostAsJsonAsync("/v1/plugins/install", new { agentIds = new[] { "agent-9" } });
+		using HttpResponseMessage uninstall = await client.PostAsJsonAsync("/v1/plugins/uninstall/vapor.test-plugin", new { agentIds = new[] { "agent-9" } });
 		using HttpResponseMessage refresh = await client.PostAsJsonAsync("/v1/plugins/inventory/refresh", new { });
 		using HttpResponseMessage updateCheck = await client.PostAsJsonAsync("/v1/plugins/update-check", new { });
 
@@ -130,9 +130,9 @@ public sealed class PluginApiTests
 		using var client = CreateAdminClient(factory);
 
 		using HttpResponseMessage noAgents = await client.PostAsJsonAsync("/v1/plugins/install", new { url = "https://pkg/a.zip" });
-		using HttpResponseMessage noSha = await client.PostAsJsonAsync("/v1/plugins/install", new { url = "https://pkg/a.zip", agentIds = new[] { "agent-1" } });
-		using HttpResponseMessage badSha = await client.PostAsJsonAsync("/v1/plugins/install", new { url = "https://pkg/a.zip", sha256 = "xyz", agentIds = new[] { "agent-1" } });
-		using HttpResponseMessage neither = await client.PostAsJsonAsync("/v1/plugins/install", new { agentIds = new[] { "agent-1" } });
+		using HttpResponseMessage noSha = await client.PostAsJsonAsync("/v1/plugins/install", new { url = "https://pkg/a.zip", agentIds = new[] { "agent-9" } });
+		using HttpResponseMessage badSha = await client.PostAsJsonAsync("/v1/plugins/install", new { url = "https://pkg/a.zip", sha256 = "xyz", agentIds = new[] { "agent-9" } });
+		using HttpResponseMessage neither = await client.PostAsJsonAsync("/v1/plugins/install", new { agentIds = new[] { "agent-9" } });
 
 		Assert.Equal(HttpStatusCode.BadRequest, noAgents.StatusCode);
 		Assert.Equal(HttpStatusCode.BadRequest, noSha.StatusCode);
@@ -153,7 +153,7 @@ public sealed class PluginApiTests
 		});
 		using var client = CreateAdminClient(factory);
 
-		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", new { pluginId = "vapor.absent", agentIds = new[] { "agent-1" } });
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", new { pluginId = "vapor.absent", agentIds = new[] { "agent-9" } });
 
 		Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
 	}
@@ -234,7 +234,7 @@ public sealed class PluginApiTests
 		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", new
 		{
 			pluginId = "vapor.test-plugin",
-			agentIds = new[] { "agent-1" }
+			agentIds = new[] { "agent-9" }
 		});
 
 		Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
@@ -276,8 +276,8 @@ public sealed class PluginApiTests
 			using var client = CreateAdminClient(factory);
 
 			object body = catalogMode
-				? new { pluginId = "vapor.test-plugin", agentIds = new[] { "agent-1" } }
-				: new { url = "https://pkg/direct.zip", sha256 = new string('A', 64), agentIds = new[] { "agent-1" } };
+				? new { pluginId = "vapor.test-plugin", agentIds = new[] { "agent-9" } }
+				: new { url = "https://pkg/direct.zip", sha256 = new string('A', 64), agentIds = new[] { "agent-9" } };
 			using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", body);
 			Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
@@ -317,7 +317,7 @@ public sealed class PluginApiTests
 			url = "https://pkg/direct.zip",
 			sha256 = new string('A', 64),
 			version = "1.2.3",
-			agentIds = new[] { "agent-1" }
+			agentIds = new[] { "agent-9" }
 		});
 
 		Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
@@ -339,7 +339,7 @@ public sealed class PluginApiTests
 		using var client = CreateAdminClient(factory);
 
 		using HttpResponseMessage noAgents = await client.PostAsJsonAsync("/v1/plugins/uninstall/vapor.test-plugin", new { });
-		using HttpResponseMessage dispatched = await client.PostAsJsonAsync("/v1/plugins/uninstall/vapor.test-plugin", new { agentIds = new[] { "agent-1" } });
+		using HttpResponseMessage dispatched = await client.PostAsJsonAsync("/v1/plugins/uninstall/vapor.test-plugin", new { agentIds = new[] { "agent-9" } });
 
 		Assert.Equal(HttpStatusCode.BadRequest, noAgents.StatusCode);
 		Assert.Equal(HttpStatusCode.Accepted, dispatched.StatusCode);
@@ -350,7 +350,7 @@ public sealed class PluginApiTests
 		JobWithTasks created = await store.GetJob(jobId, CancellationToken.None);
 
 		Assert.Equal("plugin_uninstall", created.Job.Action);
-		Assert.Equal("agent:agent-1", created.Tasks[0].Target);
+		Assert.Equal("agent:agent-9", created.Tasks[0].Target);
 	}
 
 	[Fact]
@@ -361,7 +361,7 @@ public sealed class PluginApiTests
 
 		// A route segment can carry decoded whitespace (the "%20" URL form), which
 		// trims to an empty plugin id — the endpoint must reject it before dispatch.
-		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/uninstall/%20", new { agentIds = new[] { "agent-1" } });
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/uninstall/%20", new { agentIds = new[] { "agent-9" } });
 
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 		Assert.Contains("pluginId is required", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
@@ -504,10 +504,10 @@ public sealed class PluginApiTests
 		wsClient.ConfigureRequest = request =>
 			request.Headers.Authorization = "Bearer agent-token";
 		using var ws = await wsClient.ConnectAsync(
-			new Uri(factory.Server.BaseAddress, "/v1/agent/ws?agentId=agent-1&region=local"),
+			new Uri(factory.Server.BaseAddress, "/v1/agent/ws?agentId=agent-9&region=local"),
 			CancellationToken.None);
 		await SendTextAsync(ws, JsonSerializer.Serialize(new WSMessage("hello",
-			new AgentHello("agent-1", "local",
+			new AgentHello("agent-9", "local",
 				new Dictionary<string, bool> { ["plugin_install"] = true }, null),
 			null, null), JsonDefaults.Options));
 
@@ -516,7 +516,7 @@ public sealed class PluginApiTests
 			using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/install", new
 			{
 				pluginId = "vapor.tunnel",
-				agentIds = new[] { "agent-1" }
+				agentIds = new[] { "agent-9" }
 			});
 			Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 		}
@@ -556,7 +556,7 @@ public sealed class PluginApiTests
 			if (agents.GetArrayLength() > 0 && agents[0].GetProperty("plugins").GetArrayLength() > 0)
 			{
 				firstPluginId = agents[0].GetProperty("plugins")[0].GetProperty("id").GetString();
-				Assert.Equal("agent-1", agents[0].GetProperty("agentId").GetString());
+				Assert.Equal("agent-9", agents[0].GetProperty("agentId").GetString());
 			}
 		}
 
@@ -576,10 +576,10 @@ public sealed class PluginApiTests
 		wsClient.ConfigureRequest = request =>
 			request.Headers.Authorization = "Bearer agent-token";
 		using var ws = await wsClient.ConnectAsync(
-			new Uri(factory.Server.BaseAddress, "/v1/agent/ws?agentId=agent-gone&region=local"),
+			new Uri(factory.Server.BaseAddress, "/v1/agent/ws?agentId=agent-9&region=local"),
 			CancellationToken.None);
 		await SendTextAsync(ws, JsonSerializer.Serialize(new WSMessage("hello",
-			new AgentHello("agent-gone", "local",
+			new AgentHello("agent-9", "local",
 				new Dictionary<string, bool>(), null),
 			null, null), JsonDefaults.Options));
 
@@ -592,7 +592,7 @@ public sealed class PluginApiTests
 			for (int attempt = 0; attempt < 50 && !listed; attempt++)
 			{
 				using HttpResponseMessage roster = await client.GetAsync("/v1/agents");
-				listed = (await roster.Content.ReadAsStringAsync()).Contains("agent-gone", StringComparison.Ordinal);
+				listed = (await roster.Content.ReadAsStringAsync()).Contains("agent-9", StringComparison.Ordinal);
 				if (!listed)
 				{
 					await Task.Delay(100, CancellationToken.None);
@@ -614,7 +614,7 @@ public sealed class PluginApiTests
 		{
 			await Task.Delay(100, CancellationToken.None);
 			using HttpResponseMessage roster = await pollClient.GetAsync("/v1/agents");
-			stillListed = (await roster.Content.ReadAsStringAsync()).Contains("agent-gone", StringComparison.Ordinal);
+			stillListed = (await roster.Content.ReadAsStringAsync()).Contains("agent-9", StringComparison.Ordinal);
 		}
 
 		Assert.False(stillListed);
@@ -677,7 +677,7 @@ public sealed class PluginApiTests
 		await using var factory = CreateFactory();
 		using var client = CreateAdminClient(factory);
 
-		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/update-check", new { agentIds = new[] { "agent-1" } });
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/plugins/update-check", new { agentIds = new[] { "agent-9" } });
 
 		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 		using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -806,7 +806,7 @@ public sealed class PluginApiTests
 				services.RemoveAll<IJobStore>();
 				services.RemoveAll<IAuditStore>();
 				services.RemoveAll<AccountStore>();
-				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:"));
+				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:", AgentKeyAgentIds: new Dictionary<string, string> { ["agent-token"] = "agent-9" }));
 				services.AddSingleton<IJobStore>(sp => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();
@@ -1259,7 +1259,7 @@ public sealed class HostTargetedDispatchTests
 		// agent-1. The host-targeted task must land on agent-2.
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
-		registry.Register(new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["plugin_install"] = true }, null), new NoopWebSocket(), cts.Token);
+		registry.Register(new AgentHello("agent-9", "local", new Dictionary<string, bool> { ["plugin_install"] = true }, null), new NoopWebSocket(), cts.Token);
 		registry.Register(new AgentHello("agent-2", "local", new Dictionary<string, bool> { ["plugin_install"] = true }, null), new NoopWebSocket(), cts.Token);
 
 		var store = new FakeJobStore();
@@ -1281,7 +1281,7 @@ public sealed class HostTargetedDispatchTests
 		// Only agent-1 is connected; a task targeted at agent-2 must not run there.
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
-		registry.Register(new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["plugin_install"] = true }, null), new NoopWebSocket(), cts.Token);
+		registry.Register(new AgentHello("agent-9", "local", new Dictionary<string, bool> { ["plugin_install"] = true }, null), new NoopWebSocket(), cts.Token);
 
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "plugin_install", target: "agent:agent-2"));
@@ -1300,7 +1300,7 @@ public sealed class HostTargetedDispatchTests
 	{
 		var registry = new AgentRegistry();
 		using var cts = new CancellationTokenSource();
-		registry.Register(new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["login"] = true }, null), new NoopWebSocket(), cts.Token);
+		registry.Register(new AgentHello("agent-9", "local", new Dictionary<string, bool> { ["login"] = true }, null), new NoopWebSocket(), cts.Token);
 
 		var store = new FakeJobStore();
 		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "plugin_install", target: "agent:agent-1"));

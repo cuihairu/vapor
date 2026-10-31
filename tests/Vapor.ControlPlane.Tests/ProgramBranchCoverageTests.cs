@@ -894,6 +894,18 @@ public sealed class ProgramBranchCoverageTests
 	}
 
 	[Fact]
+	public async Task AgentWs_RejectsAgentIdMismatchingBoundKey()
+	{
+		await using BranchFactory factory = new();
+		var wsClient = factory.Server.CreateWebSocketClient();
+		Uri uri = new(factory.Server.BaseAddress, "v1/agent/ws?agentId=agent-10&region=us-east&authorization=agent-token");
+
+		InvalidOperationException error = await Assert.ThrowsAnyAsync<InvalidOperationException>(
+			() => wsClient.ConnectAsync(uri, CancellationToken.None));
+		Assert.Contains("403", error.Message);
+	}
+
+	[Fact]
 	public async Task AgentWs_NonHelloFirstFrame_ClosesWithPolicyViolation()
 	{
 		await using BranchFactory factory = new();
@@ -1066,10 +1078,10 @@ public sealed class ProgramBranchCoverageTests
 		adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 
 		var wsClient = factory.Server.CreateWebSocketClient();
-		Uri uri = new(factory.Server.BaseAddress, "v1/agent/ws?agentId=agent-7&region=us-east&authorization=agent-token");
+		Uri uri = new(factory.Server.BaseAddress, "v1/agent/ws?agentId=agent-9&region=us-east&authorization=agent-token");
 		using System.Net.WebSockets.WebSocket ws = await wsClient.ConnectAsync(uri, CancellationToken.None);
 
-		await WebSocketJson.Send(ws, new WSMessage("hello", new AgentHello("agent-7", "us-east", null, null), null, null), CancellationToken.None);
+		await WebSocketJson.Send(ws, new WSMessage("hello", new AgentHello("agent-9", "us-east", null, null), null, null), CancellationToken.None);
 		await Task.Delay(200);
 
 		// CloseOutputAsync sends the close frame without waiting for the server's
@@ -1080,7 +1092,7 @@ public sealed class ProgramBranchCoverageTests
 		while (DateTimeOffset.UtcNow < deadline)
 		{
 			using HttpResponseMessage status = await adminClient.GetAsync("/v1/agents/status");
-			if (!(await status.Content.ReadAsStringAsync()).Contains("agent-7"))
+			if (!(await status.Content.ReadAsStringAsync()).Contains("agent-9"))
 			{
 				break;
 			}
@@ -1089,7 +1101,7 @@ public sealed class ProgramBranchCoverageTests
 		}
 
 		using HttpResponseMessage final = await adminClient.GetAsync("/v1/agents/status");
-		Assert.DoesNotContain("agent-7", await final.Content.ReadAsStringAsync());
+		Assert.DoesNotContain("agent-9", await final.Content.ReadAsStringAsync());
 	}
 
 	[Fact]
@@ -1109,10 +1121,10 @@ public sealed class ProgramBranchCoverageTests
 		adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
 
 		var wsClient = factory.Server.CreateWebSocketClient();
-		Uri uri = new(factory.Server.BaseAddress, "v1/agent/ws?agentId=agent-6&region=us-east&authorization=agent-token");
+		Uri uri = new(factory.Server.BaseAddress, "v1/agent/ws?agentId=agent-9&region=us-east&authorization=agent-token");
 		using System.Net.WebSockets.WebSocket ws = await wsClient.ConnectAsync(uri, CancellationToken.None);
 
-		await WebSocketJson.Send(ws, new WSMessage("hello", new AgentHello("agent-6", "us-east", null, null), null, null), CancellationToken.None);
+		await WebSocketJson.Send(ws, new WSMessage("hello", new AgentHello("agent-9", "us-east", null, null), null, null), CancellationToken.None);
 		await Task.Delay(200);
 		await WebSocketJson.Send(ws, new WSMessage("task_heartbeat", null, null, null, new TaskHeartbeat("t-1", 0, DateTimeOffset.UtcNow)), CancellationToken.None);
 
@@ -1130,7 +1142,7 @@ public sealed class ProgramBranchCoverageTests
 		while (DateTimeOffset.UtcNow < deadline)
 		{
 			using HttpResponseMessage status = await adminClient.GetAsync("/v1/agents/status");
-			if (!(await status.Content.ReadAsStringAsync()).Contains("agent-6"))
+			if (!(await status.Content.ReadAsStringAsync()).Contains("agent-9"))
 			{
 				break;
 			}
@@ -1139,7 +1151,7 @@ public sealed class ProgramBranchCoverageTests
 		}
 
 		using HttpResponseMessage final = await adminClient.GetAsync("/v1/agents/status");
-		Assert.DoesNotContain("agent-6", await final.Content.ReadAsStringAsync());
+		Assert.DoesNotContain("agent-9", await final.Content.ReadAsStringAsync());
 	}
 
 	[Fact]
@@ -1746,7 +1758,7 @@ internal sealed class BranchFactory : WebApplicationFactory<Program>
 			services.RemoveAll<IAuditStore>();
 			services.RemoveAll<IHostedService>();
 			services.RemoveAll<IHostedLifecycleService>();
-			services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:"));
+			services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:", AgentKeyAgentIds: new Dictionary<string, string> { ["agent-token"] = "agent-9" }));
 			services.AddSingleton<IJobStore>(sp => self.JobStore ?? new SqliteJobStore(":memory:"));
 			services.AddSingleton<IAuditStore>(sp => self.AuditStore ??= new SqliteAuditStore(":memory:"));
 			services.AddSingleton<IEventBroker>(self.Events);

@@ -34,6 +34,7 @@ public sealed class CompositionRootSmokeTests
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
 			["Vapor_AGENT_API_KEYS"] = "agent-token",
+			["Vapor_AGENT_KEY_AGENT_IDS"] = "agent-token=agent-token",
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
 			["Vapor_CONFIG_DB_PATH"] = configDbPath,
@@ -122,6 +123,7 @@ public sealed class CompositionRootSmokeTests
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
 			["Vapor_AGENT_API_KEYS"] = "agent-token",
+			["Vapor_AGENT_KEY_AGENT_IDS"] = "agent-token=agent-token",
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
 			["Vapor_CONFIG_DB_PATH"] = configDbPath,
@@ -173,6 +175,7 @@ public sealed class CompositionRootSmokeTests
 		{
 			["Vapor_ADMIN_API_KEY"] = "admin-token",
 			["Vapor_AGENT_API_KEYS"] = "agent-token",
+			["Vapor_AGENT_KEY_AGENT_IDS"] = "agent-token=agent-token",
 			["Vapor_DB_PATH"] = dbPath,
 			["Vapor_AUDIT_DB_PATH"] = auditDbPath,
 			["Vapor_CONFIG_DB_PATH"] = configDbPath,

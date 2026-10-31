@@ -29,6 +29,12 @@ compose 开发环境下的基础 URL：`http://127.0.0.1:8080`。真实部署的
 
 - `Auth.TryAdmin`—— 令牌与`AdminApiKey`完全相等（ordinal 比较）。
 - `Auth.TryAgent`—— 令牌是`AgentApiKeys`的成员（ordinal 比较）。
+- Agent 密钥到 Agent ID 的绑定
+  （`Vapor_AGENT_KEY_AGENT_IDS=key1=agent-1,key2=agent-2`，逗号分隔的
+  `key=agentId` 对）：`GET /v1/agent/ws` 必须使用；查询参数`agentId`与绑定
+  不一致时返回`403 { "error": "agentId does not match key" }`。同一绑定也用于
+  `GET /v1/auth/challenges/events`：Agent 必须指定一个已声明给该`AgentId`的
+  账号；未绑定 Agent ID 的 Agent 密钥按无效密钥处理。
 - 密钥过期（`Config.ParseApiKey`）：任何已配置的密钥都可以带一个
   `@<ISO-8601>`后缀 —— 例如`VAPOR_AGENT_API_KEYS=new-key,old-key@2026-12-31T23:59:59Z`。
   该后缀会从凭据中剥离（只有日期才会被解析为过期时间；最后一个`@`之后
@@ -142,11 +148,11 @@ compose 开发环境下的基础 URL：`http://127.0.0.1:8080`。真实部署的
 - 审计：`auth.code.submitted`（`code`值会写进 details 字典，但落库前由`SensitiveDataRedactor`脱敏 —— 存下来的审计记录里永远不会出现明文验证码）。
 
 #### `GET /v1/auth/challenges/events` (SSE)
-- 用途：登录挑战的实时流；管理员看到全部（`code_provided_*`上的验证码已脱敏），Agent 只看得到`code_provided_*`（带验证码）。
+- 用途：登录挑战的实时流；管理员看到全部（`code_provided_*`上的验证码已脱敏），Agent 只看得到其密钥所绑定 Agent 名下账号的`code_provided_*`（带验证码）。
 - 认证：**管理员或 Agent**。
-- 查询参数：`accountName`（string，可选）—— 过滤到单个账号。
+- 查询参数：`accountName`（string；管理员可选，Agent 必填）—— 过滤到单个账号。
 - 200：`text/event-stream`，帧为`event: auth.<challengeType>`，负载是`AuthChallengeEvent` JSON（见 §2）。首帧是`event: ready`。
-- 错误：401（无响应体）。
+- 错误：未知 / 过期 / 未绑定 Agent ID 的 Agent 密钥返回 401（无响应体）；Agent 省略`accountName`，或指定账号未分配给该 Agent 时返回 403。
 
 #### `POST /v1/qr`
 - 用途：为控制台把文本渲染成二维码 SVG —— 管理页面把它嵌进`qr_required`挑战卡片，让 Steam 手机 App 直接扫描轮换中的挑战 URL。渲染器是第一方实现（仓库内的二维码编码器，字节模式 / ECC M / 版本 1-6，≤ 106 个 UTF-8 字节）：登录令牌始终留在控制平面内，不牵涉任何第三方图像服务（todo §18 红线）。

@@ -36,6 +36,7 @@ are in [docker.md](docker.md).
 |----------|----------|---------|-------|
 | `Vapor_ADMIN_API_KEY` | yes | — | Bearer key for admin REST/SSE endpoints; optional `@<ISO-8601>` expiry suffix (see § Secrets) |
 | `Vapor_AGENT_API_KEYS` | yes | — | Comma-separated keys the agent tunnel accepts; each key may carry an `@<ISO-8601>` expiry suffix |
+| `Vapor_AGENT_KEY_AGENT_IDS` | yes | — | Comma-separated `key=agentId` bindings; each agent key must map to the `AGENT_ID` it uses for the WebSocket tunnel and account ownership checks |
 | `Vapor_VIEWER_API_KEY` | no | — | Read-only console key: accepted on GET/HEAD/OPTIONS like the admin key; every write (and the agent tunnel) still returns `401`. Must differ from the admin key; no expiry suffix — rotate by redeploying |
 | `Vapor_DB_PATH` | no | `data/controlplane.db` | Main store; volume-mounted in compose |
 | `Vapor_AUDIT_DB_PATH` | no | (derived) | Audit log store |

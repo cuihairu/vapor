@@ -16,6 +16,56 @@ public sealed class E2EStack : IAsyncLifetime
 	public const string AgentId = "e2e-agent-1";
 	public const string AgentRegion = "e2e-region";
 
+	/// <summary>
+	/// Per-agent API key bindings used by <see cref="StartAgentAsync"/>: the
+	/// control plane now binds each agent key to exactly one agent identity
+	/// (ARCH-03), so an extra agent that shares the primary key is rejected
+	/// with 403. Every spawned agent gets its own derived key.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> AgentKeyBindings = new Dictionary<string, string>
+	{
+		[AgentId] = AgentApiKey,
+		["agent-loss-1"] = "agent-loss-1-key",
+		["agent-loss-2"] = "agent-loss-2-key",
+	};
+
+	private static string AgentKeyFor(string agentId) =>
+		AgentKeyBindings.TryGetValue(agentId, out string? key) ? key : $"{agentId}-key";
+
+	/// <summary>
+	/// Accounts that need agent-local credentials after ARCH-01 removed login
+	/// secrets from persisted task payloads. The legacy v1 store format keeps
+	/// the fixture token out of the control-plane database while still allowing
+	/// <see cref="Vapor.Steam.Core.SessionManager.TryRestoreSessionAsync"/> to
+	/// create the deterministic E2E session.
+	/// </summary>
+	private static readonly IReadOnlyList<string> E2EAccountsWithStoredCredentials =
+	[
+		"audit-account",
+		"e2e-account",
+		"e2e-case-account",
+		"restart-target",
+	];
+
+	private static string WriteAgentCredentialFixture(string homeDir)
+	{
+		string vaporDir = Path.Combine(homeDir, ".vapor");
+		Directory.CreateDirectory(vaporDir);
+		var accounts = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+		foreach (string accountName in E2EAccountsWithStoredCredentials)
+		{
+			accounts[accountName] = new Dictionary<string, string>(StringComparer.Ordinal)
+			{
+				["refreshToken"] = "dummy-e2e-token",
+			};
+		}
+
+		File.WriteAllText(
+			Path.Combine(vaporDir, "credentials.json"),
+			JsonSerializer.Serialize(accounts));
+		return vaporDir;
+	}
+
 	public string BaseUrl { get; private set; } = string.Empty;
 	public HttpClient Http { get; private set; } = null!;
 
@@ -78,7 +128,8 @@ public sealed class E2EStack : IAsyncLifetime
 	{
 		["ASPNETCORE_URLS"] = BaseUrl,
 		["Vapor_ADMIN_API_KEY"] = AdminApiKey,
-		["Vapor_AGENT_API_KEYS"] = AgentApiKey,
+		["Vapor_AGENT_API_KEYS"] = string.Join(",", AgentKeyBindings.Values),
+		["Vapor_AGENT_KEY_AGENT_IDS"] = string.Join(",", AgentKeyBindings.Select(kv => $"{kv.Value}={kv.Key}")),
 		["Vapor_DB_PATH"] = Path.Combine(_workDir, "controlplane.db"),
 		["Vapor_AUDIT_DB_PATH"] = Path.Combine(_workDir, "audit.db"),
 		// Every env-driven database path must be pinned into the throwaway work
@@ -142,6 +193,7 @@ public sealed class E2EStack : IAsyncLifetime
 		string agentDll = TestInfrastructure.FindAppDll("Vapor.Agent", "Vapor.Agent.dll");
 		string homeDir = Path.Combine(_workDir, $"home-{agentId}");
 		Directory.CreateDirectory(homeDir);
+		string credentialDir = WriteAgentCredentialFixture(homeDir);
 
 		VaporProcess agent = VaporProcess.Start(
 			agentDll,
@@ -150,8 +202,9 @@ public sealed class E2EStack : IAsyncLifetime
 				["AGENT_ID"] = agentId,
 				["AGENT_REGION"] = region,
 				["AGENT_CONTROLPLANE_WS_URL"] = $"{BaseUrl.Replace("http://", "ws://")}/v1/agent/ws",
-				["AGENT_API_KEY"] = AgentApiKey,
+				["AGENT_API_KEY"] = AgentKeyFor(agentId),
 				["VAPOR_PLUGINS_DIR"] = Path.Combine(_workDir, "plugins-empty"),
+				["VAPOR_CREDENTIALS_DIR"] = credentialDir,
 				// Isolate FileCredentialStore (~/.vapor) and any user-profile writes from the developer machine.
 				["HOME"] = homeDir,
 				["USERPROFILE"] = homeDir,

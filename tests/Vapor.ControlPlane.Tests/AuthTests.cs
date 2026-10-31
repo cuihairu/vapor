@@ -125,4 +125,22 @@ public sealed class AuthTests
 	{
 		Assert.False(Auth.TryViewer(CreateViewerConfig(), new StringValues("Bearer other"), "GET"));
 	}
+
+	[Fact]
+	public void TryAgentIdentity_ReturnsBoundAgentIdOnlyForConfiguredKey()
+	{
+		Config cfg = new(
+			"admin-key",
+			new Dictionary<string, DateTimeOffset?> { ["agent-key"] = null },
+			":memory:",
+			300,
+			false,
+			":memory:",
+			AgentKeyAgentIds: new Dictionary<string, string> { ["agent-key"] = "agent-9" });
+
+		Assert.True(Auth.TryAgentIdentity(cfg, new StringValues("Bearer agent-key"), out string? agentId));
+		Assert.Equal("agent-9", agentId);
+		Assert.False(Auth.TryAgentIdentity(cfg, new StringValues("Bearer other"), out string? unknown));
+		Assert.Null(unknown);
+	}
 }

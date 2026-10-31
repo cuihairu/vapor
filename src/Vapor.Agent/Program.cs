@@ -22,6 +22,16 @@ static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) 
 	_ => throw new InvalidOperationException($"{key} is required")
 };
 
+// The agent's encrypted credential store normally lives under the OS user
+// profile (~/.vapor). A test/container host may not resolve that path from a
+// relocated $HOME, so the directory is overridable via VAPOR_CREDENTIALS_DIR
+// (mirrors VAPOR_PLUGINS_DIR).
+static string CredentialDirectory() =>
+	Environment.GetEnvironmentVariable("VAPOR_CREDENTIALS_DIR") ?? "";
+
+// TEMP DIAGNOSTIC
+try { System.IO.File.WriteAllText("/tmp/vapor-agent-diag.txt", "VAPOR_CREDENTIALS_DIR=" + CredentialDirectory() + "\nHOME=" + (Environment.GetEnvironmentVariable("HOME") ?? "")); } catch {}
+
 // The encryption key must be resolved before anything touches the credential store —
 // including the offline maFile import below.
 VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
@@ -37,7 +47,10 @@ if (args.Length > 0 && args[0].Equals("import-mafile", StringComparison.OrdinalI
 	// CA2000 suppressed: ownership of importStore transfers to MaFileImportCli.RunAsync,
 	// which disposes it before returning.
 #pragma warning disable CA2000
-	var importStore = new FileCredentialStore(importLoggerFactory.CreateLogger<FileCredentialStore>());
+	string credentialDir = CredentialDirectory();
+	var importStore = new FileCredentialStore(
+		importLoggerFactory.CreateLogger<FileCredentialStore>(),
+		string.IsNullOrEmpty(credentialDir) ? null : credentialDir);
 	int exitCode = await MaFileImportCli.RunAsync(
 		args.Skip(1).ToArray(),
 		importStore,
@@ -56,7 +69,9 @@ var taskTimeoutPolicy = TaskTimeoutPolicy.FromEnvironment(Environment.GetEnviron
 var serviceCollection = new ServiceCollection()
 	.AddLogging(configure => configure.AddRedactingConsole())
 	.AddSingleton<IActionRegistry, ActionRegistry>()
-	.AddSingleton<ICredentialStore, FileCredentialStore>()
+	.AddSingleton<ICredentialStore>(p => new FileCredentialStore(
+		p.GetRequiredService<ILogger<FileCredentialStore>>(),
+		string.IsNullOrEmpty(CredentialDirectory()) ? null : CredentialDirectory()))
 	.AddSingleton<Vapor.Steam.Core.Trading.TradeRateLimiter>()
 	.AddSingleton<ISessionManager>(p => new SessionManager(
 		p.GetRequiredService<IActionRegistry>(),
@@ -708,103 +723,26 @@ static async Task PollAuthChallengesAsync(
 		var httpScheme = wsUri.Scheme == "wss" ? "https" : "http";
 		var httpBaseUrl = $"{httpScheme}://{wsUri.Host}:{wsUri.Port}";
 
-		using var httpClient = new System.Net.Http.HttpClient();
-		httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {agentApiKey}");
-		httpClient.Timeout = TimeSpan.FromMinutes(5);
-
 		logger.LogInformation("Starting auth challenge polling for agent {AgentId}", agentId);
 
 		while (!cancellationToken.IsCancellationRequested)
 		{
 			try
 			{
-				// Connect to auth challenge events stream
-				var url = $"{httpBaseUrl}/v1/auth/challenges/events";
-				using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, url);
-				using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-				response.EnsureSuccessStatusCode();
-
-				using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-				using var reader = new System.IO.StreamReader(stream);
-
-				while (!cancellationToken.IsCancellationRequested)
-				{
-					var line = await reader.ReadLineAsync(cancellationToken);
-					if (line is null) break;
-					if (string.IsNullOrWhiteSpace(line)) continue;
-
-					// Parse SSE format: "event: <type>" then "data: <json>"
-					if (line.StartsWith("event: ", StringComparison.Ordinal))
-					{
-						var eventType = line["event: ".Length..].Trim();
-						var dataLine = await reader.ReadLineAsync(cancellationToken);
-						if (dataLine?.StartsWith("data: ", StringComparison.Ordinal) == true)
-						{
-							var jsonData = dataLine["data: ".Length..];
-							try
-							{
-								if (eventType is not ("auth.code_provided_email" or "auth.code_provided_totp" or "auth.code_provided_2fa"))
-								{
-									continue;
-								}
-
-								using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonData);
-								var root = jsonDoc.RootElement;
-
-								if (!root.TryGetProperty("accountName", out var accountNameProp))
-								{
-									continue;
-								}
-
-								var accountName = accountNameProp.GetString();
-								if (string.IsNullOrWhiteSpace(accountName))
-								{
-									continue;
-								}
-
-								if (!root.TryGetProperty("code", out var codeProp))
-								{
-									logger.LogWarning("Auth code event missing code for {AccountName}", accountName);
-									continue;
-								}
-
-								var code = codeProp.GetString();
-								if (string.IsNullOrWhiteSpace(code))
-								{
-									logger.LogWarning("Auth code event has empty code for {AccountName}", accountName);
-									continue;
-								}
-
-								var session = await sessionManager.GetSessionAsync(accountName, cancellationToken);
-								if (session == null)
-								{
-									logger.LogWarning("Auth code received but no active session for {AccountName}", accountName);
-									continue;
-								}
-
-								if (eventType == "auth.code_provided_email")
-								{
-									logger.LogInformation("Applying email auth code for {AccountName}", accountName);
-									session.ProvideAuthCode(code);
-								}
-								else
-								{
-									logger.LogInformation("Applying 2FA code for {AccountName}", accountName);
-									session.Provide2FACode(code);
-								}
-							}
-							catch (System.Text.Json.JsonException ex)
-							{
-								logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
-							}
-							catch (Exception ex)
-							{
-								logger.LogWarning(ex, "Failed to handle auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
-							}
-						}
-					}
-				}
+				List<string> accountNames = sessionManager.ListSessions()
+					.Select(session => session.AccountName)
+					.Distinct(StringComparer.Ordinal)
+					.ToList();
+				List<Task> subscriptions = accountNames
+					.Select(accountName => SubscribeToAccountChallengesAsync(
+						httpBaseUrl,
+						accountName,
+						agentApiKey,
+						sessionManager,
+						logger,
+						cancellationToken))
+					.ToList();
+				await Task.WhenAll(subscriptions).ConfigureAwait(false);
 			}
 			catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
 			{
@@ -820,6 +758,96 @@ static async Task PollAuthChallengesAsync(
 	catch (Exception ex)
 	{
 		logger.LogError(ex, "Auth challenge polling task failed");
+	}
+}
+
+static async Task SubscribeToAccountChallengesAsync(
+	string httpBaseUrl,
+	string accountName,
+	string agentApiKey,
+	ISessionManager sessionManager,
+	ILogger logger,
+	CancellationToken cancellationToken)
+{
+	using var accountHttpClient = new System.Net.Http.HttpClient();
+	accountHttpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {agentApiKey}");
+	accountHttpClient.Timeout = TimeSpan.FromMinutes(5);
+
+	var url = $"{httpBaseUrl}/v1/auth/challenges/events?accountName={Uri.EscapeDataString(accountName)}";
+	using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, url);
+	using var response = await accountHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+	response.EnsureSuccessStatusCode();
+
+	using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+	using var reader = new System.IO.StreamReader(stream);
+	while (!cancellationToken.IsCancellationRequested)
+	{
+		var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+		if (line is null)
+		{
+			return;
+		}
+
+		if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("event: ", StringComparison.Ordinal))
+		{
+			continue;
+		}
+
+		var eventType = line["event: ".Length..].Trim();
+		var dataLine = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+		if (dataLine?.StartsWith("data: ", StringComparison.Ordinal) != true)
+		{
+			continue;
+		}
+
+		var jsonData = dataLine["data: ".Length..];
+		try
+		{
+			if (eventType is not ("auth.code_provided_email" or "auth.code_provided_totp" or "auth.code_provided_2fa"))
+			{
+				continue;
+			}
+
+			using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonData);
+			if (!jsonDoc.RootElement.TryGetProperty("code", out var codeProp))
+			{
+				logger.LogWarning("Auth code event missing code for {AccountName}", accountName);
+				continue;
+			}
+
+			var code = codeProp.GetString();
+			if (string.IsNullOrWhiteSpace(code))
+			{
+				logger.LogWarning("Auth code event has empty code for {AccountName}", accountName);
+				continue;
+			}
+
+			var session = await sessionManager.GetSessionAsync(accountName, cancellationToken).ConfigureAwait(false);
+			if (session == null)
+			{
+				logger.LogWarning("Auth code received but no active session for {AccountName}", accountName);
+				continue;
+			}
+
+			if (eventType == "auth.code_provided_email")
+			{
+				logger.LogInformation("Applying email auth code for {AccountName}", accountName);
+				session.ProvideAuthCode(code);
+			}
+			else
+			{
+				logger.LogInformation("Applying 2FA code for {AccountName}", accountName);
+				session.Provide2FACode(code);
+			}
+		}
+		catch (System.Text.Json.JsonException ex)
+		{
+			logger.LogWarning(ex, "Failed to parse auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
+		}
+		catch (Exception ex)
+		{
+			logger.LogWarning(ex, "Failed to handle auth challenge event: {Data}", SensitiveDataRedactor.Redact(jsonData));
+		}
 	}
 }
 

@@ -32,6 +32,20 @@ public static class Auth
 			&& (expiresAt is null || expiresAt.Value > now);
 	}
 
+	public static bool TryAgentIdentity(Config cfg, StringValues authorizationHeader, out string? agentId)
+		=> TryAgentIdentity(cfg, authorizationHeader, DateTimeOffset.UtcNow, out agentId);
+
+	public static bool TryAgentIdentity(Config cfg, StringValues authorizationHeader, DateTimeOffset now, out string? agentId)
+	{
+		agentId = null;
+		return TryAgent(cfg, authorizationHeader, now, out string? token)
+			&& token != null
+			&& cfg.AgentKeyAgentIds is not null
+			&& cfg.AgentKeyAgentIds.TryGetValue(token, out string? boundAgentId)
+			&& !string.IsNullOrWhiteSpace(boundAgentId)
+			&& (agentId = boundAgentId.Trim()) is not null;
+	}
+
 	/// <summary>
 	/// The viewer key is the read-only console credential: it authenticates
 	/// only safe (read-only) HTTP methods, and only when it differs from the

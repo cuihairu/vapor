@@ -214,6 +214,8 @@ public sealed class ControlPlaneApiTests
 	public async Task AuthChallengeEventsStream_AllowsAgentAndFiltersNonCodeProvidedEvents()
 	{
 		await using TestFactory factory = CreateFactory();
+		AccountStore accounts = factory.Accounts;
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, "agent-1", null, null);
 		using var client = factory.CreateClient();
 		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-token");
 
@@ -231,6 +233,79 @@ public sealed class ControlPlaneApiTests
 		string dataLine = await reader.ReadLineAsync() ?? string.Empty;
 		Assert.Contains("\"challengeType\":\"code_provided_2fa\"", dataLine);
 		Assert.Contains("\"code\":\"123456\"", dataLine);
+	}
+
+	[Fact]
+	public async Task AuthChallengeEventsStream_RejectsAgentForAccountOwnedByAnotherAgent()
+	{
+		await using TestFactory factory = CreateFactory();
+		AccountStore accounts = factory.Accounts;
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, "agent-2", null, null);
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-token");
+
+		using HttpResponseMessage response = await client.GetAsync("/v1/auth/challenges/events?accountName=alice");
+
+		Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+	}
+
+	[Fact]
+	public async Task AuthChallengeEventsStream_TwoAgents_DeliversOnlyOwnedAccountCodes()
+	{
+		await using TestFactory factory = CreateFactory();
+		AccountStore accounts = factory.Accounts;
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, "agent-1", null, null);
+		accounts.Upsert("bob", true, AccountDesiredState.Online, null, null, "agent-2", null, null);
+
+		using var agentOneClient = factory.CreateClient();
+		agentOneClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-one-token");
+		using var agentOneResponse = await agentOneClient.GetAsync(
+			"/v1/auth/challenges/events?accountName=alice",
+			HttpCompletionOption.ResponseHeadersRead);
+		await using var agentOneStream = await agentOneResponse.Content.ReadAsStreamAsync();
+		using var agentOneReader = new StreamReader(agentOneStream, Encoding.UTF8);
+
+		using var agentTwoClient = factory.CreateClient();
+		agentTwoClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-two-token");
+		using var agentTwoResponse = await agentTwoClient.GetAsync(
+			"/v1/auth/challenges/events?accountName=bob",
+			HttpCompletionOption.ResponseHeadersRead);
+		await using var agentTwoStream = await agentTwoResponse.Content.ReadAsStreamAsync();
+		using var agentTwoReader = new StreamReader(agentTwoStream, Encoding.UTF8);
+
+		await factory.Events.WaitForAuthSubscriptionAsync();
+		factory.Events.PublishAuthChallenge("alice", "code_provided_2fa", "agent one code", "111111");
+		factory.Events.PublishAuthChallenge("bob", "code_provided_2fa", "agent two code", "222222");
+
+		Assert.Equal("event: ready", await agentOneReader.ReadLineAsync());
+		Assert.Equal("data: {}", await agentOneReader.ReadLineAsync());
+		Assert.True(string.IsNullOrEmpty(await agentOneReader.ReadLineAsync()));
+		Assert.Equal("event: auth.code_provided_2fa", await agentOneReader.ReadLineAsync());
+		string one = await agentOneReader.ReadLineAsync() ?? string.Empty;
+		Assert.Contains("\"accountName\":\"alice\"", one);
+		Assert.Contains("\"code\":\"111111\"", one);
+		Assert.DoesNotContain("222222", one);
+
+		Assert.Equal("event: ready", await agentTwoReader.ReadLineAsync());
+		Assert.Equal("data: {}", await agentTwoReader.ReadLineAsync());
+		Assert.True(string.IsNullOrEmpty(await agentTwoReader.ReadLineAsync()));
+		Assert.Equal("event: auth.code_provided_2fa", await agentTwoReader.ReadLineAsync());
+		string two = await agentTwoReader.ReadLineAsync() ?? string.Empty;
+		Assert.Contains("\"accountName\":\"bob\"", two);
+		Assert.Contains("\"code\":\"222222\"", two);
+		Assert.DoesNotContain("111111", two);
+	}
+
+	[Fact]
+	public async Task AuthChallengeEventsStream_RejectsAgentWithoutAccountFilter()
+	{
+		await using TestFactory factory = CreateFactory();
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-token");
+
+		using HttpResponseMessage response = await client.GetAsync("/v1/auth/challenges/events");
+
+		Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 	}
 
 	private static TestFactory CreateFactory()
@@ -496,6 +571,8 @@ public sealed class ControlPlaneApiTests
 		/// <summary>Optional webhook delivery-log override; an in-memory store is used when unset.</summary>
 		public IWebhookDeliveryStore? WebhookDeliveryStore { get; set; }
 
+		public AccountStore Accounts { get; } = new();
+
 		protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
 		{
 			builder.UseEnvironment("Development");
@@ -506,12 +583,33 @@ public sealed class ControlPlaneApiTests
 				services.RemoveAll<SessionTracker>();
 				services.RemoveAll<AuthChallengeTracker>();
 				services.RemoveAll<IWebhookDeliveryStore>();
-				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, "Data Source=:memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:"));
+				services.RemoveAll<AccountStore>();
+				services.AddSingleton(new Config(
+					"admin-token",
+					new Dictionary<string, DateTimeOffset?>
+					{
+						["agent-token"] = null,
+						["agent-one-token"] = null,
+						["agent-two-token"] = null
+					},
+					"Data Source=:memory:",
+					300,
+					false,
+					":memory:",
+					CrawlDbPath: ":memory:",
+					ConfigDbPath: ":memory:",
+					AgentKeyAgentIds: new Dictionary<string, string>
+					{
+						["agent-token"] = "agent-1",
+						["agent-one-token"] = "agent-1",
+						["agent-two-token"] = "agent-2"
+					}));
 				services.AddSingleton<IJobStore>(JobStore ?? new FakeJobStore());
 				services.AddSingleton<IEventBroker>(Events);
 				services.AddSingleton<SessionTracker>();
 				services.AddSingleton<AuthChallengeTracker>();
 				services.AddSingleton<IWebhookDeliveryStore>(WebhookDeliveryStore ?? new SqliteWebhookDeliveryStore(":memory:"));
+				services.AddSingleton(Accounts);
 			});
 		}
 	}

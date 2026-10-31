@@ -3336,14 +3336,35 @@ app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEven
 	.Produces(401);
 
 // Auth challenge events streaming endpoint
-app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, string? accountName) =>
+app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, AccountStore accounts, string? accountName) =>
 {
 	var auth = GetAuthorization(ctx);
 	var isAdmin = Auth.TryAdmin(cfg, auth, out _);
-	var isAgent = !isAdmin && Auth.TryAgent(cfg, auth, out _);
+	string? agentId = null;
+	var isAgent = !isAdmin && Auth.TryAgentIdentity(cfg, auth, out agentId);
 	if (!isAdmin && !isAgent)
 	{
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+		return;
+	}
+
+	string? requestedAccountName = string.IsNullOrWhiteSpace(accountName) ? null : accountName.Trim();
+	bool AccountBelongsToAgent(string? accountName)
+	{
+		AccountSpec? account = accounts.Get(accountName ?? string.Empty);
+		return account is not null
+			&& !string.IsNullOrWhiteSpace(account.AgentId)
+			&& string.Equals(account.AgentId, agentId, StringComparison.OrdinalIgnoreCase);
+	}
+
+	if (!isAdmin && requestedAccountName is not null && !AccountBelongsToAgent(requestedAccountName))
+	{
+		ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+		return;
+	}
+	if (!isAdmin && requestedAccountName is null)
+	{
+		ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
 		return;
 	}
 
@@ -3354,12 +3375,18 @@ app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg
 	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
 	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
 
-	await foreach (var e in events.SubscribeAuthChallenges(ctx.RequestAborted, accountName))
+	await foreach (var e in events.SubscribeAuthChallenges(ctx.RequestAborted, requestedAccountName))
 	{
 		if (isAgent && !e.ChallengeType.StartsWith("code_provided_", StringComparison.Ordinal))
 		{
 			continue;
 		}
+
+		if (isAgent && !AccountBelongsToAgent(e.AccountName))
+		{
+			continue;
+		}
+
 		var payload = isAdmin && e.ChallengeType.StartsWith("code_provided_", StringComparison.Ordinal)
 			? e with { Code = null }
 			: e;
@@ -4129,7 +4156,8 @@ app.MapDelete("/v1/faults", async Task<Results<Ok<ClearFaultsResponse>, Unauthor
 
 app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistry registry, IJobStore store, IAuditStore audit, IEventBroker events, PluginInventory pluginsInventory) =>
 {
-	if (!Auth.TryAgent(cfg, GetAuthorization(ctx), out _))
+	var auth = GetAuthorization(ctx);
+	if (!Auth.TryAgentIdentity(cfg, auth, out string? boundAgentId))
 	{
 		ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
 		return;
@@ -4148,6 +4176,12 @@ app.MapGet("/v1/agent/ws", async Task (HttpContext ctx, Config cfg, AgentRegistr
 	{
 		ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
 		await ctx.Response.WriteAsJsonAsync(new ErrorResponse("agentId and region are required"), cancellationToken: ctx.RequestAborted);
+		return;
+	}
+	if (!string.Equals(agentId, boundAgentId, StringComparison.OrdinalIgnoreCase))
+	{
+		ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+		await ctx.Response.WriteAsJsonAsync(new ErrorResponse("agentId does not match key"), cancellationToken: ctx.RequestAborted);
 		return;
 	}
 

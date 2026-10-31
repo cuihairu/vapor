@@ -734,7 +734,7 @@ public sealed class ScriptFlowApiTests
 				services.RemoveAll<AccountStore>();
 				services.RemoveAll<SqliteScriptStore>();
 				services.RemoveAll<SqliteFlowStore>();
-				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:", ScriptDbPath: _dbPath));
+				services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:", ScriptDbPath: _dbPath, AgentKeyAgentIds: new Dictionary<string, string> { ["agent-token"] = "agent-9" }));
 				services.AddSingleton<IJobStore>(sp => new SqliteJobStore(":memory:"));
 				services.AddSingleton<IAuditStore>(sp => new SqliteAuditStore(":memory:"));
 				services.AddSingleton<AccountStore>();

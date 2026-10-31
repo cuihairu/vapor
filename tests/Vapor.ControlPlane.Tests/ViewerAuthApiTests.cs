@@ -131,7 +131,8 @@ public sealed class ViewerAuthApiTests
 				services.AddSingleton(new Config("admin-token",
 					new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null },
 					":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:",
-					ViewerApiKey: "viewer-token"));
+					ViewerApiKey: "viewer-token",
+					AgentKeyAgentIds: new Dictionary<string, string> { ["agent-token"] = "agent-9" }));
 			});
 		}
 	}
