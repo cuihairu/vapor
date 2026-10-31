@@ -95,19 +95,19 @@ other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 | `coverlet.collector` | 6.0.4 | test-fleet | Coverage collector. `PrivateAssets` is deliberately *not* required here: test projects are `IsPackable=false` and nothing references them, so there is no dependency graph for it to leak into. |
 | `FsCheck.Xunit` | 2.16.6 | any | Property-based testing. Only 5 of 15 test projects use it. |
 | `Moq` | 4.21.0 | any | Mocking. Only 4 test projects use it. |
-| `Microsoft.AspNetCore.Mvc.Testing` | 10.0.12 | any | `WebApplicationFactory` host for the control-plane tests. |
-| `Microsoft.Extensions.Logging.Abstractions` | 10.0.12 | any | Also a `src/` package; one version for the whole tree. |
-| `Microsoft.Extensions.Logging.Console` | 10.0.12 | any | `src/Vapor.Agent`, `src/Vapor.Steam.Core`. |
-| `Microsoft.Extensions.DependencyInjection` | 10.0.12 | any | `src/Vapor.Agent`. |
-| `Microsoft.Data.Sqlite` | 10.0.12 | any | Storage layer. Its `SqliteJobStore.Dispose` teardown is a known CI flake site — see §4. |
+| `Microsoft.AspNetCore.Mvc.Testing` | 10.0.13 | any | `WebApplicationFactory` host for the control-plane tests. |
+| `Microsoft.Extensions.Logging.Abstractions` | 10.0.13 | any | Also a `src/` package; one version for the whole tree. |
+| `Microsoft.Extensions.Logging.Console` | 10.0.13 | any | `src/Vapor.Agent`, `src/Vapor.Steam.Core`. |
+| `Microsoft.Extensions.DependencyInjection` | 10.0.13 | any | `src/Vapor.Agent`. |
+| `Microsoft.Data.Sqlite` | 10.0.14 | any | Storage layer. Its `SqliteJobStore.Dispose` teardown is a known CI flake site — see §4. |
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | Native SQLite bundle; version line is independent of the .NET one. |
 | `Cronos` | 0.13.0 | any | Cron parsing for scheduled jobs. |
-| `Swashbuckle.AspNetCore` | 10.3.0 | any | OpenAPI/Swagger, opt-in via `Vapor_ENABLE_SWAGGER`. |
-| `StackExchange.Redis` | 3.4.0 | any | Optional cache backend. |
-| `SteamKit2` | 3.4.0 | any | The Steam protocol client. Upgrades here are Steam-behaviour changes, not library hygiene — see §4. |
-| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.19.1 | any | OTLP exporter. |
-| `OpenTelemetry.Extensions.Hosting` | 1.19.1 | any | OTel host integration. |
-| `OpenTelemetry.Instrumentation.AspNetCore` | 1.19.0 | any | OTel ASP.NET Core instrumentation. Independently versioned upstream — 1.19.0 vs 1.19.1 is upstream's split, not local drift. |
+| `Swashbuckle.AspNetCore` | 10.3.1 | any | OpenAPI/Swagger, opt-in via `Vapor_ENABLE_SWAGGER`. |
+| `StackExchange.Redis` | 3.4.20 | any | Optional cache backend. |
+| `SteamKit2` | 3.5.0 | any | The Steam protocol client. Upgrades here are Steam-behaviour changes, not library hygiene — see §4. |
+| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.20.1 | any | OTLP exporter. |
+| `OpenTelemetry.Extensions.Hosting` | 1.20.1 | any | OTel host integration. |
+| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.1 | any | OTel ASP.NET Core instrumentation. Independently versioned upstream — 1.19.0 vs 1.19.1 is upstream's split, not local drift. |
 
 <!-- /verify-dependency-versions:packages -->
 
