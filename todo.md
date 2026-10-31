@@ -12,7 +12,7 @@
 
 分析与证据：[架构实现核对](docs/review/architecture-2026-10-30.zh.md)。以下 `[ ]` 是后续工作，本轮未改运行时代码，也未把历史测试数当作本轮测试结果。每项可独立提交、验证和勾选；P0 优先处理秘密边界，P1 处理派发可靠性与内存保留。
 
-- [ ] ARCH-01 / P0：在任务写入前隔离秘密字段；依据 `Program.cs` 的 `POST /v1/jobs`、`SqliteJobStore.InsertTasksAsync`、`AgentTaskExecutor`。验收：直接任务、循环模板及其子任务不能将 password/pass、access/refresh token、auth/2FA code 等受支持别名以明文写进控制平面任务库，账号通过 Agent 本地凭据恢复仍可执行；加入跨 API / SQLite 的回归断言。
+- [x] ARCH-01 / P0：在任务写入前隔离秘密字段；依据 `Program.cs` 的 `POST /v1/jobs`、`SqliteJobStore.InsertTasksAsync`、`AgentTaskExecutor`。验收：直接任务、循环模板及其子任务不能将 password/pass、access/refresh token、auth/2FA code 等受支持别名以明文写进控制平面任务库，账号通过 Agent 本地凭据恢复仍可执行；加入跨 API / SQLite 的回归断言。 — 证据:f24de37(f158d1f 先修复 NU1605 依赖降级),SqliteJobStoreTests 49 项、ControlPlane/Account 相关 209 项、全量 3927 全绿
 - [ ] ARCH-02 / P0：处理历史任务库中的秘密载荷（依赖 ARCH-01）；依据 `jobs.payload_json` 与 `tasks.payload_json`。验收：提供可预览、可备份的清理 / 迁移路径，覆盖循环模板和普通任务，日志不输出秘密；用合成旧库验证清理后 API 查询不再返回旧凭据，并写明 SQLite WAL / 备份副本的处理范围。
 - [ ] ARCH-03 / P0：为人工验证码 SSE 增加账号所属 Agent 授权；依据 `Program.cs` 的 `/v1/auth/challenges/events` 当前仅检查 Agent 角色。验收：Agent Key 与已认证 Agent 身份绑定，服务端只投递该 Agent 被分配账号的验证码；请求参数不能扩大权限；两个 Agent、跨账号订阅与管理员脱敏投影有回归覆盖。
 - [ ] ARCH-04 / P1：为控制平面 Agent 发送队列实现可观测的背压；依据 `AgentRegistry.cs` 的 `ConnectedAgent._send` 使用 `DropOldest`。验收：队列满时不静默丢失已接收的任务 / 取消消息，调度器能感知拒绝并安全重试；容量边界与取消消息场景有确定性测试。
@@ -97,3 +97,4 @@
 
 
 - [x] docs 子目录双语配对（design/ research/ review/ 实盘 6 页,2026-10-16 执行单下一轮项;PATROL1018R2 完成）——3 对真译:admin-ui（EN→中,21 个 prototypes/ 链接逐字保留）、process-boundary（EN→中,全部实测数字逐字保留）、chatgpt-review-recheck（中文占英文槽→英文槽改写真英文+中文留 .zh.md）；2 对双向改写:i18n-diagnosis-2026-10-16、market-survey（英文槽改真英文,中文留 .zh.md,50 条外链引用与截图路径逐字不动）；1 篇逐字稿:chatgpt-review-2026-10-04（1961 行第三方对话逐字稿,按「逐字稿/过长只标注不硬译」口径原文保留+双语占位页互链）；子目录页切换器用 `../zh/<dir>/<page>/` ↔ `../../<dir>/<page>/`（构建实测 href 双向可达） — 证据:本 commit(mkdocs strict 绿,7 verify 脚本 GREEN,site/zh/ 六页全中文)
+- [x] 审核通过：b9b1f71dbc06782cf19ca0a7c2a4d631e6720877..HEAD 未发现问题
