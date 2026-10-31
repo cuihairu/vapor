@@ -13,7 +13,7 @@
 分析与证据：[架构实现核对](docs/review/architecture-2026-10-30.zh.md)。以下 `[ ]` 是后续工作，本轮未改运行时代码，也未把历史测试数当作本轮测试结果。每项可独立提交、验证和勾选；P0 优先处理秘密边界，P1 处理派发可靠性与内存保留。
 
 - [x] ARCH-01 / P0：在任务写入前隔离秘密字段；依据 `Program.cs` 的 `POST /v1/jobs`、`SqliteJobStore.InsertTasksAsync`、`AgentTaskExecutor`。验收：直接任务、循环模板及其子任务不能将 password/pass、access/refresh token、auth/2FA code 等受支持别名以明文写进控制平面任务库，账号通过 Agent 本地凭据恢复仍可执行；加入跨 API / SQLite 的回归断言。 — 证据:f24de37(f158d1f 先修复 NU1605 依赖降级),SqliteJobStoreTests 49 项、ControlPlane/Account 相关 209 项、全量 3927 全绿
-- [ ] ARCH-02 / P0：处理历史任务库中的秘密载荷（依赖 ARCH-01）；依据 `jobs.payload_json` 与 `tasks.payload_json`。验收：提供可预览、可备份的清理 / 迁移路径，覆盖循环模板和普通任务，日志不输出秘密；用合成旧库验证清理后 API 查询不再返回旧凭据，并写明 SQLite WAL / 备份副本的处理范围。
+- [x] ARCH-02 / P0：处理历史任务库中的秘密载荷（依赖 ARCH-01）；依据 `jobs.payload_json` 与 `tasks.payload_json`。验收：提供可预览、可备份的清理 / 迁移路径，覆盖循环模板和普通任务，日志不输出秘密；用合成旧库验证清理后 API 查询不再返回旧凭据，并写明 SQLite WAL / 备份副本的处理范围。 — 证据:539df2c,`POST /v1/jobs/secret-payloads/purge`(dry-run 默认/confirm+backupPath 快照),合成旧库 dry-run 计数、scrub 后 API 不再返回旧凭据、备份快照含 scrubbed 前秘密,生产文档写明 WAL/备份副本范围;SqliteJobStore 51+、ControlPlane 相关 69、全量 3933 全绿
 - [ ] ARCH-03 / P0：为人工验证码 SSE 增加账号所属 Agent 授权；依据 `Program.cs` 的 `/v1/auth/challenges/events` 当前仅检查 Agent 角色。验收：Agent Key 与已认证 Agent 身份绑定，服务端只投递该 Agent 被分配账号的验证码；请求参数不能扩大权限；两个 Agent、跨账号订阅与管理员脱敏投影有回归覆盖。
 - [ ] ARCH-04 / P1：为控制平面 Agent 发送队列实现可观测的背压；依据 `AgentRegistry.cs` 的 `ConnectedAgent._send` 使用 `DropOldest`。验收：队列满时不静默丢失已接收的任务 / 取消消息，调度器能感知拒绝并安全重试；容量边界与取消消息场景有确定性测试。
 - [ ] ARCH-05 / P1：限制 Agent 待执行任务缓冲并向调度器反馈可接收容量；依据 Agent `RunOnce` 的无界 `Channel<WSMessage>` 和串行消费。验收：长任务期间缓冲数量有配置上限、容量耗尽不丢消息，调度不持续向同一 Agent 堆积；压力测试断言队列上限和任务最终状态。
