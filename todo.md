@@ -98,3 +98,9 @@
 
 - [x] docs 子目录双语配对（design/ research/ review/ 实盘 6 页,2026-10-16 执行单下一轮项;PATROL1018R2 完成）——3 对真译:admin-ui（EN→中,21 个 prototypes/ 链接逐字保留）、process-boundary（EN→中,全部实测数字逐字保留）、chatgpt-review-recheck（中文占英文槽→英文槽改写真英文+中文留 .zh.md）；2 对双向改写:i18n-diagnosis-2026-10-16、market-survey（英文槽改真英文,中文留 .zh.md,50 条外链引用与截图路径逐字不动）；1 篇逐字稿:chatgpt-review-2026-10-04（1961 行第三方对话逐字稿,按「逐字稿/过长只标注不硬译」口径原文保留+双语占位页互链）；子目录页切换器用 `../zh/<dir>/<page>/` ↔ `../../<dir>/<page>/`（构建实测 href 双向可达） — 证据:本 commit(mkdocs strict 绿,7 verify 脚本 GREEN,site/zh/ 六页全中文)
 - [x] 审核通过：b9b1f71dbc06782cf19ca0a7c2a4d631e6720877..HEAD 未发现问题
+
+## 审核发现
+
+- [x] 审核发现：历史秘密清理 `PurgeSecretPayloadsAsync` 逐行 `UPDATE` 且未包事务，进程中断/取消会留下部分已清理、部分未清理的库，与文档「never a partially scrubbed database」表述不符 — 修复:b0ba70f(jobs+tasks scrub 单事务提交,新增 trigger 失败回滚测试),ControlPlane 1338 全绿
+- [x] 审核发现：`PurgeSecretPayloads_EndpointScrubsWhenConfirmed` 中 `Assert.DoesNotContain("endpoint-secret", scrubBody)` 为恒真断言——响应体只含 dryRun/jobs/tasks/backupPath 计数，从不回显载荷，无法证明秘密已被实际清除 — 修复:b0ba70f(scrub 后改查 API 投影断言 secret 消失且 keep 保留),ControlPlane 1338 全绿
+- [x] 审核发现：purge 端点未校验 `backupPath` 与活动库路径不同，若误传活动库路径，`BackupDatabase` 会以同一文件为源和目标 — 修复:b0ba70f(同一路径抛错并映射 400,新增端点拒绝测试),ControlPlane 1338 全绿
