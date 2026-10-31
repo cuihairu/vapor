@@ -390,7 +390,52 @@ public sealed class ControlPlaneApiTests
 		Assert.Equal(HttpStatusCode.OK, scrub.StatusCode);
 		string scrubBody = await scrub.Content.ReadAsStringAsync();
 		Assert.Contains("\"tasks\":1", scrubBody, StringComparison.Ordinal);
-		Assert.DoesNotContain("endpoint-secret", scrubBody, StringComparison.Ordinal);
+
+		using HttpResponseMessage after = await client.GetAsync("/v1/jobs/job-old");
+		Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+		string afterBody = await after.Content.ReadAsStringAsync();
+		Assert.DoesNotContain("endpoint-secret", afterBody, StringComparison.Ordinal);
+		Assert.Contains("keep", afterBody, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_RollsBackJobScrubWhenTaskScrubFails()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		RawJobStoreExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"alice\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{"password":"job-secret"}"""));
+		RawJobStoreExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'alice', 'login', '', $payload, 'Finished', 0, 1, 1)",
+			("$id", "task-old"), ("$payload", """{"password":"task-secret"}"""));
+		RawJobStoreExec(store, "CREATE TRIGGER reject_task_scrub BEFORE UPDATE ON tasks WHEN NEW.id = 'task-old' BEGIN SELECT RAISE(ABORT, 'forced task scrub failure'); END;");
+
+		await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() =>
+			store.PurgeSecretPayloadsAsync(dryRun: false, backupPath: null, CancellationToken.None));
+
+		string jobPayload = RawJobStoreScalar(store, "SELECT payload_json FROM jobs WHERE id = 'job-old'");
+		string taskPayload = RawJobStoreScalar(store, "SELECT payload_json FROM tasks WHERE id = 'task-old'");
+		Assert.Contains("job-secret", jobPayload, StringComparison.Ordinal);
+		Assert.Contains("task-secret", taskPayload, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_EndpointRejectsBackupPathEqualToLiveDatabase()
+	{
+		string databasePath = Path.Combine(Path.GetTempFileName());
+		using var store = new SqliteJobStore(databasePath);
+		await using TestFactory factory = CreateFactory();
+		factory.JobStore = store;
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/jobs/secret-payloads/purge", new
+		{
+			dryRun = false,
+			confirm = true,
+			backupPath = databasePath,
+		});
+
+		Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+		Assert.Contains("must differ", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
 	}
 
 	private static void RawJobStoreExec(SqliteJobStore store, string sql, params (string Name, object Value)[] parameters)
@@ -407,6 +452,18 @@ public sealed class ControlPlaneApiTests
 			cmd.Parameters.AddWithValue(name, value);
 		}
 		cmd.ExecuteNonQuery();
+	}
+
+	private static string RawJobStoreScalar(SqliteJobStore store, string sql)
+	{
+		var connectionField = typeof(SqliteJobStore).GetField("_connection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		Assert.NotNull(connectionField);
+		var connection = (Microsoft.Data.Sqlite.SqliteConnection?)connectionField!.GetValue(store);
+		Assert.NotNull(connection);
+
+		using var cmd = connection!.CreateCommand();
+		cmd.CommandText = sql;
+		return (string)cmd.ExecuteScalar()!;
 	}
 
 	[Theory]

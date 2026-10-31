@@ -3223,8 +3223,15 @@ app.MapPost("/v1/jobs/secret-payloads/purge", async Task<IResult> (
 		return Results.BadRequest(new ErrorResponse("set confirm=true to scrub historical secret payloads"));
 	}
 
-	(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun, req?.BackupPath, ctx.RequestAborted);
-	return Results.Ok(new { dryRun, jobs, tasks, backupPath = req?.BackupPath });
+	try
+	{
+		(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun, req?.BackupPath, ctx.RequestAborted);
+		return Results.Ok(new { dryRun, jobs, tasks, backupPath = req?.BackupPath });
+	}
+	catch (InvalidOperationException ex)
+	{
+		return Results.BadRequest(new ErrorResponse(ex.Message));
+	}
 })
 	.WithTags("Jobs")
 	.WithSummary("Preview or scrub login credentials persisted in historical job/task payloads (dry-run default; confirm=true to write, optional backupPath snapshots first)")

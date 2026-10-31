@@ -19,6 +19,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 	};
 
 	private readonly SqliteConnection _connection;
+	private readonly string _dbPath;
 	private readonly SemaphoreSlim _mutex = new(1, 1);
 
 	public SqliteJobStore(string dbPath)
@@ -37,6 +38,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			}
 		}
 
+		_dbPath = dbPath;
 		_connection = new SqliteConnection($"Data Source={dbPath}");
 		_connection.Open();
 
@@ -1076,16 +1078,46 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		{
 			if (!dryRun && !string.IsNullOrWhiteSpace(backupPath))
 			{
+				EnsureBackupPathIsNotLiveDatabase(backupPath);
 				await TakeConsistentBackupAsync(backupPath, cancellationToken).ConfigureAwait(false);
 			}
 
-			int jobRows = await ScrubSecretPayloadColumnAsync("jobs", "payload_json", dryRun, cancellationToken).ConfigureAwait(false);
-			int taskRows = await ScrubSecretPayloadColumnAsync("tasks", "payload_json", dryRun, cancellationToken).ConfigureAwait(false);
+			// A single transaction keeps the scrub atomic: an interruption (process
+			// kill or cancellation) either leaves the pre-scrub rows untouched or
+			// the fully scrubbed state, never a partially scrubbed database.
+			using SqliteTransaction? tx = dryRun ? null : _connection.BeginTransaction();
+			int jobRows = await ScrubSecretPayloadColumnAsync("jobs", "payload_json", dryRun, tx, cancellationToken).ConfigureAwait(false);
+			int taskRows = await ScrubSecretPayloadColumnAsync("tasks", "payload_json", dryRun, tx, cancellationToken).ConfigureAwait(false);
+			if (tx is not null)
+			{
+				tx.Commit();
+			}
 			return (jobRows, taskRows);
 		}
 		finally
 		{
 			_mutex.Release();
+		}
+	}
+
+	private void EnsureBackupPathIsNotLiveDatabase(string backupPath)
+	{
+		// A backup path equal to the live database would make SqliteConnection.BackupDatabase
+		// copy a file onto itself, corrupting the store. Compare full paths (case-insensitively
+		// on Windows) so equivalent spellings are rejected too.
+		if (string.Equals(_dbPath, ":memory:", StringComparison.Ordinal))
+		{
+			return;
+		}
+
+		string liveFullPath = Path.GetFullPath(_dbPath);
+		string backupFullPath = Path.GetFullPath(backupPath);
+		StringComparison comparison = OperatingSystem.IsWindows()
+			? StringComparison.OrdinalIgnoreCase
+			: StringComparison.Ordinal;
+		if (string.Equals(liveFullPath, backupFullPath, comparison))
+		{
+			throw new InvalidOperationException("backupPath must differ from the live database path");
 		}
 	}
 
@@ -1102,7 +1134,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		_connection.BackupDatabase(destination);
 	}
 
-	private async Task<int> ScrubSecretPayloadColumnAsync(string table, string column, bool dryRun, CancellationToken cancellationToken)
+	private async Task<int> ScrubSecretPayloadColumnAsync(string table, string column, bool dryRun, SqliteTransaction? transaction, CancellationToken cancellationToken)
 	{
 		// CA2100 suppressed: table/column come only from this class's own compile-time
 		// literals ("jobs"/"tasks" + "payload_json"); no external input reaches the schema.
@@ -1142,6 +1174,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			{
 				Dictionary<string, object?> scrubbed = StripSecretPayload(payload);
 				using var update = _connection.CreateCommand();
+				update.Transaction = transaction;
 				update.CommandText = $"UPDATE {table} SET {column} = $payload WHERE id = $id;";
 				update.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(scrubbed, JsonDefaults.Options));
 				update.Parameters.AddWithValue("$id", id);
