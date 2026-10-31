@@ -283,6 +283,38 @@ public sealed class ControlPlaneApiTests
 		Assert.Contains("intervalSeconds", badBody);
 	}
 
+	[Fact]
+	public async Task CreateJobApi_DoesNotPersistCredentialPayload()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		await using TestFactory factory = CreateFactory();
+		factory.JobStore = store;
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage response = await client.PostAsJsonAsync("/v1/jobs", new
+		{
+			action = "login",
+			targets = new[] { "alice" },
+			payload = new Dictionary<string, object?>
+			{
+				["password"] = "api-secret",
+				["refreshToken"] = "api-refresh",
+				["message"] = "keep",
+			},
+		});
+
+		Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+		JobWithTasks created = await store.GetJob(
+			(await store.ListJobs(1, null, CancellationToken.None)).Single().Id,
+			CancellationToken.None);
+
+		JobTask task = Assert.Single(created.Tasks);
+		Assert.False(task.Payload!.ContainsKey("password"));
+		Assert.False(task.Payload.ContainsKey("refreshToken"));
+		Assert.Equal("keep", task.Payload["message"]?.ToString());
+	}
+
 	[Theory]
 	[InlineData("/v1/jobs")]
 	[InlineData("/v1/accounts/alice/loot")]

@@ -6,6 +6,18 @@ namespace Vapor.ControlPlane;
 
 public sealed class SqliteJobStore : IJobStore, IDisposable
 {
+	/// <summary>
+	/// Login/session credential aliases consumed by <see cref="Vapor.Agent.AgentTaskExecutor"/>.
+	/// Agent-local provisioning actions (for example proxy and mobile-authenticator secrets)
+	/// intentionally use dedicated action payloads and are not covered by this set.
+	/// </summary>
+	private static readonly IReadOnlySet<string> SecretPayloadKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+	{
+		"password", "pass", "accessToken", "access_token",
+		"refreshToken", "refresh_token", "authCode", "auth_code",
+		"twoFactorCode", "two_factor_code"
+	};
+
 	private readonly SqliteConnection _connection;
 	private readonly SemaphoreSlim _mutex = new(1, 1);
 
@@ -129,7 +141,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			string region = request.Region ?? "";
 			string targetsJson = JsonSerializer.Serialize(request.Targets, JsonDefaults.Options);
 			string metaJson = JsonSerializer.Serialize(request.Meta ?? new Dictionary<string, string>(), JsonDefaults.Options);
-			string payloadJson = JsonSerializer.Serialize(request.Payload ?? new Dictionary<string, object?>(), JsonDefaults.Options);
+			Dictionary<string, object?> templatePayload = StripSecretPayload(request.Payload);
+			string payloadJson = JsonSerializer.Serialize(templatePayload, JsonDefaults.Options);
 			string scheduleJson = JsonSerializer.Serialize(request.Schedule, JsonDefaults.Options);
 
 			using var cmd = _connection.CreateCommand();
@@ -182,7 +195,8 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		CancellationToken cancellationToken)
 	{
 		long nowMs = now.ToUnixTimeMilliseconds();
-		string payloadJson = JsonSerializer.Serialize(payload ?? new Dictionary<string, object?>(), JsonDefaults.Options);
+		Dictionary<string, object?> persistedPayload = StripSecretPayload(payload);
+		string payloadJson = JsonSerializer.Serialize(persistedPayload, JsonDefaults.Options);
 
 		List<JobTask> tasks = new(targets.Count);
 		foreach (string target in targets)
@@ -213,7 +227,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 				Target: target,
 				Action: action,
 				Region: string.IsNullOrEmpty(region) ? null : region,
-				Payload: payload,
+				Payload: persistedPayload,
 				Status: JobTaskStatus.Queued,
 				Attempt: 0,
 				CreatedAt: now,
@@ -222,6 +236,43 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		}
 
 		return tasks;
+	}
+
+	private static Dictionary<string, object?> StripSecretPayload(IReadOnlyDictionary<string, object?>? payload)
+	{
+		Dictionary<string, object?> result = new(StringComparer.OrdinalIgnoreCase);
+		if (payload == null)
+		{
+			return result;
+		}
+
+		if (payload is not Dictionary<string, object?> dictionary)
+		{
+			foreach ((string key, object? value) in payload)
+			{
+				result[key] = value;
+			}
+		}
+		else
+		{
+			foreach ((string key, object? value) in dictionary)
+			{
+				result[key] = value;
+			}
+		}
+
+		foreach (string key in result.Keys.Where(IsSecretPayloadKey).ToArray())
+		{
+			result.Remove(key);
+		}
+
+		return result;
+	}
+
+	private static bool IsSecretPayloadKey(string key)
+	{
+		string normalized = new(key.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+		return SecretPayloadKeys.Contains(normalized);
 	}
 
 	public async Task<JobWithTasks> GetJob(string jobId, CancellationToken cancellationToken)

@@ -2488,8 +2488,9 @@ public sealed class AccountApiTests
 		Assert.Equal("203.0.113.7", verification.GetProperty("output").GetProperty("exitIp").GetString());
 		Assert.NotEqual(doc.RootElement.GetProperty("job_id").GetString(), verification.GetProperty("job_id").GetString());
 
-		// The set_proxy task received the raw endpoint and must be host-targeted
-		// at the pinned agent (the store it persists into is that machine's).
+		// The set_proxy task must be host-targeted at the pinned agent and carry the
+		// proxy endpoint so the agent can persist it in its local credential store
+		// (the credential never lingers in the control-plane task queue afterwards).
 		string jobId = doc.RootElement.GetProperty("job_id").GetString()!;
 		Assert.Equal("socks5://alice:s3cret@10.0.0.9:1080", await PayloadValueFromTask(store, jobId, 0, "proxy"));
 		JobWithTasks setJob = await store.GetJob(jobId, CancellationToken.None);

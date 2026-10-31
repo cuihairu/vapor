@@ -7,6 +7,100 @@ namespace Vapor.ControlPlane.Tests;
 
 public sealed class SqliteJobStoreTests
 {
+	[Theory]
+	[InlineData("password")]
+	[InlineData("PASS")]
+	[InlineData("pass")]
+	[InlineData("refreshToken")]
+	[InlineData("refresh_token")]
+	[InlineData("accessToken")]
+	[InlineData("access_token")]
+	[InlineData("authCode")]
+	[InlineData("auth_code")]
+	[InlineData("twoFactorCode")]
+	[InlineData("two_factor_code")]
+	public async Task CreateJob_StripsCredentialPayloadKeysBeforeTaskPersistence(string key)
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest(
+				"login",
+				"local",
+				["acct-1"],
+				new Dictionary<string, object?> { [key] = "plaintext-secret", ["message"] = "keep" },
+				null),
+			cts.Token);
+
+		JobTask task = Assert.Single(created.Tasks);
+		Assert.False(task.Payload!.ContainsKey(key));
+		Assert.Equal("keep", task.Payload["message"]);
+
+		string payloadJson = RawScalar(store, "SELECT payload_json FROM tasks WHERE id = $id", ("$id", task.Id));
+		Assert.DoesNotContain("plaintext-secret", payloadJson, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task CreateJob_PreservesAgentSideProvisioningSecrets()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		// set_proxy, save_shared_secret and save_identity_secret are dispatched through
+		// the same task queue and read their credential from the payload at execution time;
+		// they must NOT be stripped like login-session aliases.
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest(
+				"set_proxy",
+				"local",
+				["agent:agent-1"],
+				new Dictionary<string, object?>
+				{
+					["account"] = "acct-1",
+					["proxy"] = "socks5://alice:s3cret@10.0.0.9:1080",
+					["shared_secret"] = "Zm9vYmFy",
+					["identitySecret"] = "YmF6cXV4",
+				},
+				null),
+			cts.Token);
+
+		JobTask task = Assert.Single(created.Tasks);
+		Assert.Equal("socks5://alice:s3cret@10.0.0.9:1080", task.Payload!["proxy"]?.ToString());
+		Assert.Equal("Zm9vYmFy", task.Payload["shared_secret"]?.ToString());
+		Assert.Equal("YmF6cXV4", task.Payload["identitySecret"]?.ToString());
+	}
+
+	[Fact]
+	public async Task TriggerScheduledJob_ChildTaskDoesNotInheritTemplateSecrets()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks template = await store.CreateJob(
+			new CreateJobRequest(
+				"login",
+				"local",
+				["acct-1"],
+				new Dictionary<string, object?> { ["password"] = "template-secret", ["message"] = "keep" },
+				null,
+				new JobSchedule(IntervalSeconds: 60)),
+			cts.Token);
+
+		Job? child = await store.TriggerScheduledJob(
+			template.Job.Id,
+			DateTimeOffset.UtcNow.AddSeconds(60),
+			extraMeta: null,
+			cts.Token);
+
+		Assert.NotNull(child);
+		string templateJson = RawScalar(store, "SELECT payload_json FROM jobs WHERE id = $id", ("$id", template.Job.Id));
+		Assert.DoesNotContain("template-secret", templateJson, StringComparison.Ordinal);
+		string childJson = RawScalar(store, "SELECT payload_json FROM tasks WHERE job_id = $jobId", ("$jobId", child!.Id));
+		Assert.DoesNotContain("template-secret", childJson, StringComparison.Ordinal);
+		Assert.Contains("keep", childJson, StringComparison.Ordinal);
+	}
+
 	[Fact]
 	public async Task HeartbeatTaskReturnsTrueOnlyForMatchingRunningAttempt()
 	{
@@ -902,6 +996,23 @@ public sealed class SqliteJobStoreTests
 		}
 
 		cmd.ExecuteNonQuery();
+	}
+
+	private static string RawScalar(SqliteJobStore store, string sql, params (string Name, object Value)[] parameters)
+	{
+		var connectionField = typeof(SqliteJobStore).GetField("_connection", BindingFlags.Instance | BindingFlags.NonPublic);
+		Assert.NotNull(connectionField);
+		var connection = (Microsoft.Data.Sqlite.SqliteConnection?)connectionField!.GetValue(store);
+		Assert.NotNull(connection);
+
+		using var cmd = connection!.CreateCommand();
+		cmd.CommandText = sql;
+		foreach ((string name, object value) in parameters)
+		{
+			cmd.Parameters.AddWithValue(name, value);
+		}
+
+		return Assert.IsType<string>(cmd.ExecuteScalar());
 	}
 
 	private static void MarkNextAttemptAt(SqliteJobStore store, string taskId, DateTimeOffset nextAttemptAt)
