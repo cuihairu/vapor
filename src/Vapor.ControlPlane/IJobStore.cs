@@ -37,5 +37,13 @@ public interface IJobStore
 	Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken);
 	/// <summary>Marks a claimed (running) task as failed with a terminal error, e.g. after exhausting dispatch retries.</summary>
 	Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken);
+	/// <summary>
+	/// Scans historical <c>jobs.payload_json</c> and <c>tasks.payload_json</c> for login
+	/// credential aliases and removes them. <paramref name="dryRun"/> only counts matches
+	/// without writing. When not a dry run and <paramref name="backupPath"/> is set, a
+	/// consistent SQLite snapshot is written there first. Returns the number of job rows
+	/// and task rows that were (or would be) rewritten.
+	/// </summary>
+	Task<(int Jobs, int Tasks)> PurgeSecretPayloadsAsync(bool dryRun, string? backupPath, CancellationToken cancellationToken);
 }
 

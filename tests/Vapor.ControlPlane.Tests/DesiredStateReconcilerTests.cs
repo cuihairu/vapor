@@ -4208,6 +4208,7 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken)
 			=> throw new NotSupportedException();
+		public Task<(int Jobs, int Tasks)> PurgeSecretPayloadsAsync(bool dryRun, string? backupPath, CancellationToken cancellationToken) => Task.FromResult((0, 0));
 	}
 
 	private sealed class NoopWebSocket : WebSocket

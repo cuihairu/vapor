@@ -102,6 +102,94 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task PurgeSecretPayloads_DryRunCountsWithoutWriting()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		// Synthetic historical rows written directly, as pre-ARCH-01 code did.
+		RawExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"a\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{"password":"p1","refreshToken":"r1","message":"keep"}"""));
+		RawExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'a', 'login', '', $payload, 'Finished', 0, 1, 1)",
+			("$id", "task-old"), ("$payload", """{"access_token":"t1","two_factor_code":"c1","keep":true}"""));
+		// A clean row must be untouched.
+		RawExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'a', 'login', '', $payload, 'Finished', 0, 1, 1)",
+			("$id", "task-clean"), ("$payload", """{"message":"no secret"}""")); 
+
+		(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun: true, backupPath: null, cts.Token);
+
+		Assert.Equal(1, jobs);
+		Assert.Equal(1, tasks);
+		// Dry run must not write: secrets remain in the rows.
+		Assert.Contains("p1", RawScalar(store, "SELECT payload_json FROM jobs WHERE id = $id", ("$id", "job-old")), StringComparison.Ordinal);
+		Assert.Contains("t1", RawScalar(store, "SELECT payload_json FROM tasks WHERE id = $id", ("$id", "task-old")), StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_ScrubsHistoricalRowsAndLeavesCleanRows()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		RawExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"a\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{"password":"p1","refreshToken":"r1","message":"keep"}"""));
+		RawExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'a', 'login', '', $payload, 'Finished', 0, 1, 1)",
+			("$id", "task-old"), ("$payload", """{"access_token":"t1","two_factor_code":"c1","keep":true}"""));
+		RawExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'a', 'login', '', $payload, 'Finished', 0, 1, 1)",
+			("$id", "task-clean"), ("$payload", """{"message":"no secret"}"""));
+
+		(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun: false, backupPath: null, cts.Token);
+
+		Assert.Equal(1, jobs);
+		Assert.Equal(1, tasks);
+
+		string jobJson = RawScalar(store, "SELECT payload_json FROM jobs WHERE id = $id", ("$id", "job-old"));
+		Assert.DoesNotContain("p1", jobJson, StringComparison.Ordinal);
+		Assert.DoesNotContain("r1", jobJson, StringComparison.Ordinal);
+		Assert.Contains("keep", jobJson, StringComparison.Ordinal);
+
+		string taskJson = RawScalar(store, "SELECT payload_json FROM tasks WHERE id = $id", ("$id", "task-old"));
+		Assert.DoesNotContain("t1", taskJson, StringComparison.Ordinal);
+		Assert.DoesNotContain("c1", taskJson, StringComparison.Ordinal);
+		Assert.Contains("keep", taskJson, StringComparison.Ordinal);
+
+		string cleanJson = RawScalar(store, "SELECT payload_json FROM tasks WHERE id = $id", ("$id", "task-clean"));
+		Assert.Equal("""{"message":"no secret"}""", cleanJson);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_WritesBackupSnapshotBeforeScrub()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-arch02-{Guid.NewGuid():N}.db");
+		string backupPath = Path.Combine(Path.GetTempPath(), $"vapor-arch02-backup-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+			RawExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"a\"]', '{}', 'Finished', 1, 1, $payload)",
+				("$id", "job-old"), ("$payload", """{"password":"p1"}"""));
+
+			(int jobs, int _) = await store.PurgeSecretPayloadsAsync(dryRun: false, backupPath, cts.Token);
+			Assert.Equal(1, jobs);
+
+			// The backup snapshot must exist and still contain the pre-scrub secret.
+			Assert.True(File.Exists(backupPath));
+			using var backup = new SqliteJobStore(backupPath);
+			Assert.Contains("p1", RawScalar(backup, "SELECT payload_json FROM jobs WHERE id = $id", ("$id", "job-old")), StringComparison.Ordinal);
+
+			// The live database is scrubbed.
+			Assert.DoesNotContain("p1", RawScalar(store, "SELECT payload_json FROM jobs WHERE id = $id", ("$id", "job-old")), StringComparison.Ordinal);
+		}
+		finally
+		{
+			Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+			if (File.Exists(dbPath)) File.Delete(dbPath);
+			if (File.Exists(backupPath)) File.Delete(backupPath);
+		}
+	}
+
+	[Fact]
 	public async Task HeartbeatTaskReturnsTrueOnlyForMatchingRunningAttempt()
 	{
 		using var store = new SqliteJobStore(":memory:");

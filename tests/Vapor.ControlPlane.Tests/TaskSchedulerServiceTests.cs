@@ -639,6 +639,7 @@ public sealed class TaskSchedulerServiceTests
 				Error = error,
 			}, new Job("job-1", "login", "local", [], null, JobStatus.Failed, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
 		}
+		public Task<(int Jobs, int Tasks)> PurgeSecretPayloadsAsync(bool dryRun, string? backupPath, CancellationToken cancellationToken) => Task.FromResult((0, 0));
 
 		public Task<int> RequeueStaleRunningTasks(TimeSpan taskLease, CancellationToken cancellationToken)
 		{

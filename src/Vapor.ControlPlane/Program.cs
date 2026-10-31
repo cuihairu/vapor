@@ -3204,6 +3204,34 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 	.Produces<ErrorResponse>(404)
 	.Produces(401);
 
+app.MapPost("/v1/jobs/secret-payloads/purge", async Task<IResult> (
+	HttpContext ctx,
+	Config cfg,
+	IJobStore store,
+	SecretPayloadPurgeRequest? req
+) =>
+{
+	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
+	{
+		return Results.Unauthorized();
+	}
+
+	// Preview is the default; a destructive scrub requires an explicit confirm.
+	bool dryRun = req is null || req.DryRun != false;
+	if (!dryRun && req?.Confirm != true)
+	{
+		return Results.BadRequest(new ErrorResponse("set confirm=true to scrub historical secret payloads"));
+	}
+
+	(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun, req?.BackupPath, ctx.RequestAborted);
+	return Results.Ok(new { dryRun, jobs, tasks, backupPath = req?.BackupPath });
+})
+	.WithTags("Jobs")
+	.WithSummary("Preview or scrub login credentials persisted in historical job/task payloads (dry-run default; confirm=true to write, optional backupPath snapshots first)")
+	.Produces(200)
+	.Produces<ErrorResponse>(400)
+	.Produces(401);
+
 app.MapGet("/v1/jobs/{jobId}/events", async Task (HttpContext ctx, Config cfg, IJobStore store, IEventBroker events, string jobId) =>
 {
 	if (!Auth.TryAdmin(cfg, GetAuthorization(ctx), out _))
@@ -5139,5 +5167,14 @@ public sealed record UpdateCrawlPlanRequest(
 	int? IntervalSeconds = null,
 	bool? StartNow = null,
 	bool? Enabled = null
+);
+
+// Request body for previewing/scubbing historical secret payloads. Dry run is the
+// default; a destructive scrub requires confirm=true and may snapshot the database
+// first via backupPath.
+public sealed record SecretPayloadPurgeRequest(
+	bool? DryRun = null,
+	bool? Confirm = null,
+	string? BackupPath = null
 );
 

@@ -1068,6 +1068,93 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		}
 	}
 
+	/// <inheritdoc />
+	public async Task<(int Jobs, int Tasks)> PurgeSecretPayloadsAsync(bool dryRun, string? backupPath, CancellationToken cancellationToken)
+	{
+		await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
+		{
+			if (!dryRun && !string.IsNullOrWhiteSpace(backupPath))
+			{
+				await TakeConsistentBackupAsync(backupPath, cancellationToken).ConfigureAwait(false);
+			}
+
+			int jobRows = await ScrubSecretPayloadColumnAsync("jobs", "payload_json", dryRun, cancellationToken).ConfigureAwait(false);
+			int taskRows = await ScrubSecretPayloadColumnAsync("tasks", "payload_json", dryRun, cancellationToken).ConfigureAwait(false);
+			return (jobRows, taskRows);
+		}
+		finally
+		{
+			_mutex.Release();
+		}
+	}
+
+	private async Task TakeConsistentBackupAsync(string backupPath, CancellationToken cancellationToken)
+	{
+		string? dir = Path.GetDirectoryName(Path.GetFullPath(backupPath));
+		if (!string.IsNullOrEmpty(dir))
+		{
+			Directory.CreateDirectory(dir);
+		}
+
+		await using var destination = new SqliteConnection($"Data Source={backupPath}");
+		await destination.OpenAsync(cancellationToken).ConfigureAwait(false);
+		_connection.BackupDatabase(destination);
+	}
+
+	private async Task<int> ScrubSecretPayloadColumnAsync(string table, string column, bool dryRun, CancellationToken cancellationToken)
+	{
+		// CA2100 suppressed: table/column come only from this class's own compile-time
+		// literals ("jobs"/"tasks" + "payload_json"); no external input reaches the schema.
+#pragma warning disable CA2100
+		List<(string Id, string PayloadJson)> rows = new();
+		using (var read = _connection.CreateCommand())
+		{
+			read.CommandText = $"SELECT id, {column} FROM {table} WHERE {column} IS NOT NULL AND {column} != '{{}}';";
+			using var reader = await read.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
+				rows.Add((reader.GetString(0), reader.GetString(1)));
+			}
+		}
+
+		int rewritten = 0;
+		foreach ((string id, string payloadJson) in rows)
+		{
+			Dictionary<string, object?>? payload;
+			try
+			{
+				payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(payloadJson, JsonDefaults.Options);
+			}
+			catch (JsonException)
+			{
+				// Malformed historical JSON is left untouched: scrubbing must never
+				// destroy rows it cannot safely parse.
+				continue;
+			}
+
+			if (payload is null || !payload.Keys.Any(IsSecretPayloadKey))
+			{
+				continue;
+			}
+
+			if (!dryRun)
+			{
+				Dictionary<string, object?> scrubbed = StripSecretPayload(payload);
+				using var update = _connection.CreateCommand();
+				update.CommandText = $"UPDATE {table} SET {column} = $payload WHERE id = $id;";
+				update.Parameters.AddWithValue("$payload", JsonSerializer.Serialize(scrubbed, JsonDefaults.Options));
+				update.Parameters.AddWithValue("$id", id);
+				await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			}
+
+			rewritten++;
+		}
+#pragma warning restore CA2100
+
+		return rewritten;
+	}
+
 	private void Migrate()
 	{
 		using var cmd = _connection.CreateCommand();

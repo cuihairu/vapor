@@ -1494,6 +1494,7 @@ public sealed class ProgramBranchCoverageTests
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => Task.FromResult(false);
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<(int Jobs, int Tasks)> PurgeSecretPayloadsAsync(bool dryRun, string? backupPath, CancellationToken cancellationToken) => Task.FromResult((0, 0));
 	}
 
 	/// <summary>Captures every recorded entry (no failures, no persistence).</summary>
@@ -1710,6 +1711,7 @@ internal sealed class SlowHeartbeatStore : IJobStore
 	public Task<Dictionary<string, int>> CountRunningTasksByAgent(CancellationToken cancellationToken) => _inner.CountRunningTasksByAgent(cancellationToken);
 	public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => _inner.SetTaskResult(result, cancellationToken);
 	public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => _inner.FailRunningTask(taskId, error, cancellationToken);
+	public Task<(int Jobs, int Tasks)> PurgeSecretPayloadsAsync(bool dryRun, string? backupPath, CancellationToken cancellationToken) => _inner.PurgeSecretPayloadsAsync(dryRun, backupPath, cancellationToken);
 	public Task<IReadOnlyList<TaskCancel>> CancelJob(string jobId, CancellationToken cancellationToken) => _inner.CancelJob(jobId, cancellationToken);
 }
 

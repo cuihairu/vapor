@@ -436,6 +436,41 @@ Upgrades:
    newer version keep the added columns, which older versions ignore
    safely.
 
+### Historical secret payloads (ARCH-02)
+
+Before ARCH-01, `POST /v1/jobs` persisted login credentials (password/pass,
+access/refresh token, auth/2FA code aliases) into `controlplane.db`'s
+`jobs.payload_json` and `tasks.payload_json`. New writes are stripped at the
+store; rows written by older versions are cleaned by
+`POST /v1/jobs/secret-payloads/purge`:
+
+```bash
+# Preview: counts rows that still carry a credential alias, writes nothing.
+curl -u admin:$KEY -X POST /v1/jobs/secret-payloads/purge -H 'content-type: application/json' -d '{}'
+
+# Scrub: snapshot the database first, then remove the aliases.
+curl -u admin:$KEY -X POST /v1/jobs/secret-payloads/purge -H 'content-type: application/json' \
+  -d '{"dryRun":false,"confirm":true,"backupPath":"/backups/controlplane-pre-arch02.db"}'
+```
+
+The default body (`{}`) is a dry run and never writes. A destructive scrub
+requires `confirm: true` and, when `backupPath` is set, writes a consistent
+online-backup snapshot (same API as `tools/Vapor.Backup`) before any row is
+rewritten. The scrubbed columns are `jobs.payload_json` and
+`tasks.payload_json`; `output_json` and `meta_json` are never touched, and
+agent-side provisioning payloads (`proxy`, `shared_secret`,
+`identity_secret`) are deliberately preserved because those actions consume
+them at execution time.
+
+WAL / backup-copy scope: the snapshot taken by the purge is a single SQLite
+online backup and is always consistent on its own — it is the only file you
+need to recover the pre-scrub state. The live database's `-wal`/`-shm` files
+belong to the running control plane and must not be copied or restored on
+their own; a restore should replace the `.db` file and delete the adjacent
+`-wal`/`-shm` files (see "Restoring"). Because the snapshot is taken under
+the same store lock as the scrub, it captures either the full pre-scrub or
+the full post-scrub state — never a partially scrubbed database.
+
 ## Scaling out agents
 
 Each agent is one `agent` service instance with a unique `AGENT_ID` and

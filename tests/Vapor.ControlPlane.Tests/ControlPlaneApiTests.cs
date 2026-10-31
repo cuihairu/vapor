@@ -315,6 +315,100 @@ public sealed class ControlPlaneApiTests
 		Assert.Equal("keep", task.Payload["message"]?.ToString());
 	}
 
+	[Fact]
+	public async Task PurgeSecretPayloads_ApiNoLongerReturnsHistoricalCredentials()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		await using TestFactory factory = CreateFactory();
+		factory.JobStore = store;
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		// A synthetic pre-ARCH-01 job/task row holding plaintext credentials.
+		RawJobStoreExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"alice\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{"password":"old-pass","refreshToken":"old-refresh"}"""));
+		RawJobStoreExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'alice', 'login', '', $payload, 'Finished', 0, 1, 1)",
+			("$id", "task-old"), ("$payload", """{"access_token":"old-access","two_factor_code":"old-code","message":"keep"}""" ));
+
+		// The historical secret in the task payload is visible through the API before the scrub.
+		using HttpResponseMessage before = await client.GetAsync("/v1/jobs/job-old");
+		Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+		string beforeBody = await before.Content.ReadAsStringAsync();
+		Assert.Contains("old-access", beforeBody, StringComparison.Ordinal);
+		Assert.Contains("old-code", beforeBody, StringComparison.Ordinal);
+
+		(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun: false, backupPath: null, CancellationToken.None);
+		Assert.Equal(1, jobs);
+		Assert.Equal(1, tasks);
+
+		// After the scrub the API projection no longer exposes the old credentials.
+		using HttpResponseMessage after = await client.GetAsync("/v1/jobs/job-old");
+		Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+		string afterBody = await after.Content.ReadAsStringAsync();
+		Assert.DoesNotContain("old-access", afterBody, StringComparison.Ordinal);
+		Assert.DoesNotContain("old-code", afterBody, StringComparison.Ordinal);
+		Assert.Contains("keep", afterBody, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_EndpointRequiresConfirmForDestructiveScrub()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		await using TestFactory factory = CreateFactory();
+		factory.JobStore = store;
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		// dryRun=false without confirm must be rejected.
+		using HttpResponseMessage rejected = await client.PostAsJsonAsync("/v1/jobs/secret-payloads/purge", new { dryRun = false });
+		Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+		Assert.Contains("confirm", await rejected.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+		// dryRun=true (default) returns a preview without writing.
+		using HttpResponseMessage preview = await client.PostAsJsonAsync("/v1/jobs/secret-payloads/purge", new { });
+		Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+		string previewBody = await preview.Content.ReadAsStringAsync();
+		Assert.Contains("dryRun", previewBody, StringComparison.Ordinal);
+		Assert.Contains("jobs", previewBody, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_EndpointScrubsWhenConfirmed()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		await using TestFactory factory = CreateFactory();
+		factory.JobStore = store;
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		RawJobStoreExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"alice\"]', '{}', 'Finished', 1, 1, '{}')",
+			("$id", "job-old"));
+		RawJobStoreExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'alice', 'login', '', $payload, 'Finished', 0, 1, 1)",
+			("$id", "task-old"), ("$payload", """{"password":"endpoint-secret","message":"keep"}"""));
+
+		using HttpResponseMessage scrub = await client.PostAsJsonAsync("/v1/jobs/secret-payloads/purge", new { dryRun = false, confirm = true });
+		Assert.Equal(HttpStatusCode.OK, scrub.StatusCode);
+		string scrubBody = await scrub.Content.ReadAsStringAsync();
+		Assert.Contains("\"tasks\":1", scrubBody, StringComparison.Ordinal);
+		Assert.DoesNotContain("endpoint-secret", scrubBody, StringComparison.Ordinal);
+	}
+
+	private static void RawJobStoreExec(SqliteJobStore store, string sql, params (string Name, object Value)[] parameters)
+	{
+		var connectionField = typeof(SqliteJobStore).GetField("_connection", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+		Assert.NotNull(connectionField);
+		var connection = (Microsoft.Data.Sqlite.SqliteConnection?)connectionField!.GetValue(store);
+		Assert.NotNull(connection);
+
+		using var cmd = connection!.CreateCommand();
+		cmd.CommandText = sql;
+		foreach ((string name, object value) in parameters)
+		{
+			cmd.Parameters.AddWithValue(name, value);
+		}
+		cmd.ExecuteNonQuery();
+	}
+
 	[Theory]
 	[InlineData("/v1/jobs")]
 	[InlineData("/v1/accounts/alice/loot")]
@@ -390,6 +484,7 @@ public sealed class ControlPlaneApiTests
 		public Task<bool> HeartbeatTask(string taskId, int attempt, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> SetTaskResult(TaskResult result, CancellationToken cancellationToken) => throw new NotSupportedException();
 		public Task<(JobTask Task, Job Job)> FailRunningTask(string taskId, string error, CancellationToken cancellationToken) => throw new NotSupportedException();
+		public Task<(int Jobs, int Tasks)> PurgeSecretPayloadsAsync(bool dryRun, string? backupPath, CancellationToken cancellationToken) => Task.FromResult((0, 0));
 	}
 
 	internal sealed class RecordingEventBroker : IEventBroker
