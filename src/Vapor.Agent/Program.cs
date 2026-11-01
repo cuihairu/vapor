@@ -377,6 +377,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 	int currentAttempt = 0;
 	bool currentTaskCancelledByServer = false;
 	var pendingLeaseCts = new ConcurrentDictionary<(string TaskId, int Attempt), CancellationTokenSource>();
+	var queuedCancels = new QueuedTaskCanceller();
 
 	var capabilities = actionRegistry.ListNames().Concat(hostActions.Keys)
 		.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -427,6 +428,11 @@ async Task RunOnce(CancellationToken cancellationToken)
 
 				if (string.Equals(msg.Type, "task_cancel", StringComparison.Ordinal) && msg.TaskCancel != null)
 				{
+					// A cancel for a task still sitting in the bounded buffer is
+					// remembered so the serial loop skips it before it ever runs its
+					// action. Cancels that do not match any task are harmless.
+					queuedCancels.Add(msg.TaskCancel);
+
 					bool matches;
 					lock (executionGate)
 					{
@@ -472,6 +478,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 		{
 			WSMessage dispatch = await tasks.Reader.ReadAsync(cancellationToken);
 			JobTask task = dispatch.Task!;
+			bool queuedCanceled = queuedCancels.TryRemove(task, out _);
 			var executionLeaseKey = (task.Id, task.Attempt);
 			if (pendingLeaseCts.TryRemove(executionLeaseKey, out var pendingLease))
 			{
@@ -480,6 +487,15 @@ async Task RunOnce(CancellationToken cancellationToken)
 			}
 
 			Console.WriteLine($"task received: id={task.Id} action={task.Action} target={task.Target}");
+
+			if (queuedCanceled)
+			{
+				// Cancel arrived before this task started: do not run its action.
+				// CancelJob already settled its terminal state in the store; a
+				// task_result would be rejected as not-running and could not change it.
+				Console.WriteLine($"task skipped (canceled before start): id={task.Id}");
+				continue;
+			}
 
 			// CA2000 suppressed: both sources are disposed by their using declarations
 			// at the end of every loop-iteration path. The analyzer flags the creations
@@ -631,6 +647,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 			lease.Dispose();
 		}
 		pendingLeaseCts.Clear();
+		queuedCancels.Clear();
 		try
 		{
 			await receiver;
