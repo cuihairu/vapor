@@ -69,22 +69,45 @@ public sealed class ConnectedAgent
 	public DateTimeOffset ConnectedAt { get; } = DateTimeOffset.UtcNow;
 
 	private readonly WebSocket _socket;
-	private readonly Channel<WSMessage> _send = Channel.CreateBounded<WSMessage>(new BoundedChannelOptions(1024) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+	private readonly Channel<WSMessage> _send;
 
-	public ConnectedAgent(AgentHello hello, WebSocket socket)
+	/// <summary>Number of writes rejected because the bounded send queue was full.</summary>
+	private long _sendQueueRejected;
+	/// <summary>Total rejects observed since connect; a monotonic back-pressure signal.</summary>
+	public long SendQueueRejected => Interlocked.Read(ref _sendQueueRejected);
+
+	public ConnectedAgent(AgentHello hello, WebSocket socket, int sendQueueCapacity = 1024)
 	{
 		Hello = hello;
 		_socket = socket;
+		if (sendQueueCapacity <= 0)
+		{
+			throw new ArgumentOutOfRangeException(nameof(sendQueueCapacity), "send queue capacity must be positive");
+		}
+
+		_send = Channel.CreateBounded<WSMessage>(new BoundedChannelOptions(sendQueueCapacity) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
 	}
 
 	public bool EnqueueTask(JobTask task, IReadOnlyDictionary<string, string>? traceHeaders = null)
 	{
-		return _send.Writer.TryWrite(new WSMessage(Type: "task", Hello: null, Task: task, TaskResult: null, TraceHeaders: traceHeaders));
+		bool accepted = _send.Writer.TryWrite(new WSMessage(Type: "task", Hello: null, Task: task, TaskResult: null, TraceHeaders: traceHeaders));
+		if (!accepted)
+		{
+			Interlocked.Increment(ref _sendQueueRejected);
+		}
+
+		return accepted;
 	}
 
 	public bool EnqueueTaskCancel(TaskCancel cancel)
 	{
-		return _send.Writer.TryWrite(new WSMessage(Type: "task_cancel", Hello: null, Task: null, TaskResult: null, TaskHeartbeat: null, TaskCancel: cancel));
+		bool accepted = _send.Writer.TryWrite(new WSMessage(Type: "task_cancel", Hello: null, Task: null, TaskResult: null, TaskHeartbeat: null, TaskCancel: cancel));
+		if (!accepted)
+		{
+			Interlocked.Increment(ref _sendQueueRejected);
+		}
+
+		return accepted;
 	}
 
 	public bool SupportsAction(string action)

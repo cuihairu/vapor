@@ -3182,12 +3182,20 @@ app.MapPost("/v1/jobs/{jobId}/cancel", async Task<IResult> (
 
 		if (cancels.Count > 0)
 		{
+			int rejected = 0;
 			foreach (var agent in agents.ListConnected())
 			{
 				foreach (var cancel in cancels)
 				{
-					agent.EnqueueTaskCancel(cancel);
+					if (!agent.EnqueueTaskCancel(cancel))
+					{
+						rejected++;
+					}
 				}
+			}
+			if (rejected > 0)
+			{
+				events.Publish(jobId, "job.cancel_rejected", new Dictionary<string, object?> { ["rejected"] = rejected });
 			}
 		}
 

@@ -61,8 +61,11 @@ not turn the source event stream into a durable outbox.
    account's assigned agent in this endpoint. Webhooks use `codeSupplied`, but
    that projection does not describe the agent channel.
 3. **Queue pressure and leases (high priority).** `ConnectedAgent._send` uses a
-   bounded 1,024-message channel with `DropOldest`, so successful enqueue is not
-   proof all earlier tasks/cancels remain queued. The agent uses an unbounded
+   bounded 1,024-message channel with `Wait` full-write rejection (ARCH-04 fix):
+   a full queue no longer silently drops the oldest message; instead
+   `EnqueueTask` / `EnqueueTaskCancel` return false, the scheduler retries through
+   `task.enqueue_failed`, and the cancel endpoint publishes `job.cancel_rejected`.
+   `SendQueueRejected` exposes the back-pressure signal. The agent uses an unbounded
    incoming task channel and consumes tasks serially. Tasks waiting behind a long
    action have already been claimed but have no running heartbeat. Lease recovery
    can therefore redispatch them while an old dispatch is still queued.

@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using System.Text;
+using System.Threading.Channels;
 using Vapor.ControlPlane;
 using Vapor.Protocol;
 using Xunit;
@@ -195,6 +196,90 @@ public sealed class AgentRegistryTests
 		await Task.Delay(100); // WaitToReadAsync returns false; the loop exits cleanly
 
 		// No exception escaping this test is the assertion.
+	}
+
+	[Fact]
+	public void EnqueueTask_WhenQueueIsFull_RejectsWithoutSilentlyDroppingOldest()
+	{
+		// ARCH-04: the send queue must surface back-pressure instead of silently
+		// dropping the oldest message. With capacity 1 and the send loop stopped,
+		// the first task is accepted, the second is rejected, and the counter rises.
+		var agent = new ConnectedAgent(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), sendQueueCapacity: 1);
+
+		Assert.True(agent.EnqueueTask(new JobTask("task-1", "job-1", "target-1", "ping", "local", null, JobTaskStatus.Queued, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
+		Assert.False(agent.EnqueueTask(new JobTask("task-2", "job-1", "target-1", "ping", "local", null, JobTaskStatus.Queued, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
+
+		Assert.Equal(1, agent.SendQueueRejected);
+	}
+
+	[Fact]
+	public void EnqueueTaskCancel_WhenQueueIsFull_RejectsAndIncrementsCounter()
+	{
+		// ARCH-04 cancel-message scenario: a queued cancel that cannot be written
+		// must not be silently dropped — the caller sees false and the counter rises.
+		var agent = new ConnectedAgent(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), sendQueueCapacity: 1);
+
+		Assert.True(agent.EnqueueTaskCancel(new TaskCancel("task-1", 1, DateTimeOffset.UtcNow)));
+		Assert.False(agent.EnqueueTaskCancel(new TaskCancel("task-2", 1, DateTimeOffset.UtcNow)));
+
+		Assert.Equal(1, agent.SendQueueRejected);
+	}
+
+	[Fact]
+	public void EnqueueTask_DoesNotDropOldestMessageWhenQueueIsFull()
+	{
+		// The accepted task stays in the channel; the rejected one is not written.
+		// Drain the channel after the rejected write and confirm only the accepted
+		// task remains — DropOldest would have evicted it.
+		var agent = new ConnectedAgent(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), sendQueueCapacity: 1);
+		var first = new JobTask("task-1", "job-1", "target-1", "ping", "local", null, JobTaskStatus.Queued, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+		var second = new JobTask("task-2", "job-1", "target-1", "ping", "local", null, JobTaskStatus.Queued, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+		Assert.True(agent.EnqueueTask(first));
+		Assert.False(agent.EnqueueTask(second));
+
+		Channel<WSMessage> channel = SendChannelOf(agent);
+		Assert.True(channel.Reader.TryRead(out WSMessage? msg));
+		Assert.Equal("task-1", msg!.Task!.Id);
+		Assert.False(channel.Reader.TryRead(out _));
+	}
+
+	[Fact]
+	public void EnqueueTask_RejectsWhenQueueCapacityIsExhausted_WithoutDroppingPriorMessages()
+	{
+		// Capacity 3, no consumer: fills exactly to capacity, the 4th write is
+		// rejected, and all 3 accepted messages remain in order.
+		var agent = new ConnectedAgent(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), sendQueueCapacity: 3);
+		for (int i = 1; i <= 3; i++)
+		{
+			Assert.True(agent.EnqueueTask(MakeTask(i)));
+		}
+		Assert.False(agent.EnqueueTask(MakeTask(4)));
+
+		Channel<WSMessage> channel = SendChannelOf(agent);
+		for (int i = 1; i <= 3; i++)
+		{
+			Assert.True(channel.Reader.TryRead(out WSMessage? msg));
+			Assert.Equal($"task-{i}", msg!.Task!.Id);
+		}
+		Assert.False(channel.Reader.TryRead(out _));
+		Assert.Equal(1, agent.SendQueueRejected);
+	}
+
+	[Fact]
+	public void Constructor_RejectsNonPositiveQueueCapacity()
+	{
+		Assert.Throws<ArgumentOutOfRangeException>(() => new ConnectedAgent(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), sendQueueCapacity: 0));
+	}
+
+	private static JobTask MakeTask(int i) =>
+		new($"task-{i}", "job-1", "target-1", "ping", "local", null, JobTaskStatus.Queued, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+	private static Channel<WSMessage> SendChannelOf(ConnectedAgent agent)
+	{
+		return (Channel<WSMessage>)typeof(ConnectedAgent)
+			.GetField("_send", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+			.GetValue(agent)!;
 	}
 
 	private static void CompleteSendChannel(ConnectedAgent agent)

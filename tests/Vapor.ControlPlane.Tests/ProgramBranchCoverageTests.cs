@@ -707,6 +707,37 @@ public sealed class ProgramBranchCoverageTests
 	}
 
 	[Fact]
+	public async Task CancelJob_FullAgentQueue_PublishesCancelRejection()
+	{
+		var store = new SqliteJobStore(":memory:");
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			CancellationToken.None);
+		JobTask claimed = (await store.ClaimNextQueuedTask("local", CancellationToken.None))!;
+		Assert.Equal(JobTaskStatus.Running, claimed.Status);
+
+		var registry = new AgentRegistry();
+		var agent = new ConnectedAgent(
+			new AgentHello("agent-9", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new CancelNoopWebSocket(),
+			sendQueueCapacity: 1);
+		Assert.True(agent.EnqueueTask(new JobTask("retained", created.Job.Id, "acct-1", "ping", "local", null, JobTaskStatus.Queued, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
+		InsertConnectedAgent(registry, agent);
+
+		await using BranchFactory factory = new() { JobStore = store, AgentRegistry = registry };
+		using var client = factory.CreateClient();
+		client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+
+		using HttpResponseMessage resp = await client.PostAsync($"/v1/jobs/{created.Job.Id}/cancel", content: null);
+
+		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+		Assert.Equal(1, agent.SendQueueRejected);
+		Event rejection = Assert.Single(factory.Events.Published, evt => string.Equals(evt.Type, "job.cancel_rejected", StringComparison.Ordinal));
+		Assert.Equal(created.Job.Id, rejection.JobId);
+		Assert.Equal(1, Convert.ToInt32(rejection.Payload!["rejected"]));
+	}
+
+	[Fact]
 	public async Task JobEventsStream_UnknownJob_Returns404Json()
 	{
 		await using BranchFactory factory = new();
@@ -1421,6 +1452,14 @@ public sealed class ProgramBranchCoverageTests
 		}
 	}
 
+	private static void InsertConnectedAgent(AgentRegistry registry, ConnectedAgent agent)
+	{
+		var agents = (System.Collections.Concurrent.ConcurrentDictionary<string, ConnectedAgent>)typeof(AgentRegistry)
+			.GetField("_agents", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+			.GetValue(registry)!;
+		agents[agent.Hello.AgentId] = agent;
+	}
+
 	/// <summary>
 	/// A store whose jobs immediately complete with a caller-supplied output
 	/// dictionary. Values keep their live .NET types (no SQLite JSON round-trip),
@@ -1553,6 +1592,8 @@ public sealed class ProgramBranchCoverageTests
 			get { lock (_gate) { return _jobSubscriptions.Count; } }
 		}
 
+		public List<Event> Published { get; } = [];
+
 		public Task WaitForJobSubscriptionAsync() => _jobReady.Task;
 		public Task WaitForSessionSubscriptionAsync() => _sessionReady.Task;
 
@@ -1566,6 +1607,11 @@ public sealed class ProgramBranchCoverageTests
 					.Where(sub => sub.JobId == "*" || string.Equals(sub.JobId, jobId, StringComparison.Ordinal))
 					.Select(sub => sub.Channel.Writer)
 					.ToList();
+			}
+
+			lock (_gate)
+			{
+				Published.Add(evt);
 			}
 
 			foreach (ChannelWriter<Event> writer in writers)
@@ -1737,6 +1783,9 @@ internal sealed class BranchFactory : WebApplicationFactory<Program>
 	/// <summary>Optional audit store override (exposed for assertions and fault injection).</summary>
 	public IAuditStore? AuditStore { get; internal set; }
 
+	/// <summary>Optional agent registry override; a fresh registry is used when unset.</summary>
+	public AgentRegistry? AgentRegistry { get; init; }
+
 	/// <summary>
 	/// Handle onto the agent WebSocket request's abort signal: the middleware
 	/// below replaces the endpoint's RequestAborted with a linked source a test
@@ -1756,12 +1805,14 @@ internal sealed class BranchFactory : WebApplicationFactory<Program>
 			services.RemoveAll<IJobStore>();
 			services.RemoveAll<IEventBroker>();
 			services.RemoveAll<IAuditStore>();
+			services.RemoveAll<AgentRegistry>();
 			services.RemoveAll<IHostedService>();
 			services.RemoveAll<IHostedLifecycleService>();
 			services.AddSingleton(new Config("admin-token", new Dictionary<string, DateTimeOffset?> { ["agent-token"] = null }, ":memory:", 300, false, ":memory:", CrawlDbPath: ":memory:", ConfigDbPath: ":memory:", AgentKeyAgentIds: new Dictionary<string, string> { ["agent-token"] = "agent-9" }));
 			services.AddSingleton<IJobStore>(sp => self.JobStore ?? new SqliteJobStore(":memory:"));
 			services.AddSingleton<IAuditStore>(sp => self.AuditStore ??= new SqliteAuditStore(":memory:"));
 			services.AddSingleton<IEventBroker>(self.Events);
+			services.AddSingleton<AgentRegistry>(sp => self.AgentRegistry ?? new AgentRegistry());
 			services.AddSingleton<IStartupFilter>(new WsRequestAbortCapture(this));
 		});
 	}
@@ -1791,4 +1842,22 @@ internal sealed class BranchFactory : WebApplicationFactory<Program>
 			next(app);
 		};
 	}
+
+}
+
+/// <summary>WebSocket that never drains the send channel (keeps the queue full).</summary>
+internal sealed class CancelNoopWebSocket : System.Net.WebSockets.WebSocket
+{
+	public override System.Net.WebSockets.WebSocketCloseStatus? CloseStatus => null;
+	public override string? CloseStatusDescription => null;
+	public override System.Net.WebSockets.WebSocketState State => System.Net.WebSockets.WebSocketState.Open;
+	public override string SubProtocol => string.Empty;
+	public override void Abort() { }
+	public override Task CloseAsync(System.Net.WebSockets.WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+	public override Task CloseOutputAsync(System.Net.WebSockets.WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+	public override void Dispose() { }
+	public override Task<System.Net.WebSockets.WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) => Task.FromResult(new System.Net.WebSockets.WebSocketReceiveResult(0, System.Net.WebSockets.WebSocketMessageType.Close, true));
+	public override ValueTask<System.Net.WebSockets.ValueWebSocketReceiveResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken) => ValueTask.FromResult(new System.Net.WebSockets.ValueWebSocketReceiveResult(0, System.Net.WebSockets.WebSocketMessageType.Close, true));
+	public override Task SendAsync(ArraySegment<byte> buffer, System.Net.WebSockets.WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) => Task.CompletedTask;
+	public override ValueTask SendAsync(ReadOnlyMemory<byte> buffer, System.Net.WebSockets.WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken) => ValueTask.CompletedTask;
 }

@@ -48,7 +48,9 @@ Agent 主动连接控制平面。当前没有外部消息队列、跨实例锁�
    `Code = null` 的投影。该端点没有把 Key 身份与账号所属 Agent 做服务端绑定。
    webhook 使用 `codeSupplied`，不能用这条规则概括 Agent 通道。
 3. **队列压力与租约（高优先级）。** `ConnectedAgent._send` 是容量 1,024 的
-   `DropOldest` 队列，入队成功不代表之前的任务 / 取消消息仍然保留。Agent 接收队列无界，
+   `Wait` 满时拒绝写入的队列（ARCH-04 修复）：满队不再静默丢弃最旧消息，而是让
+   `EnqueueTask` / `EnqueueTaskCancel` 返回 false，调度器走 `task.enqueue_failed` 安全重试，
+   取消端点发布 `job.cancel_rejected`；`SendQueueRejected` 计数可观测背压。Agent 接收队列无界，
    任务消费串行。排在长任务后面的任务已被领取，却未启动心跳，可能在仍排队时过期重派。
 4. **排队任务取消（高优先级）。** Agent 接收器只取消正在执行的 `(taskId, attempt)`，
    没有删除或作废已排队任务。仅取消数据库记录 / 拒绝旧结果，不能阻止旧派发随后触发外部动作。

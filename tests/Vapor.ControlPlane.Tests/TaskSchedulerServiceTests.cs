@@ -351,6 +351,36 @@ public sealed class TaskSchedulerServiceTests
 	}
 
 	[Fact]
+	public async Task DispatchOnce_FullSendQueue_RequeuesTaskForSafeRetryAndKeepsExistingMessages()
+	{
+		// ARCH-04 scheduler-level contract: a full bounded send queue must return
+		// false so the scheduler knows the claimed task was not delivered, and must
+		// requeue it through the same safe retry path as any enqueue failure.
+		var registry = new AgentRegistry();
+		var agent = CreateCapacityOneAgent("agent-1", "local", "login");
+		AddAgent(registry, agent);
+
+		var store = new FakeJobStore();
+		var retained = CreateTask("retained", "job-1", "local", "login");
+		var claimed = CreateTask("task-1", "job-1", "local", "login");
+		store.QueuedTasks.Enqueue(claimed);
+
+		// Fill the single-slot queue so the dispatch write is rejected; the retained
+		// message must survive (DropOldest would have silently evicted it).
+		Assert.True(agent.EnqueueTask(retained));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Equal("task.enqueue_failed", events.Events[0].Type);
+		Assert.Equal("agent-1", events.Events[0].Payload!["agentId"]?.ToString());
+		Assert.Equal(1, scheduler.DispatchEnqueueFailed);
+		Assert.Empty(store.Attributed); // no durable placement was written for the rejected task
+	}
+
+	[Fact]
 	public async Task DispatchOnce_FailsTaskPermanentlyWhenDispatchAttemptsExhausted()
 	{
 		var registry = new AgentRegistry();
@@ -587,6 +617,14 @@ public sealed class TaskSchedulerServiceTests
 		channel.Writer.TryComplete();
 
 		return agent;
+	}
+
+	private static ConnectedAgent CreateCapacityOneAgent(string agentId, string region, string supportedAction)
+	{
+		return new ConnectedAgent(
+			new AgentHello(agentId, region, new Dictionary<string, bool> { [supportedAction] = true }, null),
+			new NoopWebSocket(),
+			sendQueueCapacity: 1);
 	}
 
 	private sealed class FakeJobStore : IJobStore
