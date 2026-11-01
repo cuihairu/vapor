@@ -133,6 +133,21 @@ public sealed class AuthChallengeOutboxTests
 	}
 
 	[Fact]
+	public void Stage_TrimsAccountName()
+	{
+		var outbox = new AuthChallengeOutbox(new FixedTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero)));
+		outbox.Stage(NewEvent("  alice  ", "code_provided_2fa", "123456"), TimeSpan.FromSeconds(120));
+
+		// TryGet/Acknowledge always trim their lookup key; a staged event whose
+		// account name has surrounding whitespace must land on the same trimmed key.
+		AuthChallengeEvent? evt = outbox.TryGet("alice");
+		Assert.NotNull(evt);
+		Assert.Equal("code_provided_2fa", evt!.ChallengeType);
+		Assert.Equal("123456", evt.Code);
+		Assert.Equal(1, outbox.Count);
+	}
+
+	[Fact]
 	public void Acknowledge_BlankAccountName_DoesNothing()
 	{
 		var outbox = new AuthChallengeOutbox(new FixedTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero)));

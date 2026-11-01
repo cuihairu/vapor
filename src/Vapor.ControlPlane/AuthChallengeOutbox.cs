@@ -37,7 +37,7 @@ public sealed class AuthChallengeOutbox
 			? now
 			: now + TimeSpan.FromTicks(Math.Min(ttl.Ticks, remainingBeforeMax.Ticks));
 
-		_pending[e.AccountName] = new PendingDelivery(e with { Timestamp = now }, expiresAt);
+		_pending[e.AccountName.Trim()] = new PendingDelivery(e with { Timestamp = now }, expiresAt);
 	}
 
 	/// <summary>Reads a staged delivery for an account using the outbox clock.</summary>
