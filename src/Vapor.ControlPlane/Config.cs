@@ -40,11 +40,15 @@ public sealed record Config(
 	string? ViewerApiKey = null,
 	string ScriptDbPath = "data/scripts.db",
 	string WebhookNotificationsDbPath = "data/webhook.db",
-	IReadOnlyDictionary<string, string>? AgentKeyAgentIds = null
+	IReadOnlyDictionary<string, string>? AgentKeyAgentIds = null,
+	int AuthChallengeDeliveryTtlSeconds = 120
 )
 {
 	/// <summary>Max dispatch attempts per task before it fails permanently; 0 or less means unlimited retries.</summary>
 	public bool HasDispatchAttemptLimit => TaskMaxDispatchAttempts > 0;
+
+	/// <summary>How long a staged manual auth-code delivery may wait for the owning agent before it is dropped.</summary>
+	public TimeSpan AuthChallengeDeliveryTtl => TimeSpan.FromSeconds(AuthChallengeDeliveryTtlSeconds > 0 ? AuthChallengeDeliveryTtlSeconds : 120);
 
 	/// <summary>
 	/// Splits an optional "<c>@&lt;ISO-8601&gt;</c>" expiry suffix from a configured API key:
@@ -122,6 +126,7 @@ public sealed record Config(
 		string configDbPath = Environment.GetEnvironmentVariable("Vapor_CONFIG_DB_PATH") ?? "data/config.db";
 		string scriptDbPath = Environment.GetEnvironmentVariable("Vapor_SCRIPT_DB_PATH") ?? "data/scripts.db";
 		string webhookDbPath = Environment.GetEnvironmentVariable("Vapor_WEBHOOK_DB_PATH") ?? "data/webhook.db";
+		int authChallengeDeliveryTtlSeconds = int.TryParse(Environment.GetEnvironmentVariable("VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS"), out int ttl) && ttl > 0 ? ttl : 120;
 		Dictionary<string, string> agentKeyAgentIds = new(StringComparer.Ordinal);
 		string agentKeyAgentIdsRaw = Environment.GetEnvironmentVariable("Vapor_AGENT_KEY_AGENT_IDS") ?? "";
 		foreach (string entry in agentKeyAgentIdsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -134,7 +139,7 @@ public sealed record Config(
 			agentKeyAgentIds[entry[..separator]] = entry[(separator + 1)..].Trim();
 		}
 
-		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt, configDbPath, viewerApiKey, scriptDbPath, webhookDbPath, agentKeyAgentIds);
+		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt, configDbPath, viewerApiKey, scriptDbPath, webhookDbPath, agentKeyAgentIds, authChallengeDeliveryTtlSeconds);
 	}
 }
 

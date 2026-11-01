@@ -21,6 +21,10 @@ builder.Services.AddSingleton(startupConfig);
 builder.Services.AddSingleton<IEventBroker, EventBroker>();
 builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddSingleton<AuthChallengeTracker>();
+builder.Services.AddSingleton<AuthChallengeOutbox>();
+builder.Services.AddHostedService(sp => new AuthChallengeOutboxCleaner(
+	sp.GetRequiredService<AuthChallengeOutbox>(),
+	TimeSpan.FromSeconds(30)));
 // Declared-state persistence: account specs and settings write through to this
 // database so a control-plane restart no longer erases the farm declaration.
 builder.Services.AddSingleton(sp =>
@@ -3344,7 +3348,13 @@ app.MapGet("/v1/sessions/events", async Task (HttpContext ctx, Config cfg, IEven
 	.Produces(401);
 
 // Auth challenge events streaming endpoint
-app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg, IEventBroker events, AccountStore accounts, string? accountName) =>
+app.MapGet("/v1/auth/challenges/events", async Task (
+	HttpContext ctx,
+	Config cfg,
+	IEventBroker events,
+	AccountStore accounts,
+	AuthChallengeOutbox outbox,
+	string? accountName) =>
 {
 	var auth = GetAuthorization(ctx);
 	var isAdmin = Auth.TryAdmin(cfg, auth, out _);
@@ -3382,6 +3392,17 @@ app.MapGet("/v1/auth/challenges/events", async Task (HttpContext ctx, Config cfg
 
 	await ctx.Response.WriteAsync("event: ready\ndata: {}\n\n", ctx.RequestAborted);
 	await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+
+	// ARCH-09 short replay: only the owning agent gets an unconfirmed code again.
+	// Admin streams deliberately get real-time projection only and no replay.
+	if (isAgent
+		&& requestedAccountName is not null
+		&& outbox.TryGet(requestedAccountName) is { } staged)
+	{
+		await ctx.Response.WriteAsync($"event: auth.{staged.ChallengeType}\ndata: {JsonSerializer.Serialize(staged, Vapor.Protocol.JsonDefaults.Options)}\n\n", ctx.RequestAborted);
+		await ctx.Response.Body.FlushAsync(ctx.RequestAborted);
+		outbox.Acknowledge(staged.AccountName, staged.ChallengeType, staged.Code);
+	}
 
 	await foreach (var e in events.SubscribeAuthChallenges(ctx.RequestAborted, requestedAccountName))
 	{
@@ -3430,6 +3451,7 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", async (
 	IAuditStore audit,
 	IEventBroker events,
 	AuthChallengeTracker tracker,
+	AuthChallengeOutbox outbox,
 	string accountName,
 	Dictionary<string, string?> body
 ) =>
@@ -3468,6 +3490,16 @@ app.MapPost("/v1/auth/challenges/{accountName}/code", async (
 		return Results.BadRequest(new ErrorResponse("type must be one of: email, totp, 2fa"));
 	}
 
+	// Stage before clearing: the pending challenge cannot disappear into a lost
+	// live event while the owning agent's short replay is still available (ARCH-09).
+	outbox.Stage(new AuthChallengeEvent(
+		Id: Guid.NewGuid().ToString("N"),
+		AccountName: accountName,
+		ChallengeType: $"code_provided_{type}",
+		Message: $"Auth code provided for {type}",
+		Code: code,
+		Timestamp: DateTimeOffset.UtcNow,
+		JobId: null), cfg.AuthChallengeDeliveryTtl);
 	tracker.Clear(accountName);
 
 	// Publish the auth code response event

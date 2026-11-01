@@ -78,6 +78,9 @@ public sealed class ConfigEnvironmentTests
 		{ "Vapor_API_RATE_LIMIT_PER_MINUTE", "0", nameof(Config.ApiRateLimitPerMinute), 0 },
 		{ "Vapor_API_RATE_LIMIT_PER_MINUTE", "-5", nameof(Config.ApiRateLimitPerMinute), 0 },
 		{ "Vapor_API_RATE_LIMIT_PER_MINUTE", "45", nameof(Config.ApiRateLimitPerMinute), 45 },
+		{ "VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS", "soon", nameof(Config.AuthChallengeDeliveryTtlSeconds), 120 },
+		{ "VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS", "0", nameof(Config.AuthChallengeDeliveryTtlSeconds), 120 },
+		{ "VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS", "45", nameof(Config.AuthChallengeDeliveryTtlSeconds), 45 },
 	};
 
 	[Theory, MemberData(nameof(Rows))]
@@ -94,6 +97,28 @@ public sealed class ConfigEnvironmentTests
 		{
 			Environment.SetEnvironmentVariable(name, original);
 		}
+	}
+
+	[Fact]
+	public void AuthChallengeDeliveryTtl_ZeroFallsBackToDefault()
+	{
+		var config = new Config("admin", new Dictionary<string, DateTimeOffset?>(), ":memory:", 300, false, ":memory:")
+		{
+			AuthChallengeDeliveryTtlSeconds = 0
+		};
+
+		Assert.Equal(TimeSpan.FromSeconds(120), config.AuthChallengeDeliveryTtl);
+	}
+
+	[Fact]
+	public void AuthChallengeDeliveryTtl_PositiveReturnsConfiguredWindow()
+	{
+		var config = new Config("admin", new Dictionary<string, DateTimeOffset?>(), ":memory:", 300, false, ":memory:")
+		{
+			AuthChallengeDeliveryTtlSeconds = 45
+		};
+
+		Assert.Equal(TimeSpan.FromSeconds(45), config.AuthChallengeDeliveryTtl);
 	}
 
 	[Fact]
@@ -264,6 +289,7 @@ public sealed class ConfigEnvironmentTests
 		nameof(Config.CrawlRunTimeoutSeconds) => config.CrawlRunTimeoutSeconds,
 		nameof(Config.CrawlIntervalMs) => config.CrawlIntervalMs,
 		nameof(Config.ApiRateLimitPerMinute) => config.ApiRateLimitPerMinute,
+		nameof(Config.AuthChallengeDeliveryTtlSeconds) => config.AuthChallengeDeliveryTtlSeconds,
 		_ => throw new ArgumentException($"unknown property {property}", nameof(property)),
 	};
 }
