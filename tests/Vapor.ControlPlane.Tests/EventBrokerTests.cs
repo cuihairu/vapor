@@ -77,6 +77,30 @@ public sealed class EventBrokerTests
 	// ── session / auth-challenge streams ──
 
 	[Fact]
+	public void PublishSessionAndAuthChallenge_WithoutSubscribers_DoesNotRetainGlobalQueues()
+	{
+		// ARCH-08: before this fix, PublishSession/PublishAuthChallenge wrote into
+		// two unbounded global channels that nothing ever read. Publishing without
+		// subscribers must not retain those events anywhere. The concrete broker now
+		// declares no channel fields for these streams; subscription fan-out below
+		// covers the actual consumed paths.
+		var broker = new EventBroker();
+
+		for (int i = 0; i < 10_000; i++)
+		{
+			broker.PublishSession($"account-{i}", "state_changed", "Connected");
+			broker.PublishAuthChallenge($"account-{i}", "2fa_required", code: "123456");
+		}
+
+		Assert.Equal(0, broker.SessionSubscriberCount);
+		Assert.Equal(0, broker.AuthSubscriberCount);
+		Assert.DoesNotContain(
+			typeof(EventBroker).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic),
+			field => field.FieldType.IsGenericType &&
+				field.FieldType.GetGenericTypeDefinition() == typeof(System.Threading.Channels.Channel<>));
+	}
+
+	[Fact]
 	public async Task SessionSubscriber_AccountSpecificKey_ReceivesOnlyThatAccountsEvents()
 	{
 		// Drives the account-specific publish branch (distinct from the "*" global branch).
