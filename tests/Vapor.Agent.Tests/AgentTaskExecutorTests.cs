@@ -383,4 +383,57 @@ public class AgentTaskExecutorTests
 		Assert.Contains("proxy", error, StringComparison.Ordinal);
 		Assert.Empty(captured);
 	}
+	[Fact]
+	public async Task NoCredentials_NoStoredSession_UnknownAction_RequiresLogin_ReturnsNotFound()
+	{
+		// An action not present in the registry must default to login-required:
+		// without credentials and no stored session it cannot run disconnected.
+		var registry = new ActionRegistry(NullLogger<ActionRegistry>.Instance);
+		var mock = new Mock<ISessionManager>();
+		mock.Setup(m => m.TryRestoreSessionAsync(AccountName, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((BotSession?)null);
+
+		var (success, error, output) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(action: "does_not_exist"),
+			mock.Object,
+			NullLogger.Instance,
+			CancellationToken.None,
+			registry);
+
+		Assert.False(success);
+		Assert.Equal("No credentials provided and no stored session found", error);
+		Assert.Null(output);
+		mock.Verify(m => m.GetOrCreateSessionAsync(It.IsAny<string>(), It.IsAny<AccountCredentials>(), It.IsAny<CancellationToken>()), Times.Never);
+	}
+
+	[Fact]
+	public async Task NoCredentials_NoStoredSession_LoginFreeAction_FallsBackToStubSession()
+	{
+		// A login-free action (e.g. echo) may run against an empty-credential stub
+		// session in dry-run/offline fixtures rather than failing.
+		var session = CreateStubSession();
+		var registry = new ActionRegistry(NullLogger<ActionRegistry>.Instance);
+		registry.Register(new Vapor.Steam.Core.Actions.EchoAction(NullLogger<Vapor.Steam.Core.Actions.EchoAction>.Instance));
+
+		var mock = new Mock<ISessionManager>();
+		mock.Setup(m => m.TryRestoreSessionAsync(AccountName, It.IsAny<CancellationToken>()))
+			.ReturnsAsync((BotSession?)null);
+		mock.Setup(m => m.GetOrCreateSessionAsync(It.IsAny<string>(), It.IsAny<AccountCredentials>(), It.IsAny<CancellationToken>()))
+			.ReturnsAsync(session);
+
+		var (success, error, output) = await AgentTaskExecutor.ExecuteAsync(
+			CreateTask(action: "echo"),
+			mock.Object,
+			NullLogger.Instance,
+			CancellationToken.None,
+			registry);
+
+		Assert.True(success);
+		Assert.Null(error);
+		Assert.Equal(AccountName, Assert.IsType<string>(output!["account"]));
+		mock.Verify(m => m.GetOrCreateSessionAsync(
+			AccountName,
+			It.Is<AccountCredentials>(c => c.Password == string.Empty),
+			It.IsAny<CancellationToken>()), Times.Once);
+	}
 }

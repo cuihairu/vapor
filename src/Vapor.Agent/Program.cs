@@ -29,9 +29,6 @@ static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) 
 static string CredentialDirectory() =>
 	Environment.GetEnvironmentVariable("VAPOR_CREDENTIALS_DIR") ?? "";
 
-// TEMP DIAGNOSTIC
-try { System.IO.File.WriteAllText("/tmp/vapor-agent-diag.txt", "VAPOR_CREDENTIALS_DIR=" + CredentialDirectory() + "\nHOME=" + (Environment.GetEnvironmentVariable("HOME") ?? "")); } catch {}
-
 // The encryption key must be resolved before anything touches the credential store —
 // including the offline maFile import below.
 VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
@@ -508,7 +505,8 @@ async Task RunOnce(CancellationToken cancellationToken)
 							task,
 							sessionManager,
 							logger,
-							executeCts.Token
+							executeCts.Token,
+							actionRegistry
 						);
 					}
 
