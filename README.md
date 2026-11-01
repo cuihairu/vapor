@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" /> <a href="https://cuihairu.github.io/vapor//"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
+  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" /> <a href="https://cuihairu.github.io/vapor/"><img src="https://img.shields.io/badge/docs-blue" alt="docs"></a>
 </p>
 
 <div align="center">
