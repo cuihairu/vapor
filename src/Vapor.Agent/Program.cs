@@ -366,7 +366,9 @@ async Task RunOnce(CancellationToken cancellationToken)
 	await ws.ConnectAsync(uri, cancellationToken);
 
 	using SemaphoreSlim sendGate = new(1, 1);
-	var tasks = Channel.CreateUnbounded<WSMessage>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+	int taskBufferCapacity = AgentTaskBuffer.ResolveCapacity(
+		Environment.GetEnvironmentVariable("AGENT_TASK_BUFFER_CAPACITY"));
+	var tasks = AgentTaskBuffer.CreateChannel(taskBufferCapacity);
 
 	var executionGate = new object();
 	CancellationTokenSource? currentTaskCts = null;
@@ -378,6 +380,11 @@ async Task RunOnce(CancellationToken cancellationToken)
 		.Distinct(StringComparer.OrdinalIgnoreCase)
 		.ToDictionary(name => name, _ => true, StringComparer.OrdinalIgnoreCase);
 	var hello = new AgentHello(agentId, region, capabilities, null);
+	var helloMeta = new Dictionary<string, string>
+	{
+		["task_buffer_capacity"] = taskBufferCapacity.ToString()
+	};
+	hello = hello with { Meta = helloMeta };
 	await SendLocked(ws, sendGate, new WSMessage("hello", hello, null, null), cancellationToken);
 
 	var receiver = Task.Run(async () =>
