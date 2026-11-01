@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Resources;
@@ -375,6 +376,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 	string? currentTaskId = null;
 	int currentAttempt = 0;
 	bool currentTaskCancelledByServer = false;
+	var pendingLeaseCts = new ConcurrentDictionary<(string TaskId, int Attempt), CancellationTokenSource>();
 
 	var capabilities = actionRegistry.ListNames().Concat(hostActions.Keys)
 		.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -396,8 +398,30 @@ async Task RunOnce(CancellationToken cancellationToken)
 				WSMessage msg = await Receive<WSMessage>(ws, cancellationToken);
 				if (string.Equals(msg.Type, "task", StringComparison.Ordinal) && msg.Task != null)
 				{
-					// Keep the whole message: TraceHeaders carries the dispatch span context.
-					await tasks.Writer.WriteAsync(msg, cancellationToken);
+					JobTask queuedTask = msg.Task;
+					var leaseKey = (queuedTask.Id, queuedTask.Attempt);
+					CancellationTokenSource leaseCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+					pendingLeaseCts[leaseKey] = leaseCts;
+					try
+					{
+						// Keep the whole message: TraceHeaders carries the dispatch span context.
+						await tasks.Writer.WriteAsync(msg, cancellationToken);
+
+						// The control plane starts the lease at dispatch. Renew it while
+						// this task waits in the bounded buffer behind a long-running task;
+						// the execution heartbeat takes over once the serial loop starts it.
+						_ = new TaskLeaseRenewer(
+							frame => SendLocked(ws, sendGate, frame, cancellationToken),
+							TimeSpan.FromSeconds(5)).RunAsync(queuedTask, leaseCts.Token);
+					}
+					catch
+					{
+						if (pendingLeaseCts.TryRemove(leaseKey, out var removed))
+						{
+							removed.Dispose();
+						}
+						throw;
+					}
 					continue;
 				}
 
@@ -448,6 +472,12 @@ async Task RunOnce(CancellationToken cancellationToken)
 		{
 			WSMessage dispatch = await tasks.Reader.ReadAsync(cancellationToken);
 			JobTask task = dispatch.Task!;
+			var executionLeaseKey = (task.Id, task.Attempt);
+			if (pendingLeaseCts.TryRemove(executionLeaseKey, out var pendingLease))
+			{
+				pendingLease.Cancel();
+				pendingLease.Dispose();
+			}
 
 			Console.WriteLine($"task received: id={task.Id} action={task.Action} target={task.Target}");
 
@@ -595,6 +625,12 @@ async Task RunOnce(CancellationToken cancellationToken)
 	}
 	finally
 	{
+		foreach (var lease in pendingLeaseCts.Values)
+		{
+			lease.Cancel();
+			lease.Dispose();
+		}
+		pendingLeaseCts.Clear();
 		try
 		{
 			await receiver;

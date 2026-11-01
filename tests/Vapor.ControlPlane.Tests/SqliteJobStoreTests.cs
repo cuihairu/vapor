@@ -679,6 +679,28 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task HeartbeatTask_PreventsStaleRequeue()
+	{
+		// ARCH-06: a dispatched task whose lease is renewed by the agent's queued-task
+		// heartbeat must not be moved back to Queued by the stale-requeue sweep. This is
+		// what keeps a task sitting in the agent's bounded buffer from being re-dispatched.
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+		JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(claimed);
+
+		MarkTaskStale(store, claimed!.Id, DateTimeOffset.UtcNow.AddMinutes(-10));
+		Assert.True(await store.HeartbeatTask(claimed.Id, claimed.Attempt, cts.Token));
+
+		int requeued = await store.RequeueStaleRunningTasks(TimeSpan.FromSeconds(1), cts.Token);
+		Assert.Equal(0, requeued);
+	}
+
+	[Fact]
 	public async Task RequeueStaleRunningTasksKeepsJobRunningWhenOtherRunningTasksRemain()
 	{
 		using var store = new SqliteJobStore(":memory:");
