@@ -369,7 +369,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 	using SemaphoreSlim sendGate = new(1, 1);
 	int taskBufferCapacity = AgentTaskBuffer.ResolveCapacity(
 		Environment.GetEnvironmentVariable("AGENT_TASK_BUFFER_CAPACITY"));
-	var tasks = AgentTaskBuffer.CreateChannel(taskBufferCapacity);
+	using var tasks = new AgentTaskDispatcher(taskBufferCapacity);
 
 	var executionGate = new object();
 	CancellationTokenSource? currentTaskCts = null;
@@ -406,7 +406,11 @@ async Task RunOnce(CancellationToken cancellationToken)
 					try
 					{
 						// Keep the whole message: TraceHeaders carries the dispatch span context.
-						await tasks.Writer.WriteAsync(msg, cancellationToken);
+						// Enqueue never blocks: a full buffer parks the frame in the
+						// overflow queue so the receive loop keeps reading control
+						// frames such as task_cancel instead of stalling behind a
+						// pending WriteAsync.
+						tasks.Enqueue(msg);
 
 						// The control plane starts the lease at dispatch. Renew it while
 						// this task waits in the bounded buffer behind a long-running task;
@@ -468,7 +472,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 		}
 		finally
 		{
-			tasks.Writer.TryComplete();
+			tasks.Complete();
 		}
 	}, cancellationToken);
 
@@ -476,6 +480,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 	{
 		while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open)
 		{
+			tasks.FlushOverflow();
 			WSMessage dispatch = await tasks.Reader.ReadAsync(cancellationToken);
 			JobTask task = dispatch.Task!;
 			bool queuedCanceled = queuedCancels.TryRemove(task, out _);
