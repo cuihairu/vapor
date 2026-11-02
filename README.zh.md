@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" /> <a href="https://cuihairu.github.io/vapor/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" /> 
 </p>
 
 <div align="center">
@@ -10,7 +10,7 @@
 
 # Vapor — 分布式 Steam 自动化控制平面
 
-[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor) [![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases) [![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE) [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/) [![status](https://img.shields.io/badge/status-alpha-orange)](#开发状态)
+[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor) [![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases) [![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE) [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/) [![status](https://img.shields.io/badge/status-alpha-orange)](#开发状态) [![文档](https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue)](https://cuihairu.github.io/vapor/zh/)
 
 API 驱动的无头 Steam 自动化平台，面向大规模批量操作与多区域部署。产品形态借鉴 [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm) 的 Bot/Action 模型。
 
