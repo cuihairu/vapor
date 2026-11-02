@@ -96,3 +96,27 @@
 - [x] 审核发现：`PollAuthChallengesAsync` 在 `ListSessions()` 为空时 `Task.WhenAll(空)` 立即完成且循环内无 await 延迟，外层 while 形成纯 CPU 忙循环 —— 证据:Program.cs:790（空会话列表改显式 `await Task.Delay(5s)` 再 continue）+ ProgramPollAuthChallengesTests（`PollAuthChallenges_NoSessions_WaitsBeforePollingAgain`），Agent 212 全绿
 - [x] 审核发现：有界 `Wait` 缓冲使接收循环在 `tasks.Writer.WriteAsync` 阻塞（缓冲满）时无法读取后续 `task_cancel` 帧，排队任务取消可能错过生效窗口 —— 证据:AgentTaskDispatcher.cs（接收循环改非阻塞 `TryWrite`，满队入有序 overflow；执行循环消费后 `FlushOverflow` 回填，task_cancel 帧可继续读取并经 QueuedTaskCanceller 生效）+ Program.cs:413 + AgentTaskDispatcherTests，Agent 217 全绿
 - [x] 审核发现：`Config.LoadFromEnvironment` 解析 `key=value` 绑定仅对 value 做 Trim，key 部分未 Trim，键两侧含空格时与 Bearer token 精确匹配失败（src/Vapor.ControlPlane/Config.cs:139）—— 修复:cbc0471（key 侧 Trim + 回归测试 `AgentKeyAgentIds_TrimsKeySide`）, ControlPlane 1377 全绿
+
+## 代码深审 2026-11-01（requesting-code-review 流程；报告 [docs/review/2026-11-01-code-review.md](docs/review/2026-11-01-code-review.md)）
+
+P0/P1 当场修复（一问题一 commit，各套测试全绿）：
+- [x] P1 代理切换在等 disconnect 而非已完成 connect TCS，重连与旧 socket 拆除竞态 —— 修复:f35ec25（`_disconnectTcs` 由 OnDisconnected 落定；Disconnect 移出锁外防同步回调死锁），Steam.Core 1286 全绿
+- [x] P1 断开后未清 `_playingGames`，重连后 `PlayGames(desired)` 被 SetEquals 幂等短路、farm 状态静默不上报 —— 修复:efaa760（OnDisconnected 加锁清空），Steam.Core 1286 全绿
+- [x] P1 单 `_activeLoginAccountName` 槽被并发 Login 覆盖，LoggedOnCallback 错投另一账号 TCS —— 修复:94085ba（登录门控串行 send→callback 窗口），Steam.Core 1286 全绿
+- [x] P1 会话事件直读共享 ingress 通道被多订阅者互抢（2FA 码可落入丢弃方）—— 修复:b7cd244（单广播者扇出至每订阅者通道），Steam.Core 1286 全绿
+- [x] P1 编排线程原地改 `AccountRuntime` 队列而 REST 读同一列表实例，序列化抛 InvalidOperationException —— 修复:5cd501a（视图出副本 + 变更侧 copy-on-write），ControlPlane 1377 全绿
+- [x] P1 故障的 auth-challenge SSE 流留下同轮兄弟订阅未拆除，重订阅叠读 —— 修复:6bd3296（每轮 linked token 取消全部兄弟），Agent 217 全绿
+
+P2 待办（记档，未修）：
+- [ ] P2 docker-compose 默认 API key 未强制门控：`${VAPOR_ADMIN_API_KEY:-admin-dev-token}` 等兜底默认值，生产忘配环境变量即携已知 dev token 启动 —— 证据:docker-compose.yml:18,19,43（应去默认值、未配置 fail-fast）
+- [ ] P2 `SetTaskResult` 任务行更新与 `RecomputeJob` 非同一事务，进程中断留下 task=Finished 而 job 仍 Running 中间态 —— 证据:SqliteJobStore.cs:985（UPDATE tasks，无事务）+ :1004（独立 RecomputeJob）
+- [ ] P2 `RemoveSessionAsync` 中 `DisconnectAsync` 抛错则 `Dispose` 被跳过，会话泄漏 —— 证据:SessionManager.cs:178-181（应 try/finally 保证 Dispose）
+- [ ] P2 任务取消仅投递给 `ListConnected()` 在线 agent：DB 已置 Canceled，离线 agent 复联收不到 task_cancel，跑完结果被 SetTaskResult 以 task not running 丢弃 —— 证据:Program.cs:3190 + AgentRegistry.cs:144（TryWrite 失败）
+- [ ] P2 `DisconnectAsync` 以 `Task.Delay(100)` 固定睡眠等断开，竞态余量靠魔法数 —— 证据:SteamClientManager.cs:384（应改等 disconnect 事件，同 `_disconnectTcs` 机制）
+- [ ] P2 94085ba 残余：登录被取消后迟到的 LoggedOnCallback 仍可能错投给下一个登录的 TCS —— 证据:SteamClientManager.cs:371-405 + :1596（取消窗口 + 并发登录 + Steam 响应晚到；根治需回调按 SteamID 路由）
+
+P3 记录性（风格/健壮性，未修）：
+- [ ] P3 无注释空 `catch {}`：SteamClientManager.cs:380（DisconnectAsync 吞 Disconnect 异常）、:1690（Dispose 同款）；Agent Program.cs:660（websocket 排水）、:462（currentTaskCts.Cancel）
+- [ ] P3 魔法数：BotSession.cs:256（回调轮询 100ms）、:604（断开沉降 100ms）；RedisVaporCache.cs:105（`Thread.Sleep(200*attempt)` 库内重试同步阻塞）
+- [ ] P3 库内 await 缺 `ConfigureAwait(false)`：SteamWebHandler.cs:174（GetAsync）、:191（PostAsync）；DataActions.cs:440；CsgoPlugin.cs:320；SessionManager.cs:477（_eventCallback.Invoke）
+- [ ] P3 `"pending"` 状态字面量 ControlPlane Program.cs:878 重复 19 次，应提共享常量
