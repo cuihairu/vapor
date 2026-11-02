@@ -81,6 +81,28 @@ public sealed class SessionManagerLifecycleTests
 	}
 
 	[Fact]
+	public async Task BroadcastEvents_SweepCompletesRegisteredSubscriber()
+	{
+		var manager = CreateManager();
+
+		// 先注册订阅者并停在读取上，再完成入口通道：广播泵排空后正常退出，
+		// 收尾清扫必须补全仍在册的订阅者。注册时通道已完成的快速路径
+		// （SubscribeAllEvents 内的 IsCompleted 检查）不经过这里，所以此测试
+		// 验证的是广播泵退出时的清扫臂本身。
+		var enumerator = manager.SubscribeAllEvents(CancellationToken.None).GetAsyncEnumerator();
+		var read = enumerator.MoveNextAsync().AsTask();
+		await WaitForSubscriberCountAsync(manager, 1);
+
+		var channel = (Channel<SessionEvent>)typeof(SessionManager)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(manager)!;
+		channel.Writer.Complete();
+
+		Assert.False(await read.WaitAsync(TimeSpan.FromSeconds(10)));
+		manager.Dispose();
+	}
+
+	[Fact]
 	public async Task GetOrCreateSession_DuplicateAccount_DisposesTheSecondAndReturnsTheFirst()
 	{
 		var manager = CreateManager();
@@ -186,6 +208,26 @@ public sealed class SessionManagerLifecycleTests
 			credentialStore?.Object,
 			loggerFactory: null,
 			tokenRefreshCheckInterval: checkInterval);
+	}
+
+	private static async Task WaitForSubscriberCountAsync(SessionManager manager, int expected)
+	{
+		var field = typeof(SessionManager)
+			.GetField("_eventSubscribers", BindingFlags.NonPublic | BindingFlags.Instance)!;
+		var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+		while (true)
+		{
+			int count = ((System.Collections.IList)field.GetValue(manager)!).Count;
+			if (count >= expected)
+			{
+				return;
+			}
+			if (DateTimeOffset.UtcNow >= deadline)
+			{
+				Assert.Fail($"订阅者始终未注册（count {count}）。");
+			}
+			await Task.Delay(10);
+		}
 	}
 
 	private static Task GetRefreshLoop(SessionManager manager) =>

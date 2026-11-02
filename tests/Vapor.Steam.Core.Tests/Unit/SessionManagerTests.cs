@@ -367,6 +367,84 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SubscribeAllEvents_AfterEventsPublished_ReceivesSeededHistory()
+	{
+		// An event published before SubscribeAllEvents registers is either still in
+		// the broadcaster's recent history (seeded) or fanned out live — never
+		// missed. Publish first and wait until the broadcaster has drained it into
+		// history, then subscribe: delivery can only come from the seed path.
+		Channel<SessionEvent> channel = (Channel<SessionEvent>)typeof(SessionManager)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_manager)!;
+		var published = new SessionEvent(SessionEventType.StateChanged, "seed_test", SessionState.Connected);
+		channel.Writer.TryWrite(published);
+		await WaitForHistoryAsync(h => h.Count == 1);
+
+		List<SessionEvent> received = [];
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+		await foreach (var evt in _manager.SubscribeAllEvents(cts.Token))
+		{
+			received.Add(evt);
+			break;
+		}
+
+		Assert.Single(received);
+		Assert.Equal(published, received[0]);
+	}
+
+	[Fact]
+	public async Task BroadcastEvents_HistoryTrimmedToLimitAfterOverflow()
+	{
+		// 300 distinct events through the ingress: the recent-history buffer must
+		// trim from the front and cap at the limit, keeping the most recent window
+		// (evt-44 is the first survivor of 0..299) so a late subscriber seeded from
+		// it never sees the trimmed prefix.
+		Channel<SessionEvent> channel = (Channel<SessionEvent>)typeof(SessionManager)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_manager)!;
+		const int published = 300;
+		const int limit = 256;
+		for (int i = 0; i < published; i++)
+		{
+			channel.Writer.TryWrite(new SessionEvent(
+				SessionEventType.StateChanged, "history_test", SessionState.Connected, $"evt-{i}"));
+		}
+
+		// Drain completion is observable: the front is evt-0 until the cap is hit,
+		// then trimming starts and it can only advance toward the survivor window.
+		List<SessionEvent> history = await WaitForHistoryAsync(h =>
+			h.Count > 0 && h[0].Message == $"evt-{published - limit}");
+
+		Assert.Equal(limit, history.Count);
+		Assert.Equal($"evt-{published - limit}", history[0].Message);
+		Assert.Equal($"evt-{published - 1}", history[^1].Message);
+	}
+
+	/// <summary>
+	/// Polls the broadcaster's private recent-history buffer until the predicate
+	/// holds — the only way to observe drain completion, since the ingress write
+	/// returns before the background broadcaster records the event.
+	/// </summary>
+	private async Task<List<SessionEvent>> WaitForHistoryAsync(Func<List<SessionEvent>, bool> ready)
+	{
+		FieldInfo field = typeof(SessionManager).GetField("_recentEvents", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		DateTimeOffset deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+		while (true)
+		{
+			var history = (List<SessionEvent>)field.GetValue(_manager)!;
+			if (ready(history))
+			{
+				return history;
+			}
+			if (DateTimeOffset.UtcNow >= deadline)
+			{
+				Assert.Fail($"Broadcaster never reached the expected history state (count: {history.Count}, front: {(history.Count > 0 ? history[0].Message : "<empty>")}).");
+			}
+			await Task.Delay(10);
+		}
+	}
+
+	[Fact]
 	public async Task GetOrCreateSessionAsync_TrulyConcurrentCreation_LosersReturnWinnerInstance()
 	{
 		var accountName = "race_account";
