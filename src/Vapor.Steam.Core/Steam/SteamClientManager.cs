@@ -143,6 +143,9 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private readonly ConcurrentDictionary<string, LoginState> _loginStates = new(StringComparer.OrdinalIgnoreCase);
 	private readonly object _connectLock = new();
 	private TaskCompletionSource<bool> _connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+	// Completed by OnDisconnected for the in-flight proxy switch, so a reconnect
+	// does not race the dying socket. Null when no switch is awaiting teardown.
+	private TaskCompletionSource<bool>? _disconnectTcs;
 	private string? _activeLoginAccountName;
 
 	// The exit proxy the next CM connection must use. The SteamKit HTTP client
@@ -326,17 +329,32 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		lock (_connectLock)
 		{
 			_pendingProxy = proxy;
-			settle = _steamClient.IsConnected ? _connectedTcs.Task : Task.CompletedTask;
 			if (_steamClient.IsConnected)
 			{
-				try
-				{
-					_steamClient.Disconnect();
-				}
-				catch (Exception ex)
-				{
-					_logger.LogWarning(ex, "Failed to drop the CM connection for a proxy switch");
-				}
+				// Wait on the disconnect, not the (already completed) connect TCS:
+				// _connectedTcs was settled true by OnConnected, so awaiting it here
+				// returns instantly and the reconnect races the socket teardown.
+				_disconnectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				settle = _disconnectTcs.Task;
+			}
+			else
+			{
+				settle = Task.CompletedTask;
+			}
+		}
+
+		if (!settle.IsCompleted)
+		{
+			// Drop the connection outside the lock: OnDisconnected takes
+			// _connectLock to settle the TCS, so a synchronous callback here
+			// would otherwise deadlock on the lock we just released.
+			try
+			{
+				_steamClient.Disconnect();
+			}
+			catch (Exception ex)
+			{
+				_logger.LogWarning(ex, "Failed to drop the CM connection for a proxy switch");
 			}
 		}
 
@@ -1527,6 +1545,11 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	{
 		_logger.LogInformation("Steam client disconnected: {UserInitiated}", callback.UserInitiated);
 		_cs2GcSessionLive = false;
+		lock (_connectLock)
+		{
+			_disconnectTcs?.TrySetResult(true);
+			_disconnectTcs = null;
+		}
 		_connectedTcs.TrySetResult(false);
 	}
 
