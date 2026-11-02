@@ -660,7 +660,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			// place — publish a fresh list so a concurrent view snapshot is stable.
 			queue = queue.Where(a => a != farming).ToList();
 			runtime.FarmQueue = queue;
-			runtime.FarmSkippedApps = [..(runtime.FarmSkippedApps ?? []), farming];
+			runtime.FarmSkippedApps = [.. (runtime.FarmSkippedApps ?? []), farming];
 			_logger.LogWarning(
 				"Farm app {AppId} for {AccountName} exhausted its {Hours:0.#}h budget after {Elapsed:0.#}h — skipped",
 				farming, spec.AccountName, hours, (now - startedAt).TotalHours);
@@ -1732,7 +1732,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 					{
 						// Copy-on-write (see the budget-exhausted path): never mutate
 						// the list the dashboard may be serializing concurrently.
-						runtime.FarmCompletedApps = [..(runtime.FarmCompletedApps ?? []), completedApp];
+						runtime.FarmCompletedApps = [.. (runtime.FarmCompletedApps ?? []), completedApp];
 						_logger.LogInformation(
 							"Farm app {AppId} for {AccountName} finished: no drops remaining",
 							completedApp, spec.AccountName);
