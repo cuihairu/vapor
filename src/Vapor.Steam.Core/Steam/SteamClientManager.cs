@@ -147,6 +147,9 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	// does not race the dying socket. Null when no switch is awaiting teardown.
 	private TaskCompletionSource<bool>? _disconnectTcs;
 	private string? _activeLoginAccountName;
+	// Serializes LoginAsync: a LoggedOnCallback is routed through the single
+	// _activeLoginAccountName slot, so only one logon may be in flight at a time.
+	private readonly SemaphoreSlim _loginGate = new(1, 1);
 
 	// The exit proxy the next CM connection must use. The SteamKit HTTP client
 	// factory reads this when the CM WebSocket (and any WebAPI/CDN) invoker is
@@ -385,41 +388,55 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	{
 		ThrowIfDisposed();
 
-		var tcs = new TaskCompletionSource<SteamUser.LoggedOnCallback>(TaskCreationOptions.RunContinuationsAsynchronously);
-		_activeLoginAccountName = accountName;
-
-		_loginStates.AddOrUpdate(
-			accountName,
-			_ => new LoginState(accountName, password) { LoginTcs = tcs },
-			(_, existing) => existing with { Password = password, LoginTcs = tcs }
-		);
-
-		if (!_steamClient.IsConnected)
+		// One login in flight at a time: LoggedOnCallback carries no account
+		// identity, so it is routed through the single _activeLoginAccountName
+		// slot. Two overlapping LoginAsync calls would overwrite that slot and
+		// complete the wrong account's TCS with the other's callback. The gate
+		// spans send-to-callback so the slot has exactly one owner while a
+		// logon response can arrive.
+		await _loginGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
 		{
-			throw new InvalidOperationException("Steam client is not connected");
+			var tcs = new TaskCompletionSource<SteamUser.LoggedOnCallback>(TaskCreationOptions.RunContinuationsAsynchronously);
+			_activeLoginAccountName = accountName;
+
+			_loginStates.AddOrUpdate(
+				accountName,
+				_ => new LoginState(accountName, password) { LoginTcs = tcs },
+				(_, existing) => existing with { Password = password, LoginTcs = tcs }
+			);
+
+			if (!_steamClient.IsConnected)
+			{
+				throw new InvalidOperationException("Steam client is not connected");
+			}
+
+			var steamUser = _steamClient.GetHandler<SteamUser>() ?? throw new InvalidOperationException("SteamUser handler not available");
+			steamUser.LogOn(BuildLogOnDetails(accountName, password));
+
+			var callback = await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+			if (callback.Result == EResult.OK)
+			{
+				return;
+			}
+
+			if (callback.Result == EResult.AccountLogonDenied)
+			{
+				throw new SteamAuthCodeRequiredException("Steam auth code required (email Steam Guard)");
+			}
+
+			if (callback.Result == EResult.AccountLoginDeniedNeedTwoFactor)
+			{
+				throw new SteamTwoFactorCodeRequiredException("Steam 2FA code required (authenticator)");
+			}
+
+			throw new InvalidOperationException($"Steam login failed: {callback.Result}");
 		}
-
-		var steamUser = _steamClient.GetHandler<SteamUser>() ?? throw new InvalidOperationException("SteamUser handler not available");
-		steamUser.LogOn(BuildLogOnDetails(accountName, password));
-
-		var callback = await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-		if (callback.Result == EResult.OK)
+		finally
 		{
-			return;
+			_loginGate.Release();
 		}
-
-		if (callback.Result == EResult.AccountLogonDenied)
-		{
-			throw new SteamAuthCodeRequiredException("Steam auth code required (email Steam Guard)");
-		}
-
-		if (callback.Result == EResult.AccountLoginDeniedNeedTwoFactor)
-		{
-			throw new SteamTwoFactorCodeRequiredException("Steam 2FA code required (authenticator)");
-		}
-
-		throw new InvalidOperationException($"Steam login failed: {callback.Result}");
 	}
 
 	public void SetAuthCode(string accountName, string code)
@@ -1675,5 +1692,6 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 
 		_loginStates.Clear();
+		_loginGate.Dispose();
 	}
 }
