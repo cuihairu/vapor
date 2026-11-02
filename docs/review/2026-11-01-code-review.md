@@ -205,3 +205,10 @@ them from the denominator). All gaps reproduced locally and are now closed; the 
 Result: `coverage-summary.py --min 100 --min-branch 100` → 100.0% lines (22524/22524) and 100.0%
 branches (8658/8658) across all 16 assemblies; `dotnet format --verify-no-changes` clean; all 7
 `verify-*` scripts green; full serial suite green (ControlPlane 1386, Agent 221, Steam.Core 1289).
+
+CI on this fix (`70dcdca`): coverage job green, format job green, Release build-test green on all
+four platforms. The two remaining job failures are the pre-existing flaky E2E family, not this
+fix: Debug-macos aborted its test host mid-run (`AuthChallengeEventsStream_TwoAgents...`, the
+documented macos host-crash flake) and Debug-ubuntu lost `EchoJob_CompletesSuccessfully_WithExpectedOutput`
+to the at-least-once redispatch race (task finished with `attempt=2`; the test re-runs green
+locally). Both were seen before this fix and are tracked in the flaky-E2E note below.
