@@ -107,7 +107,7 @@ P0/P1 当场修复（一问题一 commit，各套测试全绿）：
 - [x] P1 编排线程原地改 `AccountRuntime` 队列而 REST 读同一列表实例，序列化抛 InvalidOperationException —— 修复:5cd501a（视图出副本 + 变更侧 copy-on-write），ControlPlane 1377 全绿
 - [x] P1 故障的 auth-challenge SSE 流留下同轮兄弟订阅未拆除，重订阅叠读 —— 修复:6bd3296（每轮 linked token 取消全部兄弟），Agent 217 全绿
 
-- [x] 质量门：覆盖率门禁在深审主干是红的（非抖动——同 SHA 两次绿靠部分报告漏报分母，第三次红暴露真缺口，run 41404115679）；本轮闭合：SqliteJobStore 五处缺口（StripSecretPayload 非字典分支、:memory: 早返、OS 条件比较改正向块、畸形 JSON 载荷、同路径抛错）+ Agent 四类（TaskLeaseRenewer 计时器循环排除并登记 TESTING.md、AgentTaskDispatcher Capacity/Dispose、QueuedTaskCanceller Clear、AuthChallengeOutboxCleaner 空区间）—— 证据:本 commit（coverage-summary 双 100%：22524 行 / 8658 分支，ControlPlane 1386 + Agent 221 + Steam.Core 1289 全绿，format 与 7 个 verify 脚本全绿）
+- [x] 质量门：覆盖率门禁在深审主干是红的（非抖动——同 SHA 两次绿靠部分报告漏报分母，第三次红暴露真缺口，run 41404115679）；本轮闭合：SqliteJobStore 五处缺口（StripSecretPayload 非字典分支、:memory: 早返、OS 条件比较改正向块、畸形 JSON 载荷、同路径抛错）+ Agent 四类（TaskLeaseRenewer 计时器循环排除并登记 TESTING.md、AgentTaskDispatcher Capacity/Dispose、QueuedTaskCanceller Clear、AuthChallengeOutboxCleaner 空区间）—— 证据:70dcdca（coverage-summary 双 100%：22524 行 / 8658 分支，ControlPlane 1386 + Agent 221 + Steam.Core 1289 全绿，format 与 7 个 verify 脚本全绿）
 
 P2 待办（记档，未修）：
 - [ ] P2 docker-compose 默认 API key 未强制门控：`${VAPOR_ADMIN_API_KEY:-admin-dev-token}` 等兜底默认值，生产忘配环境变量即携已知 dev token 启动 —— 证据:docker-compose.yml:18,19,43（应去默认值、未配置 fail-fast）
