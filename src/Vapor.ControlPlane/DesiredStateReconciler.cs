@@ -655,8 +655,12 @@ public sealed class DesiredStateReconciler : BackgroundService
 				return; // current game still has drops and budget to spare
 			}
 
-			queue.Remove(farming);
-			(runtime.FarmSkippedApps ??= []).Add(farming);
+			// Copy-on-write: the reconcile thread is the single writer, but REST
+			// dashboard polls serialize these lists concurrently. Never mutate in
+			// place — publish a fresh list so a concurrent view snapshot is stable.
+			queue = queue.Where(a => a != farming).ToList();
+			runtime.FarmQueue = queue;
+			runtime.FarmSkippedApps = [..(runtime.FarmSkippedApps ?? []), farming];
 			_logger.LogWarning(
 				"Farm app {AppId} for {AccountName} exhausted its {Hours:0.#}h budget after {Elapsed:0.#}h — skipped",
 				farming, spec.AccountName, hours, (now - startedAt).TotalHours);
@@ -1726,7 +1730,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 				{
 					foreach (uint completedApp in previous.Where(a => !fresh.Contains(a)))
 					{
-						(runtime.FarmCompletedApps ??= []).Add(completedApp);
+						// Copy-on-write (see the budget-exhausted path): never mutate
+						// the list the dashboard may be serializing concurrently.
+						runtime.FarmCompletedApps = [..(runtime.FarmCompletedApps ?? []), completedApp];
 						_logger.LogInformation(
 							"Farm app {AppId} for {AccountName} finished: no drops remaining",
 							completedApp, spec.AccountName);
@@ -1920,7 +1926,9 @@ public sealed class DesiredStateReconciler : BackgroundService
 				// Drain the decision whatever the outcome: a failed accept is
 				// recorded and retried only after the next refresh re-detects
 				// the offer, never spun on within this cycle.
-				queue.RemoveAt(0);
+				// Copy-on-write: never mutate the list in place — the orchestration
+				// view serializes it concurrently for dashboard polls.
+				runtime.TradeOffersToAccept = queue.Skip(1).ToList();
 			}
 
 			JobTask? acceptTask = outcome.Tasks.FirstOrDefault(t => string.Equals(t.Target, spec.AccountName, StringComparison.OrdinalIgnoreCase))
@@ -2202,7 +2210,7 @@ public sealed class DesiredStateReconciler : BackgroundService
 			NextAttemptAt: runtime.NextAttemptAt == DateTimeOffset.MinValue ? null : runtime.NextAttemptAt,
 			Idling: runtime.Idling,
 			FarmingAppId: runtime.FarmingAppId,
-			FarmQueue: runtime.FarmQueue,
+			FarmQueue: runtime.FarmQueue?.ToList(),
 			FarmQueueCheckedAt: runtime.FarmQueueCheckedAt == DateTimeOffset.MinValue ? null : runtime.FarmQueueCheckedAt,
 			BoostUnmetApps: runtime.BoostUnmetApps,
 			BoostCheckedAt: runtime.BoostCheckedAt == DateTimeOffset.MinValue ? null : runtime.BoostCheckedAt,
@@ -2214,8 +2222,8 @@ public sealed class DesiredStateReconciler : BackgroundService
 			Standing: runtime.StandingSummary,
 			StandingQuarantined: runtime.StandingQuarantined,
 			StandingCheckedAt: runtime.StandingCheckedAt == DateTimeOffset.MinValue ? null : runtime.StandingCheckedAt,
-			FarmCompletedApps: runtime.FarmCompletedApps,
-			FarmSkippedApps: runtime.FarmSkippedApps,
+			FarmCompletedApps: runtime.FarmCompletedApps?.ToList(),
+			FarmSkippedApps: runtime.FarmSkippedApps?.ToList(),
 			FarmAppStartedAt: runtime.FarmAppStartedAt,
 			FarmStatsStartedAt: runtime.FarmStatsStartedAt,
 			FarmCardsRemaining: runtime.FarmCardsRemaining,
@@ -2303,12 +2311,12 @@ public sealed class DesiredStateReconciler : BackgroundService
 			.Select(kv => new FarmAccountView(
 				AccountName: kv.Key,
 				FarmingAppId: kv.Value.FarmingAppId,
-				Queue: kv.Value.FarmQueue,
+				Queue: kv.Value.FarmQueue?.ToList(),
 				CardsRemaining: kv.Value.FarmCardsRemaining,
 				CardsCollected: kv.Value.FarmCardsCollected,
 				CardsPerHour: CardsPerHour(kv.Value),
-				CompletedApps: kv.Value.FarmCompletedApps,
-				SkippedApps: kv.Value.FarmSkippedApps,
+				CompletedApps: kv.Value.FarmCompletedApps?.ToList(),
+				SkippedApps: kv.Value.FarmSkippedApps?.ToList(),
 				QueueRefreshedAt: kv.Value.FarmQueueCheckedAt == DateTimeOffset.MinValue ? null : kv.Value.FarmQueueCheckedAt,
 				StatsStartedAt: kv.Value.FarmStatsStartedAt))
 			.ToList();
