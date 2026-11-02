@@ -45,4 +45,17 @@ public class QueuedTaskCancellerTests
 		canceller.Add(MakeCancel("task-1", 1));
 		Assert.Equal(1, canceller.Count);
 	}
+
+	[Fact]
+	public void Clear_RemovesAllPendingCancels()
+	{
+		var canceller = new QueuedTaskCanceller();
+		canceller.Add(MakeCancel("task-1", 1));
+		canceller.Add(MakeCancel("task-2", 2));
+		Assert.Equal(2, canceller.Count);
+
+		canceller.Clear();
+
+		Assert.Equal(0, canceller.Count);
+	}
 }

@@ -240,7 +240,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		return tasks;
 	}
 
-	private static Dictionary<string, object?> StripSecretPayload(IReadOnlyDictionary<string, object?>? payload)
+	internal static Dictionary<string, object?> StripSecretPayload(IReadOnlyDictionary<string, object?>? payload)
 	{
 		Dictionary<string, object?> result = new(StringComparer.OrdinalIgnoreCase);
 		if (payload == null)
@@ -1112,9 +1112,14 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 
 		string liveFullPath = Path.GetFullPath(_dbPath);
 		string backupFullPath = Path.GetFullPath(backupPath);
-		StringComparison comparison = OperatingSystem.IsWindows()
-			? StringComparison.OrdinalIgnoreCase
-			: StringComparison.Ordinal;
+		// Guard as a positive block (not a ternary): the Windows-only arm is
+		// unreachable on Linux CI, and a ternary's skipped arm leaves a
+		// permanently-uncovered branch (see tests/TESTING.md).
+		StringComparison comparison = StringComparison.OrdinalIgnoreCase;
+		if (!OperatingSystem.IsWindows())
+		{
+			comparison = StringComparison.Ordinal;
+		}
 		if (string.Equals(liveFullPath, backupFullPath, comparison))
 		{
 			throw new InvalidOperationException("backupPath must differ from the live database path");

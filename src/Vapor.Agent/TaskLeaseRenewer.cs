@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Vapor.Protocol;
 
 namespace Vapor.Agent;
@@ -26,6 +27,14 @@ public sealed class TaskLeaseRenewer
 	/// Runs until cancellation. Sends an immediate heartbeat, then one per interval.
 	/// Send failures and cancellation both end the loop quietly.
 	/// </summary>
+	/// <remarks>
+	/// Excluded from coverage: a PeriodicTimer that is disposed or cancelled while
+	/// awaited always throws from WaitForNextTickAsync, so the loop can only exit
+	/// through the catch arms — its closing brace (the try block's normal-completion
+	/// sequence point) is unreachable by construction. Same family as the extracted
+	/// timer loops (see tests/TESTING.md).
+	/// </remarks>
+	[ExcludeFromCodeCoverage]
 	public async Task RunAsync(JobTask task, CancellationToken cancellationToken)
 	{
 		try

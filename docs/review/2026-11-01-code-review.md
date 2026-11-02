@@ -105,11 +105,8 @@ iteration cancels every sibling subscription before the loop re-subscribes.
 - **`dotnet format`** — `--verify-no-changes` was red (157 whitespace diagnostics in
   `src/Vapor.Agent/Program.cs`); fixed by `28cc3c8` and confirmed 0 diagnostics.
 - **Coverage gate** — `scripts/coverage-summary.py --min 100 --min-branch 100` demands 100% line
-  and branch coverage. Pre-existing red, unrelated to this review's changes. The new lines added
-  here were verified 0-uncovered-line under the repo's own coverlet runsettings
-  (Steam.Core: SessionManager + SteamClientManager 0 uncovered; ControlPlane:
-  DesiredStateReconciler 0 uncovered; Agent: Program.cs is excluded from the denominator as the
-  process entry point).
+  and branch coverage. Was pre-existing red (deterministic gaps, not flake: the same SHA passed
+  twice only via partial-report omission). Fixed in this recheck; see the recheck section below.
 - **Flaky E2E** — `tests/Vapor.E2E.Tests/AccountOrchestrationE2ETests.cs:19,129-156`
   (`DeclaredOnlineAccount_IsAssignedAndRebalancesAfterAgentLoss`) polls with a fixed 60 s
   deadline; under loaded CI runners the reconcile/agent-loss cycle can exceed it and the test
@@ -184,3 +181,27 @@ one is dead code, two are P2s (one a gap in this review's own `f35ec25`).
 5. **P2** `SteamClientManager.cs:397-438,1611-1622` — re-confirmation of the `94085ba` residual:
    a cancelled login's late `LoggedOnCallback` can still route to the next login's TCS via the
    shared `_activeLoginAccountName` slot.
+
+### Coverage gate (pre-existing red, fixed this recheck)
+
+The gate had failed on the reviewed `main` (run 41404115679). The gaps were deterministic — the
+same SHA passed twice only by partial-report omission (a report omitting a file's lines removes
+them from the denominator). All gaps reproduced locally and are now closed; the gate is green.
+
+| Location | Gap | Fix |
+|---|---|---|
+| `SqliteJobStore.cs:243` | `StripSecretPayload` non-`Dictionary` branch untested | made `internal`, new test drives it via a `ReadOnlyDictionary` |
+| `SqliteJobStore.cs:1110` | `:memory:` early-return in `EnsureBackupPathIsNotLiveDatabase` | new test: in-memory store + backup path purges without throwing |
+| `SqliteJobStore.cs:1119` | OS-conditional comparison (ternary left the Windows arm uncovered) | rewritten as a positive `if (!IsWindows())` block per the repo convention (same as `FileCredentialStore.cs:564`) |
+| `SqliteJobStore.cs:1164` | malformed-JSON payload row left untouched | new test: `{not valid json}` payload survives purge |
+| `SqliteJobStore.cs:1123` | same-path throw arm | new test: `backupPath == dbPath` throws |
+| `TaskLeaseRenewer.cs:29` | PeriodicTimer loop's try-closing-brace unreachable | `[ExcludeFromCodeCoverage]` + registration in the TESTING.md exclusion table |
+| `AgentTaskDispatcher.cs:41` | `Capacity` getter untested | new test reads `.Capacity` |
+| `AgentTaskDispatcher.cs:83` | `Dispose` completes the writer | new test asserts `Reader.Completion` completes |
+| `QueuedTaskCanceller.cs:31` | `Clear` untested | new test removes all pending cancels |
+| `AuthChallengeOutboxCleaner.cs:18` | null-interval `??` fallback | new test constructs with no interval |
+| `TaskLeaseRenewer.cs:22` | null-interval default branch | new test constructs with no interval |
+
+Result: `coverage-summary.py --min 100 --min-branch 100` → 100.0% lines (22524/22524) and 100.0%
+branches (8658/8658) across all 16 assemblies; `dotnet format --verify-no-changes` clean; all 7
+`verify-*` scripts green; full serial suite green (ControlPlane 1386, Agent 221, Steam.Core 1289).

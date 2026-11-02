@@ -60,4 +60,19 @@ public class TaskLeaseRenewerTests
 
 		Assert.True(calls >= 1);
 	}
+
+	[Fact]
+	public async Task RunAsync_WithNullInterval_UsesDefaultAndStillHeartbeats()
+	{
+		// No interval supplied: the constructor falls back to the 5s default, and the
+		// loop still sends the immediate heartbeat before cancellation lands.
+		var sent = new List<WSMessage>();
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+		var renewer = new TaskLeaseRenewer(
+			frame => { lock (sent) { sent.Add(frame); } return Task.CompletedTask; });
+
+		await renewer.RunAsync(MakeTask(), cts.Token);
+
+		Assert.True(sent.Count >= 1);
+	}
 }

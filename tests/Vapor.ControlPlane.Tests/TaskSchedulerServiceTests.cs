@@ -127,6 +127,57 @@ public sealed class TaskSchedulerServiceTests
 	}
 
 	[Fact]
+	public async Task DispatchOnce_HostTargetedTask_RequeuesWhenAgentDoesNotSupportAction()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["ping"] = true }, null),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		// Host-targeted to agent-1, which cannot perform "login".
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", target: HostTaskTarget.For("agent-1")));
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Single(events.Events);
+		Assert.Equal("task.dispatch_failed", events.Events[0].Type);
+		Assert.Equal("no capable agent available", events.Events[0].Payload!["error"]?.ToString());
+	}
+
+	[Fact]
+	public async Task DispatchOnce_HostTargetedTask_RequeuesWhenAgentAtCapacity()
+	{
+		var registry = new AgentRegistry();
+		using var cts = new CancellationTokenSource();
+		// A bounded buffer (capacity 1 → 2 in-flight slots) so AcceptsInFlight can
+		// reject once the control-plane load reaches the ceiling.
+		registry.Register(
+			new AgentHello("agent-1", "local", new Dictionary<string, bool> { ["login"] = true },
+				new Dictionary<string, string> { ["task_buffer_capacity"] = "1" }),
+			new NoopWebSocket(),
+			cts.Token);
+
+		var store = new FakeJobStore();
+		store.QueuedTasks.Enqueue(CreateTask("task-1", "job-1", "local", "login", target: HostTaskTarget.For("agent-1")));
+		// The agent already holds its maximum in-flight work, so placement must wait.
+		store.LoadByAgent["agent-1"] = 2;
+		var events = new RecordingEventBroker();
+		var scheduler = new TaskSchedulerService(registry, store, events, CreateConfig(), new FaultInjector());
+
+		await scheduler.DispatchOnce(CancellationToken.None);
+
+		Assert.Equal(new[] { "task-1" }, store.RequeuedTaskIds);
+		Assert.Single(events.Events);
+		Assert.Equal("task.dispatch_failed", events.Events[0].Type);
+	}
+
+	[Fact]
 	public async Task DispatchOnce_ZeroRetryDelay_RequeuesWithoutDelay()
 	{
 		var registry = new AgentRegistry();
@@ -632,13 +683,13 @@ public sealed class TaskSchedulerServiceTests
 
 	private static Config CreateConfig() => new("", new Dictionary<string, DateTimeOffset?>(), "test.db", 300, false);
 
-	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0)
+	private static JobTask CreateTask(string taskId, string jobId, string region, string action, int attempt = 0, string? target = null)
 	{
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 		return new JobTask(
 			taskId,
 			jobId,
-			"target-1",
+			target ?? "target-1",
 			action,
 			region,
 			null,

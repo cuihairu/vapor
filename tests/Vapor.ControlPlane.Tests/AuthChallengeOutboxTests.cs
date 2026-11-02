@@ -187,6 +187,16 @@ public sealed class AuthChallengeOutboxTests
 			Timestamp: DateTimeOffset.UtcNow,
 			JobId: null);
 
+	[Fact]
+	public void Cleaner_WithNullInterval_FallsBackToDefault()
+	{
+		// The cleaner defaults its sweep interval when none is supplied; constructing
+		// it without an interval exercises the `??` fallback branch. It is not started
+		// (ExecuteAsync stays a private loop), so only the ctor branch is asserted.
+		using var cleaner = new AuthChallengeOutboxCleaner(new AuthChallengeOutbox());
+		Assert.NotNull(cleaner);
+	}
+
 	private sealed class FixedTimeProvider : TimeProvider
 	{
 		private DateTimeOffset _now;

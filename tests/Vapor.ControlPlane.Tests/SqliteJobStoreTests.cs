@@ -190,6 +190,82 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public void StripSecretPayload_NonDictionaryPayload_RemovesSecretKeys()
+	{
+		// The scrub path always hands a Dictionary, so the non-dictionary arm of
+		// StripSecretPayload (a defensive IReadOnlyDictionary branch) is otherwise
+		// never exercised; a ReadOnlyDictionary wrapper is a non-Dictionary
+		// IReadOnlyDictionary and reaches it deterministically.
+		IReadOnlyDictionary<string, object?> payload =
+			new System.Collections.ObjectModel.ReadOnlyDictionary<string, object?>(
+				new Dictionary<string, object?> { ["password"] = "p1", ["message"] = "keep" });
+
+		Dictionary<string, object?> scrubbed = SqliteJobStore.StripSecretPayload(payload);
+
+		Assert.False(scrubbed.ContainsKey("password"));
+		Assert.Equal("keep", scrubbed["message"]);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_InMemoryStore_WithBackupPath_DoesNotThrow()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		RawExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"a\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{"password":"p1"}"""));
+
+		// A :memory: store has no live file to compare against the backup path, so the
+		// guard returns early instead of rejecting it; the backup still runs.
+		string backupPath = Path.Combine(Path.GetTempPath(), $"vapor-mem-backup-{Guid.NewGuid():N}.db");
+		try
+		{
+			(int jobs, int _) = await store.PurgeSecretPayloadsAsync(dryRun: false, backupPath, cts.Token);
+			Assert.Equal(1, jobs);
+		}
+		finally
+		{
+			Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+			if (File.Exists(backupPath)) File.Delete(backupPath);
+		}
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_BackupPathEqualsLivePath_Throws()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-samepath-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+			await Assert.ThrowsAsync<InvalidOperationException>(
+				() => store.PurgeSecretPayloadsAsync(dryRun: false, dbPath, cts.Token));
+		}
+		finally
+		{
+			Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+			if (File.Exists(dbPath)) File.Delete(dbPath);
+		}
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_MalformedJson_IsLeftUntouched()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		RawExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"a\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{not valid json}"""));
+
+		// A malformed historical row must be skipped, not destroyed or thrown over.
+		(int jobs, int _) = await store.PurgeSecretPayloadsAsync(dryRun: false, backupPath: null, cts.Token);
+		Assert.Equal(0, jobs);
+
+		Assert.Equal("""{not valid json}""", RawScalar(store, "SELECT payload_json FROM jobs WHERE id = $id", ("$id", "job-old")));
+	}
+
+	[Fact]
 	public async Task HeartbeatTaskReturnsTrueOnlyForMatchingRunningAttempt()
 	{
 		using var store = new SqliteJobStore(":memory:");

@@ -46,6 +46,7 @@ public sealed class ProgramBranchCoverageTests
 	[InlineData("POST", "/v1/accounts/alice/swap-offers")]
 	[InlineData("POST", "/v1/accounts/alice/licenses")]
 	[InlineData("POST", "/v1/jobs")]
+	[InlineData("POST", "/v1/jobs/secret-payloads/purge")]
 	[InlineData("GET", "/v1/jobs")]
 	[InlineData("GET", "/v1/jobs/job-1")]
 	[InlineData("POST", "/v1/jobs/job-1/cancel")]

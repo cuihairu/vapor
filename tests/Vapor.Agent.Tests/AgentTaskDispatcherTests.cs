@@ -75,6 +75,24 @@ public sealed class AgentTaskDispatcherTests
 	}
 
 	[Fact]
+	public void Capacity_ReflectsConfiguredBufferSize()
+	{
+		var dispatcher = new AgentTaskDispatcher(3);
+
+		Assert.Equal(3, dispatcher.Capacity);
+	}
+
+	[Fact]
+	public void Dispose_CompletesTheWriter()
+	{
+		var dispatcher = new AgentTaskDispatcher(2);
+
+		dispatcher.Dispose();
+
+		Assert.True(dispatcher.Reader.Completion.IsCompleted);
+	}
+
+	[Fact]
 	public void Constructor_RejectsNonPositiveCapacity()
 	{
 		Assert.Throws<ArgumentOutOfRangeException>(() => new AgentTaskDispatcher(0));
