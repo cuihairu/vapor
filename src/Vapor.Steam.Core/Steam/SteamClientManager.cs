@@ -1545,6 +1545,14 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	{
 		_logger.LogInformation("Steam client disconnected: {UserInitiated}", callback.UserInitiated);
 		_cs2GcSessionLive = false;
+		// The playing set is connection-scoped: nothing is being played on the new
+		// connection yet. Clearing it lets a post-reconnect PlayGames(desired)
+		// re-send instead of being skipped by the SetEquals idempotence check —
+		// otherwise the desired idle/farm state silently never reaches Steam.
+		lock (_playingGamesLock)
+		{
+			_playingGames.Clear();
+		}
 		lock (_connectLock)
 		{
 			_disconnectTcs?.TrySetResult(true);
