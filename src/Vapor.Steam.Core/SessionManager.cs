@@ -64,6 +64,8 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	private SessionEventDelegate? _eventCallback;
 	private readonly Task? _tokenRefreshTask;
 	private readonly List<Task> _pumpTasks = [];
+	private readonly ConcurrentDictionary<Guid, Channel<SessionEvent>> _eventSubscribers = new();
+	private readonly Task _eventBroadcasterTask;
 
 	public SessionManager(
 		IActionRegistry actionRegistry,
@@ -81,8 +83,11 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		_loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
 		_tokenRefreshCheckInterval = tokenRefreshCheckInterval ?? TimeSpan.FromMinutes(1);
 		_tokenRefreshLeadTime = tokenRefreshLeadTime ?? TimeSpan.FromMinutes(15);
-		_eventChannel = Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = false });
+		// Single reader: the broadcaster below is the sole consumer of the ingress
+		// channel and fans every event out to each subscriber (see SubscribeAllEvents).
+		_eventChannel = Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = true });
 		_cts = new CancellationTokenSource();
+		_eventBroadcasterTask = Task.Run(BroadcastEventsAsync, _cts.Token);
 
 		if (_steamClientManager != null && _credentialStore != null)
 		{
@@ -307,11 +312,67 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		return _sessions.Values.ToList();
 	}
 
+	/// <summary>
+	/// Broadcast subscription: every subscriber receives every event. A direct
+	/// multi-reader ReadAllAsync on the shared ingress channel would hand each
+	/// event to exactly one consumer, so concurrent subscribers (plugin event
+	/// dispatcher, 2FA auto-responder, monitoring) would silently steal events
+	/// from each other — the 2FA code could land in a consumer that drops it.
+	/// Each caller gets its own channel fed by the single broadcaster.
+	/// </summary>
 	public async IAsyncEnumerable<SessionEvent> SubscribeAllEvents([EnumeratorCancellation] CancellationToken cancellationToken = default)
 	{
-		await foreach (var evt in _eventChannel.Reader.ReadAllAsync(cancellationToken))
+		Channel<SessionEvent> subscription = Channel.CreateUnbounded<SessionEvent>(
+			new UnboundedChannelOptions { SingleReader = true });
+		Guid id = Guid.NewGuid();
+		_eventSubscribers[id] = subscription;
+		if (_eventChannel.Reader.Completion.IsCompleted)
 		{
-			yield return evt;
+			// The ingress is already finished: the broadcaster's final sweep may
+			// already have passed this registration, so end it here.
+			subscription.Writer.TryComplete();
+		}
+		try
+		{
+			await foreach (var evt in subscription.Reader.ReadAllAsync(cancellationToken))
+			{
+				yield return evt;
+			}
+		}
+		finally
+		{
+			_eventSubscribers.TryRemove(id, out _);
+			subscription.Writer.TryComplete();
+		}
+	}
+
+	/// <summary>
+	/// Sole consumer of the ingress event channel: fans every event out to each
+	/// registered subscriber. Exits on manager shutdown (OperationCanceledException)
+	/// or producer-side completion, then completes every subscriber so a parked
+	/// consumer does not hang on a channel that will never see another event.
+	/// </summary>
+	private async Task BroadcastEventsAsync()
+	{
+		try
+		{
+			await foreach (var evt in _eventChannel.Reader.ReadAllAsync(_cts.Token))
+			{
+				foreach (var subscription in _eventSubscribers.Values)
+				{
+					subscription.Writer.TryWrite(evt);
+				}
+			}
+		}
+		catch (OperationCanceledException)
+		{
+		}
+		catch (ChannelClosedException)
+		{
+		}
+		foreach (var subscription in _eventSubscribers.Values)
+		{
+			subscription.Writer.TryComplete();
 		}
 	}
 
