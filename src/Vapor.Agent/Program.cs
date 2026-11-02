@@ -790,6 +790,13 @@ static async Task PollAuthChallengesAsync(
 
 		while (!cancellationToken.IsCancellationRequested)
 		{
+			// Per-iteration token: a faulting stream must tear down every sibling
+			// subscription before the loop re-subscribes. Otherwise one stream's
+			// 5-minute HttpClient timeout (or server close) faults Task.WhenAll
+			// while the other streams keep running, and re-subscribing over a live
+			// stream stacks duplicate SSE connections — an auth code is then
+			// delivered twice and the second application of a consumed code fails.
+			using var iterationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			try
 			{
 				List<string> accountNames = sessionManager.ListSessions()
@@ -809,7 +816,7 @@ static async Task PollAuthChallengesAsync(
 						agentApiKey,
 						sessionManager,
 						logger,
-						cancellationToken))
+						iterationCts.Token))
 					.ToList();
 				await Task.WhenAll(subscriptions).ConfigureAwait(false);
 			}
@@ -820,6 +827,7 @@ static async Task PollAuthChallengesAsync(
 			catch (Exception ex)
 			{
 				logger.LogError(ex, "Auth challenge polling error, will retry");
+				iterationCts.Cancel();
 				await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
 			}
 		}
