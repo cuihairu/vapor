@@ -64,7 +64,14 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	private SessionEventDelegate? _eventCallback;
 	private readonly Task? _tokenRefreshTask;
 	private readonly List<Task> _pumpTasks = [];
-	private readonly ConcurrentDictionary<Guid, Channel<SessionEvent>> _eventSubscribers = new();
+	// Subscriber fan-out is linearized with the event history under _eventLock: an
+	// event is either seeded into a registering subscriber (bounded recent history)
+	// or fanned out to it live, never both and never neither. Without this a
+	// subscriber that registers just after an event was drained misses it.
+	private readonly object _eventLock = new();
+	private readonly List<SessionEvent> _recentEvents = [];
+	private const int EventHistoryLimit = 256;
+	private readonly List<(Guid Id, Channel<SessionEvent> Subscription)> _eventSubscribers = [];
 	private readonly Task _eventBroadcasterTask;
 
 	public SessionManager(
@@ -325,7 +332,17 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		Channel<SessionEvent> subscription = Channel.CreateUnbounded<SessionEvent>(
 			new UnboundedChannelOptions { SingleReader = true });
 		Guid id = Guid.NewGuid();
-		_eventSubscribers[id] = subscription;
+		lock (_eventLock)
+		{
+			// Seed from the bounded recent history, then register: an event
+			// published before this moment is either still in the history (seeded
+			// above) or is fanned out after the registration below — never missed.
+			foreach (var evt in _recentEvents)
+			{
+				subscription.Writer.TryWrite(evt);
+			}
+			_eventSubscribers.Add((id, subscription));
+		}
 		if (_eventChannel.Reader.Completion.IsCompleted)
 		{
 			// The ingress is already finished: the broadcaster's final sweep may
@@ -341,16 +358,22 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		}
 		finally
 		{
-			_eventSubscribers.TryRemove(id, out _);
+			lock (_eventLock)
+			{
+				_eventSubscribers.RemoveAll(s => s.Id == id);
+			}
 			subscription.Writer.TryComplete();
 		}
 	}
 
 	/// <summary>
 	/// Sole consumer of the ingress event channel: fans every event out to each
-	/// registered subscriber. Exits on manager shutdown (OperationCanceledException)
-	/// or producer-side completion, then completes every subscriber so a parked
-	/// consumer does not hang on a channel that will never see another event.
+	/// registered subscriber under <c>_eventLock</c>, recording it in the bounded
+	/// recent history so a subscriber that registers just after the drain is
+	/// seeded with it rather than missing it. Exits on manager shutdown
+	/// (OperationCanceledException) or producer-side completion, then completes
+	/// every subscriber so a parked consumer does not hang on a channel that
+	/// will never see another event.
 	/// </summary>
 	private async Task BroadcastEventsAsync()
 	{
@@ -358,9 +381,17 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		{
 			await foreach (var evt in _eventChannel.Reader.ReadAllAsync(_cts.Token))
 			{
-				foreach (var subscription in _eventSubscribers.Values)
+				lock (_eventLock)
 				{
-					subscription.Writer.TryWrite(evt);
+					_recentEvents.Add(evt);
+					if (_recentEvents.Count > EventHistoryLimit)
+					{
+						_recentEvents.RemoveAt(0);
+					}
+					foreach (var (_, subscription) in _eventSubscribers)
+					{
+						subscription.Writer.TryWrite(evt);
+					}
 				}
 			}
 		}
@@ -370,9 +401,12 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		catch (ChannelClosedException)
 		{
 		}
-		foreach (var subscription in _eventSubscribers.Values)
+		lock (_eventLock)
 		{
-			subscription.Writer.TryComplete();
+			foreach (var (_, subscription) in _eventSubscribers)
+			{
+				subscription.Writer.TryComplete();
+			}
 		}
 	}
 
