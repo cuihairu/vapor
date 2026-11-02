@@ -83,11 +83,12 @@ Docker Compose (control plane + one agent):
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
+cp .env.example .env                                # required credential vars (dev values, never deploy)
 docker compose up -d                                # + --profile observability for Prometheus/Grafana
 curl -s http://127.0.0.1:8080/healthz
 ```
 
-Declare an account and run your first job (dev key defaults, see [docker.md](docs/docker.md) for the variable table):
+Declare an account and run your first job (dev keys from `.env.example`, see [docker.md](docs/docker.md) for the variable table):
 
 ```bash
 curl -sS -X PUT http://127.0.0.1:8080/v1/accounts/acct-1 \

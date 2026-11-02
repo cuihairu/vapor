@@ -21,8 +21,8 @@ Three static bearer token sets, all configured by environment variables (`Config
 
 | Role | Env var | Format |
 |---|---|---|
-| Admin | `VAPOR_ADMIN_API_KEY` | single token (compose dev default `admin-dev-token`) |
-| Agent | `VAPOR_AGENT_API_KEYS` | comma-separated list of tokens (dev default `agent-dev-token`) |
+| Admin | `VAPOR_ADMIN_API_KEY` | single token (compose default `admin-dev-token`, from `.env.example`) |
+| Agent | `VAPOR_AGENT_API_KEYS` | comma-separated list of tokens (default `agent-dev-token`, from `.env.example`) |
 | Viewer | `VAPOR_VIEWER_API_KEY` | single token; read-only — accepted on safe methods (GET/HEAD/OPTIONS) across `/v1`, every write rejected with `401` |
 
 Header convention (matching the OpenAPI security definition `bearer`): `Authorization: Bearer <token>`.

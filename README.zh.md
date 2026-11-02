@@ -76,11 +76,12 @@ Docker Compose 起控制平面 + 一个 Agent：
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
+cp .env.example .env                                # 必填凭据变量（本地开发值，绝不要部署）
 docker compose up -d                                # 另加 --profile observability 起 Prometheus/Grafana
 curl -s http://127.0.0.1:8080/healthz
 ```
 
-声明账号并跑第一个任务（开发默认 Key，变量表见 [docker.zh.md](docs/docker.zh.md)）：
+声明账号并跑第一个任务（开发 Key 来自 `.env.example`，变量表见 [docker.zh.md](docs/docker.zh.md)）：
 
 ```bash
 curl -sS -X PUT http://127.0.0.1:8080/v1/accounts/acct-1 \

@@ -1,10 +1,14 @@
 # Vapor local/production composition.
 #
+#   cp .env.example .env   # first time only: seed the required credential vars
 #   docker compose up -d                          # control plane + agent
 #   docker compose --profile observability up -d  # + Prometheus + Grafana
 #
-# Override credentials in production via environment or a .env file:
-#   VAPOR_ADMIN_API_KEY, VAPOR_AGENT_API_KEY
+# Credentials are REQUIRED (fail-fast, no known-token default): compose refuses
+# to start when VAPOR_ADMIN_API_KEY / VAPOR_AGENT_API_KEYS / VAPOR_AGENT_API_KEY
+# are unset. Provide them in .env (dev values in .env.example — never deploy
+# those to a real environment) or in the process environment. The production
+# composition lives at deploy/compose/docker-compose.deploy.yml.
 services:
   controlplane:
     build:
@@ -15,8 +19,8 @@ services:
     ports:
       - "${VAPOR_CONTROLPLANE_PORT:-8080}:8080"
     environment:
-      Vapor_ADMIN_API_KEY: "${VAPOR_ADMIN_API_KEY:-admin-dev-token}"
-      Vapor_AGENT_API_KEYS: "${VAPOR_AGENT_API_KEYS:-agent-dev-token}"
+      Vapor_ADMIN_API_KEY: "${VAPOR_ADMIN_API_KEY:?set VAPOR_ADMIN_API_KEY (see .env.example)}"
+      Vapor_AGENT_API_KEYS: "${VAPOR_AGENT_API_KEYS:?set VAPOR_AGENT_API_KEYS (see .env.example)}"
       Vapor_DB_PATH: /app/data/controlplane.db
       Vapor_AUDIT_DB_PATH: /app/data/audit.db
       Vapor_CONFIG_DB_PATH: /app/data/config.db
@@ -40,7 +44,7 @@ services:
       AGENT_ID: "${VAPOR_AGENT_ID:-agent-1}"
       AGENT_REGION: "${VAPOR_AGENT_REGION:-eu-west}"
       AGENT_CONTROLPLANE_WS_URL: ws://controlplane:8080/v1/agent/ws
-      AGENT_API_KEY: "${VAPOR_AGENT_API_KEY:-agent-dev-token}"
+      AGENT_API_KEY: "${VAPOR_AGENT_API_KEY:?set VAPOR_AGENT_API_KEY (see .env.example)}"
       VAPOR_PLUGINS_DIR: /app/plugins
       VAPOR_METRICS_HOST: 0.0.0.0
       VAPOR_METRICS_PORT: "9700"

@@ -110,7 +110,7 @@ P0/P1 当场修复（一问题一 commit，各套测试全绿）：
 - [x] 质量门：覆盖率门禁在深审主干是红的（非抖动——同 SHA 两次绿靠部分报告漏报分母，第三次红暴露真缺口，run 41404115679）；本轮闭合：SqliteJobStore 五处缺口（StripSecretPayload 非字典分支、:memory: 早返、OS 条件比较改正向块、畸形 JSON 载荷、同路径抛错）+ Agent 四类（TaskLeaseRenewer 计时器循环排除并登记 TESTING.md、AgentTaskDispatcher Capacity/Dispose、QueuedTaskCanceller Clear、AuthChallengeOutboxCleaner 空区间）—— 证据:70dcdca（coverage-summary 双 100%：22524 行 / 8658 分支，ControlPlane 1386 + Agent 221 + Steam.Core 1289 全绿，format 与 7 个 verify 脚本全绿）
 
 P2 待办（记档，未修）：
-- [ ] P2 docker-compose 默认 API key 未强制门控：`${VAPOR_ADMIN_API_KEY:-admin-dev-token}` 等兜底默认值，生产忘配环境变量即携已知 dev token 启动 —— 证据:docker-compose.yml:18,19,43（应去默认值、未配置 fail-fast）
+- [x] P2 docker-compose 默认 API key 未强制门控：`${VAPOR_ADMIN_API_KEY:-admin-dev-token}` 等兜底默认值，生产忘配环境变量即携已知 dev token 启动 —— 修复:05b1756（`:?` 缺失即 fail-fast + .env.example 模板 + CI 占位；compose config 缺值 rc15/提供 rc0，ControlPlane 1378 全绿，7 verify 脚本全绿）
 - [ ] P2 `SetTaskResult` 任务行更新与 `RecomputeJob` 非同一事务，进程中断留下 task=Finished 而 job 仍 Running 中间态 —— 证据:SqliteJobStore.cs:985（UPDATE tasks，无事务）+ :1004（独立 RecomputeJob）
 - [ ] P2 `RemoveSessionAsync` 中 `DisconnectAsync` 抛错则 `Dispose` 被跳过，会话泄漏 —— 证据:SessionManager.cs:178-181（应 try/finally 保证 Dispose）
 - [ ] P2 任务取消仅投递给 `ListConnected()` 在线 agent：DB 已置 Canceled，离线 agent 复联收不到 task_cancel，跑完结果被 SetTaskResult 以 task not running 丢弃 —— 证据:Program.cs:3190 + AgentRegistry.cs:144（TryWrite 失败）
@@ -130,3 +130,9 @@ P3 记录性（风格/健壮性，未修）：
 - [ ] 审核发现：E2E 超时消息 `{ReconcileTimeout:s}` 仍会抛 FormatException——TimeSpan 单字符 `s` 按标准格式解析、非法即抛，d8dc8ca「fix timespan format」只换了类型未修根因（旧 `TotalSeconds:s`（double）同病）；超时发生时本应给出 TimeoutException+诊断，实际抛 FormatException 遮蔽 lastAgent/栈（已用仓库 SDK net10 实测 `TimeSpan.FromSeconds(180).ToString("s")` 抛 FormatException；应改 `{ReconcileTimeout:g}` 或 `TotalSeconds:F0`）（tests/Vapor.E2E.Tests/AccountOrchestrationE2ETests.cs:159）
 - [ ] 审核发现：SubscribeAllEvents 播种「最近 ≤256 条历史」把订阅语义从「仅实时」改成「重放历史+实时」，且历史无时间上界（256 条事件在空闲期可横跨很久）；对启动后才订阅的消费者会重放陈旧 TwoFactorCodeNeeded——TwoFactorAutoResponder 的 TryAnswerAsync 会为新代码烧掉 60s 冷却并虚增 AnsweredCount（Handle2FACode 状态门控挡住真正投码，但冷却已燃），MonitoringPlugin 的 vapor_session_events_total 亦被重放虚增（当前消费者均在启动空历史时订阅一次，影响有限；但任何迟到/重启订阅都会踩中）（src/Vapor.Steam.Core/SessionManager.cs:335-345）
 - [ ] 审核发现：TaskLeaseRenewer 的覆盖排除依据失实——「PeriodicTimer 被 dispose 或取消时必抛」只对取消成立；实测 dispose-during-wait / dispose 后调用均返回 false 不抛（net10）。结论（try 闭括号不可达）凑巧仍成立（RunAsync 内 timer 为方法局部 `using`，循环体无人能 dispose 它），但依据被写进 TESTING.md 新增行（`WaitForNextTickAsync 在取消/处置时必抛`），后续读者会据此误判其它 timer 泵（src/Vapor.Agent/TaskLeaseRenewer.cs:31、tests/TESTING.md:122）
+- [ ] 审核发现：SubscribeAllEvents 的 `_eventLock` 线性化不变式（事件发布与订阅注册并发交错时「既不丢也不重」）无并发测试——新增测试只覆盖顺序情形（先发布后订阅 `SubscribeAllEvents_AfterEventsPublished_ReceivesSeededHistory`、先订阅后完成通道 `BroadcastEvents_SweepCompletesRegisteredSubscriber`），从未在「注册进行中事件同时发布」的交错下断言每事件恰好到达一次；该锁正是为此竞态而设（注释「never both and never neither」），回归会静默通过（src/Vapor.Steam.Core/SessionManager.cs:335-345、tests/Vapor.Steam.Core.Tests/Unit/SessionManagerTests.cs:370-412）
+
+## 审核覆盖：77773bba..HEAD（2026-11-03 复审，只审不改）
+
+- 复核确认（已记档，未新增）：`d8dc8ca` E2E `{ReconcileTimeout:s}` 单字符标准格式——net10 实测 `TimeSpan.ToString("s")` 抛 `FormatException`，超时路径遮蔽 TimeoutException/诊断（todo.md:130）；`122b22e` SubscribeAllEvents 播种 ≤256 条历史、无时间上界，重放陈旧 TwoFactorCodeNeeded 烧 2FA 冷却并虚增计数（todo.md:131）；`70dcdca` TaskLeaseRenewer 覆盖排除依据失实但结论凑巧成立（todo.md:132）。
+- 本轮新发现 1 条：注册-发布并发交错的不变式缺并发测试（见上）。其余变更未见问题：DesiredStateReconciler 空白修正（copy-on-write 语义不变）、SqliteJobStore 比较改正向块（等价）、StripSecretPayload 改 internal（仅测试可见性）、ChannelClosedException 捕获移除（确不可达）、各新增测试断言与实现一致（GetFarmSummaries `?.ToList()` 副本、PurgeSecretPayloads 同路径抛错/畸形 JSON 不动/`:memory:` 早返、AgentTaskDispatcher/QueuedTaskCanceller/AuthChallengeOutboxCleaner 分支）。

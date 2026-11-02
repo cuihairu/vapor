@@ -36,9 +36,16 @@ GC/thread-pool and memory.
 
 ### Environment / secrets
 
-Set these before running outside of local development (via shell env or a `.env` file):
+The credential variables are **required** — compose fail-fasts on a missing value
+(no known-token fallback). For local dev, seed them from the template:
 
-| Variable | Used by | Default in compose |
+```bash
+cp .env.example .env   # dev-only values; never deploy these
+```
+
+Set these before running (via shell env or a `.env` file):
+
+| Variable | Used by | Default (from `.env.example`) |
 |----------|---------|--------------------|
 | `VAPOR_ADMIN_API_KEY` | control plane | `admin-dev-token` |
 | `VAPOR_AGENT_API_KEY` / `VAPOR_AGENT_API_KEYS` | agent / control plane | `agent-dev-token` |
