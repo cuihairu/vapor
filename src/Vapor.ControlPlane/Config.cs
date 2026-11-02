@@ -136,7 +136,7 @@ public sealed record Config(
 			{
 				continue;
 			}
-			agentKeyAgentIds[entry[..separator]] = entry[(separator + 1)..].Trim();
+			agentKeyAgentIds[entry[..separator].Trim()] = entry[(separator + 1)..].Trim();
 		}
 
 		return new Config(adminApiKey, agentApiKeys, dbPath, taskLeaseSeconds, enableSwagger, auditDbPath, taskMaxDispatchAttempts, taskDispatchRetryDelayMs, reconcileIntervalSeconds, reconcileMaxAccountsPerAgent, reconcileMaxLoginAttempts, reconcileLoginCooldownSeconds, reconcileSessionStalenessSeconds, reconcileFarmRefreshSeconds, reconcileBoostRefreshSeconds, reconcileTradeRefreshSeconds, reconcileStandingRefreshSeconds, reconcileDryRun, webhookUrl, webhookSecret, webhookEvents, webhookMaxRetries, webhookRetryBaseDelayMs, crawlDbPath, crawlWorkerTickSeconds, crawlKeepRuns, crawlMaxAppsPerPlan, crawlMaxAppsPerTask, crawlRunTimeoutSeconds, crawlIntervalMs, pluginIndexUrl, apiRateLimitPerMinute, adminApiKeyExpiresAt, configDbPath, viewerApiKey, scriptDbPath, webhookDbPath, agentKeyAgentIds, authChallengeDeliveryTtlSeconds);

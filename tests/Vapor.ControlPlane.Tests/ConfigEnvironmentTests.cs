@@ -268,6 +268,29 @@ public sealed class ConfigEnvironmentTests
 		}
 	}
 
+	[Fact]
+	public void AgentKeyAgentIds_TrimsKeySide()
+	{
+		string? original = Environment.GetEnvironmentVariable("Vapor_AGENT_KEY_AGENT_IDS");
+		try
+		{
+			// The credential key is matched exactly by Auth.TryAgentIdentity against
+			// the Bearer token; surrounding whitespace on the key side must not be
+			// preserved or a configured token never matches.
+			Environment.SetEnvironmentVariable("Vapor_AGENT_KEY_AGENT_IDS", "  key-with-space  =agent-4");
+			Config config = Config.LoadFromEnvironment();
+
+			Assert.Equal("agent-4", config.AgentKeyAgentIds!["key-with-space"]);
+			Assert.True(config.AgentKeyAgentIds.ContainsKey("key-with-space"));
+			Assert.True(config.AgentKeyAgentIds.TryGetValue("key-with-space", out string? bound));
+			Assert.Equal("agent-4", bound);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable("Vapor_AGENT_KEY_AGENT_IDS", original);
+		}
+	}
+
 	private static int IntegerProperty(Config config, string property) => property switch
 	{
 		nameof(Config.TaskLeaseSeconds) => config.TaskLeaseSeconds,
