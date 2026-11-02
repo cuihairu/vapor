@@ -89,7 +89,7 @@ The matrix is aligned to "capability domains" rather than copying features one b
 
 | Capability | ASF | Watt | SGI | steamguard-cli | **Vapor** |
 |------|-----|------|-----|----------------|-----------|
-| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(68 `/v1` routes / 84 operations + OpenAPI) |
+| REST API | ✅(IPC) | ➖ | ➖ | ➖ | ✅(69 `/v1` routes / 85 operations + OpenAPI) |
 | Web UI | ✅(ASF-ui) | ✅ | ✅ | ➖ | ✅(read-first dashboard (writes converge to a single whitelisted write) + full-featured admin console + game data dictionary page, statically hosted, zero build chain) |
 | Plugin system | ✅ | ✅ | ➖ | ➖ | ✅(ALC isolation + SemVer + trust/permissions + runtime PluginStore: directory source → agent-targeted install/uninstall/hot-reload, ASF plugins require manual placement) |
 | Multi-node fleet (CP centralized scheduling) | ❌(single process) | ❌ | ❌ | ❌ | ✅(**unique**) |

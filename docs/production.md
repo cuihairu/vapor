@@ -43,6 +43,7 @@ are in [docker.md](docker.md).
 | `Vapor_TASK_LEASE_SECONDS` | no | `300` | Running tasks whose heartbeat stops for this long are requeued |
 | `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` | no | `10` | Permanent failure threshold for undispatchable tasks; `0` retries forever |
 | `Vapor_TASK_DISPATCH_RETRY_DELAY_MS` | no | `2000` | Backoff before an undispatched task may be claimed again |
+| `VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS` | no | `120` | How long a staged manual auth-code delivery stays replayable to the owning agent's SSE stream before it expires (short-lived outbox, not a history log); `<= 0` falls back to `120` |
 | `Vapor_RECONCILE_INTERVAL_SECONDS` | no | `15` | Account orchestrator reconcile cadence; `<= 0` disables orchestration |
 | `Vapor_RECONCILE_MAX_ACCOUNTS_PER_AGENT` | no | `25` | Capacity cap when the orchestrator assigns accounts to agents |
 | `Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS` | no | `3` | Consecutive failed logins before an account is throttled (reset by updating its spec) |
@@ -92,6 +93,7 @@ are in [docker.md](docker.md).
 | `AGENT_RECONNECT_BACKOFF_FACTOR` | no | `2` | Exponential factor |
 | `AGENT_RECONNECT_MAX_RETRIES` | no | `0` | `0` = retry forever |
 | `AGENT_TASK_TIMEOUT_SECONDS` | no | `900` | Watchdog over any single dispatched task (cancels it, reports a structured `task timeout` failure, keeps the loop serving); `<= 0` disables. Sits above the per-action timeouts, which fire first |
+| `AGENT_TASK_BUFFER_CAPACITY` | no | `32` | Bound on the agent's received-but-not-started task queue; a full buffer applies back-pressure to the websocket instead of silently dropping a task (never degrades to unbounded) |
 | `AGENT_2FA_AUTO_SUBMIT` | no | off | `true` = answer 2FA challenges locally from stored shared secrets (Steam TOTP); off leaves them to the manual SSE channel |
 | `AGENT_MARKET_LISTINGS_ENABLED` | no | off | `true` = allow real market listing creation (`create_market_listing` with `send=true`); the per-account switch must be on too (see below) |
 | `VAPOR_STEAM_INVENTORY_BASE_URL` | no | `https://steamcommunity.com` | Overrides the Steam Community host for inventory reads (mock support, 41-4). Point it at a local mock only for testing/acceptance runs — unset is the production default |

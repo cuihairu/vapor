@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" /> <a href="https://cuihairu.github.io/vapor/zh//"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
+  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" /> <a href="https://cuihairu.github.io/vapor/zh/"><img src="https://img.shields.io/badge/%E6%96%87%E6%A1%A3-blue" alt="docs"></a>
 </p>
 
 <div align="center">
@@ -18,13 +18,13 @@ Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit)；但落�
 
 ## 亮点
 
-每个账号跑成常驻 Steam bot 会话：凭据登录与令牌刷新、SteamGuard / 2FA 挑战、TOTP 与扫码登录，以及从 SDA 或 steamguard-cli 导入 `.maFile`。其上是 65 个动作——卡牌挂机、在线时长提升、交易报价、带手续费计算的市场挂单、背包与重复物品扫描、成就管理、Key 兑换、免费许可证与积分商店认领，外加 Dota 2 交易插件。每个动作都带执行安全分级，正因如此调度器对「重复执行会产生外部副作用」的动作把重派上限压到 2 次，而只读与幂等动作沿用配置上限。[动作目录](docs/actions.md) 列出每个动作的载荷字段。
+每个账号跑成常驻 Steam bot 会话：凭据登录与令牌刷新、SteamGuard / 2FA 挑战、TOTP 与扫码登录，以及从 SDA 或 steamguard-cli 导入 `.maFile`。其上是 65 个动作——卡牌挂机、在线时长提升、交易报价、带手续费计算的市场挂单、背包与重复物品扫描、成就管理、Key 兑换、免费许可证与积分商店认领，外加 Dota 2 交易插件。每个动作都带执行安全分级，正因如此调度器对「重复执行会产生外部副作用」的动作把重派上限压到 2 次，而只读与幂等动作沿用配置上限。[动作目录](docs/actions.zh.md) 列出每个动作的载荷字段。
 
 声明式编排：你只声明每个账号的 `online` / `idle` / `farm` / `boost`，调和器负责把现实收敛到该声明——卡牌刷完后轮换挂机目标，Agent 掉线时重新分配账号。`GET /v1/orchestration/farm` 可以看到实时循环。
 
 高风险面默认关闭。市场挂单创建与撤单默认 `dry_run`，且需账号级与 Agent 级双开关；交易自动接受要求显式的账号策略加合作方白名单与「仅礼物」模式。这些决定全部落审计日志。
 
-插件加载进隔离的 AssemblyLoadContext，无需重启即可卸载。清单携带 SemVer API 契约、信任级别与权限授予；运行时 PluginStore 从目录安装面向 Agent 的包。仓内自带七个官方插件：Monitoring、MobileAuthenticator、MarketWatch、CS2/CSGO、Dota 2、GameData、GameAccess——最后一个以线兼容方式从宿主抽出游戏访问动作面。见[插件开发](docs/plugins.md)。
+插件加载进隔离的 AssemblyLoadContext，无需重启即可卸载。清单携带 SemVer API 契约、信任级别与权限授予；运行时 PluginStore 从目录安装面向 Agent 的包。仓内自带七个官方插件：Monitoring、MobileAuthenticator、MarketWatch、CS2/CSGO、Dota 2、GameData、GameAccess——最后一个以线兼容方式从宿主抽出游戏访问动作面。见[插件开发](docs/plugins.zh.md)。
 
 运维侧：控制平面脚本仓库（存放操作脚本并派发给已连接的 Agent）加有序脚本编排（顺序步骤、逐步状态、停止/继续的失败策略）、OpenAPI/Swagger、SSE 事件流（任务、会话、认证挑战）、Prometheus 指标配 Grafana 仪表盘、贯穿 Agent 隧道的 OpenTelemetry 链路追踪、HMAC 签名 webhook，以及在输出侧脱敏凭据与验证码的结构化日志。安全姿态是 AES-GCM 加密凭据存储加密钥轮换工具、按角色的 API Key、落盘即脱敏的审计日志——外加一条硬规矩：Steam Guard 验证码与凭据不出 Agent，跨线的只有一个布尔值。
 
@@ -33,7 +33,7 @@ Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit)；但落�
 ```
                     ┌────────────────────────────────────────────┐
                     │               Control Plane                │
-   operators ──────▶│  REST /v1 (68 routes / 84 ops) · OpenAPI·SSE│
+   operators ──────▶│  REST /v1 (69 routes / 85 ops) · OpenAPI·SSE│
    (curl / UI)      │  SQLite: jobs · accounts · audit · crawl · scripts │
                     │  DesiredStateReconciler · schedulers       │
                     │  admin.html · dashboard.html · gamedata    │
@@ -80,7 +80,7 @@ docker compose up -d                                # 另加 --profile observabi
 curl -s http://127.0.0.1:8080/healthz
 ```
 
-声明账号并跑第一个任务（开发默认 Key，变量表见 [docker.md](docs/docker.md)）：
+声明账号并跑第一个任务（开发默认 Key，变量表见 [docker.zh.md](docs/docker.zh.md)）：
 
 ```bash
 curl -sS -X PUT http://127.0.0.1:8080/v1/accounts/acct-1 \
@@ -112,10 +112,10 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 
 | 章节 | 内容 |
 |---------|----------|
-| **上手** | [走查](docs/getting-started.zh.md) · [本地运行](docs/running.zh.md) · [Docker 与 Compose](docs/docker.md) · [生产部署](docs/production.md) |
-| **参考** | [REST API](docs/api.md) · [动作目录](docs/actions.md) · [数据字典](docs/data-dictionary.md) · [性能](docs/performance.md) · [依赖策略](docs/dependencies.md) · [发布](docs/releasing.md) |
-| **设计** | [架构](docs/architecture.md) · [领域模型](docs/domain-model.md) · [一致性模型](docs/consistency.md) · [会话引擎](docs/session-engine.md) · [插件开发](docs/plugins.md) · [功能对照（对 ASF）](docs/feature-matrix.md) |
-| **运维** | [故障排查](docs/troubleshooting.md) · [测试](tests/TESTING.md) |
+| **上手** | [走查](docs/getting-started.zh.md) · [本地运行](docs/running.zh.md) · [Docker 与 Compose](docs/docker.zh.md) · [生产部署](docs/production.zh.md) |
+| **参考** | [REST API](docs/api.zh.md) · [动作目录](docs/actions.zh.md) · [数据字典](docs/data-dictionary.zh.md) · [性能](docs/performance.zh.md) · [依赖策略](docs/dependencies.zh.md) · [发布](docs/releasing.zh.md) |
+| **设计** | [架构](docs/architecture.zh.md) · [领域模型](docs/domain-model.zh.md) · [一致性模型](docs/consistency.zh.md) · [会话引擎](docs/session-engine.zh.md) · [插件开发](docs/plugins.zh.md) · [功能对照（对 ASF）](docs/feature-matrix.zh.md) |
+| **运维** | [故障排查](docs/troubleshooting.zh.md) · [测试](tests/TESTING.md) |
 | **项目** | [变更日志](CHANGELOG.md) · [贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [支持](SUPPORT.md) |
 
 ## 环境要求
@@ -132,7 +132,7 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 
 ## 发布
 
-- 版本：SemVer tag `vX.Y.Z`（见 [docs/releasing.md](docs/releasing.md)）
+- 版本：SemVer tag `vX.Y.Z`（见 [docs/releasing.zh.md](docs/releasing.zh.md)）
 - 变更日志：`CHANGELOG.md`
 
 ## 开发状态

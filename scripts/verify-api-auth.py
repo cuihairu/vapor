@@ -45,6 +45,17 @@ def classify(calls):
     return None
 
 
+# Agent-side auth calls: TryAgentIdentity (key→agentId binding) is the
+# post-ARCH form and must count the same as the older TryAgent.
+AUTH_CALL_RE = re.compile(r"\bAuth\.(TryAdmin|TryAgent(?:Identity)?)\b")
+
+
+def auth_calls(body):
+    calls = set(AUTH_CALL_RE.findall(body))
+    # Normalize TryAgentIdentity → TryAgent so classify() sees one agent kind.
+    return {"TryAgent" if c == "TryAgentIdentity" else c for c in calls}
+
+
 def doc_kind(raw):
     raw = raw.strip().lower().replace("*", "")
     if "admin or agent" in raw:
@@ -79,7 +90,7 @@ def main():
         if not dm:
             failures.append(f"委托 helper {name}: 未找到定义（白名单与代码脱节）")
         else:
-            found = set(re.findall(r'\bAuth\.(TryAdmin|TryAgent)\b', dm.group(1)))
+            found = auth_calls(dm.group(1))
             if not found:
                 failures.append(f"委托 helper {name}: 体内无任何鉴权调用（白名单挂名、helper 裸奔）")
             helper_calls[name] = found
@@ -110,7 +121,7 @@ def main():
         sm = re.search(r'\nstatic ', body)  # 顶格 static 成员 = 路由区结束（文件尾 helper 不属于路由）
         if sm:
             body = body[:sm.start()]
-        calls = set(re.findall(r'\bAuth\.(TryAdmin|TryAgent)\b', body))
+        calls = auth_calls(body)
         for name in DELEGATES:
             if f"{name}(" in body:
                 calls |= helper_calls.get(name, set())

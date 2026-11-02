@@ -2,7 +2,7 @@ English | 简体中文
 
 # REST API reference
 
-The control plane exposes every operational capability as an HTTP API under `/v1` — 68 routes (84 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
+The control plane exposes every operational capability as an HTTP API under `/v1` — 69 routes (85 operations) — plus `/`, `/healthz` and `/metrics`. The same surface drives the admin console, so anything the UI can do, this reference documents how to do with `curl`. An OpenAPI document is available at `/swagger` when `Vapor_ENABLE_SWAGGER=true`.
 
 Base URL in the compose dev setup: `http://127.0.0.1:8080`. Key management, TLS and network hardening for real deployments: [production.md](production.md). A walkthrough that strings these endpoints into a working farm: [getting-started.md](getting-started.md).
 
@@ -82,13 +82,13 @@ Shared by `GET /v1/jobs/{jobId}/events`, `GET /v1/jobs/events`, `GET /v1/session
 - First frame sent immediately: `event: ready\ndata: {}\n\n`.
 - Every subsequent event: `event: <type>\ndata: <json>\n\n`, JSON serialized with `JsonDefaults.Options` (camelCase, enums as camelCase strings, nulls omitted).
 - Auth via the standard bearer check — browsers use the `?authorization=` query fallback.
-- Backed by `EventBroker` in-memory bounded channels (capacity 256, `DropOldest`): slow consumers may silently drop events. No replay/history.
+- Backed by `EventBroker` in-memory bounded channels (capacity 256, `DropOldest`): slow consumers may silently drop events. No replay/history for the broker itself; the one exception is the auth-challenge stream, which gives a reconnecting agent a one-shot short replay of a still-unconfirmed `code_provided_*` event (see §4.1).
 - Query filtering: session and challenge streams accept an optional `accountName` query parameter (no value = all accounts, key `*`).
 
 Event payload shapes:
 
 - Job events (`Event` record): `{ id, jobId, type, ts, payload? }` where `payload` is an open `Dictionary<string, object?>`. Frame `event:` name equals the event `type`. Types published by the code:
-  - `job.created` (payload `action`, `targets`), `job.canceled` (no payload)
+  - `job.created` (payload `action`, `targets`), `job.canceled` (no payload), `job.cancel_rejected` (payload `rejected`)
   - `task.dispatched` (`taskId`, `agentId`), `task.finished` (`taskId`, `success`, `job`), `task.failed` (`taskId`, `error`, `job`), `task.dispatch_failed` / `task.enqueue_failed` (`taskId`, `attempt`, `error`, `agentId?`)
   - `job.scheduled_triggered` / `job.scheduled_skipped` / `job.scheduled_completed` (recurring scheduler)
   - `trade.auto_accepted`, `account.farm_progress`, `account.standing_alert`, `account.standing_released`, `account.reconciled` (orchestrator; some with `jobId`, some global)
@@ -140,7 +140,7 @@ Legend for the account-task pattern: many `/v1/accounts/{name}/...` endpoints di
 - Errors: 401.
 
 #### `POST /v1/auth/challenges/{accountName}/code`
-- Purpose: submit a login challenge code for an account; clears the pending challenge and publishes a `code_provided_<type>` auth-challenge event that the agent consumes via SSE.
+- Purpose: submit a login challenge code for an account; stages the code for the owning agent's short replay, clears the pending challenge and publishes a `code_provided_<type>` auth-challenge event that the agent consumes via SSE.
 - Auth: admin.
 - Body: free-form JSON object (bound as `Dictionary<string, string?>`):
   - `code` — string, **required** (blank → 400 `code is required`); trimmed.
@@ -148,6 +148,7 @@ Legend for the account-task pattern: many `/v1/accounts/{name}/...` endpoints di
 - 200: `{ "ok": true, "accountName": "<name>", "type": "<email|totp|2fa>" }`
 - Errors: 400 (missing code / bad type), 401.
 - Route param: `{accountName}` — plain string.
+- Delivery: the code is staged in the short-lived auth-challenge outbox **before** the pending challenge is cleared, so an agent whose SSE stream is disconnected (or reconnecting) still receives the code when it re-subscribes; the staged entry is removed once the owning agent's stream acknowledges it, or expires after `VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS` (default 120).
 - Audit: `auth.code.submitted` (the `code` value is included in the details dict but redacted by `SensitiveDataRedactor` before persistence — the stored audit never contains the plain code).
 
 #### `GET /v1/auth/challenges/events` (SSE)
@@ -155,6 +156,7 @@ Legend for the account-task pattern: many `/v1/accounts/{name}/...` endpoints di
 - Auth: admin OR agent.
 - Query: `accountName` (string, optional for admin, required for agent) — filter to one account.
 - 200: `text/event-stream`, frames `event: auth.<challengeType>` with `AuthChallengeEvent` JSON payloads (see §2). Initial `event: ready`.
+- Replay: an owning agent (not admin) that re-subscribes to the same `accountName` gets a **one-shot short replay** of a still-unconfirmed staged code before the live stream resumes; admin streams get real-time projection only, no replay.
 - Errors: 401 (no body) for an unknown/expired/unbound agent key; 403 when an agent omits `accountName` or the named account is not assigned to that agent.
 
 #### `POST /v1/qr`
@@ -491,7 +493,7 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 - Purpose: cancel all queued/running tasks of a job (also pushes `task_cancel` frames to connected agents).
 - Auth: admin. Body: none.
 - 200: `{ "ok": true }`.
-- Errors: 404 `{ "error": "job not found" }`, 401. Publishes SSE `job.canceled`, audit `job.canceled`.
+- Errors: 404 `{ "error": "job not found" }`, 401. Publishes SSE `job.canceled`, audit `job.canceled`; if some task cancels cannot be enqueued to their agent (agent task buffer full), publishes SSE `job.cancel_rejected` (payload `rejected` count).
 
 #### `GET /v1/jobs/{jobId}/events` (SSE)
 - Purpose: SSE stream of this job's lifecycle events.
@@ -503,6 +505,16 @@ Job records: `Job = { id, action, region?, targets: string[], meta?: {string:str
 - Purpose: SSE stream of lifecycle events across all jobs (broker key `*`; also carries agent/account/crawl events with null `jobId`).
 - Auth: admin. Body: none. Query: none.
 - 200 `text/event-stream`. Errors: 401 (no body).
+
+#### `POST /v1/jobs/secret-payloads/purge`
+- Purpose: preview or scrub login credentials persisted in historical job/task `payload` columns. Scrubbed keys: `password`/`pass`, `accessToken`/`access_token`, `refreshToken`/`refresh_token`, `authCode`/`auth_code`, `twoFactorCode`/`two_factor_code` (case-insensitive). Agent-side provisioning payloads (`proxy`, `shared_secret`, `identity_secret`) are deliberately preserved — those actions consume them at execution time (see [production.md](production.md)). Dry-run is the default; a destructive scrub requires `confirm=true`; `backupPath` snapshots the DB file first.
+- Auth: admin.
+- Body (`SecretPayloadPurgeRequest`, all optional):
+  - `dryRun` — bool (default `true`; `false` + no `confirm` → 400 `set confirm=true to scrub historical secret payloads`)
+  - `confirm` — bool (must be `true` when `dryRun=false`)
+  - `backupPath` — string, optional file path to copy the jobs DB to before scrubbing
+- 200: `{ "dryRun": bool, "jobs": int, "tasks": int, "backupPath": string? }` (rows touched in preview / scrubbed in write mode). Only `jobs.payload_json` and `tasks.payload_json` are rewritten; `output_json`/`meta_json` are never touched.
+- Errors: 400 (`ErrorResponse`; missing confirm, or a backup-path failure), 401 (empty). No SSE event; the operation is recorded in the audit log.
 
 ---
 
