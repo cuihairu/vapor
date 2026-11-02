@@ -141,3 +141,25 @@ linked token 在循环重订阅前取消全部兄弟订阅。
 
 13. `src/Vapor.ControlPlane/Program.cs:878` —— `"pending"` 状态字面量在本文件重复 19 次，
     应提共享常量。
+
+## 发布后复核（2026-11-02）
+
+发布后由第二轮补充；已记 todo。两条为文档-源码矛盾，一条死代码，两条 P2（其一是本次
+`f35ec25` 自身的缺口）。
+
+1. **P2** `README.md:29` / `README.zh.md:29` —— 首页宣称「Steam Guard 验证码与凭据不出
+   Agent，跨线只有一个布尔值」，实现与此矛盾：人工验证码经控制平面发布并以明文经 SSE 回
+   Agent（`src/Vapor.ControlPlane/Program.cs:3507` 发布、`:3419-3420` 仅管理员剥码），任务
+   payload 凭据亦入控制平面持久化（secret-payload purge 端点）；`docs/architecture.md:109`
+   已正确描述该路径。修法：更正 README 表述。
+2. **P2** `docs/architecture.md:116` —— 把挑战流重放写成「still-acknowledged code」，与实现
+   相反：outbox 仅重放未确认（staged）验证码，`Acknowledge` 即移除
+   （`src/Vapor.ControlPlane/AuthChallengeOutbox.cs:77-91`、`Program.cs:3404`）；`docs/api.md:85` 的
+   「still-unconfirmed」才是正确表述。修法：更正架构文档。
+3. **P3** `src/Vapor.Agent/AgentTaskBuffer.cs:40` —— `CreateChannel` 已无生产调用方（`RunOnce`
+   改用 `AgentTaskDispatcher`；仅测试仍引用）：死代码。
+4. **P2** `src/Vapor.Steam.Core/Steam/SteamClientManager.cs:340-365`（SetProxy）—— 并发切换时
+   后到者覆盖 `_disconnectTcs`，先到者持有的 settle TCS 永不落定，只能靠 10 秒 `WaitAsync`
+   超时兜底。应以 `??=` 合并，让并发切换共享一次断开等待。（`f35ec25` 的缺口。）
+5. **P2** `SteamClientManager.cs:397-438,1611-1622` —— `94085ba` 残余的复核确认：被取消登录
+   的迟到 `LoggedOnCallback` 仍可经共享 `_activeLoginAccountName` 槽错投下一登录 TCS。

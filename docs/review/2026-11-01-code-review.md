@@ -157,3 +157,30 @@ families analyzers do not enforce.
 
 13. `src/Vapor.ControlPlane/Program.cs:878` — the `"pending"` status literal repeats 19 times in
     this file; should be a shared constant.
+
+## Follow-up recheck (2026-11-02)
+
+Added after publication by a second pass; logged in todo. Two are docs-vs-source contradictions,
+one is dead code, two are P2s (one a gap in this review's own `f35ec25`).
+
+1. **P2** `README.md:29` / `README.zh.md:29` — the front page claims Steam Guard codes and
+   credentials "never leave the agent, only a boolean crosses the line", which the implementation
+   contradicts: manual auth codes are published to the control plane and streamed back to the
+   agent in plaintext over SSE (`src/Vapor.ControlPlane/Program.cs:3507` publish, `:3419-3420`
+   admin-only code stripping), and task payload credentials are persisted in the control plane
+   (secret-payload purge endpoint). `docs/architecture.md:109` already describes the real path.
+   Fix: correct the README claim.
+2. **P2** `docs/architecture.md:116` — describes challenge-stream replay as replaying a
+   "still-acknowledged code"; the outbox replays only unacknowledged (staged) codes and
+   `Acknowledge` removes them (`src/Vapor.ControlPlane/AuthChallengeOutbox.cs:77-91`,
+   `Program.cs:3404`). `docs/api.md:85` ("still-unconfirmed") is the correct wording. Fix: correct
+   the architecture doc.
+3. **P3** `src/Vapor.Agent/AgentTaskBuffer.cs:40` — `CreateChannel` has no production caller
+   (`RunOnce` moved to `AgentTaskDispatcher`; only tests reference it): dead code.
+4. **P2** `src/Vapor.Steam.Core/Steam/SteamClientManager.cs:340-365` (SetProxy) — concurrent
+   switches overwrite `_disconnectTcs`, so the earlier caller's settle TCS never settles and it
+   falls back to the 10 s `WaitAsync` timeout. Coalesce with `??=` so concurrent switches share
+   one disconnect wait. (Gap in `f35ec25`.)
+5. **P2** `SteamClientManager.cs:397-438,1611-1622` — re-confirmation of the `94085ba` residual:
+   a cancelled login's late `LoggedOnCallback` can still route to the next login's TCS via the
+   shared `_activeLoginAccountName` slot.

@@ -120,3 +120,8 @@ P3 记录性（风格/健壮性，未修）：
 - [ ] P3 魔法数：BotSession.cs:256（回调轮询 100ms）、:604（断开沉降 100ms）；RedisVaporCache.cs:105（`Thread.Sleep(200*attempt)` 库内重试同步阻塞）
 - [ ] P3 库内 await 缺 `ConfigureAwait(false)`：SteamWebHandler.cs:174（GetAsync）、:191（PostAsync）；DataActions.cs:440；CsgoPlugin.cs:320；SessionManager.cs:477（_eventCallback.Invoke）
 - [ ] P3 `"pending"` 状态字面量 ControlPlane Program.cs:878 重复 19 次，应提共享常量
+- [ ] 审核发现：README 英/中首页新增「Steam Guard 验证码与凭据不出 Agent，跨线只有一个布尔值」与实现矛盾——人工验证码实经控制平面 SSE 携明文下发 Agent（Program.cs:3507 发布、:3419-3420 仅管理员剥码），任务 payload 凭据亦入控制平面持久化（secret-payload purge 端点），且同仓 docs/architecture.md:109 已正确描述该路径（README.md:29、README.zh.md:29）
+- [ ] 审核发现：docs/architecture.md:116 将挑战流重放写成「still-acknowledged code」，与实现相反——outbox 仅重放未确认（staged）验证码，Acknowledge 即移除（AuthChallengeOutbox.cs:77-91、Program.cs:3404），api.md:85 的「still-unconfirmed」才是正确表述（docs/architecture.md:116）
+- [ ] 审核发现：AgentTaskBuffer.CreateChannel 已无生产调用方（RunOnce 改用 AgentTaskDispatcher），仅测试仍引用，属死代码（AgentTaskBuffer.cs:40、Program.cs:372）
+- [ ] 审核发现：SetAccountProxyAsync 并发切换时后到者覆盖 _disconnectTcs，先到者持有的 settle TCS 永不落定，只能靠 10s WaitAsync 超时兜底（SteamClientManager.cs:340-365）
+- [ ] 审核发现：登录门控引入后，取消的登录迟到 LoggedOnCallback 仍可能经共享 _activeLoginAccountName 错投下一登录 TCS（SteamClientManager.cs:397-438、:1611-1622）；已作为 P2「94085ba 残余」记档，本轮复核确认仍在
