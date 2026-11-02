@@ -796,11 +796,11 @@ static async Task PollAuthChallengesAsync(
 					.Select(session => session.AccountName)
 					.Distinct(StringComparer.Ordinal)
 					.ToList();
-					if (accountNames.Count == 0)
-					{
-						await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-						continue;
-					}
+				if (accountNames.Count == 0)
+				{
+					await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+					continue;
+				}
 
 				List<Task> subscriptions = accountNames
 					.Select(accountName => SubscribeToAccountChallengesAsync(

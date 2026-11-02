@@ -114,7 +114,7 @@ public sealed class SqliteJobStoreTests
 			("$id", "task-old"), ("$payload", """{"access_token":"t1","two_factor_code":"c1","keep":true}"""));
 		// A clean row must be untouched.
 		RawExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'a', 'login', '', $payload, 'Finished', 0, 1, 1)",
-			("$id", "task-clean"), ("$payload", """{"message":"no secret"}""")); 
+			("$id", "task-clean"), ("$payload", """{"message":"no secret"}"""));
 
 		(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun: true, backupPath: null, cts.Token);
 

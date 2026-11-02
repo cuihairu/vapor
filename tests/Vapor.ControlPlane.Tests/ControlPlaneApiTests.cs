@@ -448,7 +448,7 @@ public sealed class ControlPlaneApiTests
 		RawJobStoreExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"alice\"]', '{}', 'Finished', 1, 1, $payload)",
 			("$id", "job-old"), ("$payload", """{"password":"old-pass","refreshToken":"old-refresh"}"""));
 		RawJobStoreExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'alice', 'login', '', $payload, 'Finished', 0, 1, 1)",
-			("$id", "task-old"), ("$payload", """{"access_token":"old-access","two_factor_code":"old-code","message":"keep"}""" ));
+			("$id", "task-old"), ("$payload", """{"access_token":"old-access","two_factor_code":"old-code","message":"keep"}"""));
 
 		// The historical secret in the task payload is visible through the API before the scrub.
 		using HttpResponseMessage before = await client.GetAsync("/v1/jobs/job-old");
