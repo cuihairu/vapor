@@ -398,9 +398,6 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		catch (OperationCanceledException)
 		{
 		}
-		catch (ChannelClosedException)
-		{
-		}
 		lock (_eventLock)
 		{
 			foreach (var (_, subscription) in _eventSubscribers)
