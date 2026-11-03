@@ -156,7 +156,7 @@ public sealed class AccountOrchestrationE2ETests
 		}
 
 		throw new TimeoutException(
-			$"Account '{AccountName}' was never assigned to '{expectedAgent}' within {ReconcileTimeout:s} (last assignment: {lastAgent}).{Environment.NewLine}{_stack.Diagnostics()}");
+			$"Account '{AccountName}' was never assigned to '{expectedAgent}' within {ReconcileTimeout:g} (last assignment: {lastAgent}).{Environment.NewLine}{_stack.Diagnostics()}");
 	}
 
 	private async Task<HttpResponseMessage> AdminAsync(HttpMethod method, string path, object? body = null)
