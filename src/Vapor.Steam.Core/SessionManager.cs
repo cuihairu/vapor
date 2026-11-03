@@ -64,15 +64,26 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	private SessionEventDelegate? _eventCallback;
 	private readonly Task? _tokenRefreshTask;
 	private readonly List<Task> _pumpTasks = [];
-	// Subscriber fan-out is linearized with the event history under _eventLock: an
-	// event is either seeded into a registering subscriber (bounded recent history)
-	// or fanned out to it live, never both and never neither. Without this a
-	// subscriber that registers just after an event was drained misses it.
+	// Subscriber fan-out is linearized with the event history under _eventLock: a
+	// durable state event is either seeded into a registering subscriber (bounded
+	// recent history) or fanned out to it live, never both and never neither.
+	// Without this a subscriber that registers just after a state change was
+	// drained would miss it. One-shot events (auth/2FA/QR challenges, errors) are
+	// NOT seeded — they are point-in-time commands whose side effects (answering a
+	// 2FA challenge, inflating counters) must not fire again for a late subscriber.
 	private readonly object _eventLock = new();
 	private readonly List<SessionEvent> _recentEvents = [];
 	private const int EventHistoryLimit = 256;
 	private readonly List<(Guid Id, Channel<SessionEvent> Subscription)> _eventSubscribers = [];
 	private readonly Task _eventBroadcasterTask;
+
+	/// <summary>
+	/// Whether an event is a durable state snapshot safe to seed into a subscriber
+	/// that registers after it was published. Challenge and error events are
+	/// point-in-time commands/notifications and are live-only.
+	/// </summary>
+	private static bool IsReplayableState(SessionEvent evt) =>
+		evt.Type is SessionEventType.StateChanged or SessionEventType.Connected or SessionEventType.Disconnected;
 
 	public SessionManager(
 		IActionRegistry actionRegistry,
@@ -334,12 +345,16 @@ public sealed class SessionManager : ISessionManager, IDisposable
 		Guid id = Guid.NewGuid();
 		lock (_eventLock)
 		{
-			// Seed from the bounded recent history, then register: an event
-			// published before this moment is either still in the history (seeded
-			// above) or is fanned out after the registration below — never missed.
+			// Seed durable state events from the bounded recent history, then
+			// register: a state event published before this moment is either still
+			// in the history (seeded above) or is fanned out after the registration
+			// below — never missed. One-shot events are never seeded.
 			foreach (var evt in _recentEvents)
 			{
-				subscription.Writer.TryWrite(evt);
+				if (IsReplayableState(evt))
+				{
+					subscription.Writer.TryWrite(evt);
+				}
 			}
 			_eventSubscribers.Add((id, subscription));
 		}
@@ -370,10 +385,11 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	/// Sole consumer of the ingress event channel: fans every event out to each
 	/// registered subscriber under <c>_eventLock</c>, recording it in the bounded
 	/// recent history so a subscriber that registers just after the drain is
-	/// seeded with it rather than missing it. Exits on manager shutdown
-	/// (OperationCanceledException) or producer-side completion, then completes
-	/// every subscriber so a parked consumer does not hang on a channel that
-	/// will never see another event.
+	/// seeded with the durable state events rather than missing them (one-shot
+	/// challenge/error events are live-only, never replayed). Exits on manager
+	/// shutdown (OperationCanceledException) or producer-side completion, then
+	/// completes every subscriber so a parked consumer does not hang on a channel
+	/// that will never see another event.
 	/// </summary>
 	private async Task BroadcastEventsAsync()
 	{

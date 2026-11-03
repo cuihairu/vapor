@@ -393,6 +393,42 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SubscribeAllEvents_OneShotChallengeEvents_AreNotSeededToLateSubscriber()
+	{
+		// A 2FA/QR/auth challenge is a point-in-time command: a subscriber that
+		// registers after it was published must NOT have it replayed, otherwise the
+		// 2FA auto-responder burns its cooldown and inflates AnsweredCount, and the
+		// monitoring plugin inflates its session-event counter.
+		Channel<SessionEvent> channel = (Channel<SessionEvent>)typeof(SessionManager)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_manager)!;
+		var challenge = new SessionEvent(SessionEventType.TwoFactorCodeNeeded, "one_shot_test", SessionState.ConnectingWait2FA);
+		channel.Writer.TryWrite(challenge);
+		await WaitForHistoryAsync(h => h.Count == 1);
+
+		List<SessionEvent> received = [];
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+		try
+		{
+			await foreach (var evt in _manager.SubscribeAllEvents(cts.Token))
+			{
+				received.Add(evt);
+				break;
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			// Expected: a non-replayed one-shot leaves the subscription empty, so
+			// the enumerator only ends when the caller token fires.
+		}
+
+		// The seed must be empty for a one-shot challenge event: the only way the
+		// subscription yields nothing is the live-only rule — assert it delivered
+		// no stale challenge.
+		Assert.Empty(received);
+	}
+
+	[Fact]
 	public async Task BroadcastEvents_HistoryTrimmedToLimitAfterOverflow()
 	{
 		// 300 distinct events through the ingress: the recent-history buffer must
@@ -418,6 +454,65 @@ public class SessionManagerTests : IDisposable
 		Assert.Equal(limit, history.Count);
 		Assert.Equal($"evt-{published - limit}", history[0].Message);
 		Assert.Equal($"evt-{published - 1}", history[^1].Message);
+	}
+
+	[Fact]
+	public async Task SubscribeAllEvents_PublishDuringRegistration_DeliversEachEventExactlyOnce()
+	{
+		// The _eventLock linearizes registration and fan-out: an event published
+		// while a subscriber is registering is either seeded from the recent
+		// history or fanned out live, never both and never neither. Publish a batch
+		// of distinct events while a subscriber registers concurrently, then assert
+		// every event reached the subscriber exactly once.
+		Channel<SessionEvent> channel = (Channel<SessionEvent>)typeof(SessionManager)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_manager)!;
+
+		const int batch = 200;
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+		List<SessionEvent> received = [];
+		var collected = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		// Concurrently publish and subscribe so the registration happens mid-batch:
+		// the lock must give the subscriber either the seed (already-published) or
+		// the live fan-out (published after registration), never a duplicate.
+		var publishTask = Task.Run(async () =>
+		{
+			for (int i = 0; i < batch; i++)
+			{
+				channel.Writer.TryWrite(new SessionEvent(
+					SessionEventType.StateChanged, "race_test", SessionState.Connected, $"race-{i}"));
+			}
+		});
+		var subscribeTask = Task.Run(async () =>
+		{
+			try
+			{
+				await foreach (var evt in _manager.SubscribeAllEvents(cts.Token))
+				{
+					lock (received)
+					{
+						received.Add(evt);
+						if (received.Count >= batch)
+						{
+							collected.TrySetResult(null);
+						}
+					}
+				}
+			}
+			catch (OperationCanceledException)
+			{
+			}
+		});
+
+		await publishTask;
+		await collected.Task.WaitAsync(TimeSpan.FromSeconds(20));
+		cts.Cancel();
+		await subscribeTask;
+
+		// Exactly once each: no loss and no duplication.
+		Assert.Equal(batch, received.Count);
+		Assert.Equal(batch, received.Select(e => e.Message).Distinct().Count());
 	}
 
 	/// <summary>
