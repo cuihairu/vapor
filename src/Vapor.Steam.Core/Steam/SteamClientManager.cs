@@ -462,6 +462,17 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 		finally
 		{
+			// This login is leaving (success, failure or cancellation). Clear the
+			// single routing slot if it still points at us: a logon response that
+			// arrives after cancellation is then dropped in OnLoggedOn instead of
+			// being misrouted to whichever login grabs the slot next. (The residual
+			// window — a cancelled login immediately followed by a new login whose
+			// slot is already overwritten — still needs per-request JobID routing,
+			// which SteamKit2's public LogOn API does not expose.)
+			if (string.Equals(_activeLoginAccountName, accountName, StringComparison.Ordinal))
+			{
+				_activeLoginAccountName = null;
+			}
 			_loginGate.Release();
 		}
 	}

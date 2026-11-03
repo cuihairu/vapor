@@ -210,6 +210,21 @@ public class SteamClientManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task LoginAsync_WhenItFails_ClearsActiveLoginSlot()
+	{
+		// A login that exits (here: the client is not connected, so the guard
+		// throws after the slot was assigned) must clear _activeLoginAccountName.
+		// Otherwise a logon response arriving later for this account would be
+		// misrouted to whatever login grabs the slot next (94085ba residual).
+		await Assert.ThrowsAsync<InvalidOperationException>(
+			() => _manager.LoginAsync("test_account", "password", CancellationToken.None));
+
+		var slot = typeof(SteamClientManager)
+			.GetField("_activeLoginAccountName", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		Assert.Null(slot.GetValue(_manager));
+	}
+
+	[Fact]
 	public void RunCallbacks_CanBeCalledMultipleTimes()
 	{
 		// Act & Assert - should not throw
