@@ -171,7 +171,7 @@ public sealed class SteamWebHandler : IDisposable
 			throw new ArgumentNullException(nameof(url));
 		}
 
-		return await SendRequestAsync(System.Net.Http.HttpMethod.Get, url, null, headers, cancellationToken);
+		return await SendRequestAsync(System.Net.Http.HttpMethod.Get, url, null, headers, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -188,7 +188,7 @@ public sealed class SteamWebHandler : IDisposable
 			throw new ArgumentNullException(nameof(url));
 		}
 
-		return await SendRequestAsync(System.Net.Http.HttpMethod.Post, url, content, headers, cancellationToken);
+		return await SendRequestAsync(System.Net.Http.HttpMethod.Post, url, content, headers, cancellationToken).ConfigureAwait(false);
 	}
 
 	/// <summary>

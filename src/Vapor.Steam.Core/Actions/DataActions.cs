@@ -437,7 +437,7 @@ public sealed class SearchGamesAction : StoreDataActionBase, IAction
 			string cacheKey = $"search:{term.ToLowerInvariant()}:{limit}:{country.ToLowerInvariant()}";
 
 			async Task<IReadOnlyList<GameSearchResult>?> Fetch(CancellationToken ct) =>
-				await client.SearchGamesAsync(term, limit, country, ct);
+				await client.SearchGamesAsync(term, limit, country, ct).ConfigureAwait(false);
 
 			IReadOnlyList<GameSearchResult> results =
 				await FetchCachedAsync(

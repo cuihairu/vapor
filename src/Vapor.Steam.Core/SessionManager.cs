@@ -530,7 +530,7 @@ public sealed class SessionManager : ISessionManager, IDisposable
 				// Also forward to event callback if set
 				if (_eventCallback != null)
 				{
-					await _eventCallback.Invoke(accountName, evt.Type.ToString(), evt.NewState?.ToString() ?? "", evt.Message);
+					await _eventCallback.Invoke(accountName, evt.Type.ToString(), evt.NewState?.ToString() ?? "", evt.Message).ConfigureAwait(false);
 				}
 			}
 		}

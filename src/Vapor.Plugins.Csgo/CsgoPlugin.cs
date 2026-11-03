@@ -317,7 +317,7 @@ public sealed class CsgoPlugin : IPlugin, IActionPlugin, IWebApiPlugin
 		}
 		else
 		{
-			(backpack, string? pickError) = await ReadBackpackAsync(webHandler, logger, cancellationToken);
+			(backpack, string? pickError) = await ReadBackpackAsync(webHandler, logger, cancellationToken).ConfigureAwait(false);
 			if (pickError is not null)
 			{
 				return new RealOpenOutcome(null, pickError);
