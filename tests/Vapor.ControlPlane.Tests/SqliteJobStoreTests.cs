@@ -759,6 +759,133 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task FailRunningTask_RollsBackTaskUpdateWhenJobRecomputeFails()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+			JobWithTasks created = await store.CreateJob(
+				new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+			JobTask claimed = (await store.ClaimNextQueuedTask("local", cts.Token))!;
+
+			using (var raw = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+			{
+				raw.Open();
+				using var cmd = raw.CreateCommand();
+				cmd.CommandText =
+					"CREATE TRIGGER recompute_abort BEFORE UPDATE ON jobs " +
+					"WHEN NEW.status = 'Failed' BEGIN SELECT RAISE(ABORT, 'recompute aborted'); END;";
+				cmd.ExecuteNonQuery();
+			}
+
+			await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(
+				() => store.FailRunningTask(claimed.Id, "boom", cts.Token));
+
+			JobWithTasks refreshed = await store.GetJob(created.Job.Id, cts.Token);
+			Assert.Equal(JobStatus.Running, refreshed.Job.Status);
+			Assert.Equal(JobTaskStatus.Running, refreshed.Tasks.Single().Status);
+		}
+		finally
+		{
+			try
+			{
+				File.Delete(dbPath);
+			}
+			catch (IOException)
+			{
+			}
+		}
+	}
+
+	[Fact]
+	public async Task RequeueTask_RollsBackTaskUpdateWhenJobRecomputeFails()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+			JobWithTasks created = await store.CreateJob(
+				new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+			JobTask claimed = (await store.ClaimNextQueuedTask("local", cts.Token))!;
+
+			using (var raw = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+			{
+				raw.Open();
+				using var cmd = raw.CreateCommand();
+				cmd.CommandText =
+					"CREATE TRIGGER recompute_abort BEFORE UPDATE ON jobs " +
+					"WHEN NEW.status = 'Queued' BEGIN SELECT RAISE(ABORT, 'recompute aborted'); END;";
+				cmd.ExecuteNonQuery();
+			}
+
+			await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(
+				() => store.RequeueTask(claimed.Id, null, cts.Token));
+
+			JobWithTasks refreshed = await store.GetJob(created.Job.Id, cts.Token);
+			Assert.Equal(JobStatus.Running, refreshed.Job.Status);
+			Assert.Equal(JobTaskStatus.Running, refreshed.Tasks.Single().Status);
+		}
+		finally
+		{
+			try
+			{
+				File.Delete(dbPath);
+			}
+			catch (IOException)
+			{
+			}
+		}
+	}
+
+	[Fact]
+	public async Task RequeueStaleRunningTasks_RollsBackTaskUpdateWhenJobRecomputeFails()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+			JobWithTasks created = await store.CreateJob(
+				new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+			JobTask claimed = (await store.ClaimNextQueuedTask("local", cts.Token))!;
+			MarkTaskStale(store, claimed.Id, DateTimeOffset.UtcNow.AddMinutes(-10));
+
+			using (var raw = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+			{
+				raw.Open();
+				using var cmd = raw.CreateCommand();
+				cmd.CommandText =
+					"CREATE TRIGGER recompute_abort BEFORE UPDATE ON jobs " +
+					"WHEN NEW.status = 'Queued' BEGIN SELECT RAISE(ABORT, 'recompute aborted'); END;";
+				cmd.ExecuteNonQuery();
+			}
+
+			await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(
+				() => store.RequeueStaleRunningTasks(TimeSpan.Zero, cts.Token));
+
+			JobWithTasks refreshed = await store.GetJob(created.Job.Id, cts.Token);
+			Assert.Equal(JobStatus.Running, refreshed.Job.Status);
+			Assert.Equal(JobTaskStatus.Running, refreshed.Tasks.Single().Status);
+		}
+		finally
+		{
+			try
+			{
+				File.Delete(dbPath);
+			}
+			catch (IOException)
+			{
+			}
+		}
+	}
+
+	[Fact]
 	public async Task RequeueTaskMovesJobBackToQueuedWhenNoOtherWorkRemains()
 	{
 		using var store = new SqliteJobStore(":memory:");

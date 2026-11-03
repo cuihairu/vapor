@@ -205,23 +205,23 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 		{
 			string taskId = Id.New();
 
-			using var cmd = _connection.CreateCommand();
-			cmd.Transaction = tx;
-			cmd.CommandText = """
+			using var updateCmd = _connection.CreateCommand();
+			updateCmd.Transaction = tx;
+			updateCmd.CommandText = """
 				INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms)
 				VALUES ($id, $jobId, $target, $action, $region, $payload, $status, $attempt, $created, $updated);
 				""";
-			cmd.Parameters.AddWithValue("$id", taskId);
-			cmd.Parameters.AddWithValue("$jobId", jobId);
-			cmd.Parameters.AddWithValue("$target", target);
-			cmd.Parameters.AddWithValue("$action", action);
-			cmd.Parameters.AddWithValue("$region", region);
-			cmd.Parameters.AddWithValue("$payload", payloadJson);
-			cmd.Parameters.AddWithValue("$status", JobTaskStatus.Queued.ToString());
-			cmd.Parameters.AddWithValue("$attempt", 0);
-			cmd.Parameters.AddWithValue("$created", nowMs);
-			cmd.Parameters.AddWithValue("$updated", nowMs);
-			await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			updateCmd.Parameters.AddWithValue("$id", taskId);
+			updateCmd.Parameters.AddWithValue("$jobId", jobId);
+			updateCmd.Parameters.AddWithValue("$target", target);
+			updateCmd.Parameters.AddWithValue("$action", action);
+			updateCmd.Parameters.AddWithValue("$region", region);
+			updateCmd.Parameters.AddWithValue("$payload", payloadJson);
+			updateCmd.Parameters.AddWithValue("$status", JobTaskStatus.Queued.ToString());
+			updateCmd.Parameters.AddWithValue("$attempt", 0);
+			updateCmd.Parameters.AddWithValue("$created", nowMs);
+			updateCmd.Parameters.AddWithValue("$updated", nowMs);
+			await updateCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
 			tasks.Add(new JobTask(
 				Id: taskId,
@@ -735,23 +735,26 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 
 			long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 			long nextAttemptAtMs = nowMs + (long)(retryDelay?.TotalMilliseconds ?? 0);
-			using var cmd = _connection.CreateCommand();
-			cmd.CommandText = """
+			using var tx = _connection.BeginTransaction();
+			using var updateCmd = _connection.CreateCommand();
+			updateCmd.Transaction = tx;
+			updateCmd.CommandText = """
 				UPDATE tasks
 				SET status = $queued, updated_at_ms = $updated, next_attempt_at_ms = $nextAttemptAt
 				WHERE id = $id AND status = $running;
 				""";
-			cmd.Parameters.AddWithValue("$queued", JobTaskStatus.Queued.ToString());
-			cmd.Parameters.AddWithValue("$updated", nowMs);
-			cmd.Parameters.AddWithValue("$nextAttemptAt", nextAttemptAtMs);
-			cmd.Parameters.AddWithValue("$id", taskId);
-			cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+			updateCmd.Parameters.AddWithValue("$queued", JobTaskStatus.Queued.ToString());
+			updateCmd.Parameters.AddWithValue("$updated", nowMs);
+			updateCmd.Parameters.AddWithValue("$nextAttemptAt", nextAttemptAtMs);
+			updateCmd.Parameters.AddWithValue("$id", taskId);
+			updateCmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 
-			long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			long updated = await updateCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 			if (updated > 0)
 			{
-				await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
+				await RecomputeJob(jobId, cancellationToken, tx).ConfigureAwait(false);
 			}
+			tx.Commit();
 		}
 		finally
 		{
@@ -768,8 +771,10 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			long cutoffMs = nowMs - (long)taskLease.TotalMilliseconds;
 			HashSet<string> affectedJobIds = [];
 
+			using var tx = _connection.BeginTransaction();
 			using (var select = _connection.CreateCommand())
 			{
+				select.Transaction = tx;
 				select.CommandText = """
 					SELECT DISTINCT job_id
 					FROM tasks
@@ -786,6 +791,7 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			}
 
 			using var cmd = _connection.CreateCommand();
+			cmd.Transaction = tx;
 			cmd.CommandText = """
 				UPDATE tasks
 				SET status = $queued, updated_at_ms = $updated, claimed_by_agent_id = NULL
@@ -801,9 +807,11 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			{
 				foreach (string jobId in affectedJobIds)
 				{
-					await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
+					await RecomputeJob(jobId, cancellationToken, tx).ConfigureAwait(false);
 				}
 			}
+
+			tx.Commit();
 
 			return (int)updated;
 		}
@@ -1043,27 +1051,28 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 				jobId = reader.GetString(0);
 			}
 
-			{
-				using var cmd = _connection.CreateCommand();
-				cmd.CommandText = """
-					UPDATE tasks
-					SET status = $failed, error = $error, updated_at_ms = $updated
-					WHERE id = $id AND status = $running;
-					""";
-				cmd.Parameters.AddWithValue("$failed", JobTaskStatus.Failed.ToString());
-				cmd.Parameters.AddWithValue("$error", error);
-				cmd.Parameters.AddWithValue("$updated", nowMs);
-				cmd.Parameters.AddWithValue("$id", taskId);
-				cmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
+			using var tx = _connection.BeginTransaction();
+			using var updateCmd = _connection.CreateCommand();
+			updateCmd.Transaction = tx;
+			updateCmd.CommandText = """
+				UPDATE tasks
+				SET status = $failed, error = $error, updated_at_ms = $updated
+				WHERE id = $id AND status = $running;
+				""";
+			updateCmd.Parameters.AddWithValue("$failed", JobTaskStatus.Failed.ToString());
+			updateCmd.Parameters.AddWithValue("$error", error);
+			updateCmd.Parameters.AddWithValue("$updated", nowMs);
+			updateCmd.Parameters.AddWithValue("$id", taskId);
+			updateCmd.Parameters.AddWithValue("$running", JobTaskStatus.Running.ToString());
 
-				long updated = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-				if (updated == 0)
-				{
-					throw new NotFoundException("task not running");
-				}
+			long updated = await updateCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+			if (updated == 0)
+			{
+				throw new NotFoundException("task not running");
 			}
 
-			await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
+			await RecomputeJob(jobId, cancellationToken, tx).ConfigureAwait(false);
+			tx.Commit();
 
 			Job job = await ReadJob(jobId, cancellationToken).ConfigureAwait(false);
 			IReadOnlyList<JobTask> tasks = await ReadTasks(jobId, cancellationToken).ConfigureAwait(false);
