@@ -206,6 +206,29 @@ public class SessionManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task RemoveSessionAsync_DisconnectThrows_StillDisposesSession()
+	{
+		// Arrange
+		var accountName = "test_account";
+		var credentials = new AccountCredentials(accountName, "password");
+		await _manager.GetOrCreateSessionAsync(accountName, credentials, CancellationToken.None);
+
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		// Act: a cancelled token makes BotSession.DisconnectAsync's WaitAsync throw
+		// OperationCanceledException; the session must still be disposed (removed)
+		// rather than leaked.
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(
+			() => _manager.RemoveSessionAsync(accountName, cts.Token));
+
+		// Assert: the account was removed from the manager even though the
+		// disconnect command failed.
+		var session = await _manager.GetSessionAsync(accountName, CancellationToken.None);
+		Assert.Null(session);
+	}
+
+	[Fact]
 	public async Task RemoveSessionAsync_IsCaseInsensitive()
 	{
 		// Arrange

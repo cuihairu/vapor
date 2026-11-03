@@ -195,9 +195,18 @@ public sealed class SessionManager : ISessionManager, IDisposable
 	{
 		if (_sessions.TryRemove(accountName, out var session))
 		{
-			await session.DisconnectAsync(cancellationToken).ConfigureAwait(false);
-			session.Dispose();
-			_logger.LogInformation("Session removed for {AccountName}", accountName);
+			try
+			{
+				await session.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+			}
+			finally
+			{
+				// Dispose must always run: if the disconnect command times out or is
+				// cancelled, skipping Dispose would leak the session's command pump
+				// (its _cts and _actionLock) for an account already removed.
+				session.Dispose();
+				_logger.LogInformation("Session removed for {AccountName}", accountName);
+			}
 		}
 	}
 
