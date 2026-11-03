@@ -143,7 +143,13 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private readonly ConcurrentDictionary<string, LoginState> _loginStates = new(StringComparer.OrdinalIgnoreCase);
 	private readonly object _connectLock = new();
 	private TaskCompletionSource<bool> _connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+	// Completed by OnDisconnected for the in-flight proxy switch, so a reconnect
+	// does not race the dying socket. Null when no switch is awaiting teardown.
+	private TaskCompletionSource<bool>? _disconnectTcs;
 	private string? _activeLoginAccountName;
+	// Serializes LoginAsync: a LoggedOnCallback is routed through the single
+	// _activeLoginAccountName slot, so only one logon may be in flight at a time.
+	private readonly SemaphoreSlim _loginGate = new(1, 1);
 
 	// The exit proxy the next CM connection must use. The SteamKit HTTP client
 	// factory reads this when the CM WebSocket (and any WebAPI/CDN) invoker is
@@ -326,17 +332,32 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		lock (_connectLock)
 		{
 			_pendingProxy = proxy;
-			settle = _steamClient.IsConnected ? _connectedTcs.Task : Task.CompletedTask;
 			if (_steamClient.IsConnected)
 			{
-				try
-				{
-					_steamClient.Disconnect();
-				}
-				catch (Exception ex)
-				{
-					_logger.LogWarning(ex, "Failed to drop the CM connection for a proxy switch");
-				}
+				// Wait on the disconnect, not the (already completed) connect TCS:
+				// _connectedTcs was settled true by OnConnected, so awaiting it here
+				// returns instantly and the reconnect races the socket teardown.
+				_disconnectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				settle = _disconnectTcs.Task;
+			}
+			else
+			{
+				settle = Task.CompletedTask;
+			}
+		}
+
+		if (!settle.IsCompleted)
+		{
+			// Drop the connection outside the lock: OnDisconnected takes
+			// _connectLock to settle the TCS, so a synchronous callback here
+			// would otherwise deadlock on the lock we just released.
+			try
+			{
+				_steamClient.Disconnect();
+			}
+			catch (Exception ex)
+			{
+				_logger.LogWarning(ex, "Failed to drop the CM connection for a proxy switch");
 			}
 		}
 
@@ -367,41 +388,55 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	{
 		ThrowIfDisposed();
 
-		var tcs = new TaskCompletionSource<SteamUser.LoggedOnCallback>(TaskCreationOptions.RunContinuationsAsynchronously);
-		_activeLoginAccountName = accountName;
-
-		_loginStates.AddOrUpdate(
-			accountName,
-			_ => new LoginState(accountName, password) { LoginTcs = tcs },
-			(_, existing) => existing with { Password = password, LoginTcs = tcs }
-		);
-
-		if (!_steamClient.IsConnected)
+		// One login in flight at a time: LoggedOnCallback carries no account
+		// identity, so it is routed through the single _activeLoginAccountName
+		// slot. Two overlapping LoginAsync calls would overwrite that slot and
+		// complete the wrong account's TCS with the other's callback. The gate
+		// spans send-to-callback so the slot has exactly one owner while a
+		// logon response can arrive.
+		await _loginGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		try
 		{
-			throw new InvalidOperationException("Steam client is not connected");
+			var tcs = new TaskCompletionSource<SteamUser.LoggedOnCallback>(TaskCreationOptions.RunContinuationsAsynchronously);
+			_activeLoginAccountName = accountName;
+
+			_loginStates.AddOrUpdate(
+				accountName,
+				_ => new LoginState(accountName, password) { LoginTcs = tcs },
+				(_, existing) => existing with { Password = password, LoginTcs = tcs }
+			);
+
+			if (!_steamClient.IsConnected)
+			{
+				throw new InvalidOperationException("Steam client is not connected");
+			}
+
+			var steamUser = _steamClient.GetHandler<SteamUser>() ?? throw new InvalidOperationException("SteamUser handler not available");
+			steamUser.LogOn(BuildLogOnDetails(accountName, password));
+
+			var callback = await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+			if (callback.Result == EResult.OK)
+			{
+				return;
+			}
+
+			if (callback.Result == EResult.AccountLogonDenied)
+			{
+				throw new SteamAuthCodeRequiredException("Steam auth code required (email Steam Guard)");
+			}
+
+			if (callback.Result == EResult.AccountLoginDeniedNeedTwoFactor)
+			{
+				throw new SteamTwoFactorCodeRequiredException("Steam 2FA code required (authenticator)");
+			}
+
+			throw new InvalidOperationException($"Steam login failed: {callback.Result}");
 		}
-
-		var steamUser = _steamClient.GetHandler<SteamUser>() ?? throw new InvalidOperationException("SteamUser handler not available");
-		steamUser.LogOn(BuildLogOnDetails(accountName, password));
-
-		var callback = await tcs.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-		if (callback.Result == EResult.OK)
+		finally
 		{
-			return;
+			_loginGate.Release();
 		}
-
-		if (callback.Result == EResult.AccountLogonDenied)
-		{
-			throw new SteamAuthCodeRequiredException("Steam auth code required (email Steam Guard)");
-		}
-
-		if (callback.Result == EResult.AccountLoginDeniedNeedTwoFactor)
-		{
-			throw new SteamTwoFactorCodeRequiredException("Steam 2FA code required (authenticator)");
-		}
-
-		throw new InvalidOperationException($"Steam login failed: {callback.Result}");
 	}
 
 	public void SetAuthCode(string accountName, string code)
@@ -1527,6 +1562,19 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	{
 		_logger.LogInformation("Steam client disconnected: {UserInitiated}", callback.UserInitiated);
 		_cs2GcSessionLive = false;
+		// The playing set is connection-scoped: nothing is being played on the new
+		// connection yet. Clearing it lets a post-reconnect PlayGames(desired)
+		// re-send instead of being skipped by the SetEquals idempotence check —
+		// otherwise the desired idle/farm state silently never reaches Steam.
+		lock (_playingGamesLock)
+		{
+			_playingGames.Clear();
+		}
+		lock (_connectLock)
+		{
+			_disconnectTcs?.TrySetResult(true);
+			_disconnectTcs = null;
+		}
 		_connectedTcs.TrySetResult(false);
 	}
 
@@ -1644,5 +1692,6 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 
 		_loginStates.Clear();
+		_loginGate.Dispose();
 	}
 }

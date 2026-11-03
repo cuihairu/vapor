@@ -308,6 +308,51 @@ public sealed class ControlPlaneApiTests
 		Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 	}
 
+	[Fact]
+	public async Task AuthChallengeCodeSubmission_ReplaysStagedDeliveryWhenAgentReconnects()
+	{
+		await using TestFactory factory = CreateFactory();
+		AccountStore accounts = factory.Accounts;
+		accounts.Upsert("alice", true, AccountDesiredState.Online, null, null, "agent-1", null, null);
+		accounts.Upsert("bob", true, AccountDesiredState.Online, null, null, "agent-2", null, null);
+
+		using var adminClient = factory.CreateClient();
+		adminClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "admin-token");
+		using HttpResponseMessage submit = await adminClient.PostAsJsonAsync(
+			"/v1/auth/challenges/alice/code",
+			new { code = "123456", type = "2fa" });
+		Assert.Equal(HttpStatusCode.OK, submit.StatusCode);
+		// The live SSE event is published but no agent is subscribed: the staged
+		// outbox entry is what survives for the reconnect replay (ARCH-09).
+		Assert.Single(factory.Events.AuthChallengeEvents, e => e.ChallengeType.StartsWith("code_provided_", StringComparison.Ordinal));
+		Assert.Equal(1, factory.Services.GetRequiredService<AuthChallengeOutbox>().Count);
+
+		using var reconnectingAgentClient = factory.CreateClient();
+		reconnectingAgentClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-one-token");
+		using var reconnectingAgentResponse = await reconnectingAgentClient.GetAsync(
+			"/v1/auth/challenges/events?accountName=alice",
+			HttpCompletionOption.ResponseHeadersRead);
+		await using var reconnectingAgentStream = await reconnectingAgentResponse.Content.ReadAsStreamAsync();
+		using var reconnectingAgentReader = new StreamReader(reconnectingAgentStream, Encoding.UTF8);
+
+		Assert.Equal("event: ready", await reconnectingAgentReader.ReadLineAsync());
+		Assert.Equal("data: {}", await reconnectingAgentReader.ReadLineAsync());
+		Assert.True(string.IsNullOrEmpty(await reconnectingAgentReader.ReadLineAsync()));
+		Assert.Equal("event: auth.code_provided_2fa", await reconnectingAgentReader.ReadLineAsync());
+		string replay = await reconnectingAgentReader.ReadLineAsync() ?? string.Empty;
+		Assert.Contains("\"accountName\":\"alice\"", replay);
+		Assert.Contains("\"code\":\"123456\"", replay);
+
+		using var otherAgentClient = factory.CreateClient();
+		otherAgentClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "agent-two-token");
+		using var otherAgentResponse = await otherAgentClient.GetAsync(
+			"/v1/auth/challenges/events?accountName=alice",
+			HttpCompletionOption.ResponseHeadersRead);
+		Assert.Equal(HttpStatusCode.Forbidden, otherAgentResponse.StatusCode);
+
+		Assert.Equal(0, factory.Services.GetRequiredService<AuthChallengeOutbox>().Count);
+	}
+
 	private static TestFactory CreateFactory()
 	{
 		return new TestFactory();
@@ -403,7 +448,7 @@ public sealed class ControlPlaneApiTests
 		RawJobStoreExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"alice\"]', '{}', 'Finished', 1, 1, $payload)",
 			("$id", "job-old"), ("$payload", """{"password":"old-pass","refreshToken":"old-refresh"}"""));
 		RawJobStoreExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'alice', 'login', '', $payload, 'Finished', 0, 1, 1)",
-			("$id", "task-old"), ("$payload", """{"access_token":"old-access","two_factor_code":"old-code","message":"keep"}""" ));
+			("$id", "task-old"), ("$payload", """{"access_token":"old-access","two_factor_code":"old-code","message":"keep"}"""));
 
 		// The historical secret in the task payload is visible through the API before the scrub.
 		using HttpResponseMessage before = await client.GetAsync("/v1/jobs/job-old");
@@ -438,6 +483,12 @@ public sealed class ControlPlaneApiTests
 		using HttpResponseMessage rejected = await client.PostAsJsonAsync("/v1/jobs/secret-payloads/purge", new { dryRun = false });
 		Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
 		Assert.Contains("confirm", await rejected.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+		// Explicit false must take the same guarded path as an omitted confirm.
+		using HttpResponseMessage explicitlyRejected = await client.PostAsJsonAsync(
+			"/v1/jobs/secret-payloads/purge",
+			new { dryRun = false, confirm = false });
+		Assert.Equal(HttpStatusCode.BadRequest, explicitlyRejected.StatusCode);
 
 		// dryRun=true (default) returns a preview without writing.
 		using HttpResponseMessage preview = await client.PostAsJsonAsync("/v1/jobs/secret-payloads/purge", new { });

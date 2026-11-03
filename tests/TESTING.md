@@ -109,6 +109,7 @@ tests/
 | src/Vapor.ControlPlane/TaskSchedulerService.cs | DispatchTimerLoopAsync | PeriodicTimer(250ms)真实时钟泵,唯一退出是宿主取消——同族真实时钟循环按 2026-09-20 收官轮定性 |
 | src/Vapor.ControlPlane/RecurringJobScheduler.cs | TimerLoopAsync | PeriodicTimer(1s)真实时钟泵,同上 |
 | src/Vapor.ControlPlane/RecurringFlowScheduler.cs | TimerLoopAsync | PeriodicTimer(1s)真实时钟泵,同上(轮七十六 流调度器同族复刻) |
+| src/Vapor.ControlPlane/AuthChallengeOutboxCleaner.cs | ExecuteAsync | PeriodicTimer(30s)真实时钟泵,同族(ARCH-09 认证挑战发件箱清扫) |
 | src/Vapor.Steam.Core/Steam/SteamTimeSynchronizer.cs | QuerySteamServerTimeAsync | 真网络探针(HTTP 查 Steam 服务器时间);偏移计算纯函数另测 |
 | src/Vapor.Steam.Core/Steam/SteamUserStatsProtocolHandler.cs | SteamUserStatsProtocolHandler | SteamKit 回调协议 handler,需真 CM 会话驱动 HandleClientMsgCallback |
 | src/Vapor.Steam.Core/Steam/SteamClientManager.cs | SteamClientManager | SteamKit CM 客户端宿主(真连接/回调泵),可测决策分支经接口替身覆盖 |
@@ -118,6 +119,7 @@ tests/
 | src/Vapor.Steam.Core/SessionManager.cs | RefreshTimerLoopAsync | PeriodicTimer 泵,同上 |
 | src/Vapor.Steam.Core/BotSession.cs | RunSteamCallbacksAsync | 同族:循环体内 RunCallbacks 在 Task.Delay 之前,取消经 Delay 的 OCE 表面化,条件退出臂不可达 |
 | src/Vapor.Plugins.MarketWatch/MarketWatchPlugin.cs | PollOnceGuardedAsync | 真实时钟轮询守卫循环;PollOnce 本体与告警逻辑另测 |
+| src/Vapor.Agent/TaskLeaseRenewer.cs | RunAsync | PeriodicTimer 泵,同族:WaitForNextTickAsync 在取消/处置时必抛,循环仅经 catch 退出,try 闭括号序列点构造不可达 |
 <!-- /verify-coverage-inventory:exclusions -->
 
 ## 测试分类

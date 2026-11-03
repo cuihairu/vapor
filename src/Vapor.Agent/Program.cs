@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry.Resources;
@@ -28,9 +29,6 @@ static string RequireEnv(string key) => Environment.GetEnvironmentVariable(key) 
 // (mirrors VAPOR_PLUGINS_DIR).
 static string CredentialDirectory() =>
 	Environment.GetEnvironmentVariable("VAPOR_CREDENTIALS_DIR") ?? "";
-
-// TEMP DIAGNOSTIC
-try { System.IO.File.WriteAllText("/tmp/vapor-agent-diag.txt", "VAPOR_CREDENTIALS_DIR=" + CredentialDirectory() + "\nHOME=" + (Environment.GetEnvironmentVariable("HOME") ?? "")); } catch {}
 
 // The encryption key must be resolved before anything touches the credential store —
 // including the offline maFile import below.
@@ -369,18 +367,27 @@ async Task RunOnce(CancellationToken cancellationToken)
 	await ws.ConnectAsync(uri, cancellationToken);
 
 	using SemaphoreSlim sendGate = new(1, 1);
-	var tasks = Channel.CreateUnbounded<WSMessage>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+	int taskBufferCapacity = AgentTaskBuffer.ResolveCapacity(
+		Environment.GetEnvironmentVariable("AGENT_TASK_BUFFER_CAPACITY"));
+	using var tasks = new AgentTaskDispatcher(taskBufferCapacity);
 
 	var executionGate = new object();
 	CancellationTokenSource? currentTaskCts = null;
 	string? currentTaskId = null;
 	int currentAttempt = 0;
 	bool currentTaskCancelledByServer = false;
+	var pendingLeaseCts = new ConcurrentDictionary<(string TaskId, int Attempt), CancellationTokenSource>();
+	var queuedCancels = new QueuedTaskCanceller();
 
 	var capabilities = actionRegistry.ListNames().Concat(hostActions.Keys)
 		.Distinct(StringComparer.OrdinalIgnoreCase)
 		.ToDictionary(name => name, _ => true, StringComparer.OrdinalIgnoreCase);
 	var hello = new AgentHello(agentId, region, capabilities, null);
+	var helloMeta = new Dictionary<string, string>
+	{
+		["task_buffer_capacity"] = taskBufferCapacity.ToString()
+	};
+	hello = hello with { Meta = helloMeta };
 	await SendLocked(ws, sendGate, new WSMessage("hello", hello, null, null), cancellationToken);
 
 	var receiver = Task.Run(async () =>
@@ -392,13 +399,44 @@ async Task RunOnce(CancellationToken cancellationToken)
 				WSMessage msg = await Receive<WSMessage>(ws, cancellationToken);
 				if (string.Equals(msg.Type, "task", StringComparison.Ordinal) && msg.Task != null)
 				{
-					// Keep the whole message: TraceHeaders carries the dispatch span context.
-					await tasks.Writer.WriteAsync(msg, cancellationToken);
+					JobTask queuedTask = msg.Task;
+					var leaseKey = (queuedTask.Id, queuedTask.Attempt);
+					CancellationTokenSource leaseCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+					pendingLeaseCts[leaseKey] = leaseCts;
+					try
+					{
+						// Keep the whole message: TraceHeaders carries the dispatch span context.
+						// Enqueue never blocks: a full buffer parks the frame in the
+						// overflow queue so the receive loop keeps reading control
+						// frames such as task_cancel instead of stalling behind a
+						// pending WriteAsync.
+						tasks.Enqueue(msg);
+
+						// The control plane starts the lease at dispatch. Renew it while
+						// this task waits in the bounded buffer behind a long-running task;
+						// the execution heartbeat takes over once the serial loop starts it.
+						_ = new TaskLeaseRenewer(
+							frame => SendLocked(ws, sendGate, frame, cancellationToken),
+							TimeSpan.FromSeconds(5)).RunAsync(queuedTask, leaseCts.Token);
+					}
+					catch
+					{
+						if (pendingLeaseCts.TryRemove(leaseKey, out var removed))
+						{
+							removed.Dispose();
+						}
+						throw;
+					}
 					continue;
 				}
 
 				if (string.Equals(msg.Type, "task_cancel", StringComparison.Ordinal) && msg.TaskCancel != null)
 				{
+					// A cancel for a task still sitting in the bounded buffer is
+					// remembered so the serial loop skips it before it ever runs its
+					// action. Cancels that do not match any task are harmless.
+					queuedCancels.Add(msg.TaskCancel);
+
 					bool matches;
 					lock (executionGate)
 					{
@@ -434,7 +472,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 		}
 		finally
 		{
-			tasks.Writer.TryComplete();
+			tasks.Complete();
 		}
 	}, cancellationToken);
 
@@ -442,10 +480,27 @@ async Task RunOnce(CancellationToken cancellationToken)
 	{
 		while (!cancellationToken.IsCancellationRequested && ws.State == WebSocketState.Open)
 		{
+			tasks.FlushOverflow();
 			WSMessage dispatch = await tasks.Reader.ReadAsync(cancellationToken);
 			JobTask task = dispatch.Task!;
+			bool queuedCanceled = queuedCancels.TryRemove(task, out _);
+			var executionLeaseKey = (task.Id, task.Attempt);
+			if (pendingLeaseCts.TryRemove(executionLeaseKey, out var pendingLease))
+			{
+				pendingLease.Cancel();
+				pendingLease.Dispose();
+			}
 
 			Console.WriteLine($"task received: id={task.Id} action={task.Action} target={task.Target}");
+
+			if (queuedCanceled)
+			{
+				// Cancel arrived before this task started: do not run its action.
+				// CancelJob already settled its terminal state in the store; a
+				// task_result would be rejected as not-running and could not change it.
+				Console.WriteLine($"task skipped (canceled before start): id={task.Id}");
+				continue;
+			}
 
 			// CA2000 suppressed: both sources are disposed by their using declarations
 			// at the end of every loop-iteration path. The analyzer flags the creations
@@ -508,7 +563,8 @@ async Task RunOnce(CancellationToken cancellationToken)
 							task,
 							sessionManager,
 							logger,
-							executeCts.Token
+							executeCts.Token,
+							actionRegistry
 						);
 					}
 
@@ -590,6 +646,13 @@ async Task RunOnce(CancellationToken cancellationToken)
 	}
 	finally
 	{
+		foreach (var lease in pendingLeaseCts.Values)
+		{
+			lease.Cancel();
+			lease.Dispose();
+		}
+		pendingLeaseCts.Clear();
+		queuedCancels.Clear();
 		try
 		{
 			await receiver;
@@ -727,12 +790,25 @@ static async Task PollAuthChallengesAsync(
 
 		while (!cancellationToken.IsCancellationRequested)
 		{
+			// Per-iteration token: a faulting stream must tear down every sibling
+			// subscription before the loop re-subscribes. Otherwise one stream's
+			// 5-minute HttpClient timeout (or server close) faults Task.WhenAll
+			// while the other streams keep running, and re-subscribing over a live
+			// stream stacks duplicate SSE connections — an auth code is then
+			// delivered twice and the second application of a consumed code fails.
+			using var iterationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 			try
 			{
 				List<string> accountNames = sessionManager.ListSessions()
 					.Select(session => session.AccountName)
 					.Distinct(StringComparer.Ordinal)
 					.ToList();
+				if (accountNames.Count == 0)
+				{
+					await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+					continue;
+				}
+
 				List<Task> subscriptions = accountNames
 					.Select(accountName => SubscribeToAccountChallengesAsync(
 						httpBaseUrl,
@@ -740,7 +816,7 @@ static async Task PollAuthChallengesAsync(
 						agentApiKey,
 						sessionManager,
 						logger,
-						cancellationToken))
+						iterationCts.Token))
 					.ToList();
 				await Task.WhenAll(subscriptions).ConfigureAwait(false);
 			}
@@ -751,6 +827,7 @@ static async Task PollAuthChallengesAsync(
 			catch (Exception ex)
 			{
 				logger.LogError(ex, "Auth challenge polling error, will retry");
+				iterationCts.Cancel();
 				await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
 			}
 		}

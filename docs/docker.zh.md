@@ -36,9 +36,15 @@ GC/线程池与内存。
 
 ### 环境变量 / 密钥
 
-在本地开发之外运行前，先设置这些变量（通过 shell 环境或 `.env` 文件）：
+凭据变量是**必填的**——compose 在缺值时直接拒绝启动（没有已知令牌兜底）。本地开发先从模板生成：
 
-| 变量 | 使用方 | Compose 中的默认值 |
+```bash
+cp .env.example .env   # 仅本地开发值；绝不要部署到真实环境
+```
+
+运行前设置这些变量（通过 shell 环境或 `.env` 文件）：
+
+| 变量 | 使用方 | 默认值（来自 `.env.example`） |
 |----------|---------|--------------------|
 | `VAPOR_ADMIN_API_KEY` | control plane | `admin-dev-token` |
 | `VAPOR_AGENT_API_KEY` / `VAPOR_AGENT_API_KEYS` | agent / control plane | `agent-dev-token` |

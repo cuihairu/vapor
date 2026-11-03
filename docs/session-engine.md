@@ -119,7 +119,7 @@ SteamClientManager handles all network communication with Steam:
 
 1. Initial login requires a password
 2. When Steam responds that an auth code or 2FA is required, the Session state becomes `ConnectingWaitAuthCode` or `ConnectingWait2FA`; QR code login goes through `ConnectingWaitQr`
-3. Codes are provided via `ProvideAuthCode()` / `Provide2FACode()`, or delivered through the SSE channel from codes submitted in the admin panel; accounts configured with a mobile authenticator shared secret can be answered automatically by the agent-side `TwoFactorAutoResponder`
+3. Codes are provided via `ProvideAuthCode()` / `Provide2FACode()`, or delivered through the SSE channel from codes submitted in the admin panel; accounts configured with a mobile authenticator shared secret can be answered automatically by the agent-side `TwoFactorAutoResponder`. A submitted code is staged in a short-lived outbox (TTL `VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS`, default 120) before the pending challenge is cleared, so a reconnecting agent still gets the code on re-subscribe (one-shot replay, acknowledged on delivery); admin streams get codes stripped
 4. After a successful login, the access token and refresh token are saved for subsequent logins — after an agent restart, the session is restored from them without manual re-login
 
 ## Boundaries

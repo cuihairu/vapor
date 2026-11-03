@@ -3649,6 +3649,48 @@ public sealed class DesiredStateReconcilerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task GetFarmSummaries_CopyOnWriteLists_SurfaceBothNullAndPopulated()
+	{
+		// The snapshot's `?.ToList()` copy must hold on both sides of the
+		// null-guard: a runtime that never populated its farm lists reads as null,
+		// and one that did surfaces a stable copy (not the shared mutable list).
+		AccountStore accounts = new();
+		accounts.Upsert("alice", true, AccountDesiredState.Farm, null, null, null, null);
+		var agents = NewRegistry(("agent-1", "us-east", null));
+		var jobs = new FakeReconcileJobStore();
+		var sessions = new SessionTracker();
+		sessions.Update("alice", "state_changed", "Connected", null);
+		using var reconciler = CreateReconciler(accounts, agents, jobs, sessions);
+
+		await reconciler.ReconcileOnce(CancellationToken.None);
+
+		System.Collections.IDictionary runtimes = (System.Collections.IDictionary)typeof(DesiredStateReconciler)
+			.GetField("_runtime", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reconciler)!;
+		Type runtimeType = typeof(DesiredStateReconciler).GetNestedType("AccountRuntime", BindingFlags.NonPublic)!;
+		object alice = runtimes["alice"]!;
+		runtimeType.GetField("FarmQueue")!.SetValue(alice, null);
+		runtimeType.GetField("FarmCompletedApps")!.SetValue(alice, null);
+		runtimeType.GetField("FarmSkippedApps")!.SetValue(alice, null);
+
+		FarmAccountView nullView = reconciler.GetFarmSummaries().Single(s => s.AccountName == "alice");
+		Assert.Null(nullView.Queue);
+		Assert.Null(nullView.CompletedApps);
+		Assert.Null(nullView.SkippedApps);
+
+		// Populated side: the view hands out copies, so mutating the snapshot
+		// cannot corrupt the runtime bookkeeping the reconciler writes next pass.
+		var populated = new List<uint> { 100U, 200U };
+		runtimeType.GetField("FarmQueue")!.SetValue(alice, populated);
+		runtimeType.GetField("FarmCompletedApps")!.SetValue(alice, new List<uint> { 300U });
+		runtimeType.GetField("FarmSkippedApps")!.SetValue(alice, new List<uint> { 400U });
+
+		FarmAccountView fullView = reconciler.GetFarmSummaries().Single(s => s.AccountName == "alice");
+		Assert.Equal([100U, 200U], fullView.Queue);
+		Assert.Equal([300U], fullView.CompletedApps);
+		Assert.Equal([400U], fullView.SkippedApps);
+	}
+
+	[Fact]
 	public void ExtractBoostUnmet_EmptyOrMalformedTargets_ReportSafe()
 	{
 		AccountStore accounts = new();

@@ -21,8 +21,8 @@ compose 开发环境下的基础 URL：`http://127.0.0.1:8080`。真实部署的
 
 | 角色 | 环境变量 | 格式 |
 |---|---|---|
-| 管理员 | `VAPOR_ADMIN_API_KEY` | 单个令牌（compose 开发默认`admin-dev-token`） |
-| Agent | `VAPOR_AGENT_API_KEYS` | 逗号分隔的令牌列表（开发默认`agent-dev-token`） |
+| 管理员 | `VAPOR_ADMIN_API_KEY` | 单个令牌（compose 默认`admin-dev-token`，来自`.env.example`） |
+| Agent | `VAPOR_AGENT_API_KEYS` | 逗号分隔的令牌列表（默认`agent-dev-token`，来自`.env.example`） |
 | 只读 | `VAPOR_VIEWER_API_KEY` | 单个令牌；只读 —— 在`/v1`的全部安全方法（GET/HEAD/OPTIONS）上受理，任何写操作都返回`401`拒绝 |
 
 请求头约定（对应 OpenAPI 安全方案`bearer`）：`Authorization: Bearer <token>`。

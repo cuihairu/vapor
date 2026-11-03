@@ -272,6 +272,41 @@ public sealed class AgentRegistryTests
 		Assert.Throws<ArgumentOutOfRangeException>(() => new ConnectedAgent(new AgentHello("agent-a", "local", null, null), new NoopWebSocket(), sendQueueCapacity: 0));
 	}
 
+	[Fact]
+	public void TaskBufferCapacity_IsParsedFromHelloMeta()
+	{
+		var bounded = new ConnectedAgent(
+			new AgentHello("agent-a", "local", null, new Dictionary<string, string> { ["task_buffer_capacity"] = "16" }),
+			new NoopWebSocket());
+		var unbounded = new ConnectedAgent(new AgentHello("agent-b", "local", null, null), new NoopWebSocket());
+		var invalid = new ConnectedAgent(
+			new AgentHello("agent-c", "local", null, new Dictionary<string, string> { ["task_buffer_capacity"] = "nope" }),
+			new NoopWebSocket());
+
+		Assert.Equal(16, bounded.TaskBufferCapacity);
+		Assert.Equal(17, bounded.MaxInFlight);
+		Assert.Null(unbounded.TaskBufferCapacity);
+		Assert.Null(unbounded.MaxInFlight);
+		Assert.Null(invalid.TaskBufferCapacity);
+		Assert.Null(invalid.MaxInFlight);
+	}
+
+	[Fact]
+	public void AcceptsInFlight_StopsAtBufferCapacityPlusOneRunningTask()
+	{
+		var agent = new ConnectedAgent(
+			new AgentHello("agent-a", "local", null, new Dictionary<string, string> { ["task_buffer_capacity"] = "1" }),
+			new NoopWebSocket());
+		var zero = new Dictionary<string, int>();
+		var one = new Dictionary<string, int> { ["agent-a"] = 1 };
+		var two = new Dictionary<string, int> { ["agent-a"] = 2 };
+
+		Assert.True(agent.AcceptsInFlight(null));
+		Assert.True(agent.AcceptsInFlight(zero));
+		Assert.True(agent.AcceptsInFlight(one));
+		Assert.False(agent.AcceptsInFlight(two));
+	}
+
 	private static JobTask MakeTask(int i) =>
 		new($"task-{i}", "job-1", "target-1", "ping", "local", null, JobTaskStatus.Queued, 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 

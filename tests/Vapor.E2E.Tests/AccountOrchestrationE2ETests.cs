@@ -16,7 +16,11 @@ public sealed class AccountOrchestrationE2ETests
 {
 	private const string AccountName = "e2e-orch-alice";
 	private const string RebalanceRegion = "e2e-rebalance";
-	private static readonly TimeSpan ReconcileTimeout = TimeSpan.FromSeconds(60);
+	// Loaded CI runners can stretch the reconcile + agent-loss detection cycle past
+	// a minute; 180 s keeps the gate deterministic without hiding an outcome bug
+	// (the test still asserts the assigned agent and the rebalance, only the wait
+	// budget is larger).
+	private static readonly TimeSpan ReconcileTimeout = TimeSpan.FromSeconds(180);
 
 	private readonly E2EStack _stack;
 
@@ -152,7 +156,7 @@ public sealed class AccountOrchestrationE2ETests
 		}
 
 		throw new TimeoutException(
-			$"Account '{AccountName}' was never assigned to '{expectedAgent}' within {ReconcileTimeout.TotalSeconds:s}s (last assignment: {lastAgent}).{Environment.NewLine}{_stack.Diagnostics()}");
+			$"Account '{AccountName}' was never assigned to '{expectedAgent}' within {ReconcileTimeout:s} (last assignment: {lastAgent}).{Environment.NewLine}{_stack.Diagnostics()}");
 	}
 
 	private async Task<HttpResponseMessage> AdminAsync(HttpMethod method, string path, object? body = null)

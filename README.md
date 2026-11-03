@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" />
+  <img src="docs/assets/vapor.svg" width="96" alt="Vapor" /> 
 </p>
 
 <div align="center">
@@ -10,7 +10,7 @@ English | [简体中文](README.zh.md)
 
 # Vapor — Distributed Steam Automation Control Plane
 
-[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor) [![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases) [![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE) [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/) [![C#](https://img.shields.io/badge/C%23-13-239120)](https://learn.microsoft.com/dotnet/csharp/) [![status](https://img.shields.io/badge/status-alpha-orange)](#development-status)
+[![CI](https://github.com/cuihairu/vapor/actions/workflows/ci.yml/badge.svg)](https://github.com/cuihairu/vapor/actions/workflows/ci.yml) [![codecov](https://codecov.io/gh/cuihairu/vapor/branch/main/graph/badge.svg)](https://codecov.io/gh/cuihairu/vapor) [![release](https://img.shields.io/github/v/release/cuihairu/vapor?sort=semver)](https://github.com/cuihairu/vapor/releases) [![license](https://img.shields.io/github/license/cuihairu/vapor)](LICENSE) [![.NET](https://img.shields.io/badge/.NET-net10.0-512BD4)](https://dotnet.microsoft.com/) [![C#](https://img.shields.io/badge/C%23-13-239120)](https://learn.microsoft.com/dotnet/csharp/) [![status](https://img.shields.io/badge/status-alpha-orange)](#development-status) [![docs](https://img.shields.io/badge/docs-blue)](https://cuihairu.github.io/vapor/)
 
 API-controlled, headless Steam automation platform designed for large-scale batch operations and multi-region deployment. Inspired by [ArchiSteamFarm](https://github.com/JustArchiNET/ArchiSteamFarm)'s Bot/Action model.
 
@@ -26,15 +26,29 @@ Risky surfaces ship disabled. Market listing creation and cancels default to `dr
 
 Plugins load into isolated AssemblyLoadContexts and unload without a restart. Manifests carry a SemVer API contract, a trust level and permission grants; the runtime PluginStore installs packages agent-targeted from a catalog. Seven official plugins ship in-tree: Monitoring, MobileAuthenticator, MarketWatch, CS2/CSGO, Dota 2, GameData, GameAccess — the last carrying the game-access action surface as a wire-compatible extraction from the host. See [plugin development](docs/plugins.md).
 
-For operations: a control-plane script repository to store and dispatch operator scripts to connected agents plus ordered script flows (sequential steps, per-step status, stop/continue failure policy), OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest. Agent-local tokens use encrypted storage; manual codes pass through the control plane to agents, while webhooks receive only `codeSupplied`. Credentials submitted in task payloads enter control-plane persistence; see the [architecture review](docs/review/architecture-2026-10-30.md).
+For operations: a control-plane script repository to store and dispatch operator scripts to connected agents plus ordered script flows (sequential steps, per-step status, stop/continue failure policy), OpenAPI/Swagger, SSE event streams (jobs, sessions, auth challenges), Prometheus metrics with a Grafana dashboard, OpenTelemetry tracing across the agent tunnel, HMAC-signed webhooks, and structured logs that redact credentials and codes at output. Security posture is AES-GCM encrypted credential stores with key rotation tooling, per-role API keys, and an audit log redacted at rest — under one hard rule: Steam Guard codes and credentials never leave the agent, only a boolean crosses the wire.
 
 ## Architecture at a glance
 
-![Vapor implemented architecture: control plane, agents, state and optional services](docs/assets/architecture/overview.en.svg)
-
-A single control plane drives regional agents through SQLite task leases. Agents initiate WS and HTTP connections; plugins share the session-engine process. Dashed lines mark optional integrations.
-
-[Full-size SVG](docs/assets/architecture/overview.en.svg) · [Architecture](docs/architecture.md) · [Source review and gaps](docs/review/architecture-2026-10-30.md)
+```
+                    ┌────────────────────────────────────────────┐
+                    │               Control Plane                │
+   operators ──────▶│  REST /v1 (69 routes / 85 ops) · OpenAPI·SSE│
+   (curl / UI)      │  SQLite: jobs · accounts · audit · crawl · scripts │
+                    │  DesiredStateReconciler · schedulers       │
+                    │  admin.html · dashboard.html · gamedata    │
+                    └───────────────┬────────────────────────────┘
+                                    │ outbound WSS tunnel (agent key)
+                    ┌───────────────┴──────────┐  ┌──────────────┐
+                    │         Agent #1         │  │   Agent #N   │   ← one per region
+                    │  session engine (bots)   │  │              │
+                    │  65 actions · plugins   │  │   plugins    │
+                    │  encrypted credentials   │  │              │
+                    └───────────────┬──────────┘  └──────┬───────┘
+                                    │                    │
+                                    ▼                    ▼
+                               Steam network       Steam network
+```
 
 ## Live demo
 
@@ -69,11 +83,12 @@ Docker Compose (control plane + one agent):
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
+cp .env.example .env                                # required credential vars (dev values, never deploy)
 docker compose up -d                                # + --profile observability for Prometheus/Grafana
 curl -s http://127.0.0.1:8080/healthz
 ```
 
-Declare an account and run your first job (dev key defaults, see [docker.md](docs/docker.md) for the variable table):
+Declare an account and run your first job (dev keys from `.env.example`, see [docker.md](docs/docker.md) for the variable table):
 
 ```bash
 curl -sS -X PUT http://127.0.0.1:8080/v1/accounts/acct-1 \

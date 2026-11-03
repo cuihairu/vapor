@@ -95,15 +95,15 @@
   - 消息由隧道密钥认证；围栏由 `taskId` + `attempt` 构成 —— 没有逐消息签名，也没有 nonce。
 - 密钥存储：
   - 加密密钥来自环境变量或密钥文件（`VAPOR_ENCRYPTION_KEY` / `VAPOR_ENCRYPTION_KEY_BASE64` / `VAPOR_ENCRYPTION_KEY_FILE`）；未实现 KMS/Vault/Keychain 集成。
-  - Agent 优先从本地凭据存储恢复；人工验证码经控制平面 SSE 下发，尚缺账号所属 Agent 的服务端授权绑定。
+  - Agent 优先从本地凭据存储恢复；人工验证码经控制平面 SSE 下发，且带服务端账号↔Agent 授权绑定：每个 Agent Key 绑定一个 `agentId`（`Auth.TryAgentIdentity`、`Config.AgentKeyAgentIds`），非管理员流必须指名属于该 Agent 的账号，否则拒绝 `403`（`AccountBelongsToAgent`）。Agent 只能看到 `code_provided_*` 事件且验证码完整；管理员流则剥离验证码。
 
 ## 队列与可靠性
 
 - SQLite `SqliteJobStore` 是持久任务队列的事实源；调度器领取任务、续租和回收过期任务。
 - WebSocket 发送队列与 Agent 注册表在内存中；未集成 NATS / Kafka / RabbitMQ。
 - 交付语义为至少一次，结果由 `taskId` + `attempt` 栅栏保护；外部副作用不保证恰好一次。
-- SSE 为实时通知，不支持历史重放；Agent 没有持久结果发件箱。
-- 排队任务的背压、租约与取消缺口见[架构核对](review/architecture-2026-10-30.md)。
+- SSE 为实时通知，不支持历史重放（唯一例外：认证挑战流对重连的 Agent 一次性短重放尚未确认的验证码，见「Agent 任务循环」）。
+- 背压、排队任务租约与排队取消均已实现：Agent 任务入口是有限缓冲（默认 32，`AGENT_TASK_BUFFER_CAPACITY`，`BoundedChannelFullMode.Wait`），对 WebSocket 施加背压；已派发仍在排队的任务靠周期 `task_heartbeat` 续租（默认 5 秒）；在任务派发前到达的 `task_cancel` 帧按 `taskId` + `attempt` 栅栏抑制该排队派发。[架构核对](review/architecture-2026-10-30.md) 记录了修复前的缺口（第 3/4 项），已由以上实现关闭。
 
 ## 多区域部署
 
@@ -337,6 +337,8 @@ Steam Guard 的交互式认证流程：
 3. CP 租约回收（`Vapor_TASK_LEASE_SECONDS`）—— 通过重新入队从 Agent 死亡或隧道丢失中恢复。
 
 每一层都存在，是因为它下面那一层救不了这类失败：没声明超时的卡死会永远占住串行循环，而它的心跳还在续租约（这正是第 2 层的存在理由）；死掉的 Agent 显然报不了任何东西（第 3 层）。默认值设在仓库内最大动作上限（600 s）之上，因此两层都武装时，精确的错误会先胜出。
+
+**串行循环周围的排队。** Agent 已收到但未开始的任务放在有限缓冲里（`AGENT_TASK_BUFFER_CAPACITY`，默认 32，`BoundedChannelFullMode.Wait`）：缓冲满时 WebSocket 读循环仍继续读，但控制平面的发送队列反而被填满，于是调度器不再往该 Agent 堆活，而不是静默丢任务。已派发仍在排队的任务靠 `task_heartbeat` 帧每 5 秒续租（`TaskLeaseRenewer`），租约回收就不会重复派发它；在任务派发前到达的 `task_cancel` 帧挂在 `taskId` + `attempt` 栅栏上（`QueuedTaskCanceller`），抑制该排队派发；过期尝试无法取消更新的重试。
 
 **考虑过的备选方案。** Agent 上按会话并行的子任务循环 —— 否决，因为真正争用的资源是*会话*（每账号一次 Steam 登录，共享 CM 客户端）；串行循环把这种互斥变成结构性的，而不是靠锁纪律维持。
 

@@ -69,10 +69,17 @@ not turn the source event stream into a durable outbox.
    incoming task channel and consumes tasks serially. Tasks waiting behind a long
    action have already been claimed but have no running heartbeat. Lease recovery
    can therefore redispatch them while an old dispatch is still queued.
+   **Resolved (2026-11-01):** the agent intake is now a bounded buffer
+   (`AGENT_TASK_BUFFER_CAPACITY`, default 32, `BoundedChannelFullMode.Wait`) and a
+   dispatched-but-queued task renews its lease via `task_heartbeat` (`TaskLeaseRenewer`),
+   so lease reclaim cannot double-dispatch it.
 4. **Queued cancellation (high priority).** The agent receiver cancels only the
    current `(taskId, attempt)`; it does not remove or invalidate an already queued
    task. Cancellation/fencing of the database record alone does not prevent that
    queued dispatch from later reaching an external action.
+   **Resolved (2026-11-01):** `QueuedTaskCanceller` now fences `task_cancel` frames
+   by `taskId` + `attempt` and suppresses the queued dispatch before it reaches an
+   external action.
 5. **Timeout containment (conditional follow-up).** `CancelAfter` requests
    cancellation; session `WaitAsync` bounds the caller's wait. A non-cooperative
    plugin may retain the session action lock or, for a host action, stall the
@@ -83,6 +90,8 @@ not turn the source event stream into a durable outbox.
    and auth event to `_globalSessionChannel` / `_globalAuthChannel`, both unbounded,
    but no reader exists in the class/interface. Notifications use separate
    `Subscribe*` channels. The unused channels retain data, including code events.
+   **Resolved (2026-11-01):** the unconsumed global channels were removed
+   (`4042b71`); the broker now only serves the `Subscribe*` channels that are read.
 7. **Documentation drift.** The old architecture introduction recommends external
    MQ and active/active CP while later decisions reject them; the Chinese home
    page collapses Markdown blocks into one long line. This documentation change

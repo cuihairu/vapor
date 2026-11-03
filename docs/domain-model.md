@@ -218,6 +218,7 @@ row — or a table row the code no longer emits — fails the build.
 |---|---|---|
 | `job.created` | Domain | job creation endpoint |
 | `job.canceled` | Domain | job cancellation endpoint |
+| `job.cancel_rejected` | Domain | job cancellation endpoint (task-cancel enqueue refused — agent task buffer full) |
 | `task.dispatched` | Domain | task scheduler |
 | `task.finished` | Domain | agent tunnel task-result path |
 | `task.failed` | Domain | task scheduler |

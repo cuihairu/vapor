@@ -114,7 +114,7 @@ public sealed class SqliteJobStoreTests
 			("$id", "task-old"), ("$payload", """{"access_token":"t1","two_factor_code":"c1","keep":true}"""));
 		// A clean row must be untouched.
 		RawExec(store, "INSERT INTO tasks (id, job_id, target, action, region, payload_json, status, attempt, created_at_ms, updated_at_ms) VALUES ($id, 'job-old', 'a', 'login', '', $payload, 'Finished', 0, 1, 1)",
-			("$id", "task-clean"), ("$payload", """{"message":"no secret"}""")); 
+			("$id", "task-clean"), ("$payload", """{"message":"no secret"}"""));
 
 		(int jobs, int tasks) = await store.PurgeSecretPayloadsAsync(dryRun: true, backupPath: null, cts.Token);
 
@@ -187,6 +187,82 @@ public sealed class SqliteJobStoreTests
 			if (File.Exists(dbPath)) File.Delete(dbPath);
 			if (File.Exists(backupPath)) File.Delete(backupPath);
 		}
+	}
+
+	[Fact]
+	public void StripSecretPayload_NonDictionaryPayload_RemovesSecretKeys()
+	{
+		// The scrub path always hands a Dictionary, so the non-dictionary arm of
+		// StripSecretPayload (a defensive IReadOnlyDictionary branch) is otherwise
+		// never exercised; a ReadOnlyDictionary wrapper is a non-Dictionary
+		// IReadOnlyDictionary and reaches it deterministically.
+		IReadOnlyDictionary<string, object?> payload =
+			new System.Collections.ObjectModel.ReadOnlyDictionary<string, object?>(
+				new Dictionary<string, object?> { ["password"] = "p1", ["message"] = "keep" });
+
+		Dictionary<string, object?> scrubbed = SqliteJobStore.StripSecretPayload(payload);
+
+		Assert.False(scrubbed.ContainsKey("password"));
+		Assert.Equal("keep", scrubbed["message"]);
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_InMemoryStore_WithBackupPath_DoesNotThrow()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		RawExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"a\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{"password":"p1"}"""));
+
+		// A :memory: store has no live file to compare against the backup path, so the
+		// guard returns early instead of rejecting it; the backup still runs.
+		string backupPath = Path.Combine(Path.GetTempPath(), $"vapor-mem-backup-{Guid.NewGuid():N}.db");
+		try
+		{
+			(int jobs, int _) = await store.PurgeSecretPayloadsAsync(dryRun: false, backupPath, cts.Token);
+			Assert.Equal(1, jobs);
+		}
+		finally
+		{
+			Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+			if (File.Exists(backupPath)) File.Delete(backupPath);
+		}
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_BackupPathEqualsLivePath_Throws()
+	{
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-samepath-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+			await Assert.ThrowsAsync<InvalidOperationException>(
+				() => store.PurgeSecretPayloadsAsync(dryRun: false, dbPath, cts.Token));
+		}
+		finally
+		{
+			Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+			if (File.Exists(dbPath)) File.Delete(dbPath);
+		}
+	}
+
+	[Fact]
+	public async Task PurgeSecretPayloads_MalformedJson_IsLeftUntouched()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		RawExec(store, "INSERT INTO jobs (id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, payload_json) VALUES ($id, 'login', '', '[\"a\"]', '{}', 'Finished', 1, 1, $payload)",
+			("$id", "job-old"), ("$payload", """{not valid json}"""));
+
+		// A malformed historical row must be skipped, not destroyed or thrown over.
+		(int jobs, int _) = await store.PurgeSecretPayloadsAsync(dryRun: false, backupPath: null, cts.Token);
+		Assert.Equal(0, jobs);
+
+		Assert.Equal("""{not valid json}""", RawScalar(store, "SELECT payload_json FROM jobs WHERE id = $id", ("$id", "job-old")));
 	}
 
 	[Fact]
@@ -676,6 +752,28 @@ public sealed class SqliteJobStoreTests
 		JobWithTasks updated = await store.GetJob(created.Job.Id, cts.Token);
 		Assert.Equal(JobStatus.Queued, updated.Job.Status);
 		Assert.Collection(updated.Tasks, task => Assert.Equal(JobTaskStatus.Queued, task.Status));
+	}
+
+	[Fact]
+	public async Task HeartbeatTask_PreventsStaleRequeue()
+	{
+		// ARCH-06: a dispatched task whose lease is renewed by the agent's queued-task
+		// heartbeat must not be moved back to Queued by the stale-requeue sweep. This is
+		// what keeps a task sitting in the agent's bounded buffer from being re-dispatched.
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null),
+			cts.Token);
+		JobTask? claimed = await store.ClaimNextQueuedTask("local", cts.Token);
+		Assert.NotNull(claimed);
+
+		MarkTaskStale(store, claimed!.Id, DateTimeOffset.UtcNow.AddMinutes(-10));
+		Assert.True(await store.HeartbeatTask(claimed.Id, claimed.Attempt, cts.Token));
+
+		int requeued = await store.RequeueStaleRunningTasks(TimeSpan.FromSeconds(1), cts.Token);
+		Assert.Equal(0, requeued);
 	}
 
 	[Fact]
