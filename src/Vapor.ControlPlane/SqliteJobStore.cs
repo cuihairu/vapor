@@ -978,11 +978,17 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 				throw new NotFoundException("task attempt mismatch");
 			}
 
+			// The task status flip and the job recomputation are one atomic unit: a
+			// crash between them would otherwise leave the task Finished/Failed while
+			// the job still reports Running, contradicting the durable queue's
+			// invariant that every result has a matching job state.
+			using (var tx = _connection.BeginTransaction())
 			{
 				string outputJson = result.Output is null
 					? string.Empty
 					: JsonSerializer.Serialize(result.Output, JsonDefaults.Options);
 				using var cmd = _connection.CreateCommand();
+				cmd.Transaction = tx;
 				cmd.CommandText = """
 					UPDATE tasks
 					SET status = $status, updated_at_ms = $updated, error = $error, output_json = $outputJson
@@ -999,9 +1005,10 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 				{
 					throw new NotFoundException("task not running");
 				}
-			}
 
-			await RecomputeJob(jobId, cancellationToken).ConfigureAwait(false);
+				await RecomputeJob(jobId, cancellationToken, tx).ConfigureAwait(false);
+				tx.Commit();
+			}
 
 			Job job = await ReadJob(jobId, cancellationToken).ConfigureAwait(false);
 			IReadOnlyList<JobTask> tasks = await ReadTasks(jobId, cancellationToken).ConfigureAwait(false);
@@ -1283,17 +1290,25 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 #pragma warning restore CA2100
 	}
 
-	private async Task RecomputeJob(string jobId, CancellationToken cancellationToken)
+	private async Task<bool> RecomputeJob(string jobId, CancellationToken cancellationToken, SqliteTransaction? tx = null)
 	{
-		Job job = await ReadJob(jobId, cancellationToken).ConfigureAwait(false);
+		Job job = await ReadJob(jobId, cancellationToken, tx).ConfigureAwait(false);
 		if (job.Status == JobStatus.Canceled)
 		{
-			return;
+			// A canceled job is terminal: the caller's task update still commits
+			// (the late result is recorded), but the job must not be resurrected.
+			// Inside a transaction this is a no-op for the jobs row, so the caller
+			// commits the task update and the job stays Canceled.
+			return false;
 		}
 
 		Dictionary<JobTaskStatus, int> counts = new();
 		using (var cmd = _connection.CreateCommand())
 		{
+			if (tx is not null)
+			{
+				cmd.Transaction = tx;
+			}
 			cmd.CommandText = "SELECT status, COUNT(*) FROM tasks WHERE job_id = $jobId GROUP BY status;";
 			cmd.Parameters.AddWithValue("$jobId", jobId);
 
@@ -1339,11 +1354,16 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 
 		long nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 		using var update = _connection.CreateCommand();
+		if (tx is not null)
+		{
+			update.Transaction = tx;
+		}
 		update.CommandText = "UPDATE jobs SET status = $status, updated_at_ms = $updated WHERE id = $id;";
 		update.Parameters.AddWithValue("$status", newStatus.ToString());
 		update.Parameters.AddWithValue("$updated", nowMs);
 		update.Parameters.AddWithValue("$id", jobId);
 		await update.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+		return true;
 	}
 
 	private async Task<string?> ReadTaskJobId(string taskId, CancellationToken cancellationToken)
@@ -1358,6 +1378,30 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 	private async Task<Job> ReadJob(string jobId, CancellationToken cancellationToken)
 	{
 		using var cmd = _connection.CreateCommand();
+		cmd.CommandText = """
+			SELECT id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, schedule_json, schedule_next_run_ms
+			FROM jobs
+			WHERE id = $id;
+			""";
+		cmd.Parameters.AddWithValue("$id", jobId);
+
+		using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+		if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+		{
+			throw new NotFoundException("job not found");
+		}
+
+		return ReadJobRow(reader);
+	}
+
+	private async Task<Job> ReadJob(string jobId, CancellationToken cancellationToken, SqliteTransaction? tx)
+	{
+		using var cmd = _connection.CreateCommand();
+		if (tx is not null)
+		{
+			cmd.Transaction = tx;
+		}
+
 		cmd.CommandText = """
 			SELECT id, action, region, targets_json, meta_json, status, created_at_ms, updated_at_ms, schedule_json, schedule_next_run_ms
 			FROM jobs

@@ -707,6 +707,58 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task SetTaskResult_RollsBackTaskUpdateWhenJobRecomputeFails()
+	{
+		// P2 atomicity: the task status flip and the job recomputation must be one
+		// transaction. If RecomputeJob fails (here via a trigger that aborts the
+		// UPDATE on jobs), the already-written task update must roll back — the task
+		// stays Running and the job stays Running instead of a Finished/Failed task
+		// next to a Running job.
+		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
+		try
+		{
+			using var store = new SqliteJobStore(dbPath);
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+			JobWithTasks created = await store.CreateJob(
+				new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+			JobTask claimed = (await store.ClaimNextQueuedTask("local", cts.Token))!;
+
+			using (var raw = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}"))
+			{
+				raw.Open();
+				using var cmd = raw.CreateCommand();
+				cmd.CommandText =
+					"CREATE TRIGGER recompute_abort BEFORE UPDATE ON jobs " +
+					"WHEN NEW.status = 'Finished' BEGIN SELECT RAISE(ABORT, 'recompute aborted'); END;";
+				cmd.ExecuteNonQuery();
+			}
+
+			var result = new TaskResult(claimed.Id, Success: true, Error: null, Output: null,
+				DateTimeOffset.UtcNow, claimed.Attempt);
+			await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(
+				() => store.SetTaskResult(result, cts.Token));
+
+			// Both halves rolled back: the task is still Running and the job still
+			// Running — no partial Finished task with a Running job.
+			JobWithTasks refreshed = await store.GetJob(created.Job.Id, cts.Token);
+			Assert.Equal(JobStatus.Running, refreshed.Job.Status);
+			Assert.Equal(JobTaskStatus.Running, refreshed.Tasks.Single().Status);
+		}
+		finally
+		{
+			try
+			{
+				File.Delete(dbPath);
+			}
+			catch (IOException)
+			{
+				// Microsoft.Data.Sqlite pooling may still hold the file on Windows; best-effort cleanup.
+			}
+		}
+	}
+
+	[Fact]
 	public async Task RequeueTaskMovesJobBackToQueuedWhenNoOtherWorkRemains()
 	{
 		using var store = new SqliteJobStore(":memory:");
