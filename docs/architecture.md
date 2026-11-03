@@ -113,7 +113,7 @@ Interfaces:
 - SQLite `SqliteJobStore` is the durable task queue of record; the scheduler claims tasks, renews leases and requeues expired attempts.
 - WebSocket send queues and agent registry are in memory. NATS / Kafka / RabbitMQ are not integrated.
 - Delivery is at least once, with `taskId` + `attempt` result fencing; external side effects are not exactly once.
-- SSE is live-only (no replay/history); the one exception is the auth-challenge stream, which gives a reconnecting agent a one-shot short replay of a still-acknowledged code (see §"Agent task loop").
+- SSE is live-only (no replay/history); the one exception is the auth-challenge stream, which gives a reconnecting agent a one-shot short replay of a still-unconfirmed code (see §"Agent task loop").
 - Backpressure, queued-task lease and queued cancellation are implemented: agent task intake is a bounded buffer (default 32, `AGENT_TASK_BUFFER_CAPACITY`, `BoundedChannelFullMode.Wait`) that applies back-pressure to the websocket; dispatched-but-queued tasks renew their lease via periodic `task_heartbeat` frames (5 s default); `task_cancel` frames that arrive before their task dispatches are fenced by `taskId` + `attempt` and suppress that queued dispatch. The [implementation review](review/architecture-2026-10-30.md) records the pre-fix gaps (items 3/4) that these closed.
 
 ## Multi-region deployment
