@@ -155,6 +155,38 @@ public class SteamClientManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task OnDisconnected_CompletesAllPendingProxySwitches()
+	{
+		// A concurrent proxy switch used to overwrite the single _disconnectTcs,
+		// orphaning the earlier caller's settle TCS so it only ended via the 10s
+		// timeout. Every in-flight switch must register its own TCS and all of
+		// them must settle when the disconnect callback fires.
+		var pending = typeof(SteamClientManager)
+			.GetField("_pendingDisconnects", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		var disconnect = typeof(SteamClientManager)
+			.GetMethod("OnDisconnected", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+		var list = (List<TaskCompletionSource<bool>>)pending.GetValue(_manager)!;
+		var first = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var second = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+		list.Add(first);
+		list.Add(second);
+
+		// Simulate the CM socket going down: every pending switch settles.
+		// The SteamKit2 callback constructor is internal; invoke it via reflection so
+		// the test can simulate the CM socket dropping without a real connection.
+		var ctor = typeof(SteamClient.DisconnectedCallback)
+			.GetConstructor(BindingFlags.Instance | BindingFlags.NonPublic, null, [typeof(bool)], null)!;
+		var callback = (SteamClient.DisconnectedCallback)ctor.Invoke([false]);
+		disconnect.Invoke(_manager, [callback]);
+
+		await Task.WhenAll(first.Task, second.Task).WaitAsync(TimeSpan.FromSeconds(5));
+		Assert.True(first.Task.IsCompleted);
+		Assert.True(second.Task.IsCompleted);
+		Assert.Empty(list);
+	}
+
+	[Fact]
 	public async Task IsConnectedAsync_WhenNotConnected_ReturnsFalse()
 	{
 		// Act

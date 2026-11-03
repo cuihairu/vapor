@@ -143,9 +143,11 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	private readonly ConcurrentDictionary<string, LoginState> _loginStates = new(StringComparer.OrdinalIgnoreCase);
 	private readonly object _connectLock = new();
 	private TaskCompletionSource<bool> _connectedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-	// Completed by OnDisconnected for the in-flight proxy switch, so a reconnect
-	// does not race the dying socket. Null when no switch is awaiting teardown.
-	private TaskCompletionSource<bool>? _disconnectTcs;
+	// Each proxy switch that must tear the live connection down registers its own
+	// settle TCS here; OnDisconnected completes every one of them so a reconnect
+	// does not race the dying socket and a concurrent switch never orphans an
+	// earlier caller's wait (which would otherwise only end via the 10s timeout).
+	private readonly List<TaskCompletionSource<bool>> _pendingDisconnects = [];
 	private string? _activeLoginAccountName;
 	// Serializes LoginAsync: a LoggedOnCallback is routed through the single
 	// _activeLoginAccountName slot, so only one logon may be in flight at a time.
@@ -337,8 +339,9 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 				// Wait on the disconnect, not the (already completed) connect TCS:
 				// _connectedTcs was settled true by OnConnected, so awaiting it here
 				// returns instantly and the reconnect races the socket teardown.
-				_disconnectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-				settle = _disconnectTcs.Task;
+				var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				_pendingDisconnects.Add(tcs);
+				settle = tcs.Task;
 			}
 			else
 			{
@@ -1572,8 +1575,11 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 		lock (_connectLock)
 		{
-			_disconnectTcs?.TrySetResult(true);
-			_disconnectTcs = null;
+			foreach (var pending in _pendingDisconnects)
+			{
+				pending.TrySetResult(true);
+			}
+			_pendingDisconnects.Clear();
 		}
 		_connectedTcs.TrySetResult(false);
 	}
