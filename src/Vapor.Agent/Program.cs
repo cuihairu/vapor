@@ -376,6 +376,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 	string? currentTaskId = null;
 	int currentAttempt = 0;
 	bool currentTaskCancelledByServer = false;
+	bool currentTaskCancelledByDisconnect = false;
 	var pendingLeaseCts = new ConcurrentDictionary<(string TaskId, int Attempt), CancellationTokenSource>();
 	var queuedCancels = new QueuedTaskCanceller();
 
@@ -472,6 +473,22 @@ async Task RunOnce(CancellationToken cancellationToken)
 		}
 		finally
 		{
+			// The websocket is gone: heartbeats and results can no longer reach the
+			// control plane, so continuing the in-flight action only burns Steam
+			// side effects for a result that would be dropped. Mark the reason and
+			// cancel it now; the reconnecting RunOnce picks up fresh dispatches
+			// instead.
+			lock (executionGate)
+			{
+				currentTaskCancelledByDisconnect = true;
+				try
+				{
+					currentTaskCts?.Cancel();
+				}
+				catch
+				{
+				}
+			}
 			tasks.Complete();
 		}
 	}, cancellationToken);
@@ -585,7 +602,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 					execute?.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error, error);
 					replyTraceparent = execute?.Id;
 				}
-				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !currentTaskCancelledByServer)
+				catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !currentTaskCancelledByServer && !currentTaskCancelledByDisconnect)
 				{
 					// Host actions rethrow caller cancels. Anything that is neither an
 					// agent shutdown nor a server task_cancel can only be the watchdog
@@ -605,13 +622,17 @@ async Task RunOnce(CancellationToken cancellationToken)
 					{
 						// A result is suppressed only on shutdown or an explicit server
 						// cancel — a watchdog firing (even just after completion) must
-						// still report, so the lease is always settled with a terminal state.
+						// still report, so the lease is always settled with a terminal
+						// state. A disconnect cancel is also suppressed: the socket is
+						// gone, so the result could never be delivered.
 						suppressed = cancellationToken.IsCancellationRequested
-							|| (currentTaskCancelledByServer && !timedOut);
+							|| (currentTaskCancelledByServer && !timedOut)
+							|| currentTaskCancelledByDisconnect;
 						currentTaskCts = null;
 						currentTaskId = null;
 						currentAttempt = 0;
 						currentTaskCancelledByServer = false;
+						currentTaskCancelledByDisconnect = false;
 					}
 				}
 			}
