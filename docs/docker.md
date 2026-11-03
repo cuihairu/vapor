@@ -40,7 +40,7 @@ The credential variables are **required** — compose fail-fasts on a missing va
 (no known-token fallback). For local dev, seed them from the template:
 
 ```bash
-cp .env.example .env   # dev-only values; never deploy these
+rm -f .env && cp .env.example .env   # dev-only values; never deploy these
 ```
 
 Set these before running (via shell env or a `.env` file):

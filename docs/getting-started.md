@@ -15,7 +15,7 @@ This walkthrough takes you from an empty machine to a farming Steam account in t
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
-cp .env.example .env   # required credential vars (dev values, never deploy)
+rm -f .env && cp .env.example .env   # required credential vars (dev values, never deploy)
 docker compose up -d
 ```
 

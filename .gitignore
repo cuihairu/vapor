@@ -72,3 +72,9 @@ __pycache__/
 node_modules/
 **/node_modules/
 .pnpm-store/
+
+# Local credential/secret environment file. The docs and README instruct
+# `cp .env.example .env` as the first setup step; a real deployment overwrites
+# the dev values with production secrets, so this file must never be committed
+# (a stray `git add .` would otherwise publish credentials).
+.env

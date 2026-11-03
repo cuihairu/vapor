@@ -83,7 +83,7 @@ Docker Compose (control plane + one agent):
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
-cp .env.example .env                                # required credential vars (dev values, never deploy)
+rm -f .env && cp .env.example .env                  # required credential vars (dev values, never deploy)
 docker compose up -d                                # + --profile observability for Prometheus/Grafana
 curl -s http://127.0.0.1:8080/healthz
 ```
