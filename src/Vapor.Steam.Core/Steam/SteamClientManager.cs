@@ -376,6 +376,25 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			return;
 		}
 
+		Task settle;
+		lock (_connectLock)
+		{
+			if (_steamClient.IsConnected)
+			{
+				// Wait on the disconnect callback rather than a fixed sleep: the
+				// callback settles this TCS as soon as the socket actually tears
+				// down, so callers do not race a wedged connection with a magic
+				// number. Same bounded mechanism as a proxy switch.
+				var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				_pendingDisconnects.Add(tcs);
+				settle = tcs.Task;
+			}
+			else
+			{
+				settle = Task.CompletedTask;
+			}
+		}
+
 		try
 		{
 			_steamClient.Disconnect();
@@ -384,7 +403,12 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		{
 		}
 
-		await Task.Delay(100).ConfigureAwait(false);
+		// Bounded wait: the disconnect callback settles the TCS; the ceiling keeps a
+		// wedged socket from blocking shutdown forever.
+		if (!settle.IsCompleted)
+		{
+			await settle.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+		}
 	}
 
 	public async Task LoginAsync(string accountName, string password, CancellationToken cancellationToken = default)
