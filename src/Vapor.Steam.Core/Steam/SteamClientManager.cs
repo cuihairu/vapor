@@ -376,6 +376,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			return;
 		}
 
+		TaskCompletionSource<bool>? disconnectTcs = null;
 		Task settle;
 		lock (_connectLock)
 		{
@@ -385,9 +386,9 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 				// callback settles this TCS as soon as the socket actually tears
 				// down, so callers do not race a wedged connection with a magic
 				// number. Same bounded mechanism as a proxy switch.
-				var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-				_pendingDisconnects.Add(tcs);
-				settle = tcs.Task;
+				disconnectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				_pendingDisconnects.Add(disconnectTcs);
+				settle = disconnectTcs.Task;
 			}
 			else
 			{
@@ -407,11 +408,38 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			// below get the real outcome via the 10s ceiling.
 		}
 
-		// Bounded wait: the disconnect callback settles the TCS; the ceiling keeps a
-		// wedged socket from blocking shutdown forever.
-		if (!settle.IsCompleted)
+		await SettleDisconnectAsync(settle, disconnectTcs, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Bounded wait on the disconnect callback TCS. A wedged socket that never
+	/// raises OnDisconnected surfaces as a timeout here; treat it as a completed
+	/// best-effort teardown instead of throwing — the old fixed-delay contract
+	/// never propagated this, and a caller (BotSession.DisconnectInternalAsync)
+	/// would otherwise skip the Disconnected transition and strand in Disconnecting.
+	/// </summary>
+	private async Task SettleDisconnectAsync(Task settle, TaskCompletionSource<bool>? disconnectTcs, TimeSpan timeout)
+	{
+		if (settle.IsCompleted)
 		{
-			await settle.WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+			return;
+		}
+
+		try
+		{
+			await settle.WaitAsync(timeout).ConfigureAwait(false);
+		}
+		catch (TimeoutException)
+		{
+			_logger.LogWarning("Disconnect timed out after {Timeout}ms; socket is wedged or already dead, treating teardown as complete", timeout.TotalMilliseconds);
+			if (disconnectTcs != null)
+			{
+				lock (_connectLock)
+				{
+					// Do not let the orphaned TCS linger until the next OnDisconnected.
+					_pendingDisconnects.Remove(disconnectTcs);
+				}
+			}
 		}
 	}
 
