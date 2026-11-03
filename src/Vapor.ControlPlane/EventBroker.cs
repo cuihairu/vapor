@@ -9,8 +9,6 @@ public sealed class EventBroker : IEventBroker
 	private readonly ConcurrentDictionary<string, ConcurrentDictionary<Channel<Event>, byte>> _subscribers = new(StringComparer.Ordinal);
 	private readonly ConcurrentDictionary<string, ConcurrentDictionary<Channel<SessionEvent>, byte>> _sessionSubscribers = new(StringComparer.Ordinal);
 	private readonly ConcurrentDictionary<string, ConcurrentDictionary<Channel<AuthChallengeEvent>, byte>> _authSubscribers = new(StringComparer.Ordinal);
-	private readonly Channel<SessionEvent> _globalSessionChannel = Channel.CreateUnbounded<SessionEvent>(new UnboundedChannelOptions { SingleReader = false });
-	private readonly Channel<AuthChallengeEvent> _globalAuthChannel = Channel.CreateUnbounded<AuthChallengeEvent>(new UnboundedChannelOptions { SingleReader = false });
 
 	/// <summary>Currently registered job-event subscriber channels across all keys (readiness/diagnostics signal).</summary>
 	public int SubscriberCount => _subscribers.Values.Sum(static subs => subs.Count);
@@ -71,9 +69,6 @@ public sealed class EventBroker : IEventBroker
 			Timestamp: DateTimeOffset.UtcNow
 		);
 
-		// Publish to global channel
-		_ = _globalSessionChannel.Writer.TryWrite(sessionEvent);
-
 		// Publish to account-specific subscribers
 		if (_sessionSubscribers.TryGetValue(accountName, out var subs))
 		{
@@ -105,9 +100,6 @@ public sealed class EventBroker : IEventBroker
 			JobId: null,
 			Attempt: attempt
 		);
-
-		// Publish to global channel
-		_ = _globalAuthChannel.Writer.TryWrite(authEvent);
 
 		// Publish to account-specific subscribers
 		if (_authSubscribers.TryGetValue(accountName, out var subs))

@@ -52,14 +52,21 @@ Agent 主动连接控制平面。当前没有外部消息队列、跨实例锁�
    `EnqueueTask` / `EnqueueTaskCancel` 返回 false，调度器走 `task.enqueue_failed` 安全重试，
    取消端点发布 `job.cancel_rejected`；`SendQueueRejected` 计数可观测背压。Agent 接收队列无界，
    任务消费串行。排在长任务后面的任务已被领取，却未启动心跳，可能在仍排队时过期重派。
+   **已解决（2026-11-01）：** Agent 入口改为有限缓冲（`AGENT_TASK_BUFFER_CAPACITY`，默认 32，
+   `BoundedChannelFullMode.Wait`），已派发仍在排队的任务靠 `task_heartbeat` 续租
+   （`TaskLeaseRenewer`），租约回收不再重复派发。
 4. **排队任务取消（高优先级）。** Agent 接收器只取消正在执行的 `(taskId, attempt)`，
    没有删除或作废已排队任务。仅取消数据库记录 / 拒绝旧结果，不能阻止旧派发随后触发外部动作。
+   **已解决（2026-11-01）：** `QueuedTaskCanceller` 按 `taskId` + `attempt` 栅栏 `task_cancel` 帧，
+   抑制排队派发，使其不再触达外部动作。
 5. **超时隔离（条件性后续）。** `CancelAfter` 发出协作取消；会话的 `WaitAsync`
    可约束调用方等待。不响应取消的插件仍可能占住会话动作锁，宿主动作则可能卡住 Agent 串行执行器。
    当前没有进程沙箱或强制终止线程；既有进程边界决策将中毒会话回收 / 配额延后到第三方插件需求出现。
 6. **无消费者事件队列（维护缺口）。** `EventBroker` 向无界的 `_globalSessionChannel` /
    `_globalAuthChannel` 写每条事件，但类及接口没有读取路径。通知服务用另一套 `Subscribe*`
    通道，不能消耗这两条队列；它们会保留事件，包括带验证码的事件。
+   **已解决（2026-11-01）：** 无消费者的全局通道已删除（`4042b71`）；broker 现在只服务有读取方的
+   `Subscribe*` 通道。
 7. **文档偏差。** 架构前半段推荐外部 MQ / 双活，后半段已明确拒绝；中文首页 Markdown
    被压成长行。本轮修正文档表述、恢复首页结构，并接入双语 SVG。
 8. **验证边界。** 背包 / 开箱 mock 验收已完成，真实 Steam 仍待操作者可用凭据。

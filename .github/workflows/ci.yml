@@ -270,4 +270,10 @@ jobs:
       run: docker build -f src/Vapor.Agent/Dockerfile -t vapor/agent:ci .
 
     - name: Validate compose file
+      # The compose file fail-fasts on missing credential vars; CI only parses,
+      # so feed it placeholders (this job never runs the containers).
+      env:
+        VAPOR_ADMIN_API_KEY: ci-placeholder
+        VAPOR_AGENT_API_KEYS: ci-placeholder
+        VAPOR_AGENT_API_KEY: ci-placeholder
       run: docker compose config -q

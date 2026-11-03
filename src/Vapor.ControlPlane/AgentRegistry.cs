@@ -30,13 +30,17 @@ public sealed class AgentRegistry
 	/// null load keeps the pure agent-id order. Health is implicit: only connected
 	/// agents are in the registry at all.
 	/// </summary>
-	public ConnectedAgent? Pick(string region, string? action, IReadOnlyDictionary<string, int>? load)
+	public ConnectedAgent? Pick(string region, string? action, IReadOnlyDictionary<string, int>? load, Func<ConnectedAgent, bool>? include = null)
 	{
 		IEnumerable<ConnectedAgent> candidates = _agents.Values
 			.Where(a => string.Equals(a.Hello.Region, region, StringComparison.Ordinal));
 		if (action != null)
 		{
 			candidates = candidates.Where(a => a.SupportsAction(action));
+		}
+		if (include != null)
+		{
+			candidates = candidates.Where(include);
 		}
 
 		var ordered = candidates
@@ -76,6 +80,17 @@ public sealed class ConnectedAgent
 	/// <summary>Total rejects observed since connect; a monotonic back-pressure signal.</summary>
 	public long SendQueueRejected => Interlocked.Read(ref _sendQueueRejected);
 
+	/// <summary>
+	/// Maximum number of tasks the agent may have in flight (buffered + executing)
+	/// before the scheduler stops placing more work on it. Derived from the agent's
+	/// hello meta <c>task_buffer_capacity</c>; null means the agent did not report a
+	/// bounded buffer and the scheduler keeps the pre-ARCH-05 placement behavior.
+	/// </summary>
+	public int? TaskBufferCapacity { get; }
+
+	/// <summary>One in-flight slot is the task being executed; the rest are buffered.</summary>
+	public int? MaxInFlight => TaskBufferCapacity is int capacity ? capacity + 1 : null;
+
 	public ConnectedAgent(AgentHello hello, WebSocket socket, int sendQueueCapacity = 1024)
 	{
 		Hello = hello;
@@ -86,6 +101,31 @@ public sealed class ConnectedAgent
 		}
 
 		_send = Channel.CreateBounded<WSMessage>(new BoundedChannelOptions(sendQueueCapacity) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true });
+
+		if (hello.Meta is { } meta
+			&& meta.TryGetValue("task_buffer_capacity", out string? raw)
+			&& int.TryParse(raw, out int capacity)
+			&& capacity > 0)
+		{
+			TaskBufferCapacity = capacity;
+		}
+	}
+
+	/// <summary>
+	/// Whether the scheduler may still place a task on this agent. When the agent
+	/// reports a bounded buffer, the control-plane in-flight count (running tasks
+	/// attributed to this agent) must stay below capacity + 1; otherwise the agent
+	/// has no room and the dispatch should wait for a result to free a slot.
+	/// </summary>
+	public bool AcceptsInFlight(IReadOnlyDictionary<string, int>? load)
+	{
+		if (MaxInFlight is not int max)
+		{
+			return true;
+		}
+
+		int inFlight = load is not null && load.TryGetValue(Hello.AgentId, out int n) ? n : 0;
+		return inFlight < max;
 	}
 
 	public bool EnqueueTask(JobTask task, IReadOnlyDictionary<string, string>? traceHeaders = null)

@@ -2,7 +2,7 @@
 
 # 上手指南
 
-本指南带你从一台空机器到挂机中的 Steam 账号，共十步：启动堆栈、声明账号、登录（密码或二维码）、处理 Steam Guard 挑战、运行首批任务，然后把账号交给编排器做卡牌挂机或时长提升。命令使用 compose 开发默认值；每一步都链接到参考文档的生产级路径。
+本指南带你从一台空机器到挂机中的 Steam 账号，共十步：启动堆栈、声明账号、登录（密码或二维码）、处理 Steam Guard 挑战、运行首批任务，然后把账号交给编排器做卡牌挂机或时长提升。命令使用 compose 开发密钥（从 `.env.example` 复制到 `.env`）；每一步都链接到参考文档的生产级路径。
 
 ## 0. 前置条件
 
@@ -15,6 +15,7 @@
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
+cp .env.example .env   # 必填凭据变量（本地开发值，绝不要部署）
 docker compose up -d
 ```
 
@@ -39,7 +40,7 @@ Agent **主动向外**连接 `ws://controlplane:8080/v1/agent/ws` 并用 agent A
 | `http://127.0.0.1:8080/dashboard.html` | 只读优先面板：统计、Agent、会话、任务、审计——双 SSE 流，外加一个白名单内的按账号调和动作 |
 | `http://127.0.0.1:8080/gamedata.html` | 游戏数据字典（走缓存的查询） |
 
-下文所有 API 示例在 compose 开发密钥（`admin-dev-token`）下原样可用。
+下文所有 API 示例在 compose 开发密钥（`admin-dev-token`，来自 `.env.example`）下原样可用。
 
 ## 3. 声明账号
 

@@ -106,15 +106,15 @@ Interfaces:
   - Messages are authenticated by the tunnel key; fencing is `taskId` + `attempt` — there are no per-message signatures or nonces.
 - Secret storage:
   - Encryption keys come from environment variables or a key file (`VAPOR_ENCRYPTION_KEY` / `VAPOR_ENCRYPTION_KEY_BASE64` / `VAPOR_ENCRYPTION_KEY_FILE`); KMS/Vault/Keychain integration is not implemented.
-  - Agents restore local credentials; manual codes travel over control-plane SSE, which currently lacks server-side account-to-agent authorization binding.
+  - Agents restore local credentials; manual codes travel over control-plane SSE with server-side account-to-agent authorization binding: each agent key is bound to one `agentId` (`Auth.TryAgentIdentity`, `Config.AgentKeyAgentIds`), and a non-admin stream must name an account assigned to that agent or it is rejected `403` (`AccountBelongsToAgent`). Agents see only `code_provided_*` events, with the code intact; admin streams get codes stripped.
 
 ## Queueing and reliability
 
 - SQLite `SqliteJobStore` is the durable task queue of record; the scheduler claims tasks, renews leases and requeues expired attempts.
 - WebSocket send queues and agent registry are in memory. NATS / Kafka / RabbitMQ are not integrated.
 - Delivery is at least once, with `taskId` + `attempt` result fencing; external side effects are not exactly once.
-- SSE is live-only; agents have no durable result outbox.
-- Pending backpressure, queued-task lease and cancellation gaps are detailed in the [implementation review](review/architecture-2026-10-30.md).
+- SSE is live-only (no replay/history); the one exception is the auth-challenge stream, which gives a reconnecting agent a one-shot short replay of a still-acknowledged code (see §"Agent task loop").
+- Backpressure, queued-task lease and queued cancellation are implemented: agent task intake is a bounded buffer (default 32, `AGENT_TASK_BUFFER_CAPACITY`, `BoundedChannelFullMode.Wait`) that applies back-pressure to the websocket; dispatched-but-queued tasks renew their lease via periodic `task_heartbeat` frames (5 s default); `task_cancel` frames that arrive before their task dispatches are fenced by `taskId` + `attempt` and suppress that queued dispatch. The [implementation review](review/architecture-2026-10-30.md) records the pre-fix gaps (items 3/4) that these closed.
 
 ## Multi-region deployment
 
@@ -606,6 +606,17 @@ undeclared hang holds the serial loop forever while its heartbeats keep the
 lease alive (layer 2's raison d'être), and a dead agent obviously cannot
 report anything (layer 3). The default sits above the largest in-tree action
 bound (600 s) so the precise errors win when both are armed.
+
+**Queueing around the serial loop.** Tasks an agent has received but not
+started sit in a bounded buffer (`AGENT_TASK_BUFFER_CAPACITY`, default 32,
+`BoundedChannelFullMode.Wait`): when it is full the websocket read loop keeps
+reading but the control plane's send queue fills instead, so the scheduler
+stops piling work onto that agent rather than silently dropping a task. A
+dispatched-but-still-queued task renews its lease with `task_heartbeat`
+frames every 5 s (`TaskLeaseRenewer`) so lease reclaim cannot double-dispatch
+it, and a `task_cancel` frame that arrives before its task dispatches is held
+in a `taskId` + `attempt` fence (`QueuedTaskCanceller`) that suppresses the
+queued dispatch; a stale attempt cannot cancel a newer retry.
 
 **Alternatives considered.** Parallel per-session task loops on the agent —
 rejected because the contended resource is the *session* (one Steam login

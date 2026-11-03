@@ -119,14 +119,15 @@ public sealed class TaskSchedulerService : BackgroundService
 				if (HostTaskTarget.TryParseAgentId(task.Target, out string targetAgentId))
 				{
 					agent = _agents.Get(targetAgentId);
-					if (agent is { } targeted && !targeted.SupportsAction(task.Action))
+					if (agent is { } targeted
+						&& (!targeted.SupportsAction(task.Action) || !targeted.AcceptsInFlight(load)))
 					{
 						agent = null;
 					}
 				}
 				else
 				{
-					agent = _agents.Pick(region, task.Action, load);
+					agent = _agents.Pick(region, task.Action, load, a => a.AcceptsInFlight(load));
 				}
 
 				if (agent == null)

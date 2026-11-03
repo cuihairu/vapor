@@ -34,7 +34,7 @@ from pathlib import Path
 # 变量转发发布点：file → (line, 说明, 该点可能发布的全部事件名)。
 # 行号是守卫不是索引：源码行内容漂移即 FAIL，更新登记是显式动作。
 DYNAMIC_PUBLISHERS = {
-    "TaskSchedulerService.cs": (210, "failureEvent 参数转发", {
+    "TaskSchedulerService.cs": (211, "failureEvent 参数转发", {
         "task.dispatch_failed", "task.enqueue_failed"}),
     "CrawlRunWorker.cs": (449, "eventType 三元转发", {
         "crawl.run_skipped", "crawl.run_completed"}),

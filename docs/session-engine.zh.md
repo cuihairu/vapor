@@ -118,7 +118,7 @@ SteamClientManager 负责与 Steam 网络通信：
 
 1. 初始登录需要密码
 2. Steam 返回需要认证码或 2FA 时，Session 状态变为 `ConnectingWaitAuthCode` 或 `ConnectingWait2FA`；扫码登录走 `ConnectingWaitQr`
-3. 通过 `ProvideAuthCode()` / `Provide2FACode()` 提供代码，或由 SSE 通道送达管理界面提交的代码；配置了移动认证器共享密钥的账号可由 agent 侧 `TwoFactorAutoResponder` 自动应答
+3. 通过 `ProvideAuthCode()` / `Provide2FACode()` 提供代码，或由 SSE 通道送达管理界面提交的代码；配置了移动认证器共享密钥的账号可由 agent 侧 `TwoFactorAutoResponder` 自动应答。提交的代码先入短期发件箱（TTL `VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS`，默认 120）再清除待处理挑战，故重连的 Agent 重新订阅时仍能拿到代码（一次性短重放，送达即确认）；管理员流则剥离代码
 4. 登录成功后，access token 和 refresh token 保存用于后续登录——agent 重启后凭此恢复会话，无需人工重登
 
 ## 边界

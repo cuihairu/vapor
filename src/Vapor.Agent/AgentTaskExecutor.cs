@@ -17,7 +17,8 @@ public static class AgentTaskExecutor
 		JobTask task,
 		ISessionManager sessionManager,
 		ILogger logger,
-		CancellationToken cancellationToken)
+		CancellationToken cancellationToken,
+		IActionRegistry? actionRegistry = null)
 	{
 		string action = task.Action.Trim().ToLowerInvariant();
 		string accountName = task.Target;
@@ -125,12 +126,29 @@ public static class AgentTaskExecutor
 				logger.LogInformation("No credentials provided, attempting to restore session for {AccountName}", accountName);
 				var restoredSession = await sessionManager.TryRestoreSessionAsync(accountName, cancellationToken);
 
-				if (restoredSession == null)
+				if (restoredSession != null)
 				{
-					return (false, "No credentials provided and no stored session found", null);
+					session = restoredSession;
 				}
+				else
+				{
+					// Only login-free actions may fall back to an empty-credential
+					// stub session (the real transport handshake is unavailable in
+					// dry-run/offline fixtures). Login-gated actions (login, trades)
+					// must fail with the explicit no-credentials error instead of
+					// silently running disconnected.
+					bool requiresLogin = actionRegistry?.Get(action)?.Metadata.RequiresLogin ?? true;
+					if (requiresLogin)
+					{
+						return (false, "No credentials provided and no stored session found", null);
+					}
 
-				session = restoredSession;
+					session = await sessionManager.GetOrCreateSessionAsync(
+						accountName,
+						new AccountCredentials(AccountName: accountName, Password: string.Empty),
+						cancellationToken
+					);
+				}
 			}
 
 			var result = await session.ExecuteActionAsync(

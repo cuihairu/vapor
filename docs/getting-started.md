@@ -2,7 +2,7 @@ English | 简体中文
 
 # Getting started
 
-This walkthrough takes you from an empty machine to a farming Steam account in ten steps: start the stack, declare an account, log in (password or QR), handle a Steam Guard challenge, run your first jobs, then hand the account to the orchestrator for card farming or playtime boosting. Commands use the compose dev defaults; every step links to the reference docs for the production-grade path.
+This walkthrough takes you from an empty machine to a farming Steam account in ten steps: start the stack, declare an account, log in (password or QR), handle a Steam Guard challenge, run your first jobs, then hand the account to the orchestrator for card farming or playtime boosting. Commands use the compose dev keys (copied from `.env.example` to `.env`); every step links to the reference docs for the production-grade path.
 
 ## 0. Prerequisites
 
@@ -15,6 +15,7 @@ This walkthrough takes you from an empty machine to a farming Steam account in t
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
+cp .env.example .env   # required credential vars (dev values, never deploy)
 docker compose up -d
 ```
 
@@ -39,7 +40,7 @@ Prefer local processes? Follow [running.md](running.md) (`Vapor_ADMIN_API_KEY` /
 | `http://127.0.0.1:8080/dashboard.html` | Read-first dashboard: stats, agents, sessions, jobs, audit — dual SSE streams, plus one whitelisted per-account reconcile action |
 | `http://127.0.0.1:8080/gamedata.html` | Game data dictionary (cached store lookups) |
 
-All API examples below work verbatim with the compose dev keys (`admin-dev-token`).
+All API examples below work verbatim with the compose dev keys (`admin-dev-token`, from `.env.example`).
 
 ## 3. Declare an account
 
