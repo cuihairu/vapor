@@ -111,8 +111,8 @@ P0/P1 当场修复（一问题一 commit，各套测试全绿）：
 
 P2 待办（记档，未修）：
 - [x] P2 docker-compose 默认 API key 未强制门控：`${VAPOR_ADMIN_API_KEY:-admin-dev-token}` 等兜底默认值，生产忘配环境变量即携已知 dev token 启动 —— 修复:05b1756（`:?` 缺失即 fail-fast + .env.example 模板 + CI 占位；compose config 缺值 rc15/提供 rc0，ControlPlane 1378 全绿，7 verify 脚本全绿）
-- [ ] P2 `SetTaskResult` 任务行更新与 `RecomputeJob` 非同一事务，进程中断留下 task=Finished 而 job 仍 Running 中间态 —— 证据:SqliteJobStore.cs:985（UPDATE tasks，无事务）+ :1004（独立 RecomputeJob）
-- [ ] P2 `RemoveSessionAsync` 中 `DisconnectAsync` 抛错则 `Dispose` 被跳过，会话泄漏 —— 证据:SessionManager.cs:178-181（应 try/finally 保证 Dispose）
+- [x] P2 `SetTaskResult` 任务行更新与 `RecomputeJob` 非同一事务，进程中断留下 task=Finished 而 job 仍 Running 中间态 —— 修复:0295ed8（`SetTaskResult` 的 UPDATE tasks + RecomputeJob 包入单事务；RecomputeJob 增可选 tx 参数，Canceled 时提交 task 更新但不动 job；新增 `SetTaskResult_RollsBackTaskUpdateWhenJobRecomputeFails` 回归测试），ControlPlane SqliteJobStoreTests 58 全绿 + 全套 1386 全绿
+- [x] P2 `RemoveSessionAsync` 中 `DisconnectAsync` 抛错则 `Dispose` 被跳过，会话泄漏 —— 修复:b088052（`RemoveSessionAsync` 改 try/finally：`DisconnectAsync` 抛错仍执行 `session.Dispose()`；新增 `RemoveSessionAsync_DisconnectThrows_StillDisposesSession` 回归测试），Steam.Core 1293 全绿
 - [ ] P2 任务取消仅投递给 `ListConnected()` 在线 agent：DB 已置 Canceled，离线 agent 复联收不到 task_cancel，跑完结果被 SetTaskResult 以 task not running 丢弃 —— 证据:Program.cs:3190 + AgentRegistry.cs:144（TryWrite 失败）
 - [ ] P2 `DisconnectAsync` 以 `Task.Delay(100)` 固定睡眠等断开，竞态余量靠魔法数 —— 证据:SteamClientManager.cs:384（应改等 disconnect 事件，同 `_disconnectTcs` 机制）
 - [ ] P2 94085ba 残余：登录被取消后迟到的 LoggedOnCallback 仍可能错投给下一个登录的 TCS —— 证据:SteamClientManager.cs:371-405 + :1596（取消窗口 + 并发登录 + Steam 响应晚到；根治需回调按 SteamID 路由）
