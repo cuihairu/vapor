@@ -462,6 +462,9 @@ async Task RunOnce(CancellationToken cancellationToken)
 						}
 						catch
 						{
+							// Intentionally swallowed: the CTS may already be disposed
+							// by the execution loop after a completed task; cancel is
+							// best-effort.
 						}
 					}
 				}
@@ -487,6 +490,8 @@ async Task RunOnce(CancellationToken cancellationToken)
 				}
 				catch
 				{
+					// Intentionally swallowed: the CTS may already be disposed; the
+					// socket is gone either way, so cancel is best-effort.
 				}
 			}
 			tasks.Complete();
@@ -680,6 +685,8 @@ async Task RunOnce(CancellationToken cancellationToken)
 		}
 		catch
 		{
+			// Intentionally swallowed: the receiver loop already handles its own
+			// exceptions and exits; the outer RunOnce reconnect loop owns recovery.
 		}
 	}
 }

@@ -401,6 +401,10 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 		catch
 		{
+			// Intentionally swallowed: the socket may already be dead (for example a
+			// dropped CM connection), in which case Disconnect raises while the
+			// disconnect is still the desired end state. Callers awaiting settle
+			// below get the real outcome via the 10s ceiling.
 		}
 
 		// Bounded wait: the disconnect callback settles the TCS; the ceiling keeps a
@@ -1730,6 +1734,8 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 		catch
 		{
+			// Intentionally swallowed: Dispose must never throw even if the CM
+			// socket is already gone and SteamKit2 raises from Disconnect.
 		}
 
 		_loginStates.Clear();
