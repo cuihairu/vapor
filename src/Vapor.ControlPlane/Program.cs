@@ -12,6 +12,10 @@ using Vapor.Protocol;
 using Vapor.Steam.Core.Security;
 using Vapor.Steam.Core.Utilities;
 
+// Accepted job responses report this lightweight status until the durable queue
+// publishes its first authoritative JobStatus event.
+const string PendingStatus = "pending";
+
 var builder = WebApplication.CreateBuilder(args);
 VaporCryptoHelper.ConfigureFromEnvironment(Environment.GetEnvironmentVariable);
 VaporCryptoHelper.EnsureSafeForEnvironment(Environment.GetEnvironmentVariable);
@@ -875,7 +879,7 @@ app.MapPost("/v1/orchestration/storage/collect", async (HttpContext ctx, Config 
 			storage_steam_id = storage.SteamId,
 			farm_accounts = eligibleFarms.Select(f => f.AccountName),
 			skipped_quarantined = skippedFarms,
-			status = "pending"
+			status = PendingStatus
 		});
 	}
 
@@ -1520,7 +1524,7 @@ app.MapPost("/v1/scripts/{id}/execute", async Task<IResult> (HttpContext ctx, Co
 
 	if (run.Status == JobTaskStatus.Queued)
 	{
-		return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+		return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 	}
 
 	if (run.Status != JobTaskStatus.Finished)
@@ -1813,7 +1817,7 @@ app.MapGet("/v1/accounts/{name}/trade-offers", async (HttpContext ctx, Config cf
 		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("List an account's trade offers (dispatches get_trade_offers and waits for the agent; 202 + job id when still pending, 502 when the task fails)")
@@ -1865,7 +1869,7 @@ app.MapGet("/v1/accounts/{name}/achievements", async (HttpContext ctx, Config cf
 		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("List an account's achievements for one game (dispatches get_achievements and waits for the agent; 202 + job id when still pending, 502 when the task fails)")
@@ -1988,7 +1992,7 @@ app.MapGet("/v1/accounts/{name}/inventory", async (HttpContext ctx, Config cfg, 
 		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("Read an account's inventory (dispatches get_inventory and waits for the agent; app_ids=753,730 scans several apps, tradable_only/marketable_only filter; 202 + job id when still pending, 502 when the task fails)")
@@ -2039,7 +2043,7 @@ app.MapGet("/v1/accounts/{name}/market/listings", async (HttpContext ctx, Config
 		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("List an account's own community market listings (dispatches get_my_market_listings and waits for the agent; start/count page through total_count; 202 + job id when still pending, 502 when the task fails)")
@@ -2127,7 +2131,7 @@ app.MapPost("/v1/accounts/{name}/market/listings/cancel", async (HttpContext ctx
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("Cancel an account's own market listings matching a filter (app / hash name / price range / age; dry_run=true by default only previews the matched listings; 202 + job id when still pending, 502 when the task fails)")
@@ -2223,7 +2227,7 @@ app.MapPost("/v1/accounts/{name}/market/listings", async (HttpContext ctx, Confi
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("Create one market listing (dry run by default: send omitted reports the fee-aware pricing plan only; a real listing needs send=true, the account's marketListingsEnabled switch and the agent's AGENT_MARKET_LISTINGS_ENABLED; 202 + job id when still pending, 502 when the task fails)")
@@ -2301,7 +2305,7 @@ app.MapGet("/v1/accounts/{name}/points-shop/summary", async (HttpContext ctx, Co
 		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("Read an account's points shop balance and, via definition_ids (comma-separated), the reward definitions behind those ids (free_only filters the list to point_cost == 0; 202 + job id when still pending, 502 when the task fails)")
@@ -2372,7 +2376,7 @@ app.MapPost("/v1/accounts/{name}/points-shop/claim", async (HttpContext ctx, Con
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("Redeem points shop reward definitions (free ones by default; force=true redeems paid ones and spends points; 202 + job id when still pending, 502 when the task fails)")
@@ -2501,7 +2505,7 @@ app.MapPost("/v1/accounts/{name}/confirmations/accept-all", async (HttpContext c
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("Respond to all of an account's pending mobile confirmations in one batch (optionally filtered by type; 202 + job id when still pending, 502 when the task fails)")
@@ -2572,7 +2576,7 @@ app.MapPost("/v1/accounts/{name}/proxy", async (HttpContext ctx, Config cfg, IAu
 	{
 		if (run.Status == JobTaskStatus.Queued)
 		{
-			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 		}
 
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
@@ -2605,7 +2609,7 @@ app.MapPost("/v1/accounts/{name}/proxy", async (HttpContext ctx, Config cfg, IAu
 	}
 	else if (verification.Status == JobTaskStatus.Queued)
 	{
-		verificationView["status"] = "pending";
+		verificationView["status"] = PendingStatus;
 	}
 	else
 	{
@@ -2702,7 +2706,7 @@ app.MapPost("/v1/accounts/{name}/loot", async (HttpContext ctx, Config cfg, IAud
 	{
 		if (run.Status == JobTaskStatus.Queued)
 		{
-			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 		}
 
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
@@ -2832,7 +2836,7 @@ app.MapGet("/v1/accounts/{name}/duplicates", async (HttpContext ctx, Config cfg,
 		return Results.Json(new { job_id = read.JobId, error = read.Error ?? $"task ended as {read.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{read.JobId}", new { job_id = read.JobId, status = PendingStatus });
 })
 	.WithTags("Accounts")
 	.WithSummary("Find an account's duplicate items (trading cards) beyond keep copies (dispatches find_duplicates; 202 + job id when still pending, 502 when the task fails)")
@@ -2925,7 +2929,7 @@ app.MapPost("/v1/accounts/{name}/swap-offers", async (HttpContext ctx, Config cf
 	{
 		if (run.Status == JobTaskStatus.Queued)
 		{
-			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 		}
 
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
@@ -3042,7 +3046,7 @@ app.MapPost("/v1/accounts/{name}/licenses", async (HttpContext ctx, Config cfg, 
 	{
 		if (run.Status == JobTaskStatus.Queued)
 		{
-			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+			return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 		}
 
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
@@ -4835,7 +4839,7 @@ static async Task<IResult> RunOfferDecisionAsync(
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 }
 
 /// <summary>
@@ -4914,7 +4918,7 @@ static async Task<IResult> DispatchAchievementWrite(
 		return Results.Json(new { job_id = run.JobId, error = run.Error ?? $"task ended as {run.Status}" }, statusCode: 502);
 	}
 
-	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = "pending" });
+	return Results.Accepted($"/v1/jobs/{run.JobId}", new { job_id = run.JobId, status = PendingStatus });
 }
 
 /// <summary>
