@@ -119,9 +119,9 @@ P2 待办（记档，未修）：
 
 P3 记录性（风格/健壮性，未修）：
 - [x] P3 无注释空 `catch {}`：SteamClientManager.cs:380（DisconnectAsync 吞 Disconnect 异常）、:1690（Dispose 同款）；Agent Program.cs:660（websocket 排水）、:462（currentTaskCts.Cancel） —— 修复:85c12af（四处空 catch 补意图注释：Disconnect 可能已断/Dispose 不抛/排水由外层重连负责/CTS 可能已 dispose；Agent 219 + Steam.Core 1294 全绿）
-- [ ] P3 魔法数：BotSession.cs:256（回调轮询 100ms）、:604（断开沉降 100ms）；RedisVaporCache.cs:105（`Thread.Sleep(200*attempt)` 库内重试同步阻塞）
-- [ ] P3 库内 await 缺 `ConfigureAwait(false)`：SteamWebHandler.cs:174（GetAsync）、:191（PostAsync）；DataActions.cs:440；CsgoPlugin.cs:320；SessionManager.cs:477（_eventCallback.Invoke）
-- [ ] P3 `"pending"` 状态字面量 ControlPlane Program.cs:878 重复 19 次，应提共享常量
+- [x] P3 魔法数：BotSession.cs:256（回调轮询 100ms）、:604（断开沉降 100ms）；RedisVaporCache.cs:105（`Thread.Sleep(200*attempt)` 库内重试同步阻塞）—— 修复:fe8cbb3（BotSession.cs:476/481 提常量、RedisVaporCache.cs:98 提常量），全套 4062 测试全绿（2026-11-04 实测）
+- [x] P3 库内 await 缺 `ConfigureAwait(false)`：SteamWebHandler.cs:174（GetAsync）、:191（PostAsync）；DataActions.cs:440；CsgoPlugin.cs:320；SessionManager.cs:477（_eventCallback.Invoke）—— 修复:d5926e0（四处补 `.ConfigureAwait(false)`），全套 4062 测试全绿（2026-11-04 实测）
+- [x] P3 `"pending"` 状态字面量 ControlPlane Program.cs:878 重复 19 次，应提共享常量 —— 修复:61f1184（Program.cs:17 提 `PendingStatus` 常量替换 19 处），全套 4062 测试全绿（2026-11-04 实测）
 - [x] 审核发现：README 英/中首页新增「Steam Guard 验证码与凭据不出 Agent，跨线只有一个布尔值」与实现矛盾——人工验证码实经控制平面 SSE 携明文下发 Agent（Program.cs:3507 发布、:3419-3420 仅管理员剥码），任务 payload 凭据亦入控制平面持久化（secret-payload purge 端点），且同仓 docs/architecture.md:109 已正确描述该路径（README.md:29、README.zh.md:29） — 修复:abce696（README.md:29 改述人工码经 SSE 下发/凭据入控制平面 SQLite，README.zh.md:29 同；ControlPlane 1386 全绿（2026-11-03 实测））
 - [x] 审核发现：docs/architecture.md:116 将挑战流重放写成「still-acknowledged code」，与实现相反——outbox 仅重放未确认（staged）验证码，Acknowledge 即移除（AuthChallengeOutbox.cs:77-91、Program.cs:3404），api.md:85 的「still-unconfirmed」才是正确表述（docs/architecture.md:116） — 修复:5cc2bbe（architecture.md:116 → still-unconfirmed，与 api.md:85 一致）
 - [x] 审核发现：AgentTaskBuffer.CreateChannel 已无生产调用方（RunOnce 改用 AgentTaskDispatcher），仅测试仍引用，属死代码（AgentTaskBuffer.cs:40、Program.cs:372） — 修复:ee2b025（AgentTaskBuffer.cs 删 CreateChannel，AgentTaskBufferTests 删两测；Agent 219 全绿）
@@ -136,3 +136,8 @@ P3 记录性（风格/健壮性，未修）：
 
 - 复核确认（已记档，未新增）：`d8dc8ca` E2E `{ReconcileTimeout:s}` 单字符标准格式——net10 实测 `TimeSpan.ToString("s")` 抛 `FormatException`，超时路径遮蔽 TimeoutException/诊断（todo.md:130）；`122b22e` SubscribeAllEvents 播种 ≤256 条历史、无时间上界，重放陈旧 TwoFactorCodeNeeded 烧 2FA 冷却并虚增计数（todo.md:131）；`70dcdca` TaskLeaseRenewer 覆盖排除依据失实但结论凑巧成立（todo.md:132）。
 - 本轮新发现 1 条：注册-发布并发交错的不变式缺并发测试（见上）。其余变更未见问题：DesiredStateReconciler 空白修正（copy-on-write 语义不变）、SqliteJobStore 比较改正向块（等价）、StripSecretPayload 改 internal（仅测试可见性）、ChannelClosedException 捕获移除（确不可达）、各新增测试断言与实现一致（GetFarmSummaries `?.ToList()` 副本、PurgeSecretPayloads 同路径抛错/畸形 JSON 不动/`:memory:` 早返、AgentTaskDispatcher/QueuedTaskCanceller/AuthChallengeOutboxCleaner 分支）。
+- [ ] 审核发现：P2 原子性修复只包住 `SetTaskResult`；`FailRunningTask`（task→Failed 后 RecomputeJob）、`RequeueTask`、`RequeueStaleRunningTasks` 仍是「任务行 UPDATE + RecomputeJob」非同一事务，进程中断仍可留下 task=Failed/Queued 而 job 仍 Running 的中间态，与所声明的「每个结果都有匹配 job 状态」不变量矛盾（src/Vapor.ControlPlane/SqliteJobStore.cs:1066、:753、:804）
+- [ ] 审核发现：`DisconnectAsync` 由固定 `Task.Delay(100)` 改为等 disconnect 事件 + 10s 有界兜底；当 `Disconnect()` 抛错（socket 已死，:402 吞掉）且 `OnDisconnected` 未再投递时 `settle.WaitAsync(10s)`（:414）抛 `TimeoutException`——旧实现从不抛。`BotSession.DisconnectInternalAsync`:611 无捕获，将跳过 `SetState(Disconnected)`（:615）卡在 Disconnecting；且超时后该 TCS 滞留 `_pendingDisconnects` 直至下次 OnDisconnected（src/Vapor.Steam.Core/Steam/SteamClientManager.cs:402-415）
+- [ ] 审核发现：`9f0f07f` 的测试清单盘点早于区间内后续测试提交，HEAD 的 TESTING.md 逐类计数已失真：AgentTaskBufferTests 记 5 实 3（ee2b025 删两测）、SessionManagerTests 记 53 实 56（38e8ef8/b088052 增三测）、SteamClientManagerTests 记 25 实 27（ac94ff3/68eb3ed 增两测）、SqliteJobStoreTests 记 57 实 48（0295ed8 仅增一测）（tests/TESTING.md:1002、:761、:775、:871）
+- [ ] 审核发现：新文档把 `cp .env.example .env` 定为第一步（README.md:86、docs/getting-started.md:18、docs/docker.md:43），生产会用真实密钥覆盖 dev 值，但 `.env` 未入 `.gitignore`，误 `git add .` 会把真实凭据入库；建议补 `.env` 忽略并提示先删已生成文件（.gitignore）
+- [ ] 审核发现：todo.md:113 引用的 compose fail-fast 修复证据哈希 `05b1756` 不可达自 HEAD（`git branch --contains` 为空），与合入主干的 `ad0cd42` 是同父同刻的两个提交且内容不同（仅 todo.md 差 8 行）——该证据哈希无法在主干验证，P2 记档行应改指 ad0cd42（todo.md:113、docker-compose.yml:22-23）
