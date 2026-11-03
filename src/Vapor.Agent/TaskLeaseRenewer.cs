@@ -28,11 +28,13 @@ public sealed class TaskLeaseRenewer
 	/// Send failures and cancellation both end the loop quietly.
 	/// </summary>
 	/// <remarks>
-	/// Excluded from coverage: a PeriodicTimer that is disposed or cancelled while
-	/// awaited always throws from WaitForNextTickAsync, so the loop can only exit
-	/// through the catch arms — its closing brace (the try block's normal-completion
-	/// sequence point) is unreachable by construction. Same family as the extracted
-	/// timer loops (see tests/TESTING.md).
+	/// Excluded from coverage: the timer is a method-local <c>using</c>, so no other
+	/// thread can dispose it while <c>RunAsync</c> is awaiting it — the only
+	/// cancellation source is the token, and a cancelled <c>WaitForNextTickAsync</c>
+	/// throws OperationCanceledException. The loop therefore exits only through the
+	/// catch arms, and the try block's normal-completion sequence point (closing
+	/// brace) is unreachable by construction. Same family as the extracted timer
+	/// loops (see tests/TESTING.md).
 	/// </remarks>
 	[ExcludeFromCodeCoverage]
 	public async Task RunAsync(JobTask task, CancellationToken cancellationToken)

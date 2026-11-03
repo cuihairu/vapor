@@ -119,7 +119,7 @@ tests/
 | src/Vapor.Steam.Core/SessionManager.cs | RefreshTimerLoopAsync | PeriodicTimer 泵,同上 |
 | src/Vapor.Steam.Core/BotSession.cs | RunSteamCallbacksAsync | 同族:循环体内 RunCallbacks 在 Task.Delay 之前,取消经 Delay 的 OCE 表面化,条件退出臂不可达 |
 | src/Vapor.Plugins.MarketWatch/MarketWatchPlugin.cs | PollOnceGuardedAsync | 真实时钟轮询守卫循环;PollOnce 本体与告警逻辑另测 |
-| src/Vapor.Agent/TaskLeaseRenewer.cs | RunAsync | PeriodicTimer 泵,同族:WaitForNextTickAsync 在取消/处置时必抛,循环仅经 catch 退出,try 闭括号序列点构造不可达 |
+| src/Vapor.Agent/TaskLeaseRenewer.cs | RunAsync | PeriodicTimer 泵,同族:timer 为方法局部 using,无人能在他线程 dispose;唯一取消源是 token(取消时 WaitForNextTickAsync 抛 OCE,dispose 则不抛),循环仅经 catch 退出,try 闭括号序列点构造不可达 |
 <!-- /verify-coverage-inventory:exclusions -->
 
 ## 测试分类
