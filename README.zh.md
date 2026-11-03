@@ -26,7 +26,7 @@ Steam 协议层基于 [SteamKit2](https://github.com/SteamRE/SteamKit)；但落�
 
 插件加载进隔离的 AssemblyLoadContext，无需重启即可卸载。清单携带 SemVer API 契约、信任级别与权限授予；运行时 PluginStore 从目录安装面向 Agent 的包。仓内自带七个官方插件：Monitoring、MobileAuthenticator、MarketWatch、CS2/CSGO、Dota 2、GameData、GameAccess——最后一个以线兼容方式从宿主抽出游戏访问动作面。见[插件开发](docs/plugins.zh.md)。
 
-运维侧：控制平面脚本仓库（存放操作脚本并派发给已连接的 Agent）加有序脚本编排（顺序步骤、逐步状态、停止/继续的失败策略）、OpenAPI/Swagger、SSE 事件流（任务、会话、认证挑战）、Prometheus 指标配 Grafana 仪表盘、贯穿 Agent 隧道的 OpenTelemetry 链路追踪、HMAC 签名 webhook，以及在输出侧脱敏凭据与验证码的结构化日志。安全姿态是 AES-GCM 加密凭据存储加密钥轮换工具、按角色的 API Key、落盘即脱敏的审计日志——外加一条硬规矩：Steam Guard 验证码与凭据不出 Agent，跨线的只有一个布尔值。
+运维侧：控制平面脚本仓库（存放操作脚本并派发给已连接的 Agent）加有序脚本编排（顺序步骤、逐步状态、停止/继续的失败策略）、OpenAPI/Swagger、SSE 事件流（任务、会话、认证挑战）、Prometheus 指标配 Grafana 仪表盘、贯穿 Agent 隧道的 OpenTelemetry 链路追踪、HMAC 签名 webhook，以及在输出侧脱敏凭据与验证码的结构化日志。安全姿态是 AES-GCM 加密凭据存储加密钥轮换工具、按角色的 API Key、落盘即脱敏的审计日志——外加一条硬规矩：人工 Steam Guard 验证码经控制平面 SSE 下发（服务端按账号绑定 Agent，所属 Agent 看到完整验证码、管理员流则剥码），任务/任务载荷里的登录凭据会持久化进控制平面 SQLite——两者在日志/审计中脱敏，并可由 secret-payload purge 端点清理；Agent 自行恢复的本地凭据则绝不离开 Agent。
 
 ## 架构速览
 
