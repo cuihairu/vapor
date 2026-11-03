@@ -1,6 +1,3 @@
-using System.Threading.Channels;
-using Vapor.Protocol;
-
 namespace Vapor.Agent;
 
 /// <summary>
@@ -36,19 +33,4 @@ public static class AgentTaskBuffer
 		return fallback;
 	}
 
-	/// <summary>Creates the bounded task channel used by <c>RunOnce</c>.</summary>
-	public static Channel<WSMessage> CreateChannel(int capacity)
-	{
-		if (capacity <= 0)
-		{
-			throw new ArgumentOutOfRangeException(nameof(capacity), "task buffer capacity must be positive");
-		}
-
-		return Channel.CreateBounded<WSMessage>(new BoundedChannelOptions(capacity)
-		{
-			FullMode = BoundedChannelFullMode.Wait,
-			SingleReader = true,
-			SingleWriter = true
-		});
-	}
 }
