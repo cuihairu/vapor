@@ -253,7 +253,7 @@ public sealed class BotSession : IDisposable
 				_steamClientManager?.RunCallbacks();
 				// 异步等待把线程在轮询空档归还线程池；同步 Sleep 会让每个活会话
 				// 永久占住一个池线程，是 CI 线程池饥饿的已知根源。
-				await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+				await Task.Delay(CallbackPollInterval, cancellationToken).ConfigureAwait(false);
 			}
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -470,6 +470,16 @@ public sealed class BotSession : IDisposable
 	// long the session will wait for the phone-side approval before giving up.
 	private static readonly TimeSpan QrLoginTimeout = TimeSpan.FromMinutes(3);
 
+	// How often the Steam callback pump polls for network callbacks. Async delay
+	// returns the thread to the pool between polls; a synchronous Sleep would pin a
+	// pool thread per live session (the known CI thread-pool-starvation cause).
+	private static readonly TimeSpan CallbackPollInterval = TimeSpan.FromMilliseconds(100);
+
+	// How long to let the socket finish teardown after Disconnect before reporting
+	// the session Disconnected. A settle delay keeps a late callback from racing the
+	// state transition; the steam callback pump has already quiesced by then.
+	private static readonly TimeSpan DisconnectSettleDelay = TimeSpan.FromMilliseconds(100);
+
 	/// <summary>
 	/// QR sign-in: connect, surface the challenge URL (republished whenever Steam
 	/// rotates it), wait for the phone-side approval, then hand the minted refresh
@@ -601,7 +611,7 @@ public sealed class BotSession : IDisposable
 			await _steamClientManager.DisconnectAsync().ConfigureAwait(false);
 		}
 
-		await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+		await Task.Delay(DisconnectSettleDelay, cancellationToken).ConfigureAwait(false);
 		SetState(SessionState.Disconnected, "disconnected");
 	}
 

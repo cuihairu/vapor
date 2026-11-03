@@ -92,6 +92,11 @@ public sealed class RedisVaporCache : IVaporCache, IDisposable
 	// outright. Retry briefly; steady-state reconnects remain the multiplexer's job.
 	private const int ConnectAttempts = 3;
 
+	// Base back-off between connect retries: attempt 1 sleeps 200ms, attempt 2
+	// 400ms, and so on. The multiplexer itself owns steady-state reconnects, so
+	// only the initial factory needs a short bounded retry.
+	private const int ConnectRetryBaseDelayMs = 200;
+
 	private static IConnectionMultiplexer ConnectWithRetry(string configuration)
 	{
 		for (int attempt = 1; ; attempt++)
@@ -102,7 +107,7 @@ public sealed class RedisVaporCache : IVaporCache, IDisposable
 			}
 			catch (RedisConnectionException) when (attempt < ConnectAttempts)
 			{
-				Thread.Sleep(200 * attempt);
+				Thread.Sleep(ConnectRetryBaseDelayMs * attempt);
 			}
 		}
 	}
