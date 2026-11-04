@@ -180,6 +180,38 @@ public class SteamClientManagerTests : IDisposable
 	}
 
 	[Fact]
+	public async Task SettleDisconnectAsync_OnCancellation_ThrowsAndRemovesPendingTcs()
+	{
+		// A caller token cancellation surfaces as OperationCanceledException and
+		// must not leave the orphaned TCS in _pendingDisconnects until the next
+		// OnDisconnected — symmetric with the timeout path. The cancellation must
+		// still propagate to the awaiting caller.
+		var settle = typeof(SteamClientManager)
+			.GetMethod("SettleDisconnectAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		var pending = typeof(SteamClientManager)
+			.GetField("_pendingDisconnects", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+		var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var list = (List<TaskCompletionSource<bool>>)pending.GetValue(_manager)!;
+		list.Add(tcs);
+
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		// Act: the canceled token makes WaitAsync throw OperationCanceledException
+		// (a TaskCanceledException in .NET); the exact subclass is an implementation
+		// detail of WaitAsync, so assert the base exception type.
+		await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+		{
+			await ((Task)settle.Invoke(_manager, [tcs.Task, tcs, TimeSpan.FromMilliseconds(100), cts.Token])!)
+				.WaitAsync(TimeSpan.FromSeconds(5));
+		});
+
+		// The orphaned TCS is pruned and the list no longer references it.
+		Assert.DoesNotContain(tcs, list);
+	}
+
+	[Fact]
 	public async Task SetAccountProxyAsync_OnDisconnectTimeout_DoesNotThrowAndRemovesPendingTcs()
 	{
 		_manager.DisconnectSettleTimeout = TimeSpan.FromMilliseconds(100);

@@ -446,6 +446,21 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 				}
 			}
 		}
+		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+		{
+			// A caller token cancellation surfaces as OperationCanceledException;
+			// prune the orphaned TCS symmetrically with the timeout path so it does
+			// not linger until the next OnDisconnected, then rethrow so the
+			// cancellation still propagates to the awaiting caller.
+			if (disconnectTcs != null)
+			{
+				lock (_connectLock)
+				{
+					_pendingDisconnects.Remove(disconnectTcs);
+				}
+			}
+			throw;
+		}
 	}
 
 	public async Task LoginAsync(string accountName, string password, CancellationToken cancellationToken = default)
