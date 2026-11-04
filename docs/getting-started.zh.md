@@ -15,7 +15,7 @@
 ```bash
 git clone https://github.com/cuihairu/vapor.git
 cd vapor
-cp .env.example .env   # 必填凭据变量（本地开发值，绝不要部署）
+rm -f .env && cp .env.example .env   # 必填凭据变量（本地开发值，绝不要部署）
 docker compose up -d
 ```
 

@@ -172,11 +172,33 @@ public class SteamClientManagerTests : IDisposable
 		list.Add(tcs);
 
 		// Act: never complete the TCS; the 100ms ceiling must be hit and swallowed.
-		await ((Task)settle.Invoke(_manager, [tcs.Task, tcs, TimeSpan.FromMilliseconds(100)])!)
+		await ((Task)settle.Invoke(_manager, [tcs.Task, tcs, TimeSpan.FromMilliseconds(100), CancellationToken.None])!)
 			.WaitAsync(TimeSpan.FromSeconds(5));
 
 		// The orphaned TCS is pruned and the list no longer references it.
 		Assert.DoesNotContain(tcs, list);
+	}
+
+	[Fact]
+	public async Task SetAccountProxyAsync_OnDisconnectTimeout_DoesNotThrowAndRemovesPendingTcs()
+	{
+		_manager.DisconnectSettleTimeout = TimeSpan.FromMilliseconds(100);
+		var steamClientField = typeof(SteamClientManager)
+			.GetField("_steamClient", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		var steamClient = (SteamClient)steamClientField.GetValue(_manager)!;
+		var isConnectedField = typeof(SteamKit2.Internal.CMClient)
+			.GetField("<IsConnected>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		isConnectedField.SetValue(steamClient, true);
+		var pending = typeof(SteamClientManager)
+			.GetField("_pendingDisconnects", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		var list = (List<TaskCompletionSource<bool>>)pending.GetValue(_manager)!;
+
+		await _manager.SetAccountProxyAsync(
+			"proxy_timeout_account",
+			"socks5://127.0.0.1:1080",
+			CancellationToken.None);
+
+		Assert.Empty(list);
 	}
 
 	[Fact]

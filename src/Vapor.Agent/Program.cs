@@ -540,6 +540,7 @@ async Task RunOnce(CancellationToken cancellationToken)
 				currentTaskId = task.Id;
 				currentAttempt = task.Attempt;
 				currentTaskCancelledByServer = false;
+				currentTaskCancelledByDisconnect = false;
 			}
 
 			if (taskTimeoutPolicy.IsEnabled)

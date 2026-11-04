@@ -157,6 +157,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	// factory reads this when the CM WebSocket (and any WebAPI/CDN) invoker is
 	// built; SetAccountProxyAsync writes it before the caller's connect.
 	private string? _pendingProxy;
+	internal TimeSpan DisconnectSettleTimeout { get; set; } = TimeSpan.FromSeconds(10);
 	private bool _disposed;
 
 	public SteamClientManager(ILogger<SteamClientManager> logger, ICredentialStore? credentialStore = null)
@@ -331,6 +332,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 		}
 
 		Task settle;
+		TaskCompletionSource<bool>? disconnectTcs = null;
 		lock (_connectLock)
 		{
 			_pendingProxy = proxy;
@@ -339,9 +341,9 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 				// Wait on the disconnect, not the (already completed) connect TCS:
 				// _connectedTcs was settled true by OnConnected, so awaiting it here
 				// returns instantly and the reconnect races the socket teardown.
-				var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-				_pendingDisconnects.Add(tcs);
-				settle = tcs.Task;
+				disconnectTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+				_pendingDisconnects.Add(disconnectTcs);
+				settle = disconnectTcs.Task;
 			}
 			else
 			{
@@ -364,9 +366,8 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			}
 		}
 
-		// Bounded wait: the disconnect callback settles the TCS; the ceiling keeps a
-		// wedged socket from blocking account switching forever.
-		await settle.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+		await SettleDisconnectAsync(settle, disconnectTcs, DisconnectSettleTimeout, cancellationToken)
+			.ConfigureAwait(false);
 	}
 
 	public async Task DisconnectAsync()
@@ -408,7 +409,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 			// below get the real outcome via the 10s ceiling.
 		}
 
-		await SettleDisconnectAsync(settle, disconnectTcs, TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+		await SettleDisconnectAsync(settle, disconnectTcs, DisconnectSettleTimeout).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -418,7 +419,11 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 	/// never propagated this, and a caller (BotSession.DisconnectInternalAsync)
 	/// would otherwise skip the Disconnected transition and strand in Disconnecting.
 	/// </summary>
-	private async Task SettleDisconnectAsync(Task settle, TaskCompletionSource<bool>? disconnectTcs, TimeSpan timeout)
+	private async Task SettleDisconnectAsync(
+		Task settle,
+		TaskCompletionSource<bool>? disconnectTcs,
+		TimeSpan timeout,
+		CancellationToken cancellationToken = default)
 	{
 		if (settle.IsCompleted)
 		{
@@ -427,7 +432,7 @@ public sealed class SteamClientManager : ISteamClientManager, IDisposable
 
 		try
 		{
-			await settle.WaitAsync(timeout).ConfigureAwait(false);
+			await settle.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
 		}
 		catch (TimeoutException)
 		{
