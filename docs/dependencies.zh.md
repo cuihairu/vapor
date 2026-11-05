@@ -54,16 +54,16 @@ done
 | `coverlet.collector` | 6.0.4 | test-fleet | 覆盖率收集器。此处刻意*不*要求 `PrivateAssets`：测试项目 `IsPackable=false` 且无任何项目引用它们，不存在可供它泄漏进去的依赖图。 |
 | `FsCheck.Xunit` | 2.16.6 | any | 基于性质的测试。15 个测试项目里只有 5 个在用。 |
 | `Moq` | 4.21.0 | any | Mock 框架。只有 4 个测试项目在用。 |
-| `Microsoft.AspNetCore.Mvc.Testing` | 10.0.12 | any | 控制平面测试用的 `WebApplicationFactory` 宿主。 |
-| `Microsoft.Extensions.Logging.Abstractions` | 10.0.12 | any | 同时也是 `src/` 包；全树一个版本。 |
-| `Microsoft.Extensions.Logging.Console` | 10.0.12 | any | `src/Vapor.Agent`、`src/Vapor.Steam.Core`。 |
-| `Microsoft.Extensions.DependencyInjection` | 10.0.12 | any | `src/Vapor.Agent`。 |
-| `Microsoft.Data.Sqlite` | 10.0.12 | any | 存储层。其 `SqliteJobStore.Dispose` 收尾是已知 CI 抖动点——见 §4。 |
+| `Microsoft.AspNetCore.Mvc.Testing` | 10.0.14 | any | 控制平面测试用的 `WebApplicationFactory` 宿主。 |
+| `Microsoft.Extensions.Logging.Abstractions` | 10.0.14 | any | 同时也是 `src/` 包；全树一个版本。 |
+| `Microsoft.Extensions.Logging.Console` | 10.0.14 | any | `src/Vapor.Agent`、`src/Vapor.Steam.Core`。 |
+| `Microsoft.Extensions.DependencyInjection` | 10.0.14 | any | `src/Vapor.Agent`。 |
+| `Microsoft.Data.Sqlite` | 10.0.14 | any | 存储层。其 `SqliteJobStore.Dispose` 收尾是已知 CI 抖动点——见 §4。 |
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | 原生 SQLite bundle；版本线独立于 .NET 那条。 |
 | `Cronos` | 0.13.0 | any | 为周期任务解析 cron。 |
 | `Swashbuckle.AspNetCore` | 10.3.0 | any | OpenAPI/Swagger，经 `Vapor_ENABLE_SWAGGER` 选择启用。 |
-| `StackExchange.Redis` | 3.4.0 | any | 可选缓存后端。 |
-| `SteamKit2` | 3.4.0 | any | Steam 协议客户端。此处的升级是 Steam 行为变更而非库卫生——见 §4。 |
+| `StackExchange.Redis` | 3.4.29 | any | 可选缓存后端。 |
+| `SteamKit2` | 3.5.0 | any | Steam 协议客户端。此处的升级是 Steam 行为变更而非库卫生——见 §4。 |
 | `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.19.1 | any | OTLP 导出器。 |
 | `OpenTelemetry.Extensions.Hosting` | 1.19.1 | any | OTel 宿主集成。 |
 | `OpenTelemetry.Instrumentation.AspNetCore` | 1.19.0 | any | OTel ASP.NET Core instrumentation。上游独立编版本——1.19.0 与 1.19.1 之差是上游的拆版，不是本地漂移。 |
