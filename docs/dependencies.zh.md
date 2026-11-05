@@ -61,12 +61,12 @@ done
 | `Microsoft.Data.Sqlite` | 10.0.14 | any | 存储层。其 `SqliteJobStore.Dispose` 收尾是已知 CI 抖动点——见 §4。 |
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | 原生 SQLite bundle；版本线独立于 .NET 那条。 |
 | `Cronos` | 0.13.0 | any | 为周期任务解析 cron。 |
-| `Swashbuckle.AspNetCore` | 10.3.0 | any | OpenAPI/Swagger，经 `Vapor_ENABLE_SWAGGER` 选择启用。 |
+| `Swashbuckle.AspNetCore` | 10.3.1 | any | OpenAPI/Swagger，经 `Vapor_ENABLE_SWAGGER` 选择启用。 |
 | `StackExchange.Redis` | 3.4.29 | any | 可选缓存后端。 |
 | `SteamKit2` | 3.5.0 | any | Steam 协议客户端。此处的升级是 Steam 行为变更而非库卫生——见 §4。 |
-| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.19.1 | any | OTLP 导出器。 |
-| `OpenTelemetry.Extensions.Hosting` | 1.19.1 | any | OTel 宿主集成。 |
-| `OpenTelemetry.Instrumentation.AspNetCore` | 1.19.0 | any | OTel ASP.NET Core instrumentation。上游独立编版本——1.19.0 与 1.19.1 之差是上游的拆版，不是本地漂移。 |
+| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.20.1 | any | OTLP 导出器。 |
+| `OpenTelemetry.Extensions.Hosting` | 1.20.1 | any | OTel 宿主集成。 |
+| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.1 | any | OTel ASP.NET Core instrumentation。上游独立编版本——1.19.0 与 1.19.1 之差是上游的拆版，不是本地漂移。 |
 
 <!-- /verify-dependency-versions:packages -->
 
