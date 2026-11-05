@@ -843,6 +843,33 @@ public sealed class SqliteJobStoreTests
 	}
 
 	[Fact]
+	public async Task RequeueTask_OrphanedTaskJobMissing_ThrowsNotFoundAndRollsBack()
+	{
+		using var store = new SqliteJobStore(":memory:");
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+		JobWithTasks created = await store.CreateJob(
+			new CreateJobRequest("ping", "local", ["acct-1"], null, null), cts.Token);
+		JobTask claimed = (await store.ClaimNextQueuedTask("local", cts.Token))!;
+
+		// Detach the task from its job: FK CASCADE would normally remove the task
+		// with the job row, so briefly disable FK enforcement to leave tasks.job_id
+		// pointing at a deleted job. The tx-transactional RecomputeJob path must
+		// surface the "job not found" NotFoundException (tx-ReadJob miss) instead of
+		// committing a requeue whose job no longer exists.
+		RawExec(store, "PRAGMA foreign_keys = OFF;");
+		RawExec(store, "DELETE FROM jobs WHERE id = $id", ("$id", created.Job.Id));
+		RawExec(store, "PRAGMA foreign_keys = ON;");
+
+		await Assert.ThrowsAsync<NotFoundException>(
+			() => store.RequeueTask(claimed.Id, null, cts.Token));
+
+		// The exception aborts the tx before commit: the task update rolls back.
+		string status = RawScalar(store, "SELECT status FROM tasks WHERE id = $id", ("$id", claimed.Id));
+		Assert.Equal(JobTaskStatus.Running.ToString(), status);
+	}
+
+	[Fact]
 	public async Task RequeueStaleRunningTasks_RollsBackTaskUpdateWhenJobRecomputeFails()
 	{
 		string dbPath = Path.Combine(Path.GetTempPath(), $"vapor-jobs-{Guid.NewGuid():N}.db");
