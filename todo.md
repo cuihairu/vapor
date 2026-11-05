@@ -14,8 +14,8 @@
 
 分析文档：[架构实现核对](docs/review/architecture-2026-10-30.zh.md)。每项可独立提交、验证和勾选；P0 优先秘密边界，P1 派发可靠性与内存保留。
 
-- [x] ARCH-01 / P0：任务写入前隔离秘密字段 —— 证据:ad6d1be（同内容合入提交；原始记档 f24de37 不可达自主干，为同父同刻兄弟提交，仅 docs/dependencies.md 差行；复核 `git merge-base --is-ancestor ad6d1be HEAD` 通过）, 3927 测试全绿
-- [x] ARCH-02 / P0：处理历史任务库中的秘密载荷 —— 证据:2c2b370（同内容合入提交；原始记档 539df2c 不可达自主干，为同父同刻兄弟提交，仅 docs/dependencies.md 差行；复核 `git merge-base --is-ancestor 2c2b370 HEAD` 通过）, 3933 测试全绿
+- [x] ARCH-01 / P0：任务写入前隔离秘密字段 —— 证据:ad6d1be（同内容合入提交；原始记档 f24de37 不可达自主干，为同内容变基提交，仅 docs/dependencies.md 差行；复核 `git merge-base --is-ancestor ad6d1be HEAD` 通过）, 3927 测试全绿
+- [x] ARCH-02 / P0：处理历史任务库中的秘密载荷 —— 证据:2c2b370（同内容合入提交；原始记档 539df2c 不可达自主干，为同内容变基提交，仅 docs/dependencies.md 差行；复核 `git merge-base --is-ancestor 2c2b370 HEAD` 通过）, 3933 测试全绿
 - [x] ARCH-03 / P0：为人工验证码 SSE 增加账号所属 Agent 授权 —— 证据:2dbe091, ControlPlane 1344 + Agent 198
 - [x] ARCH-04 / P1：控制平面 Agent 发送队列实现可观测背压 —— 证据:9fed6fa, 4069 测试全绿
 - [x] ARCH-05 / P1：限制 Agent 待执行任务缓冲并向调度器反馈可接收容量 —— 证据:11daadd, Agent 205 + ControlPlane 1355
@@ -146,4 +146,6 @@ P3 记录性（风格/健壮性，未修）：
 - [x] 审核发现：todo.md:113 引用的 compose fail-fast 修复证据哈希 `05b1756` 不可达自 HEAD（`git branch --contains` 为空），与合入主干的 `ad0cd42` 是同父同刻的两个提交且内容不同（仅 todo.md 差 8 行）——该证据哈希无法在主干验证，P2 记档行应改指 ad0cd42（todo.md:113、docker-compose.yml:22-23）—— 修复:0993dae（P2 记档行改指 ad0cd42；复核 `git merge-base --is-ancestor ad0cd42 HEAD` 通过且 docker-compose.yml:22-23 仍为 `:?` fail-fast）
 
 - [x] 审核发现：`SettleDisconnectAsync` 仅捕获 `TimeoutException`，调用方令牌取消时 `settle.WaitAsync(timeout, cancellationToken)`（src/Vapor.Steam.Core/Steam/SteamClientManager.cs:435）抛 `OperationCanceledException` 且不移除 `_pendingDisconnects` 中滞留的 TCS——与本 commit 超时路径建立的「吞超时 + 移除滞留 TCS」契约不对称，`SetAccountProxyAsync`（同文件 :369）把调用方 `cancellationToken` 传入使该路径可达（src/Vapor.Steam.Core/Steam/SteamClientManager.cs:435）—— 修复:6900a7b（catch `OperationCanceledException`（when token 已取消）+ prune 滞留 TCS + rethrow，与超时路径对称；新增 `SettleDisconnectAsync_OnCancellation_ThrowsAndRemovesPendingTcs` 回归测试；证据哈希由不可达兄弟提交 9f485f4 改指合入提交，复核 `git merge-base --is-ancestor 6900a7b HEAD` 通过），Steam.Core 1297 全绿（`dotnet test tests/Vapor.Steam.Core.Tests`，2026-11-05 实测）
-- 不属实：本轮 diff 未见问题（0aa584c6..HEAD）—— 该 diff 即 6900a7b，其 todo.md 行引用的证据哈希 `9f485f4` 不可达自 HEAD（同父同刻兄弟提交、内容仅 todo.md 差行），与 05b1756 同类，diff 并非「未见问题」；已改指合入提交 6900a7b，2026-11-05 复核。
+- 不属实：本轮 diff 未见问题（0aa584c6..HEAD）—— 该 diff 即 6900a7b，其 todo.md 行引用的证据哈希 `9f485f4` 不可达自 HEAD（同内容变基提交、内容仅 todo.md 差行），与 05b1756 同类，diff 并非「未见问题」；已改指合入提交 6900a7b，2026-11-05 复核。
+
+- [x] 审核发现：提交关系记档有误：ad6d1be/f24de37 与 2c2b370/539df2c 的父提交和提交时间均不同，6900a7b/9f485f4 的提交时间也相差 67 秒，不能称为同父同刻（todo.md:16）—— 修复:本提交（三处误导性「同父同刻」改为「同内容变基提交」；`git show -s --format='%h %P %ci'` 实测六提交元数据；改后 `rg '同父同刻' todo.md` 仅剩 :146 历史记档原文与 :151 本条引述两处字面命中，非误导性记档，2026-11-05）
