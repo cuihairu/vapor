@@ -107,7 +107,7 @@ other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 | `SteamKit2` | 3.5.0 | any | The Steam protocol client. Upgrades here are Steam-behaviour changes, not library hygiene — see §4. |
 | `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.20.1 | any | OTLP exporter. |
 | `OpenTelemetry.Extensions.Hosting` | 1.20.1 | any | OTel host integration. |
-| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.1 | any | OTel ASP.NET Core instrumentation. Independently versioned upstream — 1.19.0 vs 1.19.1 is upstream's split, not local drift. |
+| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.1 | any | OTel ASP.NET Core instrumentation. Independently versioned upstream — version may evolve independently from sibling OTel packages. |
 
 <!-- /verify-dependency-versions:packages -->
 

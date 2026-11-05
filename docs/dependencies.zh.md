@@ -66,7 +66,7 @@ done
 | `SteamKit2` | 3.5.0 | any | Steam 协议客户端。此处的升级是 Steam 行为变更而非库卫生——见 §4。 |
 | `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.20.1 | any | OTLP 导出器。 |
 | `OpenTelemetry.Extensions.Hosting` | 1.20.1 | any | OTel 宿主集成。 |
-| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.1 | any | OTel ASP.NET Core instrumentation。上游独立编版本——1.19.0 与 1.19.1 之差是上游的拆版，不是本地漂移。 |
+| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.1 | any | OTel ASP.NET Core instrumentation。上游独立编版本——版本可独立演进，不与同族包强制同步。 |
 
 <!-- /verify-dependency-versions:packages -->
 
