@@ -1150,7 +1150,15 @@ public sealed class SqliteJobStore : IJobStore, IDisposable
 			Directory.CreateDirectory(dir);
 		}
 
-		await using var destination = new SqliteConnection($"Data Source={backupPath}");
+		// Build the connection string via the builder so backupPath is carried as a
+		// value, never interpolated raw into the connection string (resource
+		// injection: a hostile path such as "x.db;Mode=Memory" must not be able to
+		// alter connection-string keywords).
+		var destinationBuilder = new SqliteConnectionStringBuilder
+		{
+			DataSource = backupPath,
+		};
+		await using var destination = new SqliteConnection(destinationBuilder.ToString());
 		await destination.OpenAsync(cancellationToken).ConfigureAwait(false);
 		_connection.BackupDatabase(destination);
 	}
