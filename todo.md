@@ -167,3 +167,30 @@ P3 记录性（风格/健壮性，未修）：
 - [x] 审核发现：本提交（e55fef0）新增的 todo.md:166 审核发现行将 41-4b 条目引用为「todo.md:7（41-4b）」，但 41-4b 条目实际在 todo.md:9（todo.md:7 为「41-4 mock 链路验收」行），行号引用失准、应为 todo.md:9（todo.md:166、todo.md:9）—— 修复:本提交（todo.md:166 的「todo.md:7（41-4b）」改述为「todo.md:9（41-4b）」；`sed -n '166p' todo.md` 实测含 `todo.md:9（41-4b）`、不含 `todo.md:7（41-4b）`；`sed -n '7p' todo.md` = 41-4 mock 链路验收行、`sed -n '9p' todo.md` = 41-4b 条目，2026-11-06 复核）
 
 - [x] 审核发现：本轮 diff 未见问题（e55fef03..HEAD）—— 证据:d898467（e55fef03..HEAD 仅此一提交；核实 :166 行号引用 todo.md:7→:9 修正准确、:167 新增记档属实；`sed -n '7p;9p' todo.md` 实测 7=41-4 mock 链路验收/9=41-4b、:166 无 todo.md:7 残留）, 4162 测试全绿
+
+## 源码分层分析 2026-11-07
+
+### a) 抽象层清单
+
+- 接入与契约：共享 JSON 线上契约，并承载控制面的 REST/SSE/WebSocket/OpenAPI 与健康/指标入口。代表：`src/Vapor.ControlPlane/Program.cs:19`。
+- 控制与编排：把期望状态、周期与手动任务收敛成持久任务/子任务，处理路由、重试、取消和事件。代表：`src/Vapor.ControlPlane/TaskSchedulerService.cs:8`。
+- Agent 隧道：维持逐 Agent 认证出站 WebSocket 与有限发送队列，承载帧级握手、派发、结果、取消、心跳和追踪。代表：`src/Vapor.ControlPlane/AgentRegistry.cs:58`。
+- 运行时执行：在 Agent 本地有限入口串行接管任务，区分账号动作与宿主机操作，并按尝试围栏回报。代表：`src/Vapor.Agent/AgentTaskExecutor.cs:16`。
+- Steam 域：维护逐账号会话、SteamKit/Web 传输、限流和加密凭据，以动作语义屏蔽外部协议细节。代表：`src/Vapor.Steam.Core/BotSession.cs:309`。
+- 插件域：按清单发现、验证、加载和卸载隔离插件，通过能力契约贡献动作、路由、命令、事件和安装操作。代表：`src/Vapor.Plugins.Core/PluginManager.cs:53`。
+- 状态归属：按持久性、故障半径和安全边界划分 SQLite、Agent 文件、可选 Redis 与瞬态内存。代表：`src/Vapor.ControlPlane/Program.cs:34`。
+- 平台服务：独立于请求生命周期执行周期调度、webhook、审计、限流、故障注入和可观测性。代表：`src/Vapor.ControlPlane/NotificationService.cs:13`。
+
+### b) 超大文件候选（>1000 行）
+
+- [ ] LAY-001 [P1] 拆分 src/Vapor.ControlPlane/Program.cs（5265 行）——一个文件同时承载启动装配、认证/指标、任务、账号、插件、脚本、采集、认证挑战、SSE 和 Agent WebSocket 88 个端点（src/Vapor.ControlPlane/Program.cs:272、src/Vapor.ControlPlane/Program.cs:4201）。
+- [ ] LAY-002 [P1] 拆分 src/Vapor.ControlPlane/DesiredStateReconciler.cs（2420 行）——调和循环与登录/挂机/卡片/游戏时长/交易/信誉分多个专属流程、派发器和运行时记录混在同一类（src/Vapor.ControlPlane/DesiredStateReconciler.cs:128、src/Vapor.ControlPlane/DesiredStateReconciler.cs:257）。
+- [ ] LAY-003 [P1] 拆分 src/Vapor.Steam.Core/Steam/SteamClientManager.cs（1792 行）——连接回调、登录状态机、令牌供应、QR/机器码验证和单槽登录路由都依赖同一个巨型管理器（src/Vapor.Steam.Core/Steam/SteamClientManager.cs:120、src/Vapor.Steam.Core/Steam/SteamClientManager.cs:480）。
+- [ ] LAY-004 [P1] 拆分 src/Vapor.ControlPlane/SqliteJobStore.cs（1523 行）——作业/子任务 CRUD、调度实例化、租约、取消、结果围栏、归档备份和 schema 迁移集中在单一存储类（src/Vapor.ControlPlane/SqliteJobStore.cs:1153、src/Vapor.ControlPlane/SqliteJobStore.cs:1220）。
+- [ ] LAY-005 [P1] 拆分 src/Vapor.Steam.Core/Web/SteamTradeClient.cs（1028 行）——库存读取、交易报价列表/发送/接受/拒绝/取消与响应解析共用一个客户端（src/Vapor.Steam.Core/Web/SteamTradeClient.cs:20、src/Vapor.Steam.Core/Web/SteamTradeClient.cs:70、src/Vapor.Steam.Core/Web/SteamTradeClient.cs:260）。
+
+### c) 目录/分类不合理处
+
+- `src/Vapor.ControlPlane/Program.cs:272` 起的 88 个端点全部内联在顶级语句中，路由、DTO 解析、授权、审计和领域调用没有独立边界，导致接入契约层文件吞掉编排与领域入口。
+- `src/Vapor.ControlPlane/DesiredStateReconciler.cs:27` 的类名只表达“调和”，实际包含登录、挂机、卡片、游戏时长、交易、信誉分和备份协流程；按账号意图拆分比按目录更符合源码行为。
+- `src/Vapor.Agent/Program.cs:42` 同时承载导入 CLI、环境装配、插件加载、WebSocket 协议循环、SSE 认证挑战订阅、任务执行和序列化助手；入口文件缺少按通道/生命周期的模块边界。
