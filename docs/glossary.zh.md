@@ -20,7 +20,7 @@
 | 动作 | Action | 有元数据、由会话调用的命名操作；也是公开任务动作名。 | `src/Vapor.Steam.Core/IAction.cs:6`、`src/Vapor.Protocol/Models.cs:51` |
 | 会话 | Session | Agent 管理的 Steam 账号运行时状态机与动作执行面。 | `src/Vapor.Steam.Core/SessionManager.cs:13`、`src/Vapor.Steam.Core/BotSession.cs:309` |
 | 凭据存储 | Credential store | Agent 本地加密且原子写入的凭据文件，用于恢复 Steam 会话。 | `src/Vapor.Steam.Core/Security/FileCredentialStore.cs:8`、`src/Vapor.Steam.Core/Security/FileCredentialStore.cs:14` |
-| 期望状态 | Desired state | 持久账号规格，调和循环用它和活跃编排状态比对。 | `src/Vapor.ControlPlane/AccountStore.cs:5`、`src/Vapor.ControlPlane/DesiredStateReconciler.cs:12` |
+| 期望状态 | Desired state | 持久账号规格，调和循环用它和活跃编排状态比对。 | `src/Vapor.ControlPlane/AccountStore.cs:5`、`src/Vapor.ControlPlane/DesiredStateReconciler.cs:66` |
 | 事件 | Event | 控制面对任务、会话与认证挑战的非持久通知扇出。 | `src/Vapor.ControlPlane/EventBroker.cs:7`、`src/Vapor.Protocol/Models.cs:116` |
 | WebSocket 消息 | WebSocket message | 控制面/Agent 每帧共用的 JSON 隧道信封，非空成员统一 JSON 默认值。 | `src/Vapor.Protocol/Models.cs:131`、`src/Vapor.Protocol/JsonDefaults.cs:6` |
 | 插件清单 | Plugin manifest | 插件发现与兼容契约：身份、API 版本、信任、权限、入口程序集和配置。 | `src/Vapor.Plugins.Core/PluginManifest.cs:9`、`src/Vapor.Plugins.Core/PluginManifest.cs:92`、`src/Vapor.Plugins.GameAccess/plugin.json:1` |

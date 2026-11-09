@@ -56,7 +56,7 @@
 | 层 | 实现位置 | 配置 schema | 专属协议文件 | 文案挂载点 |
 |---|---|---|---|---|
 | 接入与契约 | `src/Vapor.ControlPlane/Program.cs`、`src/Vapor.ControlPlane/Endpoints/*.cs` | `src/Vapor.ControlPlane/Config.cs` | `src/Vapor.Protocol/*.cs`，尤其 `Models.cs` | `docs/api.md`、`docs/api.zh.md` |
-| 控制与编排 | `src/Vapor.ControlPlane/TaskSchedulerService.cs`、`DesiredStateReconciler.cs`、`RecurringJobScheduler.cs`、`RecurringFlowScheduler.cs` | 启动参数在 `src/Vapor.ControlPlane/Config.cs`；账号形状在 `src/Vapor.Protocol/Accounts.cs`；周期任务规则在 `src/Vapor.Protocol/Models.cs` | `src/Vapor.Protocol/Accounts.cs`、`Models.cs` | `docs/domain-model.md`、`docs/domain-model.zh.md` |
+| 控制与编排 | `src/Vapor.ControlPlane/TaskSchedulerService.cs`、`DesiredStateReconciler*.cs`、`RecurringJobScheduler.cs`、`RecurringFlowScheduler.cs` | 启动参数在 `src/Vapor.ControlPlane/Config.cs`；账号形状在 `src/Vapor.Protocol/Accounts.cs`；周期任务规则在 `src/Vapor.Protocol/Models.cs` | `src/Vapor.Protocol/Accounts.cs`、`Models.cs` | `docs/domain-model.md`、`docs/domain-model.zh.md` |
 | Agent 隧道 | `src/Vapor.ControlPlane/Endpoints/JobEndpoints.cs`（`/v1/agent/ws`）、`AgentRegistry.cs`；`src/Vapor.Agent/Program.cs`、`AgentReconnectPolicy.cs`、`TaskLeaseRenewer.cs`、`QueuedTaskCanceller.cs` | Agent 环境在 `src/Vapor.Agent/Program.cs`；策略解析在 `AgentReconnectPolicy.cs` 与 `TaskTimeoutPolicy.cs` | `src/Vapor.Protocol/Models.cs`、`src/Vapor.Protocol/JsonDefaults.cs` | `docs/architecture.md`、`docs/architecture.zh.md` |
 | 运行时执行 | `src/Vapor.Agent/AgentTaskBuffer.cs`、`AgentTaskDispatcher.cs`、`AgentTaskExecutor.cs`、`HostActions/*.cs` | 动作默认值在 `src/Vapor.Protocol/Actions.cs`；超时在 `src/Vapor.Agent/TaskTimeoutPolicy.cs` | `src/Vapor.Protocol/Actions.cs`、`Commands.cs` | `docs/actions.md`、`docs/actions.zh.md` |
 | Steam 域 | `src/Vapor.Steam.Core/BotSession.cs`、`SessionManager.cs`、`Steam/*.cs`、`Web/*.cs`、`Actions/*.cs` | 代理配置在 `src/Vapor.Steam.Core/Web/ProxyOptions.cs`；缓存 TTL 在 `src/Vapor.Steam.Core/Caching/SteamCacheTtl.cs` | 结果/交易/账号模型在 `src/Vapor.Steam.Core/Models/*.cs` | `docs/session-engine.md`、`docs/session-engine.zh.md` |
@@ -74,7 +74,7 @@
 6. **插件能力与核心执行隔离，以便初始化前先校验兼容性与信任。** 发现依赖清单（`src/Vapor.Plugins.Core/PluginManager.cs:53`）；加载器在插件生命周期前校验配置（`src/Vapor.Plugins.Core/PluginLoader.cs:50`）；每个插件使用可回收加载上下文（`src/Vapor.Plugins.Core/PluginLoadContext.cs:12`）。
 7. **状态按持久性和故障半径拆分，不按类类型拆分。** 队列/配置/审计/采集/脚本/webhook 分别落在 SQLite（`src/Vapor.ControlPlane/Program.cs:39`、`Program.cs:63`、`Program.cs:64`）；Agent 凭据留在本地加密文件（`src/Vapor.Steam.Core/Security/FileCredentialStore.cs:8`）；在线隧道状态在内存（`src/Vapor.ControlPlane/AgentRegistry.cs:9`）；大量派生读选择 Redis 或有界内存（`src/Vapor.Agent/Program.cs:114`）。
 8. **平台服务独立，因为它们按后台节奏轮询/扇出，不随请求或任务生命周期结束。** webhook 通知是后台服务（`src/Vapor.ControlPlane/NotificationService.cs:13`）；周期调度独立运行（`src/Vapor.ControlPlane/RecurringJobScheduler.cs:17`、`src/Vapor.ControlPlane/RecurringFlowScheduler.cs:22`）；故障注入包裹真实 API 边缘（`src/Vapor.ControlPlane/FaultInjector.cs:54`）。
-9. **期望状态与活跃会话状态分成两个读模型，因为收敛必须跨控制面重启。** 账号规格写穿 SQLite 并在启动时重载（`src/Vapor.ControlPlane/AccountStore.cs:5`）；`SessionTracker` 保留当前活跃状态供调和器消费（`src/Vapor.ControlPlane/DesiredStateReconciler.cs:12`）。
+9. **期望状态与活跃会话状态分成两个读模型，因为收敛必须跨控制面重启。** 账号规格写穿 SQLite 并在启动时重载（`src/Vapor.ControlPlane/AccountStore.cs:5`）；`SessionTracker` 保留当前活跃状态供调和器消费（`src/Vapor.ControlPlane/DesiredStateReconciler.cs:66`）。
 10. **SteamKit/Web 客户端被动作包住，因为调用方需要统一语义信封，而不是传输细节。** `IAction` 暴露元数据和唯一执行方法（`src/Vapor.Steam.Core/IAction.cs:6`）；会话选择并调用已注册动作（`src/Vapor.Steam.Core/BotSession.cs:309`）；动作目录是公开 payload 文档（`docs/actions.md:78`）。
 
 ### 控制平面（公开 API）
