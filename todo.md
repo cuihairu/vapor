@@ -183,7 +183,7 @@ P3 记录性（风格/健壮性，未修）：
 
 ### b) 超大文件候选（>1000 行）
 
-- [ ] LAY-001 [P1] 拆分 src/Vapor.ControlPlane/Program.cs（5265 行）——一个文件同时承载启动装配、认证/指标、任务、账号、插件、脚本、采集、认证挑战、SSE 和 Agent WebSocket 88 个端点（src/Vapor.ControlPlane/Program.cs:272、src/Vapor.ControlPlane/Program.cs:4201）。
+- [x] LAY-001 [P1] 拆分 src/Vapor.ControlPlane/Program.cs（5265 行）——一个文件同时承载启动装配、认证/指标、任务、账号、插件、脚本、采集、认证挑战、SSE 和 Agent WebSocket 88 个端点（src/Vapor.ControlPlane/Program.cs:272、src/Vapor.ControlPlane/Program.cs:4201）。 —— 证据:6994bc2（Program.cs 5265→281 行：启动装配+中间件+10 个 Map 调用；88 端点迁 Endpoints/ 10 组文件、25 个请求 helper 迁 EndpointHelpers.cs、30 个请求 DTO 迁 Contracts/ControlPlaneContracts.cs；verify-api-docs 88 路由 69 /v1 路径 85 操作、verify-api-auth 88 Auth 2 委托 helper 全绿；全套 4162 测试全绿（ControlPlane 1391）；实机走查 boot+healthz/metrics/401/账号写读回/swagger 72 路径）
 - [ ] LAY-002 [P1] 拆分 src/Vapor.ControlPlane/DesiredStateReconciler.cs（2420 行）——调和循环与登录/挂机/卡片/游戏时长/交易/信誉分多个专属流程、派发器和运行时记录混在同一类（src/Vapor.ControlPlane/DesiredStateReconciler.cs:128、src/Vapor.ControlPlane/DesiredStateReconciler.cs:257）。
 - [ ] LAY-003 [P1] 拆分 src/Vapor.Steam.Core/Steam/SteamClientManager.cs（1792 行）——连接回调、登录状态机、令牌供应、QR/机器码验证和单槽登录路由都依赖同一个巨型管理器（src/Vapor.Steam.Core/Steam/SteamClientManager.cs:120、src/Vapor.Steam.Core/Steam/SteamClientManager.cs:480）。
 - [ ] LAY-004 [P1] 拆分 src/Vapor.ControlPlane/SqliteJobStore.cs（1523 行）——作业/子任务 CRUD、调度实例化、租约、取消、结果围栏、归档备份和 schema 迁移集中在单一存储类（src/Vapor.ControlPlane/SqliteJobStore.cs:1153、src/Vapor.ControlPlane/SqliteJobStore.cs:1220）。
