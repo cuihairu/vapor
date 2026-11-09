@@ -8,7 +8,8 @@ verify-testing-docs.py（测试计数）同型：新代码无测试即红 → �
 没同步即红 → 新端点没写文档即红。
 
 校验（双向集合比对，路由模板逐字比对，不剥 query、不归一占位符）：
-  1. 代码侧：Program.cs 全部 Map(Get|Post|Put|Delete)("...") 字面量路由
+  1. 代码侧：Program.cs + Endpoints/*.cs（2026-11-09 端点拆分起路由按组
+     分文件注册）全部 Map(Get|Post|Put|Delete)("...") 字面量路由
      → (METHOD, path) 集合。
   2. 文档侧：api.md 全部 `METHOD /path` 形态 → (METHOD, path) 集合。
   3. 代码有文档无 → FAIL（新端点缺文档）。
@@ -32,9 +33,10 @@ api.md 引言 `50 routes (58 operations)` 长期 stale；feature-matrix §3.7 RE
 文档端点行只写路由路径——query 参数写在正文 Query 行（achievements 小节
 先例），把 `?x=` 拼进端点标题会被判定漂移。
 
-用法：python3 scripts/verify-api-docs.py [Program.cs] [api.md] [feature-matrix.md]
+用法：python3 scripts/verify-api-docs.py [Program.cs|Endpoints/*.cs] [api.md] [feature-matrix.md]
 退出码：0 = ALL GREEN，1 = 有 FAIL（逐条打印）。
 """
+import glob
 import re
 import sys
 
@@ -59,11 +61,17 @@ def parse_doc(text):
 
 
 def main():
-    cs_path = sys.argv[1] if len(sys.argv) > 1 else "src/Vapor.ControlPlane/Program.cs"
+    cs_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    cs_files = [cs_arg] if cs_arg else sorted(
+        glob.glob("src/Vapor.ControlPlane/Program.cs")
+        + glob.glob("src/Vapor.ControlPlane/Endpoints/*.cs"))
+    cs_path = ", ".join(cs_files)
     md_path = sys.argv[2] if len(sys.argv) > 2 else "docs/api.md"
     mx_path = sys.argv[3] if len(sys.argv) > 3 else "docs/feature-matrix.md"
-    with open(cs_path, encoding="utf-8") as fh:
-        code = parse_code(fh.read())
+    code = set()
+    for path in cs_files:
+        with open(path, encoding="utf-8") as fh:
+            code |= parse_code(fh.read())
     with open(md_path, encoding="utf-8") as fh:
         md_text = fh.read()
     doc = parse_doc(md_text)

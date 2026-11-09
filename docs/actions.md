@@ -6,7 +6,7 @@ Actions are the unit of work an agent executes: `POST /v1/jobs` names an action,
 
 The HTTP side of this (job envelope, dispatch, scheduling, reading results over REST/SSE) is in [api.md](api.md), "Jobs & tasks" section; a guided tour is in [getting-started.md](getting-started.md). Payload examples below are for `POST /v1/jobs` bodies.
 
-Source map, for reference: host Steam-domain actions live in `src/Vapor.Steam.Core/Actions/*.cs`, the game-access actions in the official `src/Vapor.Plugins.GameAccess/` plugin (bundled into the agent image; same names), agent host actions in `src/Vapor.Agent/HostActions/*.cs`, the remaining plugin actions in `src/Vapor.Plugins.*`, and the job envelope in `src/Vapor.ControlPlane/Program.cs` + `src/Vapor.Protocol/Models.cs`. Field names below are copied verbatim from the payload-parsing / output-building code.
+Source map, for reference: host Steam-domain actions live in `src/Vapor.Steam.Core/Actions/*.cs`, the game-access actions in the official `src/Vapor.Plugins.GameAccess/` plugin (bundled into the agent image; same names), agent host actions in `src/Vapor.Agent/HostActions/*.cs`, the remaining plugin actions in `src/Vapor.Plugins.*`, and the job envelope in `src/Vapor.ControlPlane/Contracts/ControlPlaneContracts.cs` + `src/Vapor.Protocol/Models.cs`. Field names below are copied verbatim from the payload-parsing / output-building code.
 
 ## Conventions
 

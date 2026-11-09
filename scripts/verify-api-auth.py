@@ -23,9 +23,10 @@ Auth 声明 ↔ 代码鉴权调用的对照固化为机械守护，与 verify-ap
 
 新增端点的预期摩擦：忘写鉴权或忘写 Auth 行立即红——这是护栏不是障碍。
 
-用法：python3 scripts/verify-api-auth.py [Program.cs] [api.md]
+用法：python3 scripts/verify-api-auth.py [Program.cs|Endpoints/*.cs] [api.md]
 退出码：0 = ALL GREEN，1 = 有 FAIL（逐条打印）。
 """
+import glob
 import re
 import sys
 
@@ -70,23 +71,50 @@ def doc_kind(raw):
 
 
 def main():
-    cs_path = sys.argv[1] if len(sys.argv) > 1 else "src/Vapor.ControlPlane/Program.cs"
+    cs_arg = sys.argv[1] if len(sys.argv) > 1 else None
     md_path = sys.argv[2] if len(sys.argv) > 2 else "docs/api.md"
-    with open(cs_path, encoding="utf-8") as fh:
-        cs = fh.read()
+    if cs_arg is not None:
+        cs_files = [cs_arg]
+    else:
+        # 2026-11-09 endpoint split: routes live in Endpoints/*.cs, the
+        # delegate helpers moved to EndpointHelpers.cs; Program.cs keeps only
+        # startup wiring. Scan them together.
+        cs_files = (sorted(glob.glob("src/Vapor.ControlPlane/Program.cs")
+                           + glob.glob("src/Vapor.ControlPlane/Endpoints/*.cs"))
+                    + ["src/Vapor.ControlPlane/EndpointHelpers.cs"])
+    cs_path = ", ".join(cs_files)
+    texts = {}
+    for path in cs_files:
+        with open(path, encoding="utf-8") as fh:
+            texts[path] = fh.read()
     with open(md_path, encoding="utf-8") as fh:
         md = fh.read()
 
     failures = []
-    starts = [(m.start(), m.group(1).upper(), m.group(2))
-              for m in re.finditer(r'\bMap(Get|Post|Put|Delete)\(\s*"([^"]*)"', cs)]
-    if not starts:
+    blocks = []  # (verb, routePath, body) collected per file, in file order
+    for text in texts.values():
+        starts = [(m.start(), m.group(1).upper(), m.group(2))
+                  for m in re.finditer(r'\bMap(Get|Post|Put|Delete)\(\s*"([^"]*)"', text)]
+        for i, (pos, verb, rpath) in enumerate(starts):
+            end = starts[i + 1][0] if i + 1 < len(starts) else len(text)
+            body = text[pos:end]
+            sm = re.search(r'\nstatic ', body)  # col-0 static member ends the route region (old single-file layout)
+            if sm:
+                body = body[:sm.start()]
+            blocks.append((verb, rpath, body))
+    if not blocks:
         failures.append(f"{cs_path}: 未解析到任何 Map* 路由")
 
     helper_calls = {}
     for name in DELEGATES:
-        dm = re.search(rf'\bstatic async Task<IResult> {name}\(.*?\n{{\n(.*?)(?=\nstatic |\Z)',
-                       cs, re.S)
+        dm = None
+        for text in texts.values():
+            # accept both layouts: old col-0 `{` and new class-indented members
+            dm = re.search(rf'\bstatic async Task<IResult> {name}\(.*?\n\t?\{{\n'
+                           rf'(.*?)(?=\n\t?(?:internal |public |private )?static |\Z)',
+                           text, re.S)
+            if dm:
+                break
         if not dm:
             failures.append(f"委托 helper {name}: 未找到定义（白名单与代码脱节）")
         else:
@@ -115,12 +143,7 @@ def main():
         for verb, path in eps:
             doc_auth[(verb, path)] = kind
 
-    for i, (pos, verb, path) in enumerate(starts):
-        end = starts[i + 1][0] if i + 1 < len(starts) else len(cs)
-        body = cs[pos:end]
-        sm = re.search(r'\nstatic ', body)  # 顶格 static 成员 = 路由区结束（文件尾 helper 不属于路由）
-        if sm:
-            body = body[:sm.start()]
+    for verb, path, body in blocks:
         calls = auth_calls(body)
         for name in DELEGATES:
             if f"{name}(" in body:
@@ -134,12 +157,12 @@ def main():
         elif actual != expected:
             failures.append(f"{verb} {path}: 代码 {actual} != 文档 {expected}")
 
-    if len(doc_auth) < len(starts):
-        code_keys = {(v, p) for _, v, p in starts}
+    if len(doc_auth) < len(blocks):
+        code_keys = {(v, p) for v, p, _ in blocks}
         for verb, path in sorted(code_keys - set(doc_auth)):
             failures.append(f"{md_path}: {verb} {path} 无 Auth 归属（不在任何带 Auth 行的小节）")
 
-    print(f"路由 {len(starts)} 个，文档 Auth 归属 {len(doc_auth)} 个，"
+    print(f"路由 {len(blocks)} 个，文档 Auth 归属 {len(doc_auth)} 个，"
           f"委托 helper {len(DELEGATES)} 个")
     if failures:
         for f in failures:

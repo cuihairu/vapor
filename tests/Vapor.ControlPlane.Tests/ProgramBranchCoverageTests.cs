@@ -449,23 +449,14 @@ public sealed class ProgramBranchCoverageTests
 		// A DefaultHttpContext has no remote IP: the "unknown" sentinel and the
 		// null remoteIp field must hold everywhere, and a null details payload
 		// serializes as an empty object rather than throwing.
-		// The top-level-statements Program lives in the global namespace (the
-		// named partial declaration only lifts it public), and its local
-		// functions are emitted under compiler-generated names
-		// (<<Main>$>g__WriteAuditLog|0_NN): match by name fragment + arity.
-		System.Reflection.BindingFlags probe =
-			System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
-		Type statementsProgram = typeof(Program).Assembly.GetType("Program", throwOnError: false) ?? typeof(Program);
-		System.Reflection.MethodInfo writeAudit = statementsProgram.GetMethods(probe)
-			.First(m => m.Name.Contains("WriteAuditLog", StringComparison.Ordinal) && m.GetParameters().Length == 7);
-		System.Reflection.MethodInfo auditActor = statementsProgram.GetMethods(probe)
-			.First(m => m.Name.Contains("GetAuditActor", StringComparison.Ordinal) && m.GetParameters().Length == 1);
-
+		// The helpers used to be top-level local functions of the single-file
+		// Program (compiler-generated names, matchable only by reflection);
+		// since the endpoint split they are internal static members of
+		// EndpointHelpers and bind directly.
 		Microsoft.AspNetCore.Http.DefaultHttpContext noIp = new();
 		RecordingAuditStore recorded = new();
-		object?[] args = [Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, recorded, noIp, "test.action", null, null, null];
-		await ((System.Threading.Tasks.Task)writeAudit.Invoke(null, args)!).ConfigureAwait(true);
-		Assert.Equal("unknown", auditActor.Invoke(null, [noIp]));
+		await EndpointHelpers.WriteAuditLog(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, recorded, noIp, "test.action", null, null, null).ConfigureAwait(true);
+		Assert.Equal("unknown", EndpointHelpers.GetAuditActor(noIp));
 		Assert.Null(Assert.Single(recorded.Entries).RemoteIp);
 
 		// An empty X-Forwarded-For header fails IsNullOrEmpty and falls through
@@ -474,18 +465,18 @@ public sealed class ProgramBranchCoverageTests
 		Microsoft.AspNetCore.Http.DefaultHttpContext withIp = new();
 		withIp.Connection.RemoteIpAddress = IPAddress.Loopback;
 		withIp.Request.Headers["X-Forwarded-For"] = "";
-		Assert.Equal(IPAddress.Loopback.ToString(), auditActor.Invoke(null, [withIp]));
+		Assert.Equal(IPAddress.Loopback.ToString(), EndpointHelpers.GetAuditActor(withIp));
 
 		Microsoft.AspNetCore.Http.DefaultHttpContext whitespaceIp = new();
 		whitespaceIp.Connection.RemoteIpAddress = IPAddress.Loopback;
 		whitespaceIp.Request.Headers["X-Forwarded-For"] = "   ";
-		Assert.Equal("   ", auditActor.Invoke(null, [whitespaceIp]));
+		Assert.Equal("   ", EndpointHelpers.GetAuditActor(whitespaceIp));
 
 		// A usable X-Forwarded-For wins over the connection address.
 		Microsoft.AspNetCore.Http.DefaultHttpContext forwarded = new();
 		forwarded.Connection.RemoteIpAddress = IPAddress.Loopback;
 		forwarded.Request.Headers["X-Forwarded-For"] = "10.0.0.1";
-		Assert.Equal("10.0.0.1", auditActor.Invoke(null, [forwarded]));
+		Assert.Equal("10.0.0.1", EndpointHelpers.GetAuditActor(forwarded));
 
 		// A connection that does carry an address flows verbatim into both the
 		// structured log line and the persisted entry (the "unknown" sentinel
@@ -495,8 +486,7 @@ public sealed class ProgramBranchCoverageTests
 		withAddress.Connection.RemoteIpAddress = IPAddress.Loopback;
 		RecordingAuditStore recordedAddressed = new();
 		Dictionary<string, object?> details = new() { ["outcome"] = "recorded" };
-		object?[] addressed = [Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, recordedAddressed, withAddress, "test.action", "alice", "job-7", details];
-		await ((System.Threading.Tasks.Task)writeAudit.Invoke(null, addressed)!).ConfigureAwait(true);
+		await EndpointHelpers.WriteAuditLog(Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, recordedAddressed, withAddress, "test.action", "alice", "job-7", details).ConfigureAwait(true);
 		AuditEntry entry = Assert.Single(recordedAddressed.Entries);
 		Assert.Equal(IPAddress.Loopback.ToString(), entry.RemoteIp);
 		Assert.Equal("alice", entry.AccountName);
@@ -512,17 +502,10 @@ public sealed class ProgramBranchCoverageTests
 		// ?authorization= fallback has no natural false side. Drive it directly
 		// with that impossible shape so the guard stays pinned (see
 		// tests/TESTING.md).
-		System.Reflection.BindingFlags probe =
-			System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
-		Type statementsProgram = typeof(Program).Assembly.GetType("Program", throwOnError: false) ?? typeof(Program);
-		System.Reflection.MethodInfo getAuthorization = statementsProgram.GetMethods(probe)
-			.First(m => m.Name.Contains("GetAuthorization", StringComparison.Ordinal) && m.GetParameters().Length == 1);
-
 		var ctx = new Microsoft.AspNetCore.Http.DefaultHttpContext();
 		ctx.Request.Query = new EmptyValueQueryCollection();
 
-		Microsoft.Extensions.Primitives.StringValues result =
-			(Microsoft.Extensions.Primitives.StringValues)getAuthorization.Invoke(null, [ctx])!;
+		Microsoft.Extensions.Primitives.StringValues result = EndpointHelpers.GetAuthorization(ctx);
 
 		Assert.True(result == Microsoft.Extensions.Primitives.StringValues.Empty);
 	}

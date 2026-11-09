@@ -6,7 +6,7 @@
 
 这件事的 HTTP 侧（任务信封、派发、调度、经 REST/SSE 读结果）在 [api.md](api.md) 的 "Jobs & tasks" 一节；导览见 [getting-started.md](getting-started.md)。下面的 payload 示例针对 `POST /v1/jobs` 请求体。
 
-源码地图，供参考：宿主 Steam 域动作位于 `src/Vapor.Steam.Core/Actions/*.cs`，游戏访问动作位于官方 `src/Vapor.Plugins.GameAccess/` 插件（打进 Agent 镜像；名称相同），Agent 宿主动作位于 `src/Vapor.Agent/HostActions/*.cs`，其余插件动作位于 `src/Vapor.Plugins.*`，任务信封位于 `src/Vapor.ControlPlane/Program.cs` + `src/Vapor.Protocol/Models.cs`。下面的字段名从 payload 解析 / 输出构建代码中原样抄录。
+源码地图，供参考：宿主 Steam 域动作位于 `src/Vapor.Steam.Core/Actions/*.cs`，游戏访问动作位于官方 `src/Vapor.Plugins.GameAccess/` 插件（打进 Agent 镜像；名称相同），Agent 宿主动作位于 `src/Vapor.Agent/HostActions/*.cs`，其余插件动作位于 `src/Vapor.Plugins.*`，任务信封位于 `src/Vapor.ControlPlane/Contracts/ControlPlaneContracts.cs` + `src/Vapor.Protocol/Models.cs`。下面的字段名从 payload 解析 / 输出构建代码中原样抄录。
 
 ## 约定
 
