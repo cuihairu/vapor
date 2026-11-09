@@ -58,7 +58,7 @@ Queued ──claim──▶ Running ──result ok──▶ Finished
 ```
 
 Anchors: `SqliteJobStore.ClaimNextQueuedTask`, `RequeueStaleRunningTasks`,
-`SetTaskResult`, `CancelJob` (`src/Vapor.ControlPlane/SqliteJobStore.cs`).
+`SetTaskResult`, `CancelJob` (`src/Vapor.ControlPlane/SqliteJobStore*.cs`).
 
 ### Claiming and fencing
 
