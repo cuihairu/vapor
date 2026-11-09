@@ -167,6 +167,7 @@ P3 记录性（风格/健壮性，未修）：
 - [x] 审核发现：本提交（e55fef0）新增的 todo.md:166 审核发现行将 41-4b 条目引用为「todo.md:7（41-4b）」，但 41-4b 条目实际在 todo.md:9（todo.md:7 为「41-4 mock 链路验收」行），行号引用失准、应为 todo.md:9（todo.md:166、todo.md:9）—— 修复:本提交（todo.md:166 的「todo.md:7（41-4b）」改述为「todo.md:9（41-4b）」；`sed -n '166p' todo.md` 实测含 `todo.md:9（41-4b）`、不含 `todo.md:7（41-4b）`；`sed -n '7p' todo.md` = 41-4 mock 链路验收行、`sed -n '9p' todo.md` = 41-4b 条目，2026-11-06 复核）
 
 - [x] 审核发现：本轮 diff 未见问题（e55fef03..HEAD）—— 证据:d898467（e55fef03..HEAD 仅此一提交；核实 :166 行号引用 todo.md:7→:9 修正准确、:167 新增记档属实；`sed -n '7p;9p' todo.md` 实测 7=41-4 mock 链路验收/9=41-4b、:166 无 todo.md:7 残留）, 4162 测试全绿
+- [x] 审核发现：本轮 diff 未见问题（7fba9c4f..HEAD）。—— 证据:d1f6240（区间仅此一提交、todo.md 5 行复核戳 diffstat 实测 todo.md-only；2026-11-10 逐条实测其事实引用：SteamKit2 3.5.0 于 Vapor.Steam.Core.csproj:12、open/consume 门控 fallback:false 于 CsgoPlugin.cs:142/148、单槽登录路由 SteamClientManager.cs:48 字段/SteamClientManager.Login.cs:25 写入/:69-71 比对+清理/SteamClientManager.Callbacks.cs:93 读取、7 个源码插件 plugin.json 均 trust=official、仓库无 .env/maFile/凭据文件、进程无 STEAM/VAPOR 环境变量、data/ 仅 5 个 DB audit/config/controlplane/crawl/scripts；verify-dependency-versions 全绿 exit=0）
 
 ## 源码分层分析 2026-11-07
 
