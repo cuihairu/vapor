@@ -507,7 +507,10 @@ public sealed class BotSessionBranchTests : IDisposable
 		await Task.Delay(300, CancellationToken.None); // ≥3 windows of the 100ms cadence
 		cts.Cancel();
 
-		await loop.WaitAsync(TimeSpan.FromSeconds(10));
+		// 30s budget: the coverage CI job's coverlet instrumentation can park
+		// even a bare Task.Delay loop for seconds (same family as 88371dc's
+		// WaitForEventsAsync budget); the plain test jobs finish in ~300ms.
+		await loop.WaitAsync(TimeSpan.FromSeconds(30));
 		Assert.Equal(TaskStatus.RanToCompletion, loop.Status);
 	}
 
