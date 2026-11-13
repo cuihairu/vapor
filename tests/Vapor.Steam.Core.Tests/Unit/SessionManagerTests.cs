@@ -538,6 +538,64 @@ public class SessionManagerTests : IDisposable
 		Assert.Equal(batch, received.Select(e => e.Message).Distinct().Count());
 	}
 
+	[Fact]
+	public async Task SubscribeAllEvents_RegisteredSubscriber_ReceivesLiveFanOut()
+	{
+		// The race above is delivery-guaranteed but not path-guaranteed: under a
+		// loaded machine the publisher can drain all 200 events into history
+		// before the subscriber registers, every event arrives via the seed path,
+		// and the live fan-out inside the broadcast loop never executes — the
+		// whole suite can then pass with that line at zero hits (2026-11-14
+		// coverage run). This test pins the fan-out deterministically: wait until
+		// the subscription is registered in the broadcaster's list, and only then
+		// publish a fresh event. That event cannot be in the history the
+		// registration seeded, so the subscription's only route to it is the
+		// TryWrite in BroadcastEventsAsync.
+		Channel<SessionEvent> channel = (Channel<SessionEvent>)typeof(SessionManager)
+			.GetField("_eventChannel", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_manager)!;
+		FieldInfo subscribers = typeof(SessionManager)
+			.GetField("_eventSubscribers", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+		List<SessionEvent> received = [];
+		var collectTask = Task.Run(async () =>
+		{
+			await foreach (var evt in _manager.SubscribeAllEvents(CancellationToken.None))
+			{
+				lock (received)
+				{
+					received.Add(evt);
+				}
+				break;
+			}
+		});
+
+		// Registration happens on the enumerator's first MoveNextAsync; poll the
+		// private list until the subscription shows up in it. From this moment on
+		// every drain fans out to this subscriber — the write below can only be
+		// delivered live, never seeded.
+		System.Collections.IList registered = (System.Collections.IList)subscribers.GetValue(_manager)!;
+		DateTimeOffset deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(10);
+		while (registered.Count == 0)
+		{
+			if (DateTimeOffset.UtcNow >= deadline)
+			{
+				Assert.Fail("Subscription never registered with the broadcaster within 10s.");
+			}
+			await Task.Delay(10);
+		}
+
+		var published = new SessionEvent(SessionEventType.StateChanged, "live_fanout", SessionState.Connected, "live-1");
+		channel.Writer.TryWrite(published);
+		await collectTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+		lock (received)
+		{
+			Assert.Single(received);
+			Assert.Equal(published, received[0]);
+		}
+	}
+
 	/// <summary>
 	/// Polls the broadcaster's private recent-history buffer until the predicate
 	/// holds — the only way to observe drain completion, since the ingress write
