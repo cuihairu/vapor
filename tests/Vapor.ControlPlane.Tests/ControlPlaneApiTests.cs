@@ -273,24 +273,33 @@ public sealed class ControlPlaneApiTests
 		await using var agentTwoStream = await agentTwoResponse.Content.ReadAsStreamAsync();
 		using var agentTwoReader = new StreamReader(agentTwoStream, Encoding.UTF8);
 
-		await factory.Events.WaitForAuthSubscriptionAsync();
+		// Both streams must be registered before publishing: the endpoint
+		// subscribes only after flushing the ready line, and a publish that
+		// beats the second registration is dropped, leaving that reader
+		// waiting on an event that never arrives.
+		await factory.Events.WaitForAuthSubscriptionAsync(expectedSubscriptions: 2);
+
+		// Bound every stream read so a stalled SSE body fails the test instead
+		// of hanging the host until the Blame collector dumps it (12 min).
+		using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
 		factory.Events.PublishAuthChallenge("alice", "code_provided_2fa", "agent one code", "111111");
 		factory.Events.PublishAuthChallenge("bob", "code_provided_2fa", "agent two code", "222222");
 
-		Assert.Equal("event: ready", await agentOneReader.ReadLineAsync());
-		Assert.Equal("data: {}", await agentOneReader.ReadLineAsync());
-		Assert.True(string.IsNullOrEmpty(await agentOneReader.ReadLineAsync()));
-		Assert.Equal("event: auth.code_provided_2fa", await agentOneReader.ReadLineAsync());
-		string one = await agentOneReader.ReadLineAsync() ?? string.Empty;
+		Assert.Equal("event: ready", await agentOneReader.ReadLineAsync(readTimeout.Token));
+		Assert.Equal("data: {}", await agentOneReader.ReadLineAsync(readTimeout.Token));
+		Assert.True(string.IsNullOrEmpty(await agentOneReader.ReadLineAsync(readTimeout.Token)));
+		Assert.Equal("event: auth.code_provided_2fa", await agentOneReader.ReadLineAsync(readTimeout.Token));
+		string one = await agentOneReader.ReadLineAsync(readTimeout.Token) ?? string.Empty;
 		Assert.Contains("\"accountName\":\"alice\"", one);
 		Assert.Contains("\"code\":\"111111\"", one);
 		Assert.DoesNotContain("222222", one);
 
-		Assert.Equal("event: ready", await agentTwoReader.ReadLineAsync());
-		Assert.Equal("data: {}", await agentTwoReader.ReadLineAsync());
-		Assert.True(string.IsNullOrEmpty(await agentTwoReader.ReadLineAsync()));
-		Assert.Equal("event: auth.code_provided_2fa", await agentTwoReader.ReadLineAsync());
-		string two = await agentTwoReader.ReadLineAsync() ?? string.Empty;
+		Assert.Equal("event: ready", await agentTwoReader.ReadLineAsync(readTimeout.Token));
+		Assert.Equal("data: {}", await agentTwoReader.ReadLineAsync(readTimeout.Token));
+		Assert.True(string.IsNullOrEmpty(await agentTwoReader.ReadLineAsync(readTimeout.Token)));
+		Assert.Equal("event: auth.code_provided_2fa", await agentTwoReader.ReadLineAsync(readTimeout.Token));
+		string two = await agentTwoReader.ReadLineAsync(readTimeout.Token) ?? string.Empty;
 		Assert.Contains("\"accountName\":\"bob\"", two);
 		Assert.Contains("\"code\":\"222222\"", two);
 		Assert.DoesNotContain("111111", two);
@@ -335,11 +344,15 @@ public sealed class ControlPlaneApiTests
 		await using var reconnectingAgentStream = await reconnectingAgentResponse.Content.ReadAsStreamAsync();
 		using var reconnectingAgentReader = new StreamReader(reconnectingAgentStream, Encoding.UTF8);
 
-		Assert.Equal("event: ready", await reconnectingAgentReader.ReadLineAsync());
-		Assert.Equal("data: {}", await reconnectingAgentReader.ReadLineAsync());
-		Assert.True(string.IsNullOrEmpty(await reconnectingAgentReader.ReadLineAsync()));
-		Assert.Equal("event: auth.code_provided_2fa", await reconnectingAgentReader.ReadLineAsync());
-		string replay = await reconnectingAgentReader.ReadLineAsync() ?? string.Empty;
+		// Bound stream reads so a stalled SSE body fails fast instead of
+		// hanging the host until the Blame collector dumps it (12 min).
+		using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+		Assert.Equal("event: ready", await reconnectingAgentReader.ReadLineAsync(readTimeout.Token));
+		Assert.Equal("data: {}", await reconnectingAgentReader.ReadLineAsync(readTimeout.Token));
+		Assert.True(string.IsNullOrEmpty(await reconnectingAgentReader.ReadLineAsync(readTimeout.Token)));
+		Assert.Equal("event: auth.code_provided_2fa", await reconnectingAgentReader.ReadLineAsync(readTimeout.Token));
+		string replay = await reconnectingAgentReader.ReadLineAsync(readTimeout.Token) ?? string.Empty;
 		Assert.Contains("\"accountName\":\"alice\"", replay);
 		Assert.Contains("\"code\":\"123456\"", replay);
 
@@ -701,7 +714,13 @@ public sealed class ControlPlaneApiTests
 
 		public List<Event> Events { get; } = [];
 		public List<AuthChallengeEvent> AuthChallengeEvents { get; } = [];
-		private readonly TaskCompletionSource _authSubscriptionReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		// Subscription-readiness waiters. The SSE endpoint registers its broker
+		// subscription AFTER flushing the ready line, so a test that opens two
+		// streams must wait for both registrations — completing on the first one
+		// let PublishAuthChallenge race the second registration and drop the
+		// event, leaving that reader stuck in ReadLineAsync forever (CI macos
+		// Debug hang, Blame dump run 43150002841).
+		private readonly List<(int Expected, TaskCompletionSource Waiter)> _authSubscriptionWaits = [];
 
 		/// <summary>Active job-event subscriptions (mirrors <see cref="EventBroker"/> semantics; used by benchmarks).</summary>
 		public int ActiveJobSubscriptions
@@ -796,7 +815,14 @@ public sealed class ControlPlaneApiTests
 			lock (_gate)
 			{
 				_authSubscriptions.Add(subscription);
-				_authSubscriptionReady.TrySetResult();
+				for (int i = _authSubscriptionWaits.Count - 1; i >= 0; i--)
+				{
+					if (_authSubscriptions.Count >= _authSubscriptionWaits[i].Expected)
+					{
+						_authSubscriptionWaits[i].Waiter.TrySetResult();
+						_authSubscriptionWaits.RemoveAt(i);
+					}
+				}
 			}
 
 			try
@@ -816,7 +842,21 @@ public sealed class ControlPlaneApiTests
 			}
 		}
 
-		public Task WaitForAuthSubscriptionAsync() => _authSubscriptionReady.Task;
+		/// <summary>Resolves once at least <paramref name="expectedSubscriptions"/> auth-challenge SSE streams have registered with the broker.</summary>
+		public Task WaitForAuthSubscriptionAsync(int expectedSubscriptions = 1)
+		{
+			lock (_gate)
+			{
+				if (_authSubscriptions.Count >= expectedSubscriptions)
+				{
+					return Task.CompletedTask;
+				}
+
+				var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+				_authSubscriptionWaits.Add((expectedSubscriptions, waiter));
+				return waiter.Task;
+			}
+		}
 
 		private static async IAsyncEnumerable<T> Empty<T>()
 		{
