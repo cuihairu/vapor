@@ -96,7 +96,27 @@ public sealed partial class SteamClientManager
 			return;
 		}
 
-		if (_loginStates.TryGetValue(accountName, out var state))
+		// A cancelled login's late response can arrive while a newer login
+		// already owns the slot (SteamKit2 sends no per-request identity with the
+		// callback). A successful logon at least proves which account it belongs
+		// to through ClientSteamID: when the slotted account's SteamId is known
+		// from a prior logon and differs, this callback is the earlier cancelled
+		// login's straggler — drop it instead of completing the active login's
+		// TCS with (and persisting) another account's result.
+		if (_loginStates.TryGetValue(accountName, out var state)
+			&& state.SteamId is not null
+			&& callback.ClientSteamID is not null
+			&& !callback.ClientSteamID.Equals(state.SteamId))
+		{
+			_logger.LogWarning(
+				"Dropped late logon response carrying {CallbackSteamId}: the active login is {AccountName} ({SlottedSteamId})",
+				callback.ClientSteamID,
+				accountName,
+				state.SteamId);
+			return;
+		}
+
+		if (state is not null)
 		{
 			state.LoginTcs?.TrySetResult(callback);
 		}

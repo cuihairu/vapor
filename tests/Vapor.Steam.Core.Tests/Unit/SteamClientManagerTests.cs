@@ -303,6 +303,92 @@ public class SteamClientManagerTests : IDisposable
 		Assert.Null(slot.GetValue(_manager));
 	}
 
+	private SteamUser.LoggedOnCallback BuildLoggedOnCallback(EResult result, SteamID? clientSteamId)
+	{
+		// The SteamKit2 callback constructor is internal; the parameterless-data
+		// shape only needs Result and ClientSteamID for the routing fence.
+		var ctor = typeof(SteamUser.LoggedOnCallback).GetConstructor(
+			BindingFlags.Instance | BindingFlags.NonPublic, null, [typeof(EResult)], null)!;
+		var callback = (SteamUser.LoggedOnCallback)ctor.Invoke([result]);
+		if (clientSteamId is not null)
+		{
+			typeof(SteamUser.LoggedOnCallback)
+				.GetField("<ClientSteamID>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic)!
+				.SetValue(callback, clientSteamId);
+		}
+
+		return callback;
+	}
+
+	private System.Collections.IDictionary LoginStates()
+	{
+		return (System.Collections.IDictionary)typeof(SteamClientManager)
+			.GetField("_loginStates", BindingFlags.Instance | BindingFlags.NonPublic)!
+			.GetValue(_manager)!;
+	}
+
+	private TaskCompletionSource<SteamUser.LoggedOnCallback> AttachLoginTcs(object state)
+	{
+		var tcs = new TaskCompletionSource<SteamUser.LoggedOnCallback>(TaskCreationOptions.RunContinuationsAsynchronously);
+		state.GetType().GetProperty("LoginTcs")!.SetValue(state, tcs);
+		return tcs;
+	}
+
+	[Fact]
+	public async Task OnLoggedOn_LateSuccessFromCancelledOtherAccountLogin_IsDropped()
+	{
+		// The 94085ba residual: alice's login is cancelled mid-flight, bob's
+		// login takes the routing slot, and alice's success callback arrives
+		// late. SteamKit2 puts no request identity on the callback, but it
+		// proves its account via ClientSteamID — bob's known SteamId differs,
+		// so the straggler must be dropped instead of completing bob's TCS and
+		// persisting alice's SteamID as bob's.
+		var bobSteamId = new SteamID(76561197960265730ul);
+		var aliceSteamId = new SteamID(76561197960287930ul);
+		await _manager.UpdateSteamIdAsync("bob", bobSteamId);
+
+		var slot = typeof(SteamClientManager)
+			.GetField("_activeLoginAccountName", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		slot.SetValue(_manager, "bob");
+
+		var bobState = LoginStates()["bob"]!;
+		var bobTcs = AttachLoginTcs(bobState);
+
+		var onLoggedOn = typeof(SteamClientManager)
+			.GetMethod("OnLoggedOn", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		onLoggedOn.Invoke(_manager, [BuildLoggedOnCallback(EResult.OK, aliceSteamId)]);
+
+		Assert.False(bobTcs.Task.IsCompleted);
+		Assert.Equal(bobSteamId, (SteamID)bobState.GetType().GetProperty("SteamId")!.GetValue(bobState)!);
+		Assert.Equal("bob", slot.GetValue(_manager));
+	}
+
+	[Fact]
+	public async Task OnLoggedOn_LateSuccessForSlottedAccount_IsDelivered()
+	{
+		// Same-account re-login: attempt one is cancelled, attempt two owns the
+		// slot, attempt one's success arrives late. The client really is logged
+		// on as this account, so the callback must still reach the TCS — the
+		// identity fence only drops foreign-account stragglers.
+		var bobSteamId = new SteamID(76561197960265730ul);
+		await _manager.UpdateSteamIdAsync("bob", bobSteamId);
+
+		var slot = typeof(SteamClientManager)
+			.GetField("_activeLoginAccountName", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		slot.SetValue(_manager, "bob");
+
+		var bobState = LoginStates()["bob"]!;
+		var bobTcs = AttachLoginTcs(bobState);
+		var callback = BuildLoggedOnCallback(EResult.OK, bobSteamId);
+
+		var onLoggedOn = typeof(SteamClientManager)
+			.GetMethod("OnLoggedOn", BindingFlags.Instance | BindingFlags.NonPublic)!;
+		onLoggedOn.Invoke(_manager, [callback]);
+
+		Assert.True(bobTcs.Task.IsCompleted);
+		Assert.Same(callback, await bobTcs.Task);
+	}
+
 	[Fact]
 	public void RunCallbacks_CanBeCalledMultipleTimes()
 	{

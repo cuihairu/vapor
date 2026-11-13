@@ -19,10 +19,14 @@ public sealed partial class SteamClientManager
 		// spans send-to-callback so the slot has exactly one owner while a
 		// logon response can arrive.
 		await _loginGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+		// The generation identifies this attempt to the exit path, which runs
+		// outside the block that declares it.
+		long generation = ++_loginGeneration;
 		try
 		{
 			var tcs = new TaskCompletionSource<SteamUser.LoggedOnCallback>(TaskCreationOptions.RunContinuationsAsynchronously);
 			_activeLoginAccountName = accountName;
+			_activeLoginGeneration = generation;
 
 			_loginStates.AddOrUpdate(
 				accountName,
@@ -60,15 +64,18 @@ public sealed partial class SteamClientManager
 		finally
 		{
 			// This login is leaving (success, failure or cancellation). Clear the
-			// single routing slot if it still points at us: a logon response that
-			// arrives after cancellation is then dropped in OnLoggedOn instead of
-			// being misrouted to whichever login grabs the slot next. (The residual
-			// window — a cancelled login immediately followed by a new login whose
-			// slot is already overwritten — still needs per-request JobID routing,
-			// which SteamKit2's public LogOn API does not expose.)
-			if (string.Equals(_activeLoginAccountName, accountName, StringComparison.Ordinal))
+			// single routing slot only if this attempt still owns it — compared by
+			// generation, not by account name, so a same-name re-login that grabs
+			// the slot is never clobbered by an earlier attempt's exit. A response
+			// arriving after the slot is dropped (or handed to a different
+			// account's login) is fenced in OnLoggedOn by the slotted account's
+			// known SteamId; callbacks without a usable identity (failure
+			// results, first-ever logins) remain the SteamKit2 JobID-routing
+			// limitation.
+			if (_activeLoginGeneration == generation)
 			{
 				_activeLoginAccountName = null;
+				_activeLoginGeneration = 0;
 			}
 			_loginGate.Release();
 		}

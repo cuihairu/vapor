@@ -46,6 +46,13 @@ public sealed partial class SteamClientManager : ISteamClientManager, IDisposabl
 	// earlier caller's wait (which would otherwise only end via the 10s timeout).
 	private readonly List<TaskCompletionSource<bool>> _pendingDisconnects = [];
 	private string? _activeLoginAccountName;
+	// Monotonic generation identifying which LoginAsync attempt owns the routing
+	// slot. LoggedOnCallback carries no request identity, so the exit path
+	// compares generations (not account names) before clearing, and OnLoggedOn
+	// fences late responses of earlier cancelled logins off the active login by
+	// the slotted account's stored SteamId.
+	private long _loginGeneration;
+	private long _activeLoginGeneration;
 	// Serializes LoginAsync: a LoggedOnCallback is routed through the single
 	// _activeLoginAccountName slot, so only one logon may be in flight at a time.
 	private readonly SemaphoreSlim _loginGate = new(1, 1);
