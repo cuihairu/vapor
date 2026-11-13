@@ -103,6 +103,42 @@ curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
 Then open the consoles: [`/admin.html`](http://127.0.0.1:8080/admin.html) (full management UI) · [`/dashboard.html`](http://127.0.0.1:8080/dashboard.html) (read-first, one whitelisted reconcile action) · [`/gamedata.html`](http://127.0.0.1:8080/gamedata.html) (game data dictionary). The full walkthrough — login, challenges, farming, plugins — is in [docs/getting-started.md](docs/getting-started.md).
 
 
+## MCP server
+
+`Vapor.Mcp` is a stdio [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI agents inspect and operate a running control plane. It is a thin proxy over the existing REST read faces — no second query path — and every call rides the control plane's admin authentication.
+
+Read-only tools (always present): `list_agents`, `agent_status`, `list_accounts` (whitelist-sanitized: status and labeling fields only — passwords, maFile paths and shared/identity secrets are structurally excluded), `list_plugins`, `plugin_status`, `recent_events`, `metrics_snapshot`.
+
+Gated write tools (registered only when `MCP_WRITE_ENABLED=1`; a read-only server's tools list does not contain them at all): `enable_account`, `disable_account` — the same audited desired-state surface the dashboard uses. Real Steam actions (case opening, consumption, trades) are not exposed here and stay behind their own plugin gates.
+
+Configuration (environment of the process that launches the server):
+
+| Variable | Meaning |
+|----------|---------|
+| `Vapor_MCP_BASE_URL` | Control plane base URL (default `http://127.0.0.1:8080`) |
+| `Vapor_MCP_ADMIN_API_KEY` | Admin API key; the server refuses to start without one |
+| `MCP_WRITE_ENABLED` | Set to `1` (or `true`) to register the write tools (`Vapor_MCP_WRITE_ENABLED` also accepted) |
+
+Claude Code (`~/.claude.json` or project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "vapor": {
+      "command": "dotnet",
+      "args": ["run", "--project", "/path/to/vapor/src/Vapor.Mcp", "--no-build", "-c", "Release", "--"],
+      "env": {
+        "Vapor_MCP_BASE_URL": "http://127.0.0.1:8080",
+        "Vapor_MCP_ADMIN_API_KEY": "admin-dev-token"
+      }
+    }
+  }
+}
+```
+
+Cursor (`~/.cursor/mcp.json`) uses the same `mcpServers` shape. Details: [docs/mcp.md](docs/mcp.md).
+
+
 ## Local test policy
 
 CI and local development branch three ways by change surface — a one-line docs
@@ -120,7 +156,7 @@ edit should not compile the world.
 | Section | Contents |
 |---------|----------|
 | **Getting started** | [Walkthrough](docs/getting-started.md) · [Local run](docs/running.md) · [Docker & Compose](docs/docker.md) · [Production deployment](docs/production.md) |
-| **Reference** | [REST API](docs/api.md) · [Actions catalog](docs/actions.md) · [Data dictionary](docs/data-dictionary.md) · [Performance](docs/performance.md) · [Dependency policy](docs/dependencies.md) · [Releasing](docs/releasing.md) |
+| **Reference** | [REST API](docs/api.md) · [MCP server](docs/mcp.md) · [Actions catalog](docs/actions.md) · [Data dictionary](docs/data-dictionary.md) · [Performance](docs/performance.md) · [Dependency policy](docs/dependencies.md) · [Releasing](docs/releasing.md) |
 | **Design** | [Architecture](docs/architecture.md) · [Domain model](docs/domain-model.md) · [Consistency model](docs/consistency.md) · [Session engine](docs/session-engine.md) · [Plugin development](docs/plugins.md) · [Feature matrix (vs. ASF)](docs/feature-matrix.md) |
 | **Operations** | [Troubleshooting](docs/troubleshooting.md) · [Testing](tests/TESTING.md) |
 | **Project** | [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md) · [Support](SUPPORT.md) |

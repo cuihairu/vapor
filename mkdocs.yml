@@ -105,6 +105,7 @@ nav:
       - Process boundary: research/process-boundary.md
   - Reference:
       - REST API: api.md
+      - MCP server: mcp.md
       - Actions catalog: actions.md
       - Data dictionary: data-dictionary.md
       - Testing: testing.md

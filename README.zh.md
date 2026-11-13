@@ -96,6 +96,42 @@ curl -sS -X POST http://127.0.0.1:8080/v1/jobs \
 然后打开控制台：[`/admin.html`](http://127.0.0.1:8080/admin.html)（完整管理界面）· [`/dashboard.html`](http://127.0.0.1:8080/dashboard.html)（读优先，仅一个白名单内调和动作）· [`/gamedata.html`](http://127.0.0.1:8080/gamedata.html)（游戏数据字典）。完整走查——登录、挑战、挂机、插件——见[上手指南](docs/getting-started.zh.md)。
 
 
+## MCP server
+
+`Vapor.Mcp` 是一个 stdio [Model Context Protocol](https://modelcontextprotocol.io) 服务器，让 AI agent 能检查并操作运行中的控制面。它是对既有 REST 读面的薄代理——不新增第二套查询逻辑——每次调用都走控制面既有的 admin 鉴权。
+
+只读工具（始终注册）：`list_agents`、`agent_status`、`list_accounts`（白名单脱敏：仅状态与标注字段——密码、maFile 路径、共享/身份密钥被结构性排除）、`list_plugins`、`plugin_status`、`recent_events`、`metrics_snapshot`。
+
+门控写工具（仅当 `MCP_WRITE_ENABLED=1` 时才注册；不启用时工具清单里根本没有它们）：`enable_account`、`disable_account`——与仪表盘同一套经审计的声明态面。真实 Steam 动作（开箱/消耗/交易）不在此暴露，仍归各自插件门控管。
+
+配置（启动该服务器的进程的环境变量）：
+
+| 变量 | 含义 |
+|----------|---------|
+| `Vapor_MCP_BASE_URL` | 控制面 base URL（缺省 `http://127.0.0.1:8080`） |
+| `Vapor_MCP_ADMIN_API_KEY` | Admin API key；缺失则拒绝启动 |
+| `MCP_WRITE_ENABLED` | 置 `1`（或 `true`）注册写工具（也接受 `Vapor_MCP_WRITE_ENABLED`） |
+
+Claude Code（`~/.claude.json` 或项目 `.mcp.json`）：
+
+```json
+{
+  "mcpServers": {
+    "vapor": {
+      "command": "dotnet",
+      "args": ["run", "--project", "/path/to/vapor/src/Vapor.Mcp", "--no-build", "-c", "Release", "--"],
+      "env": {
+        "Vapor_MCP_BASE_URL": "http://127.0.0.1:8080",
+        "Vapor_MCP_ADMIN_API_KEY": "admin-dev-token"
+      }
+    }
+  }
+}
+```
+
+Cursor（`~/.cursor/mcp.json`）使用同样的 `mcpServers` 形状。详见 [docs/mcp.zh.md](docs/mcp.zh.md)（英文版 [docs/mcp.md](docs/mcp.md)）。
+
+
 ## 本地测试口径
 
 CI 与本地开发按改动面三路分流——改一行文档不该全量编译。
@@ -114,7 +150,7 @@ CI 与本地开发按改动面三路分流——改一行文档不该全量编�
 | 章节 | 内容 |
 |---------|----------|
 | **上手** | [走查](docs/getting-started.zh.md) · [本地运行](docs/running.zh.md) · [Docker 与 Compose](docs/docker.zh.md) · [生产部署](docs/production.zh.md) |
-| **参考** | [REST API](docs/api.zh.md) · [动作目录](docs/actions.zh.md) · [数据字典](docs/data-dictionary.zh.md) · [性能](docs/performance.zh.md) · [依赖策略](docs/dependencies.zh.md) · [发布](docs/releasing.zh.md) |
+| **参考** | [REST API](docs/api.zh.md) · [MCP server](docs/mcp.zh.md) · [动作目录](docs/actions.zh.md) · [数据字典](docs/data-dictionary.zh.md) · [性能](docs/performance.zh.md) · [依赖策略](docs/dependencies.zh.md) · [发布](docs/releasing.zh.md) |
 | **设计** | [架构](docs/architecture.zh.md) · [领域模型](docs/domain-model.zh.md) · [一致性模型](docs/consistency.zh.md) · [会话引擎](docs/session-engine.zh.md) · [插件开发](docs/plugins.zh.md) · [功能对照（对 ASF）](docs/feature-matrix.zh.md) |
 | **运维** | [故障排查](docs/troubleshooting.zh.md) · [测试](tests/TESTING.md) |
 | **项目** | [变更日志](CHANGELOG.md) · [贡献](CONTRIBUTING.md) · [安全策略](SECURITY.md) · [支持](SUPPORT.md) |

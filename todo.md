@@ -196,3 +196,7 @@ P3 记录性（风格/健壮性，未修）：
 - `src/Vapor.ControlPlane/Program.cs:272` 起的 88 个端点全部内联在顶级语句中，路由、DTO 解析、授权、审计和领域调用没有独立边界，导致接入契约层文件吞掉编排与领域入口。
 - `src/Vapor.ControlPlane/DesiredStateReconciler.cs:27` 的类名只表达“调和”，实际包含登录、挂机、卡片、游戏时长、交易、信誉分和备份协流程；按账号意图拆分比按目录更符合源码行为。
 - `src/Vapor.Agent/Program.cs:42` 同时承载导入 CLI、环境装配、插件加载、WebSocket 协议循环、SSE 认证挑战订阅、任务执行和序列化助手；入口文件缺少按通道/生命周期的模块边界。
+
+## MCP server（2026-11-13 用户令，全部完成）
+
+- [x] MCP server：官方 `ModelContextProtocol` C# SDK（2.4.0，探针实测 API 形态后落码）stdio 服务器 `src/Vapor.Mcp`，薄代理控制面既有 REST 面（不新增第二套查询逻辑）；7 只读工具恒注册（list_agents/agent_status/list_accounts/list_plugins/plugin_status/recent_events/metrics_snapshot），写工具 enable_account/disable_account 仅 `MCP_WRITE_ENABLED=1`（别名 `Vapor_MCP_WRITE_ENABLED`，`1`/`true` 不分大小写）时进注册表——未启用时 tools list 里根本没有它们（McpHostTests 钉死注册表差集）；真实 Steam 动作（开箱/消耗/交易）不经 MCP 暴露；list_accounts 与写工具输出投影 AccountSpec 白名单 14 字段，凭据形状字段（password/maFile/shared_secret/identity_secret/token）结构性不可达（AccountSanitizerTests 注入断言钉死）；无 admin key 拒绝启动退出码 2；无 agent 进程启停通道故不提供 start_agent/stop_agent（决策记档 docs/mcp.md）—— 证据:本 commit（README 双语 MCP 节 + docs/mcp.{md,zh.md} + mkdocs nav + CHANGELOG；Vapor.Mcp.Tests 48 方法/83 运行时例全绿；全套双百 22724/22724 行 + 8754/8754 分支，2026-11-14 实测）

@@ -113,7 +113,7 @@ Vapor 复用了 ASF 已验证的概念——bot 会话、动作、挂机——�
 |---------|----------|
 | **入门** | [上手指南](getting-started.md) · [本地运行](running.md) · [Docker 与 Compose](docker.md) · [生产部署](production.md) |
 | **设计** | [架构](architecture.md) · [会话引擎](session-engine.md) · [插件](plugins.md) · [功能矩阵](feature-matrix.md) · [性能](performance.md) |
-| **参考** | [REST API](api.md) · [动作目录](actions.md) · [数据字典](data-dictionary.md) · [测试](testing.md) · [依赖策略](dependencies.md) · [发布流程](releasing.md) · [故障排查](troubleshooting.md) |
+| **参考** | [REST API](api.md) · [MCP server](mcp.md) · [动作目录](actions.md) · [数据字典](data-dictionary.md) · [测试](testing.md) · [依赖策略](dependencies.md) · [发布流程](releasing.md) · [故障排查](troubleshooting.md) |
 
 ## 状态
 

@@ -99,6 +99,7 @@ other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 | `Microsoft.Extensions.Logging.Abstractions` | 10.0.14 | any | Also a `src/` package; one version for the whole tree. |
 | `Microsoft.Extensions.Logging.Console` | 10.0.14 | any | `src/Vapor.Agent`, `src/Vapor.Steam.Core`. |
 | `Microsoft.Extensions.DependencyInjection` | 10.0.14 | any | `src/Vapor.Agent`. |
+| `Microsoft.Extensions.Hosting` | 10.0.14 | any | `src/Vapor.Mcp`. Host builder for the stdio MCP server shell. |
 | `Microsoft.Data.Sqlite` | 10.0.14 | any | Storage layer. Its `SqliteJobStore.Dispose` teardown is a known CI flake site — see §4. |
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | Native SQLite bundle; version line is independent of the .NET one. |
 | `Cronos` | 0.13.0 | any | Cron parsing for scheduled jobs. |
@@ -108,6 +109,7 @@ other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 | `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.20.1 | any | OTLP exporter. |
 | `OpenTelemetry.Extensions.Hosting` | 1.20.1 | any | OTel host integration. |
 | `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.1 | any | OTel ASP.NET Core instrumentation. Independently versioned upstream — version may evolve independently from sibling OTel packages. |
+| `ModelContextProtocol` | 2.4.0 | any | Official MCP C# SDK. Stdio transport + tool registry for `src/Vapor.Mcp`; tool surface is deliberately thin over the control plane's REST read faces. |
 
 <!-- /verify-dependency-versions:packages -->
 

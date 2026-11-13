@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Vapor.Mcp`, a stdio [Model Context Protocol](https://modelcontextprotocol.io)
+  server (`docs/mcp.md`) that exposes a running control plane to AI agents as
+  a thin proxy over the existing REST faces — every tool call is one
+  authenticated HTTP call, so there is no second query path. Seven read-only
+  tools (`list_agents`, `agent_status`, `list_accounts`, `list_plugins`,
+  `plugin_status`, `recent_events`, `metrics_snapshot`) are always registered;
+  the two write tools (`enable_account`, `disable_account`) exist in the
+  registry only when `MCP_WRITE_ENABLED=1` (or `true`; `Vapor_MCP_WRITE_ENABLED`
+  accepted as an alias) — a read-only server's tools list does not contain
+  them at all. `list_accounts` and the write tools project account payloads
+  onto an explicit field whitelist before anything leaves the server, so a
+  credential-shaped field (password, `maFile` path, shared/identity secret,
+  tokens) cannot reach tool output even if upstream ever grew one. Real Steam
+  actions (case opening, consumption, trades) are not exposed over MCP; the
+  server requires an admin API key to start and fails closed without one.
 - Consume-ledger end-to-end coverage for the Csgo case plugin (41-4, local
   half): a second test re-stages the package with `consume.enabled` and a
   pinned `ledger.path` in its own manifest, installs it over the running

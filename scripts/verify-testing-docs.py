@@ -38,6 +38,7 @@ DETAIL_MAP = {
     "Vapor.Protocol.Tests": ["Vapor.Protocol.Tests"],
     "Vapor.KeyRotation.Tests": ["Vapor.KeyRotation.Tests"],
     "Vapor.Backup.Tests": ["Vapor.Backup.Tests"],
+    "Vapor.Mcp.Tests": ["Vapor.Mcp.Tests"],
 }
 
 PROSE_SECTIONS = {"插件体系", "Agent", "E2E"}
