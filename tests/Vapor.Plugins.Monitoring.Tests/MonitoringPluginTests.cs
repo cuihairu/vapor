@@ -95,7 +95,7 @@ public class MonitoringPluginTests
 			Assert.Equal("prometheus", result.Output!["format"]);
 			Assert.Contains("process_uptime_seconds", (string)result.Output["metrics"]!, StringComparison.Ordinal);
 
-			var summary = JsonDocument.Parse((string)result.Output["summary"]!);
+			using var summary = JsonDocument.Parse((string)result.Output["summary"]!);
 			Assert.True(summary.RootElement.TryGetProperty("uptimeSeconds", out _));
 			Assert.True(summary.RootElement.TryGetProperty("executionsTotal", out _));
 		}
@@ -132,7 +132,7 @@ public class MonitoringPluginTests
 			Assert.Contains("vapor_action_executions_total{action=\"echo\",status=\"failure\"} 1", exposition, StringComparison.Ordinal);
 			Assert.Contains("vapor_cache_entries 1", exposition, StringComparison.Ordinal);
 
-			var summary = JsonDocument.Parse(plugin.RenderMetricsJson());
+			using var summary = JsonDocument.Parse(plugin.RenderMetricsJson());
 			Assert.Equal(2, summary.RootElement.GetProperty("executionsTotal").GetDouble());
 			Assert.Equal(1, summary.RootElement.GetProperty("actionsRegistered").GetInt32());
 			Assert.Equal(1, summary.RootElement.GetProperty("cache").GetProperty("entries").GetInt32());
@@ -175,7 +175,7 @@ public class MonitoringPluginTests
 				var serverField = typeof(MonitoringPlugin).GetField("_server", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 				Assert.Null(serverField!.GetValue(plugin));
 
-				var summary = JsonDocument.Parse(plugin.RenderMetricsJson());
+				using var summary = JsonDocument.Parse(plugin.RenderMetricsJson());
 				Assert.True(summary.RootElement.TryGetProperty("uptimeSeconds", out _));
 			}
 			finally

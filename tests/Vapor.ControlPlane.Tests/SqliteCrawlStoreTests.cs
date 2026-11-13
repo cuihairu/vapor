@@ -203,7 +203,7 @@ public sealed class SqliteCrawlStoreTests : IDisposable
 	public async Task Results_DataJsonSurvivesRoundTrip()
 	{
 		await _store.UpsertPlanAsync(SamplePlan());
-		var payload = JsonDocument.Parse("""{"name":"Dota 2","is_free":true}""").RootElement.Clone();
+		var payload = JsonElement.Parse("""{"name":"Dota 2","is_free":true}""");
 		await _store.AddResultAsync(MakeResult("run-1", data: payload));
 
 		var loaded = Assert.Single(await _store.QueryResultsAsync(new CrawlResultQuery()));

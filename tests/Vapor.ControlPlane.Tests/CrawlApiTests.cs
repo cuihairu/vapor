@@ -354,7 +354,7 @@ public sealed class CrawlApiTests
 		using var client = factory.CreateClient();
 		string planId = await CreatePlanAsync(client, new { name = "results", appIds = new List<string> { "570", "730", "440" } });
 		SqliteCrawlStore crawl = factory.Services.GetRequiredService<SqliteCrawlStore>();
-		var data = JsonDocument.Parse("""{"name":"Dota 2","is_free":true}""").RootElement.Clone();
+		var data = JsonElement.Parse("""{"name":"Dota 2","is_free":true}""");
 		await crawl.AddResultAsync(MakeRow(planId, "run-1", appId: 570, account: "alice", ok: true, data: data));
 		await crawl.AddResultAsync(MakeRow(planId, "run-1", appId: 730, account: "bob", ok: false, error: "boom"));
 		await crawl.AddResultAsync(MakeRow(planId, "run-2", appId: 440, account: "alice", ok: true));

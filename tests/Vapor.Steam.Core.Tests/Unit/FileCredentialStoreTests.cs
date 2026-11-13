@@ -193,8 +193,8 @@ public sealed class FileCredentialStoreTests : IDisposable
 		string backupJson = await File.ReadAllTextAsync(BackupPath);
 		Assert.DoesNotContain("token-v2", backupJson, StringComparison.Ordinal);
 
-		string encryptedBackupToken = JsonDocument.Parse(backupJson)
-			.RootElement.GetProperty("accounts")
+		string encryptedBackupToken = JsonElement.Parse(backupJson)
+			.GetProperty("accounts")
 			.GetProperty(account)
 			.GetProperty("refreshToken")
 			.GetString()!;

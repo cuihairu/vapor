@@ -106,7 +106,7 @@ public sealed class ViewerAuthApiTests
 	}
 
 	private static async Task<JsonElement> ReadJson(HttpResponseMessage response) =>
-		JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+		JsonElement.Parse(await response.Content.ReadAsStringAsync());
 
 	private static HttpClient CreateClient(TestFactory factory, string? bearer = null)
 	{

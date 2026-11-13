@@ -317,7 +317,7 @@ public sealed class StandingQuarantineGateTests
 	}
 
 	private static async Task<JsonElement> ReadJson(HttpResponseMessage response) =>
-		JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
+		JsonElement.Parse(await response.Content.ReadAsStringAsync());
 
 	private static TestFactory CreateFactory() => new();
 

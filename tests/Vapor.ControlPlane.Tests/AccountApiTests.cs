@@ -2521,7 +2521,7 @@ public sealed class AccountApiTests
 		Assert.Contains("scheme://host:port", body, StringComparison.Ordinal);
 
 		// A failed assignment must not fire the check_proxy follow-up.
-		string jobId = JsonDocument.Parse(body).RootElement.GetProperty("job_id").GetString()!;
+		string jobId = JsonElement.Parse(body).GetProperty("job_id").GetString()!;
 		JobWithTasks job = await store.GetJob(jobId, CancellationToken.None);
 		Assert.Single(job.Tasks);
 	}
@@ -2722,7 +2722,7 @@ public sealed class AccountApiTests
 
 		// The verification leg is audited in its own right.
 		using HttpResponseMessage checkAudit = await client.GetAsync("/v1/audit/logs?action=account.proxy_check");
-		Assert.True(JsonDocument.Parse(await checkAudit.Content.ReadAsStringAsync()).RootElement.GetProperty("total").GetInt32() >= 1);
+		Assert.True(JsonElement.Parse(await checkAudit.Content.ReadAsStringAsync()).GetProperty("total").GetInt32() >= 1);
 	}
 
 	[Fact]
@@ -2950,7 +2950,7 @@ public sealed class AccountApiTests
 
 		Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 		string body = await resp.Content.ReadAsStringAsync();
-		Assert.Empty(JsonDocument.Parse(body).RootElement.GetProperty("accounts").EnumerateArray());
+		Assert.Empty(JsonElement.Parse(body).GetProperty("accounts").EnumerateArray());
 	}
 
 	[Fact]
@@ -2997,7 +2997,7 @@ public sealed class AccountApiTests
 		using HttpResponseMessage snapshot = await client.GetAsync("/v1/orchestration/storage/snapshot");
 		Assert.Equal(HttpStatusCode.OK, snapshot.StatusCode);
 		string body = await snapshot.Content.ReadAsStringAsync();
-		JsonElement accounts = JsonDocument.Parse(body).RootElement.GetProperty("accounts");
+		JsonElement accounts = JsonElement.Parse(body).GetProperty("accounts");
 		Assert.Equal(3, accounts.GetArrayLength());
 
 		JsonElement alice = SingleResult(accounts, "alice");

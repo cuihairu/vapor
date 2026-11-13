@@ -63,7 +63,7 @@ public sealed class CredentialStoreRotatorTests : IDisposable
 	private static async Task<JsonElement> ReadAccountsAsync(string path)
 	{
 		string json = await File.ReadAllTextAsync(path);
-		return JsonDocument.Parse(json).RootElement.GetProperty("accounts");
+		return JsonElement.Parse(json).GetProperty("accounts");
 	}
 
 	[Fact]
