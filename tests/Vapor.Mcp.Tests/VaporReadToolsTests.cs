@@ -169,10 +169,11 @@ public sealed class VaporReadToolsTests
 		{
 			Content = new StringContent("""
 				{"agents":[
-					{"agentId":"agent-1","plugins":[{"id":"csgo"},{"id":"monitoring","version":"1.0"}]},
+					{"agentId":"agent-1","reportedAt":"2026-11-13T10:00:00Z","plugins":[{"id":"csgo"},{"id":"monitoring","version":"1.0"}],"updates":[{"id":"csgo","status":"upToDate"},{"id":"monitoring","status":"updateAvailable","catalogVersion":"1.2"}]},
 					{"agentId":"agent-2"},
 					{"agentId":"agent-3","plugins":"not-an-array"},
-					{"agentId":"agent-4","plugins":[{"id":7},{"id":"MONITORING","version":"1.1"}]}
+					{"agentId":"agent-4","reportedAt":"2026-11-13T11:00:00Z","plugins":[{"id":7},{"id":"MONITORING","version":"1.1"}],"updates":[{"id":"csgo","status":"upToDate"}]},
+					{"agentId":"agent-5","plugins":[{"id":"monitoring","version":"1.3"}]}
 				]}
 				"""),
 		});
@@ -180,11 +181,21 @@ public sealed class VaporReadToolsTests
 
 		string output = await VaporReadTools.PluginStatus(client, "monitoring", CancellationToken.None);
 
+		// Each row keeps its enclosing agent identity and reporting context —
+		// without them the version numbers cannot be told apart or trusted.
 		using JsonDocument doc = JsonDocument.Parse(output);
 		JsonElement[] rows = [.. doc.RootElement.EnumerateArray()];
-		Assert.Equal(2, rows.Length);
-		Assert.Equal("1.0", rows[0].GetProperty("version").GetString());
-		Assert.Equal("1.1", rows[1].GetProperty("version").GetString());
+		Assert.Equal(3, rows.Length);
+		Assert.Equal("agent-1", rows[0].GetProperty("agentId").GetString());
+		Assert.Equal("2026-11-13T10:00:00Z", rows[0].GetProperty("reportedAt").GetString());
+		Assert.Equal("1.0", rows[0].GetProperty("plugin").GetProperty("version").GetString());
+		Assert.Equal("updateAvailable", rows[0].GetProperty("update").GetProperty("status").GetString());
+		Assert.Equal("agent-4", rows[1].GetProperty("agentId").GetString());
+		Assert.Equal("1.1", rows[1].GetProperty("plugin").GetProperty("version").GetString());
+		Assert.True(rows[1].TryGetProperty("update", out JsonElement noUpdate) && noUpdate.ValueKind == JsonValueKind.Null);
+		Assert.Equal("agent-5", rows[2].GetProperty("agentId").GetString());
+		Assert.True(rows[2].TryGetProperty("reportedAt", out JsonElement noReportedAt) && noReportedAt.ValueKind == JsonValueKind.Null);
+		Assert.Equal("1.3", rows[2].GetProperty("plugin").GetProperty("version").GetString());
 	}
 
 	[Fact]

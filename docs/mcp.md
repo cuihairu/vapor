@@ -37,7 +37,7 @@ refuses to start (exit code 2): fail-closed, no anonymous read face.
 | `agent_status` | `GET /v1/agents/status` | One agent's connection row (region, capabilities, connected since); case-insensitive id match. |
 | `list_accounts` | `GET /v1/accounts` | Optional `state` / `region` / `agent` filters. Output passes a whitelist sanitizer first — see below. |
 | `list_plugins` | `GET /v1/plugins/installed` | Per-agent last-reported plugin inventory. |
-| `plugin_status` | `GET /v1/plugins/installed` | Rows for one plugin id across agents. |
+| `plugin_status` | `GET /v1/plugins/installed` | Rows for one plugin id across agents; each row carries the reporting agent, its report time, the plugin entry, and that agent's update verdict. |
 | `recent_events` | `GET /v1/audit/logs` | Audit/event log query; `limit` clamped to 1–500 (default 20), optional `action` / `account` / `agentId` filters. |
 | `metrics_snapshot` | `GET /metrics` | Raw Prometheus text of the control plane metrics. |
 

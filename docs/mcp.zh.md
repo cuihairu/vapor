@@ -34,7 +34,7 @@ admin key 时服务器拒绝启动（退出码 2）：fail-closed，不存在匿
 | `agent_status` | `GET /v1/agents/status` | 单个 agent 的连接状态行（region/capabilities/connectedAt）；id 大小写无关。 |
 | `list_accounts` | `GET /v1/accounts` | 可选 `state` / `region` / `agent` 过滤。输出先过白名单脱敏——见下。 |
 | `list_plugins` | `GET /v1/plugins/installed` | 各 agent 最后上报的插件清单。 |
-| `plugin_status` | `GET /v1/plugins/installed` | 跨 agent 收集某插件 id 的上报行。 |
+| `plugin_status` | `GET /v1/plugins/installed` | 跨 agent 收集某插件 id 的上报行；每行带上报 agent、上报时间、插件条目与该 agent 的更新判定。 |
 | `recent_events` | `GET /v1/audit/logs` | 审计/事件账查询；`limit` 钳制 1–500（缺省 20），可选 `action` / `account` / `agentId` 过滤。 |
 | `metrics_snapshot` | `GET /metrics` | 控制面指标的 Prometheus 原文。 |
 

@@ -72,7 +72,7 @@ public sealed class VaporReadTools
 		=> client.GetAsync("/v1/plugins/installed", cancellationToken);
 
 	[McpServerTool(Name = "plugin_status")]
-	[Description("Get the per-agent reporting rows for one plugin id from the agents' last plugin inventory reports.")]
+	[Description("Get the per-agent rows for one plugin id from the agents' last inventory reports. Each row carries the reporting agent, its report time, the plugin entry, and that agent's update verdict for the plugin.")]
 	public static async Task<string> PluginStatus(
 		ControlPlaneClient client,
 		[Description("Plugin id as reported in the inventory, e.g. \"monitoring\".")] string pluginId,
@@ -85,31 +85,77 @@ public sealed class VaporReadTools
 			throw new McpException("unexpected control plane response shape: 'agents' array is missing");
 		}
 
-		var matches = new List<JsonElement>();
+		// One row per reporting agent: the plugin entry alone loses the enclosing
+		// agentId/reportedAt that give the version numbers their meaning, and the
+		// agent's update verdict for this plugin is what the row is usually asked for.
+		var rows = new List<Dictionary<string, object?>>();
 		foreach (JsonElement agent in agents.EnumerateArray())
 		{
-			if (!agent.TryGetProperty("plugins", out JsonElement plugins) || plugins.ValueKind != JsonValueKind.Array)
+			if (!agent.TryGetProperty("agentId", out JsonElement agentId)
+				|| agentId.ValueKind != JsonValueKind.String
+				|| !agent.TryGetProperty("plugins", out JsonElement plugins)
+				|| plugins.ValueKind != JsonValueKind.Array)
 			{
 				continue;
 			}
 
+			JsonElement? match = null;
 			foreach (JsonElement plugin in plugins.EnumerateArray())
 			{
 				if (plugin.TryGetProperty("id", out JsonElement id)
 					&& id.ValueKind == JsonValueKind.String
 					&& string.Equals(id.GetString(), pluginId, StringComparison.OrdinalIgnoreCase))
 				{
-					matches.Add(plugin);
+					match = plugin;
+					break;
 				}
 			}
+
+			if (match is null)
+			{
+				continue;
+			}
+
+			rows.Add(new Dictionary<string, object?>
+			{
+				["agentId"] = agentId.GetString(),
+				["reportedAt"] = GetStringOrNull(agent, "reportedAt"),
+				["plugin"] = match.Value,
+				["update"] = FindUpdate(agent, pluginId),
+			});
 		}
 
-		if (matches.Count == 0)
+		if (rows.Count == 0)
 		{
 			throw new McpException($"plugin '{pluginId}' is not present in any agent's reported inventory");
 		}
 
-		return JsonSerializer.Serialize(matches);
+		return JsonSerializer.Serialize(rows);
+	}
+
+	private static string? GetStringOrNull(JsonElement element, string name)
+		=> element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
+			? value.GetString()
+			: null;
+
+	private static JsonElement? FindUpdate(JsonElement agent, string pluginId)
+	{
+		if (!agent.TryGetProperty("updates", out JsonElement updates) || updates.ValueKind != JsonValueKind.Array)
+		{
+			return null;
+		}
+
+		foreach (JsonElement update in updates.EnumerateArray())
+		{
+			if (update.TryGetProperty("id", out JsonElement id)
+				&& id.ValueKind == JsonValueKind.String
+				&& string.Equals(id.GetString(), pluginId, StringComparison.OrdinalIgnoreCase))
+			{
+				return update;
+			}
+		}
+
+		return null;
 	}
 
 	[McpServerTool(Name = "recent_events")]
