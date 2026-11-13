@@ -243,4 +243,14 @@ public sealed class TradeOfferStateMachineTests
 
 		Assert.NotNull(TradeOfferStateMachine.ValidateForCancel(offer));
 	}
+
+	[Fact]
+	public void CanCancel_ForReceivedOffer_ReturnsFalse()
+	{
+		// ValidateForCancel rejects received offers before ever calling CanCancel,
+		// so the IsOurOffer arm of CanCancel itself is only exercised here — the
+		// CI compiler lowers line 89 into four branch points and this arm was the
+		// one holding the coverage gate below 100% (2026-11-14 run 43484694850).
+		Assert.False(TradeOfferStateMachine.CanCancel(ReceivedActiveOffer()));
+	}
 }
