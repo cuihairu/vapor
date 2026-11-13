@@ -219,6 +219,13 @@ public sealed class SqliteAuditStoreTests : IDisposable
 	[Fact]
 	public async Task Constructor_LegacySchema_AddsExecutionIdColumnsAndKeepsRows()
 	{
+		// The class-wide 5s `_cts` is budgeted for the in-memory store this suite
+		// otherwise uses; this test is the exception — a temp-file database whose
+		// migration ran 9s on a loaded Windows CI runner (2026-11-13 e1a9927
+		// build-test Release windows-latest), so the shared token expired
+		// mid-test and QueryAsync surfaced it as TaskCanceledException. The
+		// file-backed workload gets its own runner-load-sized budget.
+		using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 		string dbPath = Path.Combine(Path.GetTempPath(), $"audit-legacy-{Guid.NewGuid():N}.db");
 		try
 		{
@@ -248,7 +255,7 @@ public sealed class SqliteAuditStoreTests : IDisposable
 			using (var store = new SqliteAuditStore(dbPath))
 			{
 				// The pre-existing row reads back with null execution ids...
-				AuditEntry legacy = Assert.Single(await store.QueryAsync(new AuditQuery(AccountName: "alice"), _cts.Token));
+				AuditEntry legacy = Assert.Single(await store.QueryAsync(new AuditQuery(AccountName: "alice"), cts.Token));
 				Assert.Equal("job-old", legacy.JobId);
 				Assert.Null(legacy.TaskId);
 				Assert.Null(legacy.Attempt);
@@ -257,8 +264,8 @@ public sealed class SqliteAuditStoreTests : IDisposable
 				Assert.Null(legacy.TraceId);
 
 				// ...and new entries persist the full execution-id set alongside it.
-				await store.RecordAsync(NewEntry("account.reconciled", account: "bob", taskId: "task-new", attempt: 1, agentId: "agent-x"), _cts.Token);
-				IReadOnlyList<AuditEntry> migrated = await store.QueryAsync(new AuditQuery(AgentId: "agent-x"), _cts.Token);
+				await store.RecordAsync(NewEntry("account.reconciled", account: "bob", taskId: "task-new", attempt: 1, agentId: "agent-x"), cts.Token);
+				IReadOnlyList<AuditEntry> migrated = await store.QueryAsync(new AuditQuery(AgentId: "agent-x"), cts.Token);
 				Assert.Equal("task-new", Assert.Single(migrated).TaskId);
 			}
 		}
