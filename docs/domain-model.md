@@ -165,7 +165,7 @@ Both placement surfaces share one ordering contract — region match, then capab
 
 Labels are deliberately absent: the hello carries `agentId`/`region`/`capabilities`/`meta` only, and no cross-region or label-based placement requirement has been observed. If one appears, structured labels slot in at this step without touching the tunnel protocol.
 
-Code index: `AgentHello.Capabilities` — `src/Vapor.Protocol/Models.cs:124`; `ConnectedAgent.SupportsAction` — `src/Vapor.ControlPlane/AgentRegistry.cs:84`; consumers: `AgentRegistry.Pick(region, action, load)` for task dispatch, `DesiredStateReconciler.PickAgent` for account placement; `SqliteJobStore.MarkTaskClaimedBy` / `CountRunningTasksByAgent` — `src/Vapor.ControlPlane/SqliteJobStore.cs` for the dispatch load signal.
+Code index: `AgentHello.Capabilities` — `src/Vapor.Protocol/Models.cs:124`; `ConnectedAgent.SupportsAction` — `src/Vapor.ControlPlane/AgentRegistry.cs:153`; consumers: `AgentRegistry.Pick(region, action, load)` for task dispatch, `DesiredStateReconciler.PickAgent` for account placement; `SqliteJobStore.MarkTaskClaimedBy` / `CountRunningTasksByAgent` — `src/Vapor.ControlPlane/SqliteJobStore.cs` for the dispatch load signal.
 
 ## 9. Event
 

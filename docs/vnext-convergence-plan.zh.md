@@ -74,7 +74,7 @@ V-next 的收敛方向因此定为：
 
 ### P0-C：Desired-State 收敛面收口
 
-**目标**：账户的"期望 / 实际 / 原因 / 收敛"在 API 与 UI 上完整呈现。复查确认：reconciler 已产出结构化 reason（`DesiredStateReconciler.cs:471,562,620,664,693`），dashboard 已显示 desired/actual mismatch（`dashboard.html:861-866`）与 overall reasons（`dashboard.html:789-801`）；缺口是 **per-account 的收敛原因聚合呈现 + 一键 Reconcile 动作**。
+**目标**：账户的"期望 / 实际 / 原因 / 收敛"在 API 与 UI 上完整呈现。复查确认：reconciler 已产出结构化 reason（`DesiredStateReconciler.Jobs.cs:154,249,261`、`DesiredStateReconciler.Dispatcher.cs:223`），dashboard 已显示 desired/actual mismatch（`dashboard.html:877-887`）与 overall reasons（`dashboard.html:805-817`）；缺口是 **per-account 的收敛原因聚合呈现 + 一键 Reconcile 动作**。
 
 **范围**：
 - API：账户视图带上 observed（实际会话状态/离线下一步）+ reason（reconciler 最近一次该账户收敛决议）字段；字段契约入 `api.md` 并纳入 verify-api-docs 口径。

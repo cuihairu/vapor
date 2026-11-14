@@ -74,7 +74,7 @@ The V-next convergence direction is therefore set as:
 
 ### P0-C: Desired-State convergence surface close-out
 
-**Goal**: fully present each account's "desired / actual / reason / convergence" across the API and UI. The recheck confirms: the reconciler already produces structured reason (`DesiredStateReconciler.cs:471,562,620,664,693`), and the dashboard already shows desired/actual mismatch (`dashboard.html:861-866`) and overall reasons (`dashboard.html:789-801`); the gap is **per-account aggregated presentation of convergence reasons + a one-click Reconcile action**.
+**Goal**: fully present each account's "desired / actual / reason / convergence" across the API and UI. The recheck confirms: the reconciler already produces structured reasons (`DesiredStateReconciler.Jobs.cs:154,249,261`, `DesiredStateReconciler.Dispatcher.cs:223`), and the dashboard already shows desired/actual mismatch (`dashboard.html:877-887`) and overall reasons (`dashboard.html:805-817`); the gap is **per-account aggregated presentation of convergence reasons + a one-click Reconcile action**.
 
 **Scope**:
 - API: the account view carries observed (actual session state / next step when offline) + reason (the reconciler's most recent convergence decision for that account) fields; the field contract goes into `api.md` and under the verify-api-docs criteria.

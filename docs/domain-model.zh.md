@@ -165,7 +165,7 @@ Agent 对自身可运行哪些动作的宣告：hello 帧中一个扁平的 `act
 
 标签被刻意省略：hello 只携带 `agentId`/`region`/`capabilities`/`meta`，目前也未观察到跨区域或基于标签的放置需求。若将来出现，结构化标签可在本步骤接入，无需改动隧道协议。
 
-代码索引：`AgentHello.Capabilities` —— `src/Vapor.Protocol/Models.cs:124`；`ConnectedAgent.SupportsAction` —— `src/Vapor.ControlPlane/AgentRegistry.cs:84`；消费者：任务派发用 `AgentRegistry.Pick(region, action, load)`，账号放置用 `DesiredStateReconciler.PickAgent`；派发负载信号见 `SqliteJobStore.MarkTaskClaimedBy` / `CountRunningTasksByAgent` —— `src/Vapor.ControlPlane/SqliteJobStore.cs`。
+代码索引：`AgentHello.Capabilities` —— `src/Vapor.Protocol/Models.cs:124`；`ConnectedAgent.SupportsAction` —— `src/Vapor.ControlPlane/AgentRegistry.cs:153`；消费者：任务派发用 `AgentRegistry.Pick(region, action, load)`，账号放置用 `DesiredStateReconciler.PickAgent`；派发负载信号见 `SqliteJobStore.MarkTaskClaimedBy` / `CountRunningTasksByAgent` —— `src/Vapor.ControlPlane/SqliteJobStore.cs`。
 
 ## 9. Event
 

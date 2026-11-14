@@ -200,3 +200,9 @@ P3 记录性（风格/健壮性，未修）：
 ## MCP server（2026-11-13 用户令，全部完成）
 
 - [x] MCP server：官方 `ModelContextProtocol` C# SDK（2.4.0，探针实测 API 形态后落码）stdio 服务器 `src/Vapor.Mcp`，薄代理控制面既有 REST 面（不新增第二套查询逻辑）；7 只读工具恒注册（list_agents/agent_status/list_accounts/list_plugins/plugin_status/recent_events/metrics_snapshot），写工具 enable_account/disable_account 仅 `MCP_WRITE_ENABLED=1`（别名 `Vapor_MCP_WRITE_ENABLED`，`1`/`true` 不分大小写）时进注册表——未启用时 tools list 里根本没有它们（McpHostTests 钉死注册表差集）；真实 Steam 动作（开箱/消耗/交易）不经 MCP 暴露；list_accounts 与写工具输出投影 AccountSpec 白名单 14 字段，凭据形状字段（password/maFile/shared_secret/identity_secret/token）结构性不可达（AccountSanitizerTests 注入断言钉死）；无 admin key 拒绝启动退出码 2；无 agent 进程启停通道故不提供 start_agent/stop_agent（决策记档 docs/mcp.md）—— 证据:本 commit（README 双语 MCP 节 + docs/mcp.{md,zh.md} + mkdocs nav + CHANGELOG；Vapor.Mcp.Tests 48 方法/83 运行时例全绿；全套双百 22724/22724 行 + 8754/8754 分支，2026-11-14 实测）
+
+## 文档站双语自动切换（2026-11-14 G2 审计候选，P2，待拍板）
+
+- [ ] 现状：mkdocs Material + i18n `docs_structure: suffix`（`mkdocs.yml:71-84`），`/`=en 默认、`/zh/`=zh，24/24 成对；语言切换只有导航栏手动链接，无 `navigator.language` 探测、无根路径按语言重定向、无 cookie/`rootLocale`，且无 `docs/overrides`。实测 `/`→200/en/CJK 0、`/zh/`→200/zh/CJK 5。
+- [ ] 候选做法（未实施）：`docs/overrides/main.html` 注入首访语言探测（`navigator.language` 前缀 `zh` → `/zh/`，其余留 `/`），或用 `mkdocs-redirects` 给 `/` 做才会触发的一次性跳转；需保留手动切换与深链（`/zh/xxx/` 直达不跳）。
+- [ ] 拍板项：属文档站构建行为而非文档-代码不一致，且涉及默认入口语义（英语优先 or 浏览器优先），按「待拍板项自行定」规则也应留给用户确认后再动。
