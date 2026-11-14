@@ -6,7 +6,7 @@
 
 ## 1. 对照对象与口径
 
-vapor 的定位与家底(来自本仓文档):API 控制的无头 Steam 自动化平台,控制面 + 分区 Agent(README);57 个动作(`docs/actions.md`),`/v1` 58 条路由 / 68 个操作(`docs/api.md` 引言);6 个官方插件,插件机制含清单、信任、权限、可收集 ALC 隔离与运行时 PluginStore(`docs/plugins.md`)。
+vapor 的定位与家底(来自本仓文档):API 控制的无头 Steam 自动化平台,控制面 + 分区 Agent(README);65 个动作(`docs/actions.md`),`/v1` 69 条路由 / 85 个操作(`docs/api.md` 引言);7 个官方插件,插件机制含清单、信任、权限、可收集 ALC 隔离与运行时 PluginStore(`docs/plugins.md`)。
 
 对照分两组,共 11 个产品。**摘要**:直接同类 5 家逐项对功能面找缺口,基线与邻近 6 家划「不做什么」的边界、并给第 4 节供插件机制参照:
 
@@ -22,7 +22,7 @@ vapor 的定位与家底(来自本仓文档):API 控制的无头 Steam 自动化
 | 产品(形态) | 功能清单(摘) | vapor 覆盖 | 缺口 / 判断 |
 |---|---|---|---|
 | **ArchiSteamFarm**(C# 守护进程,多账号 bot) | 挂卡与换卡、IPC + ASF-ui、Steam 聊天里发命令(默认 `!` 前缀,按 EAccess 分级)、per-bot WebProxy、官方插件(MEF2/System.Composition 约定发现)、官方插件按宿主版本自动更新 | 挂卡/换卡/代理/REST/插件全覆盖,另有多账号舰队与期望状态编排(ASF 单进程没有) | **两条真缺口**:①聊天控制面,ASF 能在 Steam 私聊/群聊里执行命令([Commands wiki](https://github.com/JustArchiNET/ArchiSteamFarm/wiki/Commands)),vapor 的交互面只有 REST/SSE/两个控制台;②插件更新检查,ASF 官方插件按宿主版本自动更新(`docs/plugins.md` §Alignment),vapor PluginStore 只有 `plugin_install`/`plugin_uninstall`/`plugin_list`(`docs/plugins.md` §PluginStore) |
-| **Steam Desktop Authenticator**(桌面令牌工具) | 2FA 代码、交易/市场确认、maFile 加密存储、QR 扫码登录;官方 README 声明已停止维护、不再更新 | TOTP、确认、maFile 导入(`import-mafile`)、QR 登录均覆盖(`docs/feature-matrix.md` §3.1) | ①「移除令牌」(Remove Authenticator,带撤销码)在 57 个动作里没有对应项,Steam 官方支持该流程([Steam Guard FAQ](https://help.steampowered.com/en/faqs/view/7EFD-3CAE-64D3-1C31));②SDA 停止维护,存量 maFile 用户的迁移窗口是真实存在的 |
+| **Steam Desktop Authenticator**(桌面令牌工具) | 2FA 代码、交易/市场确认、maFile 加密存储、QR 扫码登录;官方 README 声明已停止维护、不再更新 | TOTP、确认、maFile 导入(`import-mafile`)、QR 登录均覆盖(`docs/feature-matrix.md` §3.1) | ①「移除令牌」(Remove Authenticator,带撤销码)在 65 个动作里没有对应项,Steam 官方支持该流程([Steam Guard FAQ](https://help.steampowered.com/en/faqs/view/7EFD-3CAE-64D3-1C31));②SDA 停止维护,存量 maFile 用户的迁移窗口是真实存在的 |
 | **Watt Toolkit / Steam++**(跨平台桌面工具箱) | 3.0 支持自定义插件(默认插件可删可禁)、网络加速(YARP 本地反代 + JS 注入)、账号切换、库存游戏(模拟运行挂卡、云存档管理、成就解锁)、本地令牌(TOTP/HOTP、批量确认);README 中「自动挂卡(集成 ASF)」一项已划线标注开发中 | 挂卡、确认、成就覆盖;加速、账号切换、通用 TOTP 保险箱属「明确不采用」(`docs/feature-matrix.md` §4) | 无实质缺口。附带发现:feature-matrix 里「Watt 内嵌 ASF 挂卡」一行以 2026-09 的版本为准,当前 README 已划线,属时点差,下轮矩阵维护时可回填 |
 | **Steam Game Idler**(桌面应用,多账号) | 两阶段卡牌引擎(最多 32 并发)、跳过退款窗口内游戏、黑白名单、自动挂卡、成就解锁(拟人节奏、可导入他人的解锁时序)、时长 boost、库存与市场挂单、免费游戏认领,无需本地 Steam 客户端 | farming、成就、boost、库存、市场、免费认领全部覆盖(`docs/feature-matrix.md` §3.2/§3.5/§3.6,成就 2026-09-18 落地) | 两条细节缺口:①farm 队列不识别 Steam 退款窗口(全仓无 refund 相关实现);②`unlock_achievements` 是显式单发写入,没有拟人节奏与解锁时序导入。两项都不压 GA 出口条件,属体验层 |
 | **steamguard-cli**(Rust CLI,单账号 × 多 maFile) | 2FA 生成、确认响应、密钥加密存储(可挂系统 keyring)、QR 导出与 QR 登录、SDA maFile 互操作、防泄漏的内存数据结构 | 全覆盖,且是多账号服务端形态 | 无。定位不同:单机 CLI 对服务端舰队,不是同一类采购决策 |

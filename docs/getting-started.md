@@ -19,7 +19,7 @@ rm -f .env && cp .env.example .env   # required credential vars (dev values, nev
 docker compose up -d
 ```
 
-This starts two containers: `controlplane` (REST API on `:8080`, SQLite in a named volume) and `agent` (WebSocket client, encrypted credential store in its own volume, Monitoring plugin preinstalled). Add `--profile observability` to also start Prometheus (`:9090`) and Grafana (`:3000`).
+This starts two containers: `controlplane` (REST API on `:8080`, SQLite in a named volume) and `agent` (WebSocket client, encrypted credential store in its own volume, Monitoring and GameAccess plugins preinstalled). Add `--profile observability` to also start Prometheus (`:9090`) and Grafana (`:3000`).
 
 Verify:
 
@@ -187,7 +187,7 @@ The run is one job, so `GET /v1/jobs/<jobId>/events` streams its progress live. 
 
 ## 10. Add capabilities with plugins
 
-The agent image ships with Monitoring preinstalled. Plugins are ALC-isolated, trust-checked, permission-scoped, and hot-loadable. Install one at runtime from a catalog or a direct URL+checksum:
+The agent image ships with the Monitoring and GameAccess plugins preinstalled. Plugins are ALC-isolated, trust-checked, permission-scoped, and hot-loadable. Install one at runtime from a catalog or a direct URL+checksum:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/plugins/install \

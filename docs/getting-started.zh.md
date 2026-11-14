@@ -19,7 +19,7 @@ rm -f .env && cp .env.example .env   # 必填凭据变量（本地开发值，�
 docker compose up -d
 ```
 
-这会启动两个容器：`controlplane`（REST API 在 `:8080`，SQLite 在命名卷中）和 `agent`（WebSocket 客户端，加密凭据存储在独立卷中，预装 Monitoring 插件）。加 `--profile observability` 可同时启动 Prometheus（`:9090`）与 Grafana（`:3000`）。
+这会启动两个容器：`controlplane`（REST API 在 `:8080`，SQLite 在命名卷中）和 `agent`（WebSocket 客户端，加密凭据存储在独立卷中，预装 Monitoring 与 GameAccess 插件）。加 `--profile observability` 可同时启动 Prometheus（`:9090`）与 Grafana（`:3000`）。
 
 验证：
 
@@ -187,7 +187,7 @@ curl -sS -X POST http://127.0.0.1:8080/v1/orchestration/storage/collect \
 
 ## 10. 用插件扩展能力
 
-Agent 镜像预装 Monitoring。插件 ALC 隔离、信任校验、权限收窄、支持热加载。运行时从目录或直链 URL+校验和安装：
+Agent 镜像预装 Monitoring 与 GameAccess 插件。插件 ALC 隔离、信任校验、权限收窄、支持热加载。运行时从目录或直链 URL+校验和安装：
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/v1/plugins/install \

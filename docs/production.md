@@ -85,7 +85,7 @@ are in [docker.md](docker.md).
 | `AGENT_REGION` | yes | — | Region used for task routing |
 | `AGENT_CONTROLPLANE_WS_URL` | yes | — | e.g. `ws://controlplane:8080/v1/agent/ws` |
 | `AGENT_API_KEY` | yes | — | Must be one of `Vapor_AGENT_API_KEYS` |
-| `VAPOR_PLUGINS_DIR` | no | — | Plugin directory; the image ships Monitoring preinstalled |
+| `VAPOR_PLUGINS_DIR` | no | — | Plugin directory; the image ships the Monitoring and GameAccess plugins preinstalled |
 | `VAPOR_METRICS_HOST` / `VAPOR_METRICS_PORT` | no | `:9700` | Prometheus endpoint, also the agent healthcheck |
 | `VAPOR_REDIS` | no | off | StackExchange.Redis connection string (e.g. `redis:6379`); switches the data cache from in-memory to Redis |
 | `AGENT_RECONNECT_INITIAL_DELAY_MS` | no | `500` | Reconnect backoff start |

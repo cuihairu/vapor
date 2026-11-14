@@ -40,9 +40,9 @@ done
 | `test-fleet` | 每个测试项目**必须**声明它，且精确为此版本 |
 | `any` | 声明它的项目**必须**精确使用此版本（是否声明本身是可选的） |
 
-这里的*测试项目*指 `*.Tests` 项目，全部 15 个也都设置了 `<IsTestProject>true</IsTestProject>`——脚本同样检查该属性，因为 `Directory.Build.props` 正是以它为键来套用覆盖率默认值。早前轮次有三个插件测试项目建立时没带它；由于该属性也是*识别*测试项目的天然手段，这个缺口本会让它们悄然豁免于下面的舰队检查，因此脚本按任一信号即认作测试项目，两信号不一致时失败。
+这里的*测试项目*指 `*.Tests` 项目，全部 16 个也都设置了 `<IsTestProject>true</IsTestProject>`——脚本同样检查该属性，因为 `Directory.Build.props` 正是以它为键来套用覆盖率默认值。早前轮次有三个插件测试项目建立时没带它；由于该属性也是*识别*测试项目的天然手段，这个缺口本会让它们悄然豁免于下面的舰队检查，因此脚本按任一信号即认作测试项目，两信号不一致时失败。
 
-`test-fleet` 之所以存在，是因为测试工具链必须在全部 15 个测试项目里行为一致：只要有一个项目还留在旧 runner 上，你就会得到一个本地通过却什么也不上报的测试，或一个悄悄变形的覆盖率分母。典型案例：`Vapor.ControlPlane.Tests` 在项目的整个生命周期里停在 xunit 2.6.2 / test SDK 17.8.0 / runner 2.5.4，而其余 11 个停在 2.9.3 / 17.14.1 / 2.8.2，却没有一条红的。
+`test-fleet` 之所以存在，是因为测试工具链必须在全部 16 个测试项目里行为一致：只要有一个项目还留在旧 runner 上，你就会得到一个本地通过却什么也不上报的测试，或一个悄悄变形的覆盖率分母。典型案例：`Vapor.ControlPlane.Tests` 在项目的整个生命周期里停在 xunit 2.6.2 / test SDK 17.8.0 / runner 2.5.4，而其余 11 个停在 2.9.3 / 17.14.1 / 2.8.2，却没有一条红的。
 
 <!-- verify-dependency-versions:packages -->
 
@@ -52,7 +52,7 @@ done
 | `xunit.runner.visualstudio` | 2.8.2 | test-fleet | VSTest 适配器。必须带 `<PrivateAssets>all</PrivateAssets>`（机械检查）——它会拖入整套 `Microsoft.TestPlatform.*` 外加构建资产。 |
 | `Microsoft.NET.Test.Sdk` | 17.14.1 | test-fleet | 测试宿主 + 发现。驱动 `--blame-hang`，覆盖率作业依赖它。 |
 | `coverlet.collector` | 6.0.4 | test-fleet | 覆盖率收集器。此处刻意*不*要求 `PrivateAssets`：测试项目 `IsPackable=false` 且无任何项目引用它们，不存在可供它泄漏进去的依赖图。 |
-| `FsCheck.Xunit` | 2.16.6 | any | 基于性质的测试。15 个测试项目里只有 5 个在用。 |
+| `FsCheck.Xunit` | 2.16.6 | any | 基于性质的测试。16 个测试项目里只有 5 个在用。 |
 | `Moq` | 4.21.0 | any | Mock 框架。只有 4 个测试项目在用。 |
 | `Microsoft.AspNetCore.Mvc.Testing` | 10.0.14 | any | 控制平面测试用的 `WebApplicationFactory` 宿主。 |
 | `Microsoft.Extensions.Logging.Abstractions` | 10.0.14 | any | 同时也是 `src/` 包；全树一个版本。 |

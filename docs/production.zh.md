@@ -37,6 +37,7 @@
 | `Vapor_TASK_LEASE_SECONDS` | 否 | `300` | 运行中任务的心跳停这么久即被重新入队 |
 | `Vapor_TASK_MAX_DISPATCH_ATTEMPTS` | 否 | `10` | 无法派发任务的永久失败阈值；`0` 表示无限重试 |
 | `Vapor_TASK_DISPATCH_RETRY_DELAY_MS` | 否 | `2000` | 未派发任务可被再次认领前的退避延迟 |
+| `VAPOR_AUTH_CHALLENGE_DELIVERY_TTL_SECONDS` | 否 | `120` | 暂存的手工认证码投递在对属主 Agent 的 SSE 流上保持可重放的时长（短命 outbox，不是历史日志）；`<= 0` 回退到 `120` |
 | `Vapor_RECONCILE_INTERVAL_SECONDS` | 否 | `15` | 账号编排器的收敛节奏；`<= 0` 关闭编排 |
 | `Vapor_RECONCILE_MAX_ACCOUNTS_PER_AGENT` | 否 | `25` | 编排器给 Agent 分配账号时的容量上限 |
 | `Vapor_RECONCILE_MAX_LOGIN_ATTEMPTS` | 否 | `3` | 账号被限速前的连续登录失败次数（更新其 spec 可重置） |
@@ -78,7 +79,7 @@
 | `AGENT_REGION` | 是 | — | 任务路由所用的区域 |
 | `AGENT_CONTROLPLANE_WS_URL` | 是 | — | 例如 `ws://controlplane:8080/v1/agent/ws` |
 | `AGENT_API_KEY` | 是 | — | 必须是 `Vapor_AGENT_API_KEYS` 中的一项 |
-| `VAPOR_PLUGINS_DIR` | 否 | — | 插件目录；镜像已预装 Monitoring |
+| `VAPOR_PLUGINS_DIR` | 否 | — | 插件目录；镜像已预装 Monitoring 与 GameAccess 插件 |
 | `VAPOR_METRICS_HOST` / `VAPOR_METRICS_PORT` | 否 | `:9700` | Prometheus 端点，同时也是 agent 健康检查 |
 | `VAPOR_REDIS` | 否 | off | StackExchange.Redis 连接串（例如 `redis:6379`）；把数据缓存从进程内切到 Redis |
 | `AGENT_RECONNECT_INITIAL_DELAY_MS` | 否 | `500` | 重连退避的起点 |
@@ -86,6 +87,7 @@
 | `AGENT_RECONNECT_BACKOFF_FACTOR` | 否 | `2` | 指数因子 |
 | `AGENT_RECONNECT_MAX_RETRIES` | 否 | `0` | `0` = 无限重试 |
 | `AGENT_TASK_TIMEOUT_SECONDS` | 否 | `900` | 盯单个已派发任务的看门狗（取消该任务、上报结构化的 `task timeout` 失败，循环继续服务）；`<= 0` 关闭。它设在逐动作超时之上，后者先触发 |
+| `AGENT_TASK_BUFFER_CAPACITY` | 否 | `32` | Agent 已接收但未开始执行的任务队列上限；队列满时对 websocket 施加背压，而不是悄悄丢任务（绝不退化为无界） |
 | `AGENT_2FA_AUTO_SUBMIT` | 否 | off | `true` = 用已存的共享密钥（Steam TOTP）在本地应答 2FA 挑战；关闭则交给人工 SSE 通道 |
 | `AGENT_MARKET_LISTINGS_ENABLED` | 否 | off | `true` = 允许创建真实市场挂单（`create_market_listing` 带 `send=true`）；每账号的开关也必须打开（见下文） |
 | `VAPOR_STEAM_INVENTORY_BASE_URL` | 否 | `https://steamcommunity.com` | 覆盖库存读取所用的 Steam Community 主机（mock 支持，41-4）。仅在测试/验收时指向本地 mock，不设置即生产默认值 |

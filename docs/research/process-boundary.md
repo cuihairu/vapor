@@ -2,9 +2,11 @@ English | 简体中文
 
 # Plugin process boundary: quantification notes
 
-Conclusion first: the six official plugins cost **≈ 2.3 MB of resident memory in
+Conclusion first: the official plugins cost **≈ 2.3 MB of resident memory in
 total** (of which the managed heap is only ≈ 45 KB) — memory is not a reason to
-move plugins into separate processes. The real exposure of the current
+move plugins into separate processes. The measurement ran on the six-plugin
+fleet of the time; the inventory is seven official plugins since the Dota 2
+plugin landed (§3 notes the counts). The real exposure of the current
 in-process host is the **runaway-compute fault domain**: a plugin that ignores
 its cancellation token turns its session into a zombie (every later action on
 that session times out) while the agent itself stays online and keeps its
@@ -45,16 +47,20 @@ Method: a throwaway console probe (not part of `Vapor.sln`, so it does not
 enter the coverage denominator) that reuses `PluginManager`/`PluginDiscovery`
 exactly as the agent does. It first loads and unloads all six plugins once
 (warm-up: pays JIT and file-cache costs), takes a baseline, loads the six
-plugins from a directory layout identical to the agent's `plugins/` root, then
+plugins that existed then from a directory layout identical to the agent's
+`plugins/` root, then
 reads `/proc/self/statm` (page-level RSS), `GC.GetTotalMemory(true)` and
 `Process.PrivateMemorySize64` again after GC.
 
 Environment: Linux 6.x kernel, .NET 10, Release, one run shown (repeated runs
-agree to within ~0.1 MB). All six plugins load with 0 failures and register 34
-actions: caseopening 1, game-access 16, game-data 4, market-watch 3,
-mobile-authenticator 9, monitoring 1.
+agree to within ~0.1 MB). All six plugins that existed then load with 0
+failures and register 34 actions: caseopening 1, game-access 16, game-data 4,
+market-watch 3, mobile-authenticator 9, monitoring 1. As of 2026-11-15 the
+inventory is seven official plugins registering 39 actions: caseopening 3,
+dota2 3, game-access 16, game-data 4, market-watch 3, mobile-authenticator 9,
+monitoring 1 (per-plugin breakdown in `docs/actions.md:5`).
 
-| Metric | Delta while loading all six plugins |
+| Metric | Delta while loading the six plugins of the run |
 |---|---|
 | Resident set (statm pages × 4 KiB) | **+2,416,640 B ≈ 2.3 MB** |
 | Managed heap (`GC.GetTotalMemory(true)`) | **+45,336 B ≈ 45 KB** |
@@ -74,9 +80,10 @@ long rssAfter = File.ReadAllText("/proc/self/statm").Split(' ')
 Console.WriteLine(rssAfter - rssBefore);
 ```
 
-Reading: the six official plugins are **an order of magnitude below anything
+Reading: the official plugins are **an order of magnitude below anything
 that would justify process isolation on memory grounds** — 2.3 MB against a
-~100 MB agent process. GOG Galaxy-style per-plugin processes would multiply the
+~100 MB agent process, and the one plugin added since the run (Dota 2,
+3 actions) is the same order of magnitude as the others. GOG Galaxy-style per-plugin processes would multiply the
 agent's footprint by roughly the process baseline each, to defend against a
 failure mode (memory) that no official plugin exercises.
 

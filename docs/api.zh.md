@@ -2,7 +2,7 @@
 
 # REST API 参考
 
-控制平面把每一项运维能力都作为 HTTP API 暴露在`/v1`下 —— 68 条路由（84 个操作）—— 外加`/`、`/healthz`与`/metrics`。管理控制台用的也是同一套接口，因此 UI 能做的一切，这份参考都用`curl`演示了对应做法。当`Vapor_ENABLE_SWAGGER=true`时，可在`/swagger`取到 OpenAPI 文档。
+控制平面把每一项运维能力都作为 HTTP API 暴露在`/v1`下 —— 69 条路由（85 个操作）—— 外加`/`、`/healthz`与`/metrics`。管理控制台用的也是同一套接口，因此 UI 能做的一切，这份参考都用`curl`演示了对应做法。当`Vapor_ENABLE_SWAGGER=true`时，可在`/swagger`取到 OpenAPI 文档。
 
 compose 开发环境下的基础 URL：`http://127.0.0.1:8080`。真实部署的密钥管理、TLS 与网络加固见 [production.md](production.md)；把这些端点串成一套能跑起来的挂机农场的完整走查见 [getting-started.md](getting-started.md)。
 

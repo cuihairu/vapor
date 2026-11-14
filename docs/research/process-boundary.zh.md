@@ -2,8 +2,9 @@
 
 # 插件进程边界：量化笔记
 
-先说结论：六个官方插件合计只占 **≈ 2.3 MB 常驻内存**（其中托管堆仅
-≈ 45 KB）—— 内存不构成把插件挪进独立进程的理由。当前进程内宿主的真实
+先说结论：官方插件合计只占 **≈ 2.3 MB 常驻内存**（其中托管堆仅
+≈ 45 KB）—— 内存不构成把插件挪进独立进程的理由。测量跑在当时六个插件的
+编队上；Dota 2 插件落地后编队为七个官方插件（§3 记了计数）。当前进程内宿主的真实
 暴露面是**失控计算故障域**：一个无视自身取消令牌的插件会把它的会话
 变成僵尸（该会话之后每个动作全部超时），而 Agent 本身保持在线并继续
 续租。本页记录机制清单、故障域矩阵与测量方法，让后续决策（独立进程
@@ -41,19 +42,22 @@ vs. 配额 + 硬超时）能建立在数据上。它回答 research §6 候选 5
 
 方法：一个一次性控制台探针（不属于 `Vapor.sln`，因此不进入
 覆盖率分母），完全按 Agent 的方式复用
-`PluginManager`/`PluginDiscovery`。它先把六个插件完整加载并卸载一遍
+`PluginManager`/`PluginDiscovery`。它先把当时存在的六个插件完整加载并卸载一遍
 （预热：支付 JIT 与文件缓存成本），取一份基线，再从与 Agent 的
-`plugins/` 根一致的目录布局加载六个插件，然后在 GC 之后再次读取
+`plugins/` 根一致的目录布局加载当时存在的六个插件，然后在 GC 之后再次读取
 `/proc/self/statm`（页级 RSS）、`GC.GetTotalMemory(true)` 与
 `Process.PrivateMemorySize64`。
 
 环境：Linux 6.x 内核、.NET 10、Release，展示单次运行
-（重复运行偏差在 ~0.1 MB 内）。六个插件全部以 0 失败加载，
+（重复运行偏差在 ~0.1 MB 内）。当时存在的六个插件全部以 0 失败加载，
 并注册 34 个动作：caseopening 1、game-access 16、
 game-data 4、market-watch 3、mobile-authenticator 9、
-monitoring 1。
+monitoring 1。截至 2026-11-15，编队为七个官方插件、注册 39 个
+动作：caseopening 3、dota2 3、game-access 16、game-data 4、
+market-watch 3、mobile-authenticator 9、monitoring 1（逐插件口径见
+`docs/actions.md:5`）。
 
-| 指标 | 加载全部六个插件时的增量 |
+| 指标 | 加载本次运行的六个插件时的增量 |
 |---|---|
 | 常驻集（statm 页 × 4 KiB） | **+2,416,640 B ≈ 2.3 MB** |
 | 托管堆（`GC.GetTotalMemory(true)`） | **+45,336 B ≈ 45 KB** |
@@ -73,8 +77,9 @@ long rssAfter = File.ReadAllText("/proc/self/statm").Split(' ')
 Console.WriteLine(rssAfter - rssBefore);
 ```
 
-解读：六个官方插件**比任何能以内存为由证成进程隔离的量级低
-一个数量级** —— 2.3 MB 对 ~100 MB 的 Agent 进程。GOG Galaxy
+解读：官方插件**比任何能以内存为由证成进程隔离的量级低
+一个数量级** —— 2.3 MB 对 ~100 MB 的 Agent 进程，而运行之后补进来的那一个
+插件（Dota 2，3 个动作）与其他插件同一量级。GOG Galaxy
 式的每插件进程会把 Agent 的足迹大致按每份进程基线相乘，
 去防御一种没有任何官方插件会去触发的故障模式
 （内存）。

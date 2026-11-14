@@ -46,13 +46,13 @@ V-next 的收敛方向因此定为：
 
 **边界**：
 - 不改 `POST /v1/jobs` 信封与 wire 格式（分类是元数据，不进 payload 契约）；外部 key 幂等支持为 P0-A 的可选项，若评估为侵入性过大则降 P2 单列。
-- `IAction`/`ActionMetadata` 属于 Plugin API 面：按 `docs/releasing.md` 的 API 兼容规则处理（新增字段带默认值，需随轮验证 in-tree 六个官方插件的加载/卸载测试不回归）。
+- `IAction`/`ActionMetadata` 属于 Plugin API 面：按 `docs/releasing.md` 的 API 兼容规则处理（新增字段带默认值，需随轮验证 in-tree 七个官方插件的加载/卸载测试不回归）。
 
 **验收标准**：
 1. 65 个动作全部显式声明 `ActionSafety`；`ActionRegistry.Register` 拒绝未声明者（至少 warning→后续轮次升级为拒绝）。
 2. 重试策略按分类生效，测试覆盖：`NonIdempotent` 动作管道失败不触发二次派发；`Idempotent` 保留重试。
 3. `actions.md` 分类列与代码单源，verify 脚本负探针（人为改一处 → EXIT=1）。
-4. API 兼容：六个官方插件 load/unload 测试全绿；五 verify + format + 全量串行双百门禁全绿（口径见 §6）。
+4. API 兼容：七个官方插件 load/unload 测试全绿；五 verify + format + 全量串行双百门禁全绿（口径见 §6）。
 
 ### P0-B：核心领域模型字典
 
@@ -106,7 +106,7 @@ V-next 的收敛方向因此定为：
 
 ### P1-C：Plugin 平台补丁包（拆三子项，仅做前二）
 
-- **C1 配置 schema**：manifest 增加可选 `configurationSchema` 字段，插件初始化前按 schema 校验 `configuration`，失败 = 结构化发现错误（含字段级信息）。树内六插件至少一个用上（示例性）。
+- **C1 配置 schema**：manifest 增加可选 `configurationSchema` 字段，插件初始化前按 schema 校验 `configuration`，失败 = 结构化发现错误（含字段级信息）。树内七插件至少一个用上（示例性）。
 - **C2 依赖声明**：manifest 增加可选 `dependencies`（pluginId + apiVersion 约束），启用时构建依赖图：缺失依赖、循环依赖、apiVersion 不匹配 → 发现失败。
 - **C3 升级/回滚/健康/资源策略**：评估为生态级大件，**降 P3 不排期**（处置记录见 git 历史）。
 

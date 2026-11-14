@@ -46,13 +46,13 @@ The V-next convergence direction is therefore set as:
 
 **Boundaries**:
 - Do not change the `POST /v1/jobs` envelope or wire format (classification is metadata and does not enter the payload contract); external-key idempotency support is an optional part of P0-A — if assessed as too invasive, it is demoted to a separate P2 item.
-- `IAction`/`ActionMetadata` are part of the Plugin API surface: handle them per the API compatibility rules in `docs/releasing.md` (new fields carry defaults; each round must verify that the load/unload tests of the six in-tree official plugins do not regress).
+- `IAction`/`ActionMetadata` are part of the Plugin API surface: handle them per the API compatibility rules in `docs/releasing.md` (new fields carry defaults; each round must verify that the load/unload tests of the seven in-tree official plugins do not regress).
 
 **Acceptance criteria**:
 1. All 65 actions explicitly declare `ActionSafety`; `ActionRegistry.Register` rejects undeclared ones (at least a warning → escalated to rejection in later rounds).
 2. The retry policy takes effect by classification, with test coverage: a `NonIdempotent` action failing in the pipeline does not trigger a second dispatch; `Idempotent` keeps its retry.
 3. The `actions.md` classification column and the code stay single-source; verify script negative probe (manually change one spot → EXIT=1).
-4. API compatibility: the six official plugins' load/unload tests all green; five verify + format + the full serial double-100 gates all green (criteria in §6).
+4. API compatibility: the seven official plugins' load/unload tests all green; five verify + format + the full serial double-100 gates all green (criteria in §6).
 
 ### P0-B: Core domain model dictionary
 
@@ -106,7 +106,7 @@ The V-next convergence direction is therefore set as:
 
 ### P1-C: Plugin platform patch package (split into three sub-items; only the first two are done)
 
-- **C1 configuration schema**: add an optional `configurationSchema` field to the manifest; validate `configuration` against the schema before plugin initialization; failure = a structured discovery error (with field-level detail). At least one of the six in-tree plugins uses it (by way of example).
+- **C1 configuration schema**: add an optional `configurationSchema` field to the manifest; validate `configuration` against the schema before plugin initialization; failure = a structured discovery error (with field-level detail). At least one of the seven in-tree plugins uses it (by way of example).
 - **C2 dependency declaration**: add optional `dependencies` to the manifest (pluginId + apiVersion constraint); build a dependency graph at enable time: missing dependency, circular dependency, or apiVersion mismatch → discovery failure.
 - **C3 upgrade/rollback/health/resource policy**: assessed as ecosystem-scale work, **demoted to P3 and not scheduled** (disposition recorded in git history).
 
