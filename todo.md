@@ -206,4 +206,4 @@ P3 记录性（风格/健壮性，未修）：
 - [ ] 现状：mkdocs Material + i18n `docs_structure: suffix`（`mkdocs.yml:71-84`），`/`=en 默认、`/zh/`=zh，24/24 成对；语言切换只有导航栏手动链接，无 `navigator.language` 探测、无根路径按语言重定向、无 cookie/`rootLocale`，且无 `docs/overrides`。实测 `/`→200/en/CJK 0、`/zh/`→200/zh/CJK 5。
 - [ ] 候选做法（未实施）：`docs/overrides/main.html` 注入首访语言探测（`navigator.language` 前缀 `zh` → `/zh/`，其余留 `/`），或用 `mkdocs-redirects` 给 `/` 做才会触发的一次性跳转；需保留手动切换与深链（`/zh/xxx/` 直达不跳）。
 - [ ] 拍板项：属文档站构建行为而非文档-代码不一致，且涉及默认入口语义（英语优先 or 浏览器优先），按「待拍板项自行定」规则也应留给用户确认后再动。
-- [ ] 同节附项（P2）：`<html lang>` 取 mkdocs i18n 配置的 `zh`（`mkdocs.yml:83`），实测 `/zh/` = `lang="zh"`、正文 693 个 CJK 字符。`zh` 是 BCP 47 合法中文主标签、合规但无地区细分；页面实为简体中文，更精确标签是 `zh-Hans`/`zh-CN`，改法需覆盖 material 主题 HTML（当前无 `docs/overrides`）。属标签精确度而非缺陷，留拍板。
+- [ ] 同节附项（P2）：`<html lang>` 取 mkdocs i18n 配置的 `zh`（`mkdocs.yml:82`——原记 `:83` 指向 `name: 简体中文` 行，差一行，2026-11-15 第三腿修正），实测 `/zh/` = `lang="zh"`、正文 693 个 CJK 字符。`zh` 是 BCP 47 合法中文主标签、合规但无地区细分；页面实为简体中文，更精确标签是 `zh-Hans`/`zh-CN`，改法需覆盖 material 主题 HTML（当前无 `docs/overrides`）。属标签精确度而非缺陷，留拍板。
