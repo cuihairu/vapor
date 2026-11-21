@@ -387,6 +387,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deferral that rejected third-party image services and untested embedded
   encoders.
 
+
+- First-visit browser-language routing for the docs site
+  (`docs/javascripts/lang-redirect.js`, mounted via `mkdocs.yml`
+  `extra_javascript`): a visitor whose browser prefers Chinese and has no
+  recorded preference is routed once, from an English page to the same page
+  in Chinese, through the theme's own locale link so the target is correct at
+  any page depth. The choice is stored (`vapor-lang`), so a browser is routed
+  at most once and an explicit language-switcher click is never overridden;
+  `/zh/` deep links never bounce.
+
 ### Changed
 
 - `Vapor.ControlPlane.Tests` aligned to the test fleet: xunit 2.6.2 → 2.9.3,

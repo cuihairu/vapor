@@ -95,12 +95,12 @@ other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 | `coverlet.collector` | 6.0.4 | test-fleet | Coverage collector. `PrivateAssets` is deliberately *not* required here: test projects are `IsPackable=false` and nothing references them, so there is no dependency graph for it to leak into. |
 | `FsCheck.Xunit` | 2.16.6 | any | Property-based testing. Only 5 of 16 test projects use it. |
 | `Moq` | 4.21.0 | any | Mocking. Only 4 test projects use it. |
-| `Microsoft.AspNetCore.Mvc.Testing` | 10.0.14 | any | `WebApplicationFactory` host for the control-plane tests. |
-| `Microsoft.Extensions.Logging.Abstractions` | 10.0.14 | any | Also a `src/` package; one version for the whole tree. |
-| `Microsoft.Extensions.Logging.Console` | 10.0.14 | any | `src/Vapor.Agent`, `src/Vapor.Steam.Core`. |
-| `Microsoft.Extensions.DependencyInjection` | 10.0.14 | any | `src/Vapor.Agent`. |
-| `Microsoft.Extensions.Hosting` | 10.0.14 | any | `src/Vapor.Mcp`. Host builder for the stdio MCP server shell. |
-| `Microsoft.Data.Sqlite` | 10.0.14 | any | Storage layer. Its `SqliteJobStore.Dispose` teardown is a known CI flake site — see §4. |
+| `Microsoft.AspNetCore.Mvc.Testing` | 10.0.15 | any | `WebApplicationFactory` host for the control-plane tests. |
+| `Microsoft.Extensions.Logging.Abstractions` | 10.0.15 | any | Also a `src/` package; one version for the whole tree. |
+| `Microsoft.Extensions.Logging.Console` | 10.0.15 | any | `src/Vapor.Agent`, `src/Vapor.Steam.Core`. |
+| `Microsoft.Extensions.DependencyInjection` | 10.0.15 | any | `src/Vapor.Agent`. |
+| `Microsoft.Extensions.Hosting` | 10.0.15 | any | `src/Vapor.Mcp`. Host builder for the stdio MCP server shell. |
+| `Microsoft.Data.Sqlite` | 10.0.15 | any | Storage layer. Its `SqliteJobStore.Dispose` teardown is a known CI flake site — see §4. |
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | Native SQLite bundle; version line is independent of the .NET one. |
 | `Cronos` | 0.13.0 | any | Cron parsing for scheduled jobs. |
 | `Swashbuckle.AspNetCore` | 10.3.1 | any | OpenAPI/Swagger, opt-in via `Vapor_ENABLE_SWAGGER`. |
