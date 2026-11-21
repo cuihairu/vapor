@@ -219,14 +219,11 @@ public sealed class MaFileParserTests
 		// A wrong password usually trips PKCS7 padding validation (255/256 of the
 		// keyspace), but the garbage plaintext also validates as well-padded with
 		// probability ~1/256 — the run then surfaces through the JsonException arm
-		// instead and the CryptographicException lines go dark (observed once in a
-		// coverage round). Pick a salt at run time whose garbage plaintext is
-		// provably badly padded, probed with the exact product KDF/cipher shape, so
-		// the decrypt-failure arm stays deterministic.
-		string json = BuildEncryptedSda(
-			"hunter2", SaltWhoseWrongPasswordFailsPadding(), RandomNumberGenerator.GetBytes(16),
-			JsonSerializer.Serialize(new Dictionary<string, object?> { ["shared_secret"] = SharedSecret }),
-			steamId: "76561198000000005", accountName: "erin");
+		// instead and the CryptographicException lines go dark (observed twice in
+		// coverage rounds). Build the exact maFile the test parses and probe THAT
+		// ciphertext for bad padding, so the decrypt-failure arm stays
+		// deterministic.
+		string json = MaFileWhoseWrongPasswordFailsPadding();
 
 		InvalidDataException ex = Assert.Throws<InvalidDataException>(() => MaFileParser.Parse(json, "wrong"));
 
@@ -388,19 +385,30 @@ public sealed class MaFileParserTests
 	}
 
 	/// <summary>
-	/// Searches for a salt under which decrypting with the wrong password fails
-	/// PKCS7 validation (the CryptographicException arm). Each candidate fails
-	/// with probability 255/256, so the first candidate virtually always
-	/// qualifies; the probe mirrors MaFileParser's derivation exactly.
+	/// Builds the exact maFile the test parses, then probes decrypting THAT
+	/// ciphertext with the wrong password for PKCS7 failure (the
+	/// CryptographicException arm). Probing the final ciphertext is required:
+	/// padding validity is a per-ciphertext property, so a salt validated against
+	/// a different (salt, iv) pairing does not transfer — the test must decrypt
+	/// the very bytes Parse will decrypt. Each candidate fails with probability
+	/// 255/256, so the first candidate virtually always qualifies; the probe
+	/// mirrors MaFileParser's derivation exactly (PBKDF2-SHA1 50k, AES-CBC,
+	/// PKCS7).
 	/// </summary>
-	private static byte[] SaltWhoseWrongPasswordFailsPadding()
+	private static string MaFileWhoseWrongPasswordFailsPadding()
 	{
 		string guardJson = JsonSerializer.Serialize(new Dictionary<string, object?> { ["shared_secret"] = SharedSecret });
-		byte[] iv = RandomNumberGenerator.GetBytes(16);
 		for (int attempt = 0; attempt < 512; attempt++)
 		{
 			byte[] salt = RandomNumberGenerator.GetBytes(8);
-			string cipher = EncryptSdaGuard("hunter2", salt, iv, guardJson);
+			byte[] iv = RandomNumberGenerator.GetBytes(16);
+			string json = BuildEncryptedSda(
+				"hunter2", salt, iv, guardJson,
+				steamId: "76561198000000005", accountName: "erin");
+
+			// EncryptSdaGuard is deterministic for a fixed (password, salt, iv), so
+			// this probe decrypts the very bytes embedded in the maFile above.
+			byte[] cipherBytes = Convert.FromBase64String(EncryptSdaGuard("hunter2", salt, iv, guardJson));
 			byte[] wrongKey = Rfc2898DeriveBytes.Pbkdf2("wrong", salt, 50_000, HashAlgorithmName.SHA1, 32);
 			using var aes = Aes.Create();
 			aes.Key = wrongKey;
@@ -410,15 +418,14 @@ public sealed class MaFileParserTests
 			using var decryptor = aes.CreateDecryptor();
 			try
 			{
-				byte[] cipherBytes = Convert.FromBase64String(cipher);
 				decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
 			}
 			catch (CryptographicException)
 			{
-				return salt;
+				return json;
 			}
 		}
 
-		throw new InvalidOperationException("no salt produced a badly-padded wrong-password decrypt in 512 tries");
+		throw new InvalidOperationException("no candidate produced a badly-padded wrong-password decrypt in 512 tries");
 	}
 }
