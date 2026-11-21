@@ -291,6 +291,35 @@ dotnet run --project tools/Vapor.Backup -- restore /backups/controlplane-$(date 
 2. `docker compose up -d`——SQLite schema 迁移在首次启动时自动应用；旧库原地加列（不需要 dump/恢复）。
 3. 回滚办法是在 override 文件里改钉上一个镜像 tag，再重跑一次 `docker compose up -d`；注意，被新版本迁移过的数据库会保留新增的列，旧版本会安全地忽略它们。
 
+### 历史密钥载荷（ARCH-02）
+
+在 ARCH-01 之前，`POST /v1/jobs` 会把登录凭据（password/pass、
+access/refresh token、auth/2FA code 别名）持久化进 `controlplane.db` 的
+`jobs.payload_json` 与 `tasks.payload_json`。新写入在 store 层即被剥离；
+旧版本写下的行由 `POST /v1/jobs/secret-payloads/purge` 清理：
+
+```bash
+# 预览：统计仍带凭据别名的行数，不写任何东西。
+curl -u admin:$KEY -X POST /v1/jobs/secret-payloads/purge -H 'content-type: application/json' -d '{}'
+
+# 清除：先快照数据库，再移除别名。
+curl -u admin:$KEY -X POST /v1/jobs/secret-payloads/purge -H 'content-type: application/json' \
+  -d '{"dryRun":false,"confirm":true,"backupPath":"/backups/controlplane-pre-arch02.db"}'
+```
+
+默认请求体（`{}`）是 dry run，绝不写入。破坏性清除需要 `confirm: true`；
+设置 `backupPath` 时，会在任何行被改写之前先写出一份一致性的在线备份快照
+（与 `tools/Vapor.Backup` 同一套 API）。被清除的列是 `jobs.payload_json`
+与 `tasks.payload_json`；`output_json` 与 `meta_json` 绝不动，Agent 侧的
+配置载荷（`proxy`、`shared_secret`、`identity_secret`）刻意保留，因为那些
+动作在执行时才消费它们。
+
+WAL / 备份副本范围：清除所取的快照是一份 SQLite 在线备份，其自身始终一致——
+恢复清除前状态只需要这一个文件。在线数据库的 `-wal`/`-shm` 文件属于运行中的
+控制面，绝不能单独复制或恢复；恢复时应替换 `.db` 文件并删除相邻的
+`-wal`/`-shm` 文件（见「恢复」）。由于快照与清除在同一 store 锁下取得，它捕获的
+要么是全量清除前状态、要么是全量清除后状态——绝不是一份半清除的数据库。
+
 ## 横向扩容 Agent
 
 每个 Agent 就是一个 `agent` 服务实例，带唯一的 `AGENT_ID` 与 `AGENT_REGION`。任务会路由到与该任务同区域、且声明了所需动作能力的 Agent 上。要加容量：

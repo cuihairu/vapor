@@ -87,7 +87,7 @@ compose 开发环境下的基础 URL：`http://127.0.0.1:8080`。真实部署的
 事件负载结构：
 
 - 任务事件（`Event` record）：`{ id, jobId, type, ts, payload? }`，其中`payload`是开放的`Dictionary<string, object?>`。帧的`event:`名等于事件的`type`。代码实际发布的事件类型：
-  - `job.created`（payload 为`action`、`targets`）、`job.canceled`（无 payload）
+  - `job.created`（payload 为`action`、`targets`）、`job.canceled`（无 payload）、`job.cancel_rejected`（payload 为`rejected`）
   - `task.dispatched`（`taskId`、`agentId`）、`task.finished`（`taskId`、`success`、`job`）、`task.failed`（`taskId`、`error`、`job`）、`task.dispatch_failed` / `task.enqueue_failed`（`taskId`、`attempt`、`error`、`agentId?`）
   - `job.scheduled_triggered` / `job.scheduled_skipped` / `job.scheduled_completed`（循环调度器）
   - `trade.auto_accepted`、`account.farm_progress`、`account.standing_alert`、`account.standing_released`、`account.reconciled`（编排器；部分带`jobId`，部分为全局）
@@ -488,7 +488,7 @@ compose 开发环境下的基础 URL：`http://127.0.0.1:8080`。真实部署的
 - 用途：取消一个任务下所有处于队列中 / 运行中的子任务（同时向已连接的 Agent 推送`task_cancel`帧）。
 - 认证：管理员。请求体：无。
 - 200：`{ "ok": true }`。
-- 错误：404 `{ "error": "job not found" }`、401。同时发布 SSE `job.canceled`与审计`job.canceled`。
+- 错误：404 `{ "error": "job not found" }`、401。同时发布 SSE `job.canceled`与审计`job.canceled`；若部分子任务的取消无法入队到其 Agent（Agent 任务缓冲已满），则发布 SSE `job.cancel_rejected`（payload 为`rejected` 计数）。
 
 #### `GET /v1/jobs/{jobId}/events` (SSE)
 - 用途：该任务生命周期事件的 SSE 流。
@@ -500,6 +500,16 @@ compose 开发环境下的基础 URL：`http://127.0.0.1:8080`。真实部署的
 - 用途：跨全部任务的生命周期事件 SSE 流（broker 键为`*`；也承载`jobId`为 null 的 Agent / 账号 / 抓取事件）。
 - 认证：管理员。请求体：无。查询参数：无。
 - 200 `text/event-stream`。错误：401（无响应体）。
+
+#### `POST /v1/jobs/secret-payloads/purge`
+- 用途：预览或清除持久化在历史任务/子任务 `payload` 列中的登录凭据。被清除的键：`password`/`pass`、`accessToken`/`access_token`、`refreshToken`/`refresh_token`、`authCode`/`auth_code`、`twoFactorCode`/`two_factor_code`（大小写不敏感）。Agent 侧的配置载荷（`proxy`、`shared_secret`、`identity_secret`）刻意保留——那些动作在执行时才会消费它们（见 [production.md](production.md)）。默认走 dry run；破坏性清除需要 `confirm=true`；`backupPath` 会先快照 DB 文件。
+- 认证：管理员。
+- 请求体（`SecretPayloadPurgeRequest`，全部可选）：
+  - `dryRun` — bool（默认 `true`；`false` 且无 `confirm` → 400 `set confirm=true to scrub historical secret payloads`）
+  - `confirm` — bool（`dryRun=false` 时必须为 `true`）
+  - `backupPath` — string，清除前先复制 jobs DB 的可选文件路径
+- 200：`{ "dryRun": bool, "jobs": int, "tasks": int, "backupPath": string? }`（预览触及的行数 / 写入模式实际清除的行数）。只改写 `jobs.payload_json` 与 `tasks.payload_json`；`output_json`/`meta_json` 绝不动。
+- 错误：400（`ErrorResponse`；缺少 confirm，或备份路径失败）、401（空体）。不发 SSE 事件；该操作记入审计日志。
 
 ---
 

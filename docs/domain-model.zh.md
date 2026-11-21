@@ -203,6 +203,7 @@ SSE 流上的即发即忘通知：Job/Task 生命周期、会话状态、认证�
 |---|---|---|
 | `job.created` | Domain | 任务创建端点 |
 | `job.canceled` | Domain | 任务取消端点 |
+| `job.cancel_rejected` | Domain | 任务取消端点（子任务取消入队被拒——Agent 任务缓冲已满） |
 | `task.dispatched` | Domain | 任务调度器 |
 | `task.finished` | Domain | Agent 隧道的任务结果路径 |
 | `task.failed` | Domain | 任务调度器 |
