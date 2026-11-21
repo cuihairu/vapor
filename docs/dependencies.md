@@ -91,7 +91,7 @@ other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 |---------|---------|-------|-------|
 | `xunit` | 2.9.3 | test-fleet | Test framework. 2.6.2 → 2.9.3 tightened assertion diagnostics; keep the fleet on one minor line. |
 | `xunit.runner.visualstudio` | 2.8.2 | test-fleet | VSTest adapter. Must ship `<PrivateAssets>all</PrivateAssets>` (checked mechanically) — it drags in the whole `Microsoft.TestPlatform.*` set plus build assets. |
-| `Microsoft.NET.Test.Sdk` | 17.14.1 | test-fleet | Test host + discovery. Drives `--blame-hang`, which the coverage job relies on. |
+| `Microsoft.NET.Test.Sdk` | 17.14.2 | test-fleet | Test host + discovery. Drives `--blame-hang`, which the coverage job relies on. |
 | `coverlet.collector` | 6.0.4 | test-fleet | Coverage collector. `PrivateAssets` is deliberately *not* required here: test projects are `IsPackable=false` and nothing references them, so there is no dependency graph for it to leak into. |
 | `FsCheck.Xunit` | 2.16.6 | any | Property-based testing. Only 5 of 16 test projects use it. |
 | `Moq` | 4.21.0 | any | Mocking. Only 4 test projects use it. |
@@ -104,11 +104,11 @@ other 11 sat on 2.9.3 / 17.14.1 / 2.8.2, and nothing was red.
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | Native SQLite bundle; version line is independent of the .NET one. |
 | `Cronos` | 0.13.0 | any | Cron parsing for scheduled jobs. |
 | `Swashbuckle.AspNetCore` | 10.3.1 | any | OpenAPI/Swagger, opt-in via `Vapor_ENABLE_SWAGGER`. |
-| `StackExchange.Redis` | 3.4.31 | any | Optional cache backend. |
+| `StackExchange.Redis` | 3.4.35 | any | Optional cache backend. |
 | `SteamKit2` | 3.5.0 | any | The Steam protocol client. Upgrades here are Steam-behaviour changes, not library hygiene — see §4. |
-| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.20.1 | any | OTLP exporter. |
-| `OpenTelemetry.Extensions.Hosting` | 1.20.1 | any | OTel host integration. |
-| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.2 | any | OTel ASP.NET Core instrumentation. Independently versioned upstream — version may evolve independently from sibling OTel packages. |
+| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.21.0 | any | OTLP exporter. |
+| `OpenTelemetry.Extensions.Hosting` | 1.21.0 | any | OTel host integration. |
+| `OpenTelemetry.Instrumentation.AspNetCore` | 1.21.0 | any | OTel ASP.NET Core instrumentation. Independently versioned upstream — version may evolve independently from sibling OTel packages. |
 | `ModelContextProtocol` | 2.4.0 | any | Official MCP C# SDK. Stdio transport + tool registry for `src/Vapor.Mcp`; tool surface is deliberately thin over the control plane's REST read faces. |
 
 <!-- /verify-dependency-versions:packages -->

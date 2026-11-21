@@ -50,7 +50,7 @@ done
 |---------|---------|-------|-------|
 | `xunit` | 2.9.3 | test-fleet | 测试框架。2.6.2 → 2.9.3 收紧了断言诊断；让舰队保持在一条 minor 线上。 |
 | `xunit.runner.visualstudio` | 2.8.2 | test-fleet | VSTest 适配器。必须带 `<PrivateAssets>all</PrivateAssets>`（机械检查）——它会拖入整套 `Microsoft.TestPlatform.*` 外加构建资产。 |
-| `Microsoft.NET.Test.Sdk` | 17.14.1 | test-fleet | 测试宿主 + 发现。驱动 `--blame-hang`，覆盖率作业依赖它。 |
+| `Microsoft.NET.Test.Sdk` | 17.14.2 | test-fleet | 测试宿主 + 发现。驱动 `--blame-hang`，覆盖率作业依赖它。 |
 | `coverlet.collector` | 6.0.4 | test-fleet | 覆盖率收集器。此处刻意*不*要求 `PrivateAssets`：测试项目 `IsPackable=false` 且无任何项目引用它们，不存在可供它泄漏进去的依赖图。 |
 | `FsCheck.Xunit` | 2.16.6 | any | 基于性质的测试。16 个测试项目里只有 5 个在用。 |
 | `Moq` | 4.21.0 | any | Mock 框架。只有 4 个测试项目在用。 |
@@ -63,11 +63,12 @@ done
 | `SQLitePCLRaw.bundle_e_sqlite3` | 3.0.5 | any | 原生 SQLite bundle；版本线独立于 .NET 那条。 |
 | `Cronos` | 0.13.0 | any | 为周期任务解析 cron。 |
 | `Swashbuckle.AspNetCore` | 10.3.1 | any | OpenAPI/Swagger，经 `Vapor_ENABLE_SWAGGER` 选择启用。 |
-| `StackExchange.Redis` | 3.4.31 | any | 可选缓存后端。 |
+| `StackExchange.Redis` | 3.4.35 | any | 可选缓存后端。 |
 | `SteamKit2` | 3.5.0 | any | Steam 协议客户端。此处的升级是 Steam 行为变更而非库卫生——见 §4。 |
-| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.20.1 | any | OTLP 导出器。 |
-| `OpenTelemetry.Extensions.Hosting` | 1.20.1 | any | OTel 宿主集成。 |
-| `OpenTelemetry.Instrumentation.AspNetCore` | 1.20.2 | any | OTel ASP.NET Core instrumentation。上游独立编版本——版本可独立演进，不与同族包强制同步。 |
+| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.21.0 | any | OTLP 导出器。 |
+| `OpenTelemetry.Extensions.Hosting` | 1.21.0 | any | OTel 宿主集成。 |
+| `OpenTelemetry.Instrumentation.AspNetCore` | 1.21.0 | any | OTel ASP.NET Core instrumentation。上游独立编版本——版本可独立演进，不与同族包强制同步。 |
+| `ModelContextProtocol` | 2.4.0 | any | 官方 MCP C# SDK。`src/Vapor.Mcp` 的 stdio 传输 + 工具注册表；工具面刻意保持薄，只代理控制面既有的 REST 读面。 |
 
 <!-- /verify-dependency-versions:packages -->
 
