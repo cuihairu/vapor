@@ -211,3 +211,16 @@ P3 记录性（风格/健壮性，已全部修复，2026-11-21 核）：
 ## 文档站双语自动切换（2026-11-14 G2 审计候选；2026-11-21 按「待拍板项自行定」令自行拍板，已实现）
 
 - [x] 首访语言路由已实现：`docs/javascripts/lang-redirect.js`（`mkdocs.yml` `extra_javascript` 挂载，**非** `overrides/main.html` 模板覆盖——比 G2 候选更轻，主题模板零耦合；`mkdocs-redirects` 路线不可行，静态重定向无法读浏览器语言）—— 仅当「localStorage 无既存选择（`vapor-lang`）+ 浏览器首选语言 zh 前缀 + 当前页为 en 版（以 `<html lang>` 判定，与 base 路径/页面深度无关）」三条件齐备时，经 Material 自身的 `a[hreflang=zh]` locale 链接 `location.replace` 到同页中文版（用主题自己生成的链接，任意页面深度都正确；6 个页面深度实测 src 均可解析）；路由前记 `vapor-lang=zh`，每浏览器只路由一次不反复跳；切换器点击（capture 阶段）记录显式选择，既存选择永不被覆盖；`/zh/` 深链直达不跳（`<html lang>` 为 zh 即早退，无环）。**`<html lang>` 定维持 `zh` 不改**（BCP 47 合法中文主标签、实测 `/zh/`=`lang="zh"`/693 CJK；更精确的 `zh-Hans`/`zh-CN` 须覆盖 material 主题 HTML，收益不抵维护）—— 证据:3ee6913（node vm 15 例行为测试全过：路由/存储被禁/zh 页环护/无孪生链接/点击记录/zh-TW 变体；`mkdocs build --strict` 绿；7 verify 脚本 RC=0）
+
+## 测试分层分析（2026-11-22 用户令启动；测试文件超大候选，沿源码 LAY-* 按关切拆 partial 的同法）
+
+- [x] TLAY-001 [P1] 拆分 tests/Vapor.ControlPlane.Tests/DesiredStateReconcilerTests.cs（4297 行，142 测试方法 / 144 运行时例）——调和循环测试把登录派发/退避/节流/重平衡/dry-run/smart farming/boost/trade/standing/读模型多个关切堆在同一类，与 LAY-002 源 partial 一一对应。 —— 证据:1a96c94（DesiredStateReconcilerTests.cs 4297→1460 行核心（ctor/Dispose/核心调度与结算/干运行/审计/取消测试 + 共享 helper Json/InvokeInstance/NewAccounts/NewRegistry/CreateReconciler/SwapDryRun + 嵌套类 RecordingBroker/FakeAuditStore/FakeReconcileJobStore/NoopWebSocket）；拆 5 个 partial 按关切——Farm 952 行 30 测（smart farming 调度/队列抽取/预算跳过/统计计数器）、Boost 549 行 20 测（游戏时长回补）、Standing 303 行 10 测（信誉分检查/封禁隔离）、Trade 953 行 31 测（报价扫描/评估/自动接受/确认链/结算守卫）、Views 118 行 4 测（编排/农场/standing 读模型）；成员签名与可访问性零改动、无单测改动；逐成员体字节精确迁移、1226 行成员体多集重装全等断言；门禁：0 警告 Release no-incremental 全解构建、全套 4249 测试全绿（16 项目 0 重试）、双 100% 覆盖（行 22767/22767、分支 8776/8776）、dotnet format 过、7 verify 脚本全绿）
+
+- [ ] TLAY-002 [P2] 拆分 tests/Vapor.ControlPlane.Tests/AccountApiTests.cs（3976 行，144 方法）——按资源族分 partial 与 LAY-007 AccountActionEndpoints 源 partial 对应（trade/achievements/inventory/market/points-shop/confirmations/proxy/item-collection/licenses/core）；核心「账户」族仍约 1900 行、拆分收益较低，本轮后置记录。
+- [ ] TLAY-003 [P2] 拆分 tests/Vapor.Agent.Tests/PluginHostActionTests.cs（1972 行，63 方法）。
+- [ ] TLAY-004 [P2] 拆分 tests/Vapor.ControlPlane.Tests/ProgramBranchCoverageTests.cs（1847 行，53 方法）。
+- [ ] TLAY-005 [P2] 拆分 tests/Vapor.Steam.Core.Tests/Unit/SessionManagerTests.cs（1692 行，57 方法）。
+- [ ] TLAY-006 [P2] 拆分 tests/Vapor.ControlPlane.Tests/SqliteJobStoreTests.cs（1492 行，52 方法）——与 LAY-004 SqliteJobStore 源 partial 对应。
+- [ ] TLAY-007 [P2] 拆分 tests/Vapor.ControlPlane.Tests/PluginApiTests.cs（1422 行，45 方法）。
+- [ ] TLAY-008 [P2] 拆分 tests/Vapor.Steam.Core.Tests/Unit/Actions/TradeOfferActionExecutionTests.cs（1119 行，47 方法）。
+- [ ] TLAY-009 [P2] 拆分 tests/Vapor.ControlPlane.Tests/CrawlRunWorkerTests.cs（1064 行，33 方法）。
