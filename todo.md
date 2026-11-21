@@ -57,7 +57,7 @@
 - [x] 控制台代理分配、仓库号归集、背包查看面板 —— 证据:轮三十九（fe6878c, 7370121）
 - [x] ASF 风格 CI 收紧：静态分析、NuGet 审计、覆盖率门禁、property 测试 —— 证据:轮三十六
 - [x] 测试/覆盖率基线刷新、dashboard 扩展、gifts 白名单、成就管理、boost 策略化 —— 证据:轮三十四-三十七（2931 测试）
-- [x] CI flake 治理：TracingTests 进程全局并发、BrokenTick 等待错位、vstest 收尾失速、MarketWatch 在飞失速、macos SQLite NRE 抖动 —— 证据:轮二十三-二十八
+- [x] CI flake 治理：TracingTests 进程全局并发、BrokenTick 等待错位、vstest 收尾失速、MarketWatch 在飞失速、macos SQLite NRE 抖动 —— 证据:轮二十三-二十八；覆盖率门禁抖动（wrong-password maFile 测试的探盐与其后实际加密用不同 iv，CryptographicException 臂变 ~1/256 掷硬币，CI 两行变暗）—— 证据:eba2a28
 - [x] 剪版 v0.1.0-alpha.2：九个月 Unreleased 收口 + 依赖陈账 —— 证据:轮二十六
 - [x] 故障排查手册、性能基线、控制页面修复、admin QR 扫码、假异步清理、幻影模型 ItemInfo 移除 —— 证据:轮十七-二十二
 
