@@ -112,7 +112,7 @@ P0/P1 当场修复（一问题一 commit，各套测试全绿）：
 
 - [x] 质量门：覆盖率门禁在深审主干是红的（非抖动——同 SHA 两次绿靠部分报告漏报分母，第三次红暴露真缺口，run 41404115679）；本轮闭合：SqliteJobStore 五处缺口（StripSecretPayload 非字典分支、:memory: 早返、OS 条件比较改正向块、畸形 JSON 载荷、同路径抛错）+ Agent 四类（TaskLeaseRenewer 计时器循环排除并登记 TESTING.md、AgentTaskDispatcher Capacity/Dispose、QueuedTaskCanceller Clear、AuthChallengeOutboxCleaner 空区间）—— 证据:70dcdca（coverage-summary 双 100%：22524 行 / 8658 分支，ControlPlane 1386 + Agent 221 + Steam.Core 1289 全绿，format 与 7 个 verify 脚本全绿）
 
-P2 待办（记档，未修）：
+P2 待办（记档后已全部修复，2026-11-21 核）：
 - [x] P2 docker-compose 默认 API key 未强制门控：`${VAPOR_ADMIN_API_KEY:-admin-dev-token}` 等兜底默认值，生产忘配环境变量即携已知 dev token 启动 —— 修复:ad0cd42（`:?` 缺失即 fail-fast + .env.example 模板 + CI 占位；compose config 缺值 rc15/提供 rc0，ControlPlane 1378 全绿，7 verify 脚本全绿；原记档 05b1756 不可达自主干，改指同内容合入提交 ad0cd42，2026-11-04 复核）
 - [x] P2 `SetTaskResult` 任务行更新与 `RecomputeJob` 非同一事务，进程中断留下 task=Finished 而 job 仍 Running 中间态 —— 修复:0295ed8（`SetTaskResult` 的 UPDATE tasks + RecomputeJob 包入单事务；RecomputeJob 增可选 tx 参数，Canceled 时提交 task 更新但不动 job；新增 `SetTaskResult_RollsBackTaskUpdateWhenJobRecomputeFails` 回归测试），ControlPlane SqliteJobStoreTests 58 全绿 + 全套 1386 全绿
 - [x] P2 `RemoveSessionAsync` 中 `DisconnectAsync` 抛错则 `Dispose` 被跳过，会话泄漏 —— 修复:b088052（`RemoveSessionAsync` 改 try/finally：`DisconnectAsync` 抛错仍执行 `session.Dispose()`；新增 `RemoveSessionAsync_DisconnectThrows_StillDisposesSession` 回归测试），Steam.Core 1293 全绿
@@ -120,7 +120,7 @@ P2 待办（记档，未修）：
 - [x] P2 `DisconnectAsync` 以 `Task.Delay(100)` 固定睡眠等断开，竞态余量靠魔法数 —— 修复:d7cff13（`DisconnectAsync` 改等 disconnect 事件：连接时注册 TCS 到 `_pendingDisconnects`，`OnDisconnected` settle，10s 有界兜底；同 `SetAccountProxyAsync` 机制），Steam.Core 1293 全绿
 - [x] P2 94085ba 残余：登录被取消后迟到的 LoggedOnCallback 仍可能错投给下一个登录的 TCS —— 缓解:68eb3ed（LoginAsync 退出时若槽位仍指向本账号则清空，迟到回调被 OnLoggedOn 丢弃；新增 `LoginAsync_WhenItFails_ClearsActiveLoginSlot`；Steam.Core 1294 全绿）；残余：并发「取消后立即下一登录」的槽位已覆盖窗口仍需 SteamKit2 按 JobID 路由，公共 API 不暴露（同审核发现 L129）
 
-P3 记录性（风格/健壮性，未修）：
+P3 记录性（风格/健壮性，已全部修复，2026-11-21 核）：
 - [x] P3 无注释空 `catch {}`：SteamClientManager.cs:380（DisconnectAsync 吞 Disconnect 异常）、:1690（Dispose 同款）；Agent Program.cs:660（websocket 排水）、:462（currentTaskCts.Cancel） —— 修复:85c12af（四处空 catch 补意图注释：Disconnect 可能已断/Dispose 不抛/排水由外层重连负责/CTS 可能已 dispose；Agent 219 + Steam.Core 1294 全绿）
 - [x] P3 魔法数：BotSession.cs:256（回调轮询 100ms）、:604（断开沉降 100ms）；RedisVaporCache.cs:105（`Thread.Sleep(200*attempt)` 库内重试同步阻塞）—— 修复:fe8cbb3（BotSession.cs:476/481 提常量、RedisVaporCache.cs:98 提常量），全套 4062 测试全绿（2026-11-04 实测）
 - [x] P3 库内 await 缺 `ConfigureAwait(false)`：SteamWebHandler.cs:174（GetAsync）、:191（PostAsync）；DataActions.cs:440；CsgoPlugin.cs:320；SessionManager.cs:477（_eventCallback.Invoke）—— 修复:d5926e0（四处补 `.ConfigureAwait(false)`），全套 4062 测试全绿（2026-11-04 实测）
