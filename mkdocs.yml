@@ -83,6 +83,12 @@ plugins:
           name: 简体中文
           build: true
 
+# First-visit browser-language routing (docs/javascripts/lang-redirect.js):
+# a zh-preferring browser with no recorded choice is moved once from an en page
+# to its zh twin; explicit switcher clicks are recorded and never overridden.
+extra_javascript:
+  - javascripts/lang-redirect.js
+
 nav:
   - Home: index.md
   - Getting Started:
