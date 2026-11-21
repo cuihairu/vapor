@@ -20,7 +20,7 @@ Vapor 的 Agent 内置一套插件系统：隔离加载、按 SemVer 门控
 |------------|-----------|----------------------------|
 | 动作 | `IActionPlugin` | 把贡献的 `IAction` 注册进 Agent 的动作注册表；它们经任务（`run_action`）变为可调用 |
 | 控制台命令 | `ICommandPlugin` | 加载时收集，由 `commands` 权限门控；树内尚无宿主提供运行它们的前端，因此目前只是契约面 |
-| Web 路由 | `IWebApiPlugin` | 加载时收集，由 `web` 权限门控；尚无宿主把它们经 HTTP 挂载（监控插件改为在自己的监听器上自托管端点）——见 [Web 路由](#web-iwebapiplugin) |
+| Web 路由 | `IWebApiPlugin` | 加载时收集，由 `web` 权限门控；尚无宿主把它们经 HTTP 挂载（监控插件改为在自己的监听器上自托管端点）——见 [Web 路由](#web-routes-iwebapiplugin) |
 | 会话事件 | `IEventPlugin` | 经 `PluginEventDispatcher` 接收每一个会话事件（状态变更、认证/两步验证提示、错误） |
 
 ## 快速上手 { #quick-start }
@@ -276,7 +276,7 @@ public sealed class MyPingCommand : IPluginCommand
 面与 Agent 都是无头的。该接口是预留的契约面；插件当下需要
 可达的能力时，请用动作（可经任务管线调用）。
 
-### Web 路由（`IWebApiPlugin`）
+### Web 路由（`IWebApiPlugin`） { #web-routes-iwebapiplugin }
 
 与宿主无关的 HTTP 处理器 —— 适合不得依赖控制平面的仪表盘
 或指标端点：
@@ -757,7 +757,7 @@ ak™ 对有 StatTrak 变体的物品是一次独立的 1:10 掷点。没有
 请求任何其他 `backend` 值都会让插件初始化带着显式错误失败
 ，而不是静默模拟。
 
-#### 门控的真实路径（`open.enabled`）
+#### 门控的真实路径（`open.enabled`） { #modes-and-the-backend-seam }
 
 模拟器并不是 `case_open` 的唯一应答方式。门打开时（
 `open.enabled: true` 或 `VAPOR_CSGO_OPEN_ENABLED=true`）
@@ -853,7 +853,7 @@ ak™ 对有 StatTrak 变体的物品是一次独立的 1:10 掷点。没有
   team 数据，记账那一半也只经公开端点读取运维自己的库存，在
   条款之内。
 
-## 游戏数据插件（`vapor.game-data`）
+## 游戏数据插件（`vapor.game-data`） { #game-data-plugin-vaporgame-data }
 
 本插件补上了 [Valve 游戏插件](game-plugins.md)中的只读分
 析候选项：公开的 Dota 2 数据与 TF2/CS2 物品 schema，直接
